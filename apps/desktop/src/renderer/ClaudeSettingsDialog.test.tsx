@@ -53,7 +53,9 @@ const select = (name: string) => screen.getByRole('combobox', { name }) as HTMLS
 describe('ClaudeSettingsDialog', () => {
   it('runs at the recommended levels and asks first, until the user chooses otherwise', async () => {
     const { container } = render(<ClaudeSettingsDialog api={apiWith()} onClose={vi.fn()} />);
-    await screen.findByRole('combobox', { name: 'Model for everything' });
+    // The file's first dialog takes longest to draw: nearly half a second, with every package's
+    // tests at once.
+    await screen.findByRole('combobox', { name: 'Model for everything' }, { timeout: 5000 });
     expect(select('Model for everything').value).toBe('');
     expect(select('Effort for everything').value).toBe('');
     expect(box('Change any file in your job hunt').checked).toBe(false);

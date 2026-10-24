@@ -57,6 +57,24 @@ export interface PageForm {
   fields: PageField[];
   /** Whether the page says an application went in, such as "Thank you for applying". */
   submitted: boolean;
+  /**
+   * The page of an application that runs over several in one tab, as Workday's does, by the name
+   * its steps give it, such as "My Experience", or "" for a form on one page.
+   */
+  step: string;
+  /**
+   * The form's buttons that add a part to it, such as another job's, as Workday's Add does: each
+   * by the part of the form it's in, and its words.
+   */
+  adders: PageAdder[];
+}
+
+/** A button that adds a part to a form, as another job's or another school's. */
+export interface PageAdder {
+  /** The part of the form it adds to, as a field's section names it, such as "Work Experience". */
+  section: string;
+  /** What it says, such as "Add Another". */
+  words: string;
 }
 
 /** What to put in a field. */
@@ -77,6 +95,19 @@ export interface FieldAnswer {
   place?: boolean;
   /** For a file field: the file, as base64. */
   file?: { name: string; type: string; base64: string };
+  /**
+   * Only where the field is empty, as on a form of several pages, which its site may have filled
+   * from your resume, as Workday does: what's there stays as it is.
+   */
+  ifEmpty?: boolean;
+  /**
+   * The part of the form for a job or school it's in, by its heading, and whether it names that
+   * job or school, as a title, a company or a school's name does. A part that holds another one,
+   * as a site filled it in from your resume in its own order, keeps its empty fields empty: none
+   * of the fields that name it agrees with the answers.
+   */
+  part?: string;
+  names?: boolean;
 }
 
 /** How filling one field went: whether it took, and what it shows now. */
@@ -86,10 +117,12 @@ export interface FieldFilled {
   /** What the field holds now, as the page shows it: the text, or the option picked. */
   shown: string;
   /**
-   * Why it didn't take: the field wasn't there anymore, none of its options was the answer, or
-   * the page didn't keep what was put in it.
+   * Why it didn't take: the field wasn't there anymore, none of its options was the answer, the
+   * page didn't keep what was put in it, or its part holds another job or school (`part`).
    */
-  why: '' | 'moved' | 'no-option' | 'not-taken';
+  why: '' | 'moved' | 'no-option' | 'not-taken' | 'other-part';
+  /** Whether it held an answer already, which it left as it was (`ifEmpty`). */
+  kept?: boolean;
 }
 
 /** What's in a field now, by its place. */
@@ -107,26 +140,37 @@ export interface FieldRef {
 
 /**
  * What the extension asks of the page: to read the form, fill it, read what's in some of its
- * fields, or show a field. It fills only the form at the address it read it at.
+ * fields, show a field, or press one of its buttons that add a part, as many times as you chose.
+ * It fills only the form at the address it read it at.
  */
 export type FormTask =
   | { do: 'read' }
   | { do: 'fill'; url: string; answers: FieldAnswer[] }
   | { do: 'values'; fields: FieldRef[] }
   | { do: 'outline'; fields: FieldRef[] }
-  | { do: 'show'; ref: number; key: string };
+  | { do: 'show'; ref: number; key: string }
+  | { do: 'add'; url: string; adder: PageAdder; times: number };
 
 /**
  * What each task gives back. A form the tab has moved on from, to another address, isn't filled:
- * it's elsewhere. What's in fields comes with whether the page says an application went in.
+ * it's elsewhere. What's in fields comes with whether the page says an application went in, and
+ * the page of the application it's on, with how many fields that has.
  */
 export type FormAnswer =
   | { did: 'read'; form: PageForm }
   | { did: 'fill'; filled: FieldFilled[] }
   | { did: 'elsewhere' }
-  | { did: 'values'; url: string; submitted: boolean; values: FieldValue[] }
+  | {
+      did: 'values';
+      url: string;
+      submitted: boolean;
+      values: FieldValue[];
+      step: string;
+      fields: number;
+    }
   | { did: 'outline' }
-  | { did: 'show'; found: boolean };
+  | { did: 'show'; found: boolean }
+  | { did: 'add'; added: number };
 
 /**
  * Reads the application form on the page you're on, fills it, reads what's in it, or shows one of
@@ -160,10 +204,13 @@ export async function formPage(
   const AROUND = 'header, nav, footer, [role="banner"], [role="navigation"], [role="search"]';
   /** A label that only says how to add a file, not which file. */
   const UPLOAD_WORDS =
-    /^(attach|upload|choose( a)? file|browse|select( a)? file|drop( files?)?( here)?|add( a)? file|or|enter manually)( |$)/i;
+    /^(attach|upload|choose( a)? files?|browse|select( a)? files?|drop( files?)?( here)?|add( a)? files?|or|enter manually)( |$)/i;
+  /** Words that only say how to answer a question of options, not what it asks. */
+  const HOW_ONLY =
+    /^(please )?(check|select|choose|tick|mark|pick)( only)?( one| all| any)?( of)?( the| that)?( boxes| options| following| answers?)?( below| apply| that apply)?:?$/i;
   /** Words a box shows before you type, which say nothing of what it asks. */
   const PLACEHOLDERS =
-    /^(type here|select|choose|start typing|please select|search|enter|write here)\b|\.\.\.$|…$/i;
+    /^(type here|select|choose|start typing|please select|search|enter|write here)\b|\.\.\.$|…$|^[-–—]+$/i;
   /** What a page says once an application went in. */
   const SUBMITTED =
     /thank(s| you) for (applying|your application|submitting)|application (has been |was )?(submitted|received|sent)|we(’|')?ve received your application|we have received your application|you(’|')?ve (successfully )?applied|your application is (in|complete)/i;
@@ -325,6 +372,33 @@ export async function formPage(
       .map((id) => doc.getElementById(id))
       .filter((each): each is HTMLElement => each !== null && each !== element);
 
+  /** Whether a control is a button that opens a list to pick from, as Workday's dropdowns are. */
+  const opensList = (control: Element): boolean =>
+    control.getAttribute('aria-haspopup') === 'listbox' &&
+    control.matches('button, [role="button"]');
+
+  /**
+   * Whether a box is one of Workday's lists you search, which looks up what's typed once you press
+   * Enter, and keeps what you pick as a pill beside it: its own widget's box, which Workday names
+   * "selectinput", or the box in its container, which names it "searchBox" only while it's open.
+   */
+  const searches = (control: Element): boolean =>
+    control.matches(
+      'input[data-uxi-widget-type="selectinput"], input[data-automation-id="searchBox"], [data-automation-id="multiselectInputContainer"] input',
+    );
+
+  /**
+   * What a button that opens a list says it asks, without the option it shows and "Required",
+   * which Workday's dropdowns add to their names: "Country/Region United States of America
+   * Required" asks "Country/Region", and " Select One Required" nothing.
+   */
+  const askedBy = (button: Element): string => {
+    const showing = squash(button.textContent ?? '');
+    let words = squash(button.getAttribute('aria-label') ?? '').replace(/\s*\brequired$/i, '');
+    if (showing && words.endsWith(showing)) words = words.slice(0, -showing.length);
+    return words.trim();
+  };
+
   /** The labels that name a control: those for its ID, and the one it's inside. */
   const labelsOf = (control: Element): HTMLLabelElement[] => {
     const found: HTMLLabelElement[] = [];
@@ -404,11 +478,46 @@ export async function formPage(
     return squash(byIds || group.getAttribute('aria-label') || '');
   };
 
+  /**
+   * The legend of the nearest set around a control that has one: a set of boxes may be inside
+   * another, as Workday's are, whose legend asks the question.
+   */
+  const legendOf = (control: Element): string => {
+    for (
+      let set = control.closest('fieldset');
+      set;
+      set = set.parentElement?.closest('fieldset') ?? null
+    ) {
+      const legend = [...set.children].find((child) => child.tagName === 'LEGEND');
+      if (legend) return wordsOf(legend);
+    }
+    return '';
+  };
+
+  /**
+   * What a part of a date is the part of, as "From" for its Month: the legend of the set it's in,
+   * or else the name of the nearest set around it that has one. Workday's names its date's own box
+   * by what it holds now, so a legend comes first.
+   */
+  const datePartOf = (control: Element): string => {
+    const legend = legendOf(control);
+    if (legend) return legend;
+    for (
+      let set = control.closest('fieldset, [role="group"]');
+      set;
+      set = set.parentElement?.closest('fieldset, [role="group"]') ?? null
+    ) {
+      const words = groupWords(set);
+      if (words) return words;
+    }
+    return '';
+  };
+
   /** The longest name of a part of the form: one longer is a sentence, not a name. */
   const MAX_SECTION = 120;
   /** What a part of the form holds, as fields. */
   const CONTROLS =
-    'input:not([type="hidden"]), select, textarea, [role="combobox"]:not(input), [contenteditable="true"][role="textbox"]';
+    'input:not([type="hidden"]), select, textarea, [role="combobox"]:not(input), [contenteditable="true"][role="textbox"], button[aria-haspopup="listbox"], [role="button"][aria-haspopup="listbox"]';
   /** Node.DOCUMENT_POSITION_FOLLOWING: what compareDocumentPosition says of an element after. */
   const FOLLOWS = 4;
 
@@ -430,6 +539,22 @@ export async function formPage(
     return headings;
   };
 
+  /**
+   * The nearest heading before an element whose box holds it, but for one that only repeats its
+   * question.
+   */
+  const headingAbove = (element: Element, question = '') => {
+    let heading: { words: string; names: Element } | null = null;
+    for (const each of headingsOf()) {
+      if (!(each.heading.compareDocumentPosition(element) & FOLLOWS)) break;
+      if (each.names.contains(element) && each.words !== question) heading = each;
+    }
+    return heading;
+  };
+
+  /** The words of the nearest heading before an element whose box holds it. */
+  const headingOver = (element: Element) => headingAbove(element)?.words ?? '';
+
   /** A set of fields, which may name a part of the form, or a question. */
   const SETS = 'fieldset, [role="group"], [role="region"]';
 
@@ -443,11 +568,7 @@ export async function formPage(
   const sectionOf = (members: HTMLElement[], question: string): string => {
     const [first] = members;
     if (!first) return '';
-    let heading: { words: string; names: Element } | null = null;
-    for (const each of headingsOf()) {
-      if (!(each.heading.compareDocumentPosition(first) & FOLLOWS)) break;
-      if (each.names.contains(first) && each.words !== question) heading = each;
-    }
+    const heading = headingAbove(first, question);
     let set = first.parentElement?.closest(SETS) ?? null;
     let named = '';
     for (; set; set = set.parentElement?.closest(SETS) ?? null) {
@@ -487,7 +608,7 @@ export async function formPage(
       if (take(words) && !UPLOAD_WORDS.test(words))
         return { question: cleanQuestion(words), raw: words };
     }
-    const aria = control.getAttribute('aria-label') ?? '';
+    const aria = opensList(control) ? askedBy(control) : (control.getAttribute('aria-label') ?? '');
     if (take(aria) && !UPLOAD_WORDS.test(aria)) return { question: cleanQuestion(aria), raw: aria };
     // A file field's own label often only says how to add one: the question is the group's.
     const group = groupWords(control.closest('[role="group"], [role="radiogroup"], fieldset'));
@@ -508,7 +629,14 @@ export async function formPage(
   const hintOf = (control: Element, question: string): string => {
     const described = named(control, 'aria-describedby')
       .map((each) => wordsOf(each))
-      .filter((words) => words && !PLACEHOLDERS.test(words))
+      // Words that only say what a box holds now, as Workday's date boxes and lists you search
+      // say it, aren't a hint.
+      .filter(
+        (words) =>
+          words &&
+          !PLACEHOLDERS.test(words) &&
+          !/^(current value is\b|(\d+|no) items? selected\b|expanded$)/i.test(words),
+      )
       .join(' ');
     if (described) return cut(described);
     // Words between a field's label and the field, as a form puts what it's for under its label.
@@ -605,14 +733,53 @@ export async function formPage(
   };
 
   /**
-   * The list a box that offers choices shows once it's open, and the options in it: the one it
-   * names, or one in the box around it, or the suggestions it shows as you type.
+   * The box at the page's end a list you search shows what it found in, as Workday ties it to the
+   * list's widget, by the widget's ID.
    */
-  const listOf = (control: Element): Element[] => {
+  const foundIn = (control: Element): Element[] => {
+    const widget =
+      control.getAttribute('data-uxi-multiselect-id') ??
+      control.closest('[data-automation-id="multiSelectContainer"]')?.getAttribute('id');
+    if (!widget) return [];
+    return [...doc.querySelectorAll('[data-associated-widget]')].filter(
+      (box) => box.getAttribute('data-associated-widget') === widget,
+    );
+  };
+
+  /**
+   * The lists a button opened that show now, wherever the page puts them, as Workday's dropdowns
+   * do at the page's end, naming them nowhere: those that weren't there before it was pressed
+   * (`before`), or while it says it's open, the one that shows. Never the list of picks beside a
+   * list you search, nor one the page is still closing, as Workday's lingers a moment.
+   */
+  const openedBy = (control: Element, before?: ReadonlySet<Element>): Element[] => {
+    const open = [...doc.querySelectorAll('[role="listbox"]')].filter(
+      (list) =>
+        !list.contains(control) &&
+        !list.matches('[data-automation-id="selectedItemList"]') &&
+        !list.closest('[visibility="closing"], [visibility="close"]') &&
+        shown(list),
+    );
+    if (before) return open.filter((list) => !before.has(list));
+    return control.getAttribute('aria-expanded') === 'true' && open.length === 1 ? open : [];
+  };
+
+  /**
+   * The list a box that offers choices shows once it's open, and the options in it: the one it
+   * names, or one in the box around it, or the suggestions it shows as you type. A button that
+   * opens a list may have the page show it elsewhere, as Workday's does at the page's end (see
+   * `openedBy`), and a list you search shows what it found in a box of its own there.
+   */
+  const listOf = (control: Element, before?: ReadonlySet<Element>): Element[] => {
     const lists = [
       ...named(control, 'aria-controls'),
       ...named(control, 'aria-owns'),
-      ...ownBoxes(control).flatMap((box) => [...box.querySelectorAll('[role="listbox"]')]),
+      // Not the list of picks beside a list you search, as Workday's, which are no options.
+      ...ownBoxes(control).flatMap((box) => [
+        ...box.querySelectorAll('[role="listbox"]:not([data-automation-id="selectedItemList"])'),
+      ]),
+      ...(opensList(control) ? openedBy(control, before) : []),
+      ...(searches(control) ? foundIn(control) : []),
     ];
     for (const list of lists) {
       const options = [...list.querySelectorAll('[role="option"]')].filter(shown);
@@ -672,6 +839,22 @@ export async function formPage(
   const MOST_PRESSED = 12;
   const PRESSED_WORDS = 60;
 
+  /** The sets a group of checkboxes may be in, as Workday puts its own in a grid. */
+  const BOX_SETS = 'fieldset, [role="group"], [role="grid"], [role="radiogroup"]';
+  /** A box to tick. */
+  const OPTIONS = 'input[type="checkbox"]';
+
+  /**
+   * What marks the step an application that runs over several pages is on: Workday's progress
+   * bar's, or any marked as the current step.
+   */
+  const STEP_NOW = '[data-automation-id="progressBarActiveStep"], [aria-current="step"]';
+  /** Words that say a button adds a part to a form, as "Add", "Add Another" and "+ Add another job". */
+  const ADDS = /^\+?\s*add\b(?!\s+(to|a file|file|files|attachment)\b)/i;
+  /** The most parts it adds to a form at once, and how long it waits for each to show. */
+  const MOST_ADDED = 10;
+  const ADD_MS = 3000;
+
   /**
    * Sets of buttons that each stay pressed once clicked, as a form's Yes and No are on Ashby: two
    * or more side by side, each with a few words, as a choice of one of them. A hidden field beside
@@ -704,14 +887,30 @@ export async function formPage(
       return false;
     }
     // A box with no name and nothing naming it, such as one a page keeps for dropping files on
-    // anywhere, is the page's own, not a question.
+    // anywhere, is the page's own, not a question. A box around it, that holds no other field, may
+    // name it, as Workday's for your resume does.
     const nameless =
       !control.getAttribute('id') &&
       !control.getAttribute('name') &&
       !control.getAttribute('aria-label') &&
       !control.getAttribute('aria-labelledby') &&
-      !control.closest('label');
+      !control.closest('label') &&
+      !ownBoxes(control).some(
+        (box) => box.hasAttribute('aria-labelledby') || box.hasAttribute('aria-label'),
+      );
     if (nameless && (type === 'file' || control.getAttribute('tabindex') === '-1')) return false;
+    // The box beside a button that opens a list, which keeps the option picked for the page, as
+    // Workday's dropdowns have, is the button's, not a field of its own.
+    const before = control.previousElementSibling;
+    if (
+      control instanceof HTMLInputElement &&
+      before !== null &&
+      opensList(before) &&
+      !control.getAttribute('id') &&
+      !control.getAttribute('name')
+    ) {
+      return false;
+    }
     // Kept from you, as what's around a dialog is while it's open, it's never a field.
     if (control.closest('[aria-hidden="true"], [inert]')) return false;
     // A file field, a radio button or a checkbox is often hidden behind the page's own button or
@@ -734,7 +933,7 @@ export async function formPage(
     const holders = pressed.map((set) => set[0]?.parentElement as Element);
     const controls = [
       ...doc.querySelectorAll<HTMLElement>(
-        'input, select, textarea, [role="combobox"]:not(input), [contenteditable="true"][role="textbox"]',
+        'input, select, textarea, [role="combobox"]:not(input), [contenteditable="true"][role="textbox"], button[aria-haspopup="listbox"], [role="button"][aria-haspopup="listbox"]',
       ),
     ]
       .filter((control) => !holders.some((holder) => holder.contains(control)))
@@ -746,14 +945,26 @@ export async function formPage(
       );
       controls.splice(after < 0 ? controls.length : after, 0, first);
     }
-    const groups = new Map<string, HTMLElement[]>();
-    for (const control of controls) {
+    /**
+     * The group a radio button or checkbox is one of: those with its name, or for a checkbox with
+     * none, as Workday's, the nearest set around it that holds two or more checkboxes and nothing
+     * else.
+     */
+    const sets = new Map<Element, number>();
+    const groupOf = (control: HTMLElement): string => {
       const type = (control.getAttribute('type') ?? '').toLowerCase();
       const name = control.getAttribute('name');
-      if ((type === 'radio' || type === 'checkbox') && name) {
-        const key = `${type}:${name}`;
-        groups.set(key, [...(groups.get(key) ?? []), control]);
-      }
+      if ((type === 'radio' || type === 'checkbox') && name) return `${type}:${name}`;
+      const set = type === 'checkbox' ? control.closest(BOX_SETS) : null;
+      const inside = set ? [...set.querySelectorAll(CONTROLS)] : [];
+      if (!set || inside.length < 2 || !inside.every((each) => each.matches(OPTIONS))) return '';
+      if (!sets.has(set)) sets.set(set, sets.size);
+      return `checkbox:set:${sets.get(set)}`;
+    };
+    const groups = new Map<string, HTMLElement[]>();
+    for (const control of controls) {
+      const key = groupOf(control);
+      if (key) groups.set(key, [...(groups.get(key) ?? []), control]);
     }
     const found: Found[] = [];
     const done = new Set<HTMLElement>();
@@ -762,7 +973,8 @@ export async function formPage(
       const type = (control.getAttribute('type') ?? '').toLowerCase();
       const name = control.getAttribute('name') ?? '';
       const id = control.getAttribute('id') ?? '';
-      const group = groups.get(`${type}:${name}`);
+      const grouped = groupOf(control);
+      const group = grouped ? groups.get(grouped) : undefined;
       let field: Omit<PageField, 'ref' | 'key' | 'section'>;
       let members = [control];
       const set = pressedFirst.get(control);
@@ -803,7 +1015,6 @@ export async function formPage(
         members = group;
         for (const each of group) done.add(each);
         // The group's question is above its options: a legend, a group's label, or the words before it.
-        const set = control.closest('fieldset');
         const role = control.closest('[role="radiogroup"], [role="group"]');
         let common: Element | null = control.parentElement;
         while (common && !group.every((each) => common?.contains(each)))
@@ -811,13 +1022,16 @@ export async function formPage(
         // The words before the first option, inside the group's own box, or else above the box.
         const first = control.closest('label') ?? control;
         const raw =
-          wordsOf(set?.querySelector('legend') ?? null) ||
+          legendOf(control) ||
           groupWords(role) ||
           (common ? wordsBefore(common, first) || wordsAbove(common) : '') ||
           '';
+        // Words that only say how to answer, as "Please check one of the boxes below:", ask what
+        // the heading over them does, as a self-identification form's.
+        const how = HOW_ONLY.test(cleanQuestion(raw)) ? headingOver(control) : '';
         field = {
-          question: cut(cleanQuestion(raw)),
-          hint: '',
+          question: cut(cleanQuestion(how || raw)),
+          hint: how ? cut(cleanQuestion(raw)) : '',
           control: type === 'radio' ? 'choice' : 'choices',
           type: type.slice(0, 40),
           autocomplete: '',
@@ -831,9 +1045,7 @@ export async function formPage(
         const own = questionOf(control);
         // A date's parts, such as "Month" and "Year", are asked by the set they're in, such as
         // "Start date *", which may mark them as required.
-        const set = /^(day|month|year)$/i.test(own.question)
-          ? groupWords(control.closest('fieldset, [role="group"]'))
-          : '';
+        const set = /^(day|month|year)$/i.test(own.question) ? datePartOf(control) : '';
         const question = set ? `${cleanQuestion(set)} ${own.question}` : own.question;
         const raw = set ? `${own.raw} ${set}` : own.raw;
         const tag = control.tagName;
@@ -847,6 +1059,8 @@ export async function formPage(
                 : 'choice'
               : role === 'combobox' ||
                   control.getAttribute('aria-autocomplete') === 'list' ||
+                  opensList(control) ||
+                  searches(control) ||
                   suggestionsOf(control) !== null
                 ? 'combo'
                 : type === 'checkbox'
@@ -855,7 +1069,7 @@ export async function formPage(
                     ? 'choice'
                     : type === 'file'
                       ? 'file'
-                      : type === 'number'
+                      : type === 'number' || role === 'spinbutton'
                         ? 'number'
                         : type === 'date'
                           ? 'date'
@@ -886,6 +1100,9 @@ export async function formPage(
           limit: limitOf(control, `${raw} ${hint}`),
         };
       }
+      // A box to tick that says nothing of its own, as Workday's for texts to your phone, whose
+      // only words are its part's, isn't a question.
+      if (field.control === 'check' && (!field.question || !optionWords(control))) continue;
       const ref = found.length;
       const key = cut(`${control.tagName}|${type}|${id}|${name}|${field.question}`);
       const section = sectionOf(members, field.question);
@@ -902,12 +1119,16 @@ export async function formPage(
     return same.length === 1 ? same[0] : undefined;
   };
 
-  /** An option's words, as compared: lowercase, with only its letters and digits. */
+  /**
+   * An option's words, as compared: lowercase, with only its letters and digits, and no
+   * apostrophes, so "Bachelor's" is a site's "Bachelors", as core compares words too.
+   */
   const plain = (text: string) =>
     text
       .toLowerCase()
       .normalize('NFKD')
       .replace(/[̀-ͯ]/g, '')
+      .replace(/['’]/g, '')
       .replace(/[^\p{L}\p{N}]+/gu, ' ')
       .trim();
 
@@ -1045,6 +1266,40 @@ export async function formPage(
     box.dispatchEvent(new KeyboardEvent('keyup', { key, bubbles: true, cancelable: true }));
   };
 
+  /**
+   * Types text in a box a key at a time, as a keyboard does, for a box whose page builds what's in
+   * it from each key, as a date's month and year boxes may: each key goes down, then goes in unless
+   * the page took it itself, and comes up. What was in it goes first.
+   */
+  const typeKeys = (box: HTMLInputElement, text: string) => {
+    box.focus({ preventScroll: true });
+    const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
+    const put = (value: string) => {
+      if (set) set.call(box, value);
+      else box.value = value;
+    };
+    const key = (kind: string, name: string) => {
+      const event = new KeyboardEvent(kind, { key: name, bubbles: true, cancelable: true });
+      box.dispatchEvent(event);
+      return !event.defaultPrevented;
+    };
+    if (box.value && key('keydown', 'Backspace')) {
+      put('');
+      box.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'deleteContent' }));
+    }
+    for (const each of text) {
+      if (key('keydown', each)) {
+        put(`${box.value}${each}`);
+        box.dispatchEvent(
+          new InputEvent('input', { bubbles: true, inputType: 'insertText', data: each }),
+        );
+      }
+      key('keyup', each);
+    }
+    box.dispatchEvent(new Event('change', { bubbles: true }));
+    box.blur();
+  };
+
   /** What a box's list says while it looks, and once it found nothing. */
   const LOOKING = /loading|searching/i;
   const NONE = /no[-_]?(options|results)/i;
@@ -1085,6 +1340,26 @@ export async function formPage(
    * says it. Words that only say to pick, as "Select…", are none.
    */
   const comboShows = (control: HTMLElement): string => {
+    // A button that opens a list shows the option picked as its own words, or words that only
+    // say to pick, as Workday's "Select One".
+    if (opensList(control)) {
+      const words = squash(
+        [...control.childNodes]
+          .map((node) =>
+            node.nodeType === Node.TEXT_NODE ? (node.textContent ?? '') : wordsOf(node as Element),
+          )
+          .join(' '),
+      );
+      return PLACEHOLDERS.test(words) ? '' : words;
+    }
+    // A list you search shows each option picked as a pill beside its box.
+    if (searches(control)) {
+      const box = control.closest('[data-automation-id="multiselectInputContainer"]');
+      return [...(box?.querySelectorAll('[data-automation-id="selectedItem"]') ?? [])]
+        .map((pill) => wordsOf(pill))
+        .filter(Boolean)
+        .join(', ');
+    }
     const value = (control as HTMLInputElement).value ?? '';
     // A box that takes one of its own suggestions shows the one picked in itself.
     if (suggestionsOf(control)) return value;
@@ -1098,6 +1373,20 @@ export async function formPage(
       if (words) return PLACEHOLDERS.test(words) ? value : squash(`${value} ${words}`);
     }
     return value;
+  };
+
+  /**
+   * What a part of a date holds: the digits its page shows beside its box, as Workday shows "03"
+   * while its box says "3", and as only its own keys put them there, or else the number the box
+   * says it holds, or what's in it. Words that only say what goes there, as "MM", are nothing.
+   */
+  const spinShows = (box: HTMLElement): string => {
+    const display = box.parentElement?.querySelector('[data-automation-id$="-display"]');
+    if (display) {
+      const digits = squash(display.textContent ?? '');
+      return /^\d+$/.test(digits) ? digits : '';
+    }
+    return box.getAttribute('aria-valuenow') ?? (box as HTMLInputElement).value ?? '';
   };
 
   /** What a field shows now: its text, the option picked, or the file's name. */
@@ -1126,12 +1415,95 @@ export async function formPage(
     }
     if (field.control === 'check') return (control as HTMLInputElement).checked ? 'Checked' : '';
     if (field.control === 'file') {
-      return [...((control as HTMLInputElement).files ?? [])].map((file) => file.name).join(', ');
+      // With the files the page took already, as Workday lists each one it uploaded beside it.
+      const uploaded = new Set(
+        ownBoxes(control).flatMap((box) => [
+          ...box.querySelectorAll('[data-automation-id="file-upload-item-name"]'),
+        ]),
+      );
+      return [
+        ...[...((control as HTMLInputElement).files ?? [])].map((file) => file.name),
+        ...[...uploaded].map((each) => squash(each.textContent ?? '')),
+      ]
+        .filter(Boolean)
+        .join(', ');
     }
     if (field.control === 'combo') return comboShows(control);
+    if (control.getAttribute('role') === 'spinbutton') return spinShows(control);
     if (field.type === 'password') return '';
     if (control.isContentEditable) return squash(control.textContent ?? '');
     return (control as HTMLInputElement).value ?? '';
+  };
+
+  /** The most groups of a list you search it looks through, for an option that isn't found. */
+  const MOST_GROUPS = 12;
+
+  /**
+   * The options of a list you search that are groups of others, as Workday's How Did You Hear
+   * About Us? puts its sources in groups, such as Job Board.
+   */
+  const groupsIn = (box: Element) =>
+    listOf(box).filter(
+      (row) =>
+        row.matches('[data-uxi-multiselectlistitem-type="2"]') ||
+        row.querySelector('[data-uxi-multiselectlistitem-type="2"]') !== null,
+    );
+
+  /**
+   * Looks through a list you search group by group, for the option that's the answer, as each
+   * group shows its own once it's picked, and goes back to the groups after each: the option, or
+   * nothing once none has it.
+   */
+  const browse = async (
+    box: HTMLInputElement,
+    find: () => Element | undefined,
+  ): Promise<Element | undefined> => {
+    press(box);
+    let first = await waitFor(() => groupsIn(box).length > 0 && groupsIn(box), 800);
+    // Some of Workday's sites open the list from its icon beside the box, not the box.
+    const icon = box
+      .closest('[data-automation-id="multiselectInputContainer"]')
+      ?.querySelector('[data-automation-id="promptIcon"]');
+    if (!first && icon) {
+      press(icon);
+      first = await waitFor(() => groupsIn(box).length > 0 && groupsIn(box), 800);
+    }
+    if (!first) return undefined;
+    const names = first.map((row) => squash(row.textContent ?? '')).slice(0, MOST_GROUPS);
+    for (const name of names) {
+      const group = groupsIn(box).find((row) => squash(row.textContent ?? '') === name);
+      if (!group) continue;
+      press(group.querySelector('[data-automation-id="promptOption"]') ?? group);
+      const found = await waitFor(find, 1500);
+      if (found) return found;
+      const back = foundIn(box)
+        .flatMap((list) => [...list.querySelectorAll('[data-automation-id="backButton"]')])
+        .find(shown);
+      if (back) press(back);
+      else press(box);
+      await waitFor(() => groupsIn(box).length > 0, 800);
+    }
+    return undefined;
+  };
+
+  /** The newest pill a list you search shows, for the pick it kept last, as Workday's does. */
+  const newestPill = (box: Element): Element | undefined => {
+    const pills = box
+      .closest('[data-automation-id="multiselectInputContainer"]')
+      ?.querySelectorAll('[data-automation-id="selectedItem"]');
+    return pills?.[pills.length - 1];
+  };
+
+  /**
+   * Takes back a pick a list you search kept itself, that isn't the answer, as Workday's keeps
+   * the one it found on Enter: its newest pill's own button to clear it, till the list shows what
+   * it did before.
+   */
+  const unpick = async (box: Element, had: string) => {
+    const clear = newestPill(box)?.querySelector('[data-automation-id="DELETE_charm"]');
+    if (!clear) return;
+    press(clear);
+    await waitFor(() => comboShows(box as HTMLElement) === had, 1000);
   };
 
   /** Puts an answer in a field, and says how it went. */
@@ -1145,6 +1517,8 @@ export async function formPage(
       why: ok ? ('' as const) : why || ('not-taken' as const),
     });
     if (!control || field.type === 'password') return done(false, 'not-taken');
+    // A field that holds an answer already, as a site may fill in from your resume, stays as it is.
+    if (answer.ifEmpty && shownIn(found).trim() !== '') return { ...done(true), kept: true };
     if (answer.file && field.control === 'file') {
       const bytes = Uint8Array.from(atob(answer.file.base64), (char) => char.charCodeAt(0));
       const files = new DataTransfer();
@@ -1192,51 +1566,107 @@ export async function formPage(
       const box = control as HTMLInputElement;
       const optionWords = (each: Element) => each.textContent ?? '';
       const suggests = suggestionsOf(box);
+      const search = searches(box);
+      /** The lists on the page before a button that opens one was pressed, to tell its own. */
+      let before: ReadonlySet<Element> | undefined;
       const find = () =>
         answer.place && !answer.exact
-          ? placeOf(listOf(box), picks)
-          : pickOf(listOf(box), optionWords, picks, answer.exact);
+          ? placeOf(listOf(box, before), picks)
+          : pickOf(listOf(box, before), optionWords, picks, answer.exact);
+      /** Whether a pick a list you search kept itself is the answer, as its option would be. */
+      const keptIt = (pill: Element | undefined) => {
+        if (!pill) return false;
+        if (!answer.place || answer.exact) {
+          return pickOf([pill], wordsOf, picks, answer.exact) !== undefined;
+        }
+        const said = doc.createElement('span');
+        said.textContent = wordsOf(pill);
+        return placeOf([said], picks) !== undefined;
+      };
       /**
        * Picks an option, as a person would, and says whether the box shows it then: its words, or
        * anything new, as a box for a phone's country shows only its code. A box that takes only
-       * one of its own suggestions keeps the one picked in its hidden field too.
+       * one of its own suggestions keeps the one picked in its hidden field too. An option of a
+       * list you search takes a click on its words, as Workday's do, or else on its own radio
+       * button.
        */
       const choose = async (option: Element) => {
         const words = squash(option.textContent ?? '');
-        const before = comboShows(box);
-        press(option);
-        const took = await waitFor(() => {
+        const shownBefore = comboShows(box);
+        const took = () => {
           if (suggests && suggests.picked.value === '') return false;
           const shows = comboShows(box);
-          return plain(shows).includes(plain(words)) || (shows !== '' && shows !== before);
-        }, 1000);
+          return plain(shows).includes(plain(words)) || (shows !== '' && shows !== shownBefore);
+        };
+        press(option.querySelector('[data-automation-id="promptOption"]') ?? option);
+        let picked = await waitFor(took, 1000);
+        const radio = option.querySelector('input[type="radio"], input[type="checkbox"]');
+        if (!picked && radio) {
+          press(radio);
+          picked = await waitFor(took, 1000);
+        }
         box.blur();
-        return Boolean(took);
+        return Boolean(picked);
       };
+      const pressEscape = () =>
+        box.dispatchEvent(
+          new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', bubbles: true }),
+        );
       // Opened with a press, as a person would: its list shows at once when it's the page's own.
-      // A box that only suggests as you type has nothing to show till then.
+      // A box that only suggests as you type has nothing to show till then. A button's list may
+      // take a moment, as Workday's asks its site for the options.
       if (!suggests) {
+        before = opensList(box) ? new Set(doc.querySelectorAll('[role="listbox"]')) : undefined;
         press(box);
-        const listed = await waitFor(find, 800);
+        const listed = await waitFor(find, opensList(box) ? LIST_MS : 800);
         if (listed && (await choose(listed))) return done(true);
+        before = undefined;
       }
       // A list that comes from the site's own server, such as of places, shows as you type, in a
       // box you can see: a place's picks, and its city alone, as a site's list may name it its
-      // own way.
+      // own way. A list you search shows what it found once Enter is pressed, and may keep the
+      // one it found then itself, as Workday's does: one that isn't the answer goes again.
       const typed = answer.place
         ? [...new Set([picks[0] ?? '', cityOf(picks[0] ?? ''), ...picks.slice(1)])]
         : picks;
+      const had = comboShows(box);
       for (const pick of typed.filter(Boolean).slice(0, 3)) {
         if (!(box instanceof HTMLInputElement) || !visible(box)) continue;
-        if (!suggests && box.getAttribute('aria-expanded') !== 'true') press(box);
+        if (search) pressEscape();
+        else if (!suggests && box.getAttribute('aria-expanded') !== 'true') press(box);
         const noneBefore = listSays(box, NONE);
         typeToFind(box, pick);
+        if (search) {
+          box.dispatchEvent(
+            new KeyboardEvent('keydown', {
+              key: 'Enter',
+              code: 'Enter',
+              keyCode: 13,
+              which: 13,
+              bubbles: true,
+              cancelable: true,
+            }),
+          );
+        }
         const option = await waitForList(box, find, answer.place ? PLACE_MS : LIST_MS, noneBefore);
         if (option && (await choose(option))) return done(true);
+        if (search && comboShows(box) !== had) {
+          if (keptIt(newestPill(box))) {
+            box.blur();
+            return done(true);
+          }
+          await unpick(box, had);
+        }
       }
-      box.dispatchEvent(
-        new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', bubbles: true }),
-      );
+      // A list you search may find nothing in its groups, as Workday's How Did You Hear About Us?
+      // puts LinkedIn under Job Board: each group in turn.
+      if (search && box instanceof HTMLInputElement) {
+        pressEscape();
+        if (box.value) typeInto(box, '', false);
+        const option = await browse(box, find);
+        if (option && (await choose(option))) return done(true);
+      }
+      pressEscape();
       // A box that takes only one of its own suggestions never keeps what was typed.
       if (box instanceof HTMLInputElement && box.value) typeInto(box, '');
       box.blur();
@@ -1251,11 +1681,20 @@ export async function formPage(
       return done(squash(control.textContent ?? '') === squash(text));
     }
     const box = control as HTMLInputElement | HTMLTextAreaElement;
-    typeInto(box, field.limit && text.length > field.limit ? text.slice(0, field.limit) : text);
+    const typed = field.limit && text.length > field.limit ? text.slice(0, field.limit) : text;
+    // A part of a date, as Workday's month and year boxes, takes a key at a time, and holds what
+    // it shows beside them.
+    if (box instanceof HTMLInputElement && box.getAttribute('role') === 'spinbutton') {
+      typeKeys(box, typed);
+      return done(/^\d+$/.test(typed) && Number(spinShows(box)) === Number(typed));
+    }
+    typeInto(box, typed);
     // A page may tidy what's typed, such as a phone number's spaces: the same digits and letters took.
     return done(
       plain(box.value) === plain(text) ||
-        plain(box.value).replace(/ /g, '') === plain(text).replace(/ /g, ''),
+        plain(box.value).replace(/ /g, '') === plain(text).replace(/ /g, '') ||
+        // A number the page writes its own way, as a month's "03" as "3".
+        (field.control === 'number' && /\d/.test(text) && Number(box.value) === Number(text)),
     );
   };
 
@@ -1287,6 +1726,68 @@ export async function formPage(
     }
   };
 
+  /**
+   * The step an application that runs over several pages in one tab is on, as its progress bar
+   * marks it, as Workday's does, by the name it gives it, such as "My Experience", without what
+   * only counts it, as "current step 2 of 7". A narrow window may hide the bar, which still says.
+   * "" for a form on one page.
+   */
+  const stepOf = (): string => {
+    const marked = [...doc.querySelectorAll(STEP_NOW)];
+    const now = marked.find(shown) ?? marked[0];
+    if (!now) return '';
+    const said = squash(now.textContent ?? '');
+    const counted = /^(?:you are on |current )?(step \d+ of \d+)[\s:.,-]*/i.exec(said);
+    const words = said
+      .slice(counted?.[0].length ?? 0)
+      .replace(/\s*\(?(current|current step|completed|in progress)\)?$/i, '');
+    // A narrow window may show only the count, as "step 3 of 6", which still tells the pages apart.
+    const name = words || (counted?.[1] ?? '');
+    return name.length > MAX_SECTION ? '' : name.charAt(0).toUpperCase() + name.slice(1);
+  };
+
+  /**
+   * The form's buttons that add a part to it, as another job's, in the page's order, each with the
+   * part of the form it's in: one outside the page's own parts, whose words say it adds one, as
+   * Workday's Add and Add Another do. A button made to submit its form never is, though one that
+   * only would as a form's buttons do unless they say otherwise, as Workday's say nothing, may be:
+   * pressing it, the page can't submit the form.
+   */
+  const addersOf = (): { adder: PageAdder; button: HTMLElement }[] =>
+    [...doc.querySelectorAll<HTMLElement>('button, [role="button"]')].flatMap((button) => {
+      const madeToSubmit = /^(submit|image)$/i.test(button.getAttribute('type') ?? '');
+      if (button.closest(AROUND) || madeToSubmit || (button as HTMLButtonElement).disabled) {
+        return [];
+      }
+      if (button.closest('[aria-hidden="true"], [inert]') || !visible(button)) return [];
+      const words =
+        squash(button.textContent ?? '') || squash(button.getAttribute('aria-label') ?? '');
+      if (!ADDS.test(words) || UPLOAD_WORDS.test(words) || words.length > PRESSED_WORDS) return [];
+      const section = sectionOf([button], '');
+      return section ? [{ adder: { section: cut(section), words: cut(words) }, button }] : [];
+    });
+
+  /**
+   * Presses a button that adds a part to the form, the one in the same part, as many times as
+   * asked, each once the part it added before shows, and says how many it added. A page may put
+   * another button in its place, as Workday's Add becomes Add Another, so it's found again each
+   * time.
+   */
+  const addParts = async (asked: PageAdder, times: number): Promise<number> => {
+    let added = 0;
+    for (let time = 0; time < Math.min(times, MOST_ADDED); time++) {
+      const same = addersOf().filter(({ adder }) => adder.section === asked.section);
+      const found = same.find(({ adder }) => adder.words === asked.words) ?? same[0];
+      if (!found) break;
+      const before = doc.querySelectorAll(CONTROLS).length;
+      press(found.button, true);
+      const grew = await waitFor(() => doc.querySelectorAll(CONTROLS).length > before, ADD_MS);
+      if (!grew) break;
+      added += 1;
+    }
+    return added;
+  };
+
   const fields = readFields();
   seen?.push(...fields.map((each) => each.controls));
   if (task.do === 'read') {
@@ -1298,25 +1799,55 @@ export async function formPage(
         title: doc.title,
         fields: fields.map(({ field }) => field),
         submitted: SUBMITTED.test(words.slice(0, 20_000)),
+        step: stepOf(),
+        adders: addersOf().map(({ adder }) => adder),
       },
     };
   }
+  // Nothing done here submits the form: a page's own code that would is stopped meanwhile.
+  const view = doc.defaultView;
+  const stop = (event: Event) => {
+    event.preventDefault();
+    event.stopImmediatePropagation();
+  };
   if (task.do === 'fill') {
     // Only the form it read, at the same address, but for what's after its #.
     if (task.url.split('#')[0] !== href.split('#')[0]) return { did: 'elsewhere' };
-    // Nothing done here submits the form: a page's own code that would is stopped meanwhile.
-    const view = doc.defaultView;
-    const stop = (event: Event) => {
-      event.preventDefault();
-      event.stopImmediatePropagation();
-    };
     view?.addEventListener('submit', stop, true);
     try {
       const filled: FieldFilled[] = [];
+      let now = fields;
+      // The parts for a job or school whose names hold another one, as a site filled them in from
+      // your resume in its own order: what names it holds something, and none of it agrees.
+      const agrees = new Map<string, boolean>();
       for (const answer of task.answers) {
-        const found = findField(fields, answer.ref, answer.key);
+        if (answer.part === undefined || !answer.names) continue;
+        const found = findField(now, answer.ref, answer.key);
+        const shows = found ? plain(shownIn(found)) : '';
+        if (!shows) continue;
+        const said = plain(answer.text ?? answer.pick?.[0] ?? '');
+        const same = said !== '' && (shows.includes(said) || said.includes(shows));
+        agrees.set(answer.part, (agrees.get(answer.part) ?? false) || same);
+      }
+      for (const answer of task.answers) {
+        let found = findField(now, answer.ref, answer.key);
+        // A page that put a field in anew as another took its answer, as Workday's address does
+        // once its country is picked, has it read again, to fill the one it shows.
+        if (found && !found.controls.every((control) => control.isConnected)) {
+          now = readFields();
+          found = findField(now, answer.ref, answer.key);
+        }
         if (!found) {
           filled.push({ ref: answer.ref, ok: false, shown: '', why: 'moved' });
+          continue;
+        }
+        if (
+          answer.ifEmpty &&
+          answer.part !== undefined &&
+          agrees.get(answer.part) === false &&
+          shownIn(found).trim() === ''
+        ) {
+          filled.push({ ref: answer.ref, ok: false, shown: '', why: 'other-part' });
           continue;
         }
         filled.push(await fill(found, answer));
@@ -1336,7 +1867,18 @@ export async function formPage(
         const found = findField(fields, each.ref, each.key);
         return found ? [{ ...each, value: shownIn(found).slice(0, MAX_VALUE) }] : [];
       }),
+      step: stepOf(),
+      fields: fields.length,
     };
+  }
+  if (task.do === 'add') {
+    if (task.url.split('#')[0] !== href.split('#')[0]) return { did: 'elsewhere' };
+    view?.addEventListener('submit', stop, true);
+    try {
+      return { did: 'add', added: await addParts(task.adder, task.times) };
+    } finally {
+      view?.removeEventListener('submit', stop, true);
+    }
   }
   if (task.do === 'outline') {
     for (const each of task.fields) {

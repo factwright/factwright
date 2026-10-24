@@ -363,6 +363,11 @@ export type InboxAskAnswer =
       replies: FieldReply[];
       files: { resume: OfferedFile | null; 'cover-letter': OfferedFile | null };
       /**
+       * How many jobs and schools on file a form that asks for each one can take, for a form
+       * with a button that adds a part for another. An app from before it says none.
+       */
+      blocks?: { jobs: number; schools: number };
+      /**
        * Through sync, the version of Profile's answers the replies are from, as its file's ID, or
        * empty for none yet, so a new answer saved to Profile later keeps a change made since.
        * Factwright on your computer sends none.

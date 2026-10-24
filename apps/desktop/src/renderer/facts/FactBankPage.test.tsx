@@ -9,6 +9,10 @@ import type { FactBankApi } from './useFactBank.ts';
 
 const TODAY = '2026-10-12';
 
+// Each test draws the whole fact bank page: with every package's tests at once, the first here
+// took 3.9 of vitest's usual 5 seconds.
+vi.setConfig({ testTimeout: 20_000 });
+
 const ACME = [
   '# Acme Health',
   '',
@@ -116,7 +120,11 @@ afterEach(cleanup);
 describe('FactBankPage', () => {
   it('lists the files, opens the first with facts, and shows each fact with its tags', async () => {
     const { container } = open();
-    expect(await screen.findByRole('heading', { name: 'Acme Health', level: 2 })).toBeTruthy();
+    // The file's first page takes longest to draw: nearly 2 seconds, with every package's tests at
+    // once.
+    expect(
+      await screen.findByRole('heading', { name: 'Acme Health', level: 2 }, { timeout: 5000 }),
+    ).toBeTruthy();
     expect(screen.getByText('4 facts in 2 files · 2 to verify')).toBeTruthy();
     const files = screen.getByRole('navigation', { name: 'Your fact files' });
     expect(

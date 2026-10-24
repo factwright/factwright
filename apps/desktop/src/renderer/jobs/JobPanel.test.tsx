@@ -12,6 +12,10 @@ import { sampleDocs, sampleJobs } from './sample-jobs.ts';
 
 const TODAY = localDate();
 
+// Each test draws the whole job panel, as JobCalls' do: with every package's tests at once, the
+// first here took 3.9 of vitest's usual 5 seconds.
+vi.setConfig({ testTimeout: 20_000 });
+
 beforeAll(() => {
   // jsdom doesn't open dialogs on its own.
   HTMLDialogElement.prototype.showModal ??= function showModal(this: HTMLDialogElement) {

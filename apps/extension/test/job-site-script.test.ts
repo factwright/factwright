@@ -366,6 +366,48 @@ describe('the script on a job site you allowed', () => {
     clickIn('phone');
     await new Promise((resolve) => setTimeout(resolve, 50));
     expect(sentOf('left')).toEqual([]);
+    // A form on one page has the panel read it only as it does every few seconds.
+    expect(sentOf('look')).toEqual([]);
+  });
+
+  it('follows an application that runs over several pages, as Workday swaps its own in, and tells the panel', async () => {
+    const step = (n: number, name: string, fields: string) => `
+      <div data-automation-id="progressBar"><ol>
+        <li data-automation-id="progressBarActiveStep"><div>current step ${n} of 6</div><label>${name}</label></li>
+      </ol></div>
+      <main>${fields}</main>`;
+    document.body.innerHTML = step(
+      3,
+      'Application Questions',
+      '<label for="why">Why us?</label><textarea id="why"></textarea>',
+    );
+    script = startScript(() => true, 0);
+    // A page of the application, with no file or email on it: its Fill button shows.
+    await vi.waitFor(() => expect(frames()).toHaveLength(1));
+    expect(sentOf('look')).toEqual([]);
+    const [{ doc }] = sentOf('hello') as [{ doc: string }];
+    // Leaving one of its fields has the panel read it at once, before the page can go on, as
+    // when you press Save and Continue straight after typing.
+    const why = document.getElementById('why') as HTMLTextAreaElement;
+    why.focus();
+    why.value = 'Your grid work.';
+    why.blur();
+    await vi.waitFor(() => expect(sentOf('look')).toHaveLength(1));
+    expect(sentOf('look')).toEqual([{ type: 'job-site', do: 'look', doc }]);
+    // What you typed goes nowhere: the panel reads it, if it's filling the form.
+    expect(JSON.stringify(extension.sent)).not.toContain('Your grid work.');
+    // Workday swaps its next page in, in the same tab, as you press its Save and Continue.
+    document.body.innerHTML = step(
+      4,
+      'Voluntary Disclosures',
+      '<label for="gender">Gender</label><button id="gender" type="button" aria-haspopup="listbox">Select One</button>',
+    );
+    await vi.waitFor(() => expect(sentOf('look')).toHaveLength(2));
+    expect(frames()).toHaveLength(1);
+    // Its Review, with nothing to fill, has no Fill button.
+    document.body.innerHTML = step(6, 'Review', '<p>Check your application.</p>');
+    await vi.waitFor(() => expect(frames()).toHaveLength(0));
+    expect(sentOf('look')).toHaveLength(3);
   });
 
   it('stops when the background says so, taking its frames away', async () => {

@@ -374,6 +374,17 @@ describe('filling a form from your job hunt through sync', () => {
     expect(synced.files.resume?.version).toMatch(/^[0-9a-f]{16}$/);
   });
 
+  it('says how many jobs and schools are on file, as the app does, for a form’s parts for each', async () => {
+    const { desktop, keys, client } = await account();
+    const app = await answerAsk(FILL, desktop.deps);
+    const synced = ok(await fillFor(client, keys).ask(FILL));
+    if (!app.ok || app.did !== 'fill' || synced.did !== 'fill') throw new Error('No plan.');
+    // A school in the work history, and a job only the job's resume has, as Workday's My
+    // Experience offers to add a part for each.
+    expect(synced.blocks).toEqual({ jobs: 1, schools: 1 });
+    expect(synced.blocks).toEqual(app.blocks);
+  });
+
   it('uploads the job’s resume as sync holds it, a part at a time, as offered', async () => {
     const { keys, client } = await account();
     const fill = fillFor(client, keys);

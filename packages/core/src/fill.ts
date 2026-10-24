@@ -450,6 +450,19 @@ function schoolAt(onFile: OnFile, nth: number): (School & Said) | null {
   };
 }
 
+/**
+ * How many jobs and schools on file a form that asks for each one can take, one to a part:
+ * Profile's work history, then the resume's, past what the history lists, as each part takes the
+ * next. The extension adds a part for each on a form with a button that adds another, as
+ * Workday's My Experience has, when you choose to.
+ */
+export function blocksOnFile(onFile: OnFile): { jobs: number; schools: number } {
+  return {
+    jobs: Math.max(positionsOf(onFile.history).length, onFile.resume?.positions.length ?? 0),
+    schools: Math.max(onFile.history.schools.length, onFile.resume?.education.length ?? 0),
+  };
+}
+
 /** The months, by the words a resume may use for them. */
 const MONTH_WORDS = [
   'jan',
@@ -835,6 +848,9 @@ export function answerField(field: FormField, onFile: OnFile, nth = 0): FieldRep
     const picks = (EQUAL_OPPORTUNITY_PICKS[kind] as Record<string, string[]>)[answer] ?? [];
     return { kind, pick: picks, source: 'profile' };
   }
+  // Factwright never ticks a box of its own: one that says what Profile knows, as Workday's "I
+  // have a preferred name", is yours to tick.
+  if (field.control === 'check') return left(kind, 'pick');
   const resume = onFile.resume;
   const theirs = nameParts(resume?.name ?? '');
   const theirPlace = placeParts(resume?.location ?? '');

@@ -2,6 +2,7 @@ import {
   type AskedJob,
   answerForm,
   askedJob,
+  blocksOnFile,
   FILE_LIMIT,
   FILE_PART_BYTES,
   type FieldReply,
@@ -422,6 +423,8 @@ export class SyncFill {
       job: job ? askedJob(job) : null,
       replies: answerForm(ask.fields, onFile).map(privately),
       files,
+      // How many jobs and schools are on file, for a form's parts for each, as Workday's.
+      blocks: blocksOnFile(onFile),
       // So a new answer saved later keeps what Factwright changes in Profile meanwhile.
       profile: read.synced.files.get(PROFILE_FILES.answers)?.id ?? '',
     };
