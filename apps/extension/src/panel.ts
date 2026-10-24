@@ -691,7 +691,9 @@ async function keep(state: Filling, offer: NewAnswer): Promise<void> {
   const answer = await state.way.ask({
     ask: 'remember',
     answers: [{ kind: offer.kind, text: offer.text }],
-    // The Profile the form was filled from, as a fill through sync says it.
+    // The Profile the form was filled from, as a fill through sync says it: its first pass's, so
+    // an answer a later pass had from a newer Profile, which you replaced, is kept beside it
+    // rather than over it.
     ...(state.plan.profile !== undefined && { since: state.plan.profile }),
   });
   const applied = state.applied;

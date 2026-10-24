@@ -171,6 +171,8 @@ interface Profile {
 /** Why Profile's answers were left as they are. */
 const UNREAD =
   'Profile’s answers don’t read as they are in sync, so Factwright left them. Check Profile in Factwright on your computer.';
+const GONE =
+  'Profile isn’t in sync as it was when you filled the form, so Factwright saved nothing. Add it in Profile in Factwright on your computer.';
 
 /** Profile's answers, from its file's text, or null when they aren't an object. */
 function answersIn(text: string): Record<string, unknown> | null {
@@ -660,12 +662,15 @@ export class SyncFill {
     }
   }
 
-  /** Profile's answers.json, as a version of its record has it, or null when it doesn't open. */
+  /**
+   * Profile's answers.json, as a version of its record has it, deleted or not, by what the record
+   * itself says, never the server: null when it doesn't open as Profile's own, so no other file
+   * can stand in for it.
+   */
   private async profileIn(change: Change): Promise<Profile | null> {
-    const none = { version: change.version, id: '', value: {} };
-    if (change.deleted) return none;
     const record = await openChange(this.deps.keys, change);
-    if (record?.kind !== 'file') return null;
+    if (record?.kind !== 'file' || record.path !== PROFILE_FILES.answers) return null;
+    const none = { version: change.version, id: '', value: {} };
     if (!record.file) return none;
     const contents = await fileContents(this.deps.client, this.deps.keys, record.file);
     return contents && { ...none, id: record.file.id, value: answersIn(decoded(contents)) };
@@ -705,15 +710,18 @@ export class SyncFill {
     const { client, keys } = this.deps;
     const record = await recordId(keys, fileName(PROFILE_FILES.answers));
     const [latest] = await client.versions(record);
-    const change = latest && (await client.version(record, latest.version));
-    let now: Profile | null = change
-      ? await this.profileIn(change)
+    const change = latest ? await client.version(record, latest.version) : null;
+    let now: Profile | null = latest
+      ? change && (await this.profileIn(change))
       : { version: 0, id: '', value: {} };
     const then = now && (await this.profileThen(ask.since, now));
     let clash: typeof answers = [];
     for (let attempt = 0; attempt < TRIES && now; attempt++) {
       const { value } = now;
       if (!value) return failed(UNREAD);
+      // Gone from sync since the form was filled from it, as after a restore from an older
+      // backup: nothing goes up in its place with less in it than Factwright keeps.
+      if (!now.id && ask.since) return failed(GONE);
       // An answer Factwright gave it since the form was filled, unlike yours, stays.
       clash = answers.filter(({ kind, text }) => {
         const there = profileAnswer(value, kind);
@@ -734,7 +742,7 @@ export class SyncFill {
       if (result?.reason === 'full') throw new SyncError('full', 'full');
       if (result?.reason !== 'conflict') throw new Error('Sync turned the change away.');
       // Changed meanwhile: made again on the newer version, or as new on a restored server.
-      now = result.current ? await this.profileIn(result.current) : { ...now, version: 0 };
+      now = result.current ? await this.profileIn(result.current) : { ...now, version: 0, id: '' };
       if (attempt === TRIES - 1) throw new Error('Profile kept changing in sync. Try again.');
     }
     if (!now) return failed('Factwright couldn’t read Profile through sync. Try again.');
@@ -747,20 +755,13 @@ export class SyncFill {
 
   /**
    * Where this browser keeps its copy of a file Factwright changed meanwhile, as sync names one:
-   * such as "about-me/answers (Factwright in Chrome, Oct 24).json", free in sync.
+   * such as "about-me/answers (Factwright in Chrome, Oct 24).json", which no file sync holds has.
    */
   private async copyPath(path: string): Promise<string> {
-    const { client, keys } = this.deps;
-    const taken = new Set<string>();
-    for (let tries = 0; tries < TRIES; tries++) {
-      const copy = conflictCopyPath(path, this.deps.device, this.now(), (candidate) =>
-        isSyncPath(candidate) ? !taken.has(candidate) : null,
-      );
-      const [latest] = await client.versions(await recordId(keys, fileName(copy)));
-      if (!latest || latest.deleted) return copy;
-      taken.add(copy);
-    }
-    throw new Error('Factwright couldn’t find a name for the copy. Try again.');
+    const { synced } = await this.latest();
+    return conflictCopyPath(path, this.deps.device, this.now(), (candidate) =>
+      isSyncPath(candidate) ? !synced.files.has(candidate) : null,
+    );
   }
 
   /** What went wrong, in words, by what the sync client says. */

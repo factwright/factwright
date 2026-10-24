@@ -9,6 +9,7 @@ import {
   type FieldKind,
   type FieldReply,
   type InboxAsk,
+  NO_CONTACT,
   NO_EQUAL_OPPORTUNITY,
   type SavedForm,
 } from '@factwright/core';
@@ -1066,6 +1067,72 @@ describe('keeping a new answer in Profile through sync', () => {
       website: 'https://anaruiz.example',
       phone: '(303) 555-0199',
     });
+  });
+
+  it('opens only Profile’s own record, never another, nor a deletion the server makes up', async () => {
+    const { keys, client, desktop, engine } = await account();
+    const { fill, since } = await filled(client, keys);
+    const before = desktop.about.answers().you;
+    const profile = await recordId(keys, 'file:about-me/answers.json');
+    const other = await recordId(keys, 'file:about-me/history.json');
+    const [latest] = await client.versions(profile);
+    const [history] = await client.versions(other);
+    const real = client.version.bind(client);
+    const [own, swapped] = await Promise.all([
+      real(profile, latest?.version ?? 1),
+      real(other, history?.version ?? 1),
+    ]);
+    const phone = [{ kind: 'phone' as const, text: '(303) 555-0199' }];
+    const version = vi.spyOn(client, 'version');
+    // A server that sends another file's version, or says Profile's was deleted, with nothing
+    // locked to show it.
+    for (const sent of [swapped, own && { ...own, deleted: true, data: '' }]) {
+      version.mockImplementation(async (record, at) =>
+        record === profile ? sent : real(record, at),
+      );
+      expect(await fill.ask({ ask: 'remember', answers: phone, since })).toMatchObject({
+        ok: false,
+        reason: 'failed',
+      });
+    }
+    // Saying it was deleted when the record it locked says otherwise changes nothing.
+    version.mockImplementation(async (record, at) =>
+      record === profile && own ? { ...own, deleted: true } : real(record, at),
+    );
+    expect(await fill.ask({ ask: 'remember', answers: phone, since })).toMatchObject({ saved: 1 });
+    await engine.syncOnce();
+    expect(desktop.about.answers().you).toEqual({ ...before, phone: '(303) 555-0199' });
+  });
+
+  it('saves nothing in place of a Profile gone from sync since the form was filled', async () => {
+    const { keys, client, desktop, engine } = await account();
+    const { fill, since } = await filled(client, keys);
+    const profile = await recordId(keys, 'file:about-me/answers.json');
+    const versions = client.versions.bind(client);
+    // As after the server's restored from a backup from before Profile.
+    vi.spyOn(client, 'versions').mockImplementation(async (record) =>
+      record === profile ? [] : versions(record),
+    );
+    const push = vi.spyOn(client, 'push');
+    expect(
+      await fill.ask({ ask: 'remember', answers: [{ kind: 'phone', text: '1' }], since }),
+    ).toMatchObject({ ok: false, reason: 'failed' });
+    expect(push).not.toHaveBeenCalled();
+    await engine.syncOnce();
+    expect(desktop.about.answers().you.email).toBe('ana@example.com');
+  });
+
+  it('starts Profile’s answers through sync where there were none as the form was filled', async () => {
+    const { keys, client, desktop, engine } = await account();
+    rmSync(join(desktop.workspace, 'about-me', 'answers.json'));
+    await engine.syncOnce();
+    const { fill, since } = await filled(client, keys);
+    expect(since).toBe('');
+    expect(
+      await fill.ask({ ask: 'remember', answers: [{ kind: 'phone', text: '1' }], since }),
+    ).toEqual({ ok: true, did: 'remember', saved: 1 });
+    await engine.syncOnce();
+    expect(desktop.about.answers().you).toEqual({ ...NO_CONTACT, phone: '1' });
   });
 
   it('leaves Profile’s answers as they are when they don’t read', async () => {

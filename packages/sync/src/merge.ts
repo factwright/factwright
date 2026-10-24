@@ -30,8 +30,8 @@ const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', '
 /**
  * Where a device keeps its copy of a file another device changed at the same time, such as
  * "notes (Sam’s MacBook Pro, Oct 12).md" beside "notes.md". A number keeps it unique, by what
- * `free` says of each name: whether it's free, or null for a name the device can't hold, which
- * takes "(conflict 1)" and on in its place.
+ * `free` says of each name: whether it's free, or null for a name the device can't hold, as with
+ * a device's name a file's can't have, which takes "(conflict 1)" and on in its place.
  */
 export function conflictCopyPath(
   path: string,
@@ -50,7 +50,11 @@ export function conflictCopyPath(
     const candidate = `${folder}${stem} (${label}${n > 1 ? ` ${n}` : ''})${extension}`;
     const isFree = free(candidate);
     if (isFree) return candidate;
-    if (isFree === null) return `${folder}${stem} (conflict ${n})${extension}`;
+    if (isFree === null) break;
+  }
+  for (let n = 1; ; n++) {
+    const candidate = `${folder}${stem} (conflict ${n})${extension}`;
+    if (free(candidate) !== false) return candidate;
   }
 }
 

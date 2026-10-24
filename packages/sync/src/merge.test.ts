@@ -119,9 +119,11 @@ describe('conflictCopyPath', () => {
     expect(conflictCopyPath('README', 'PC', when, free)).toBe('README (PC, Oct 24)');
   });
 
-  it('names it by number where the device can’t hold the name', () => {
-    expect(conflictCopyPath('facts/skills.md', 'Sam’s Mac', when, () => null)).toBe(
-      'facts/skills (conflict 1).md',
+  it('names it by number where the device can’t hold the name, the first that’s free', () => {
+    const taken = new Set(['facts/skills (conflict 1).md']);
+    const free = (candidate: string) => (candidate.includes('Sam:') ? null : !taken.has(candidate));
+    expect(conflictCopyPath('facts/skills.md', 'Sam:', when, free)).toBe(
+      'facts/skills (conflict 2).md',
     );
   });
 });
