@@ -4,6 +4,8 @@ Notable changes to Factwright, newest first. The format follows [Keep a Changelo
 
 ## Unreleased
 
+## 0.15.0 - 2026-10-23
+
 ### Added
 - The browser extension fills an application form a company's careers page shows in a frame from Greenhouse, Lever or Ashby, or any other job application site you allow: Fill this application finds the form in the frame, the panel lists its fields, and the Fill button and the field menus show inside the frame. With the sites off, the panel says the form's in a frame and offers to turn them on. What the extension reads in the frame never reaches the page around it.
 - Filling a form picks a place from the suggestions a box offers as you type, as Greenhouse's Location (City) and Lever's location box do, and checks the box kept it: Lever's takes only one of its own suggestions, so where none matches, the box is left empty for you. Ashby's Yes and No buttons are pressed as a click would, and checked.
