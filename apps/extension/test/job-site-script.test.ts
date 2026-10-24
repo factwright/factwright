@@ -200,7 +200,7 @@ describe('the script on a job site you allowed', () => {
     await vi.waitFor(() => expect(sentOf('menu')).toHaveLength(2));
     await vi.waitFor(() => expect(frames()).toHaveLength(2));
     expect(frames()[1]?.host.style.getPropertyValue('height')).toBe(one);
-    expect(one).toBe(`${menuHeight(false)}px`);
+    expect(one).toBe(`${menuHeight(true, false)}px`);
   });
 
   it('opens where you tab to, or click a field’s label, and nowhere the page moves the cursor as you type', async () => {

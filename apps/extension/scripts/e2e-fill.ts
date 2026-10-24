@@ -550,9 +550,19 @@ try {
     'and the page never has an answer it shows, which are in the extension’s own frame',
   );
   await shoot(form, 'fill-5-menu', false);
+  // A page that fades the menu, as one that would trick you into a click might, gets no pick.
+  await form.evaluate(() => {
+    document.documentElement.style.filter = 'opacity(0.3)';
+  });
+  await press(answer);
+  await form.waitForTimeout(500);
+  check((await fieldValue('name')) === '', 'a menu the page fades or covers takes no click');
+  await form.evaluate(() => {
+    document.documentElement.style.filter = '';
+  });
   await press(answer);
   await waitForValue('name', 'Ana María Ruiz', 10_000);
-  check(true, 'picking it puts it in the field');
+  check(true, 'picking it, as the page shows it, puts it in the field');
 
   // A new answer you type, for a field Profile keeps, is offered to keep as you leave it.
   const before = about.you.phone;

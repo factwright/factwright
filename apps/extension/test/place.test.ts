@@ -12,7 +12,7 @@ import {
 } from '../src/place.ts';
 
 const WINDOW = { width: 1280, height: 800 };
-const MENU = { width: MENU_WIDTH, height: menuHeight(false) };
+const MENU = { width: MENU_WIDTH, height: menuHeight(true, false) };
 
 /** A field, as a form lays one out. */
 const field: Box = { left: 100, top: 200, width: 300, height: 32 };

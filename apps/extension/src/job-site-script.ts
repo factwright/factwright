@@ -437,10 +437,13 @@ export function startScript(
     save: boolean;
   }
 
-  /** The menu's size, with or without the offer to keep an answer, however many answers it has. */
-  const sizeFor = (save: boolean): Size => ({
+  /**
+   * The menu's size, with answers or without, and with the offer to keep one or without, however
+   * many answers it has.
+   */
+  const sizeFor = (answers: boolean, save: boolean): Size => ({
     width: Math.min(MENU_WIDTH, innerWidth - 2 * EDGE),
-    height: menuHeight(save),
+    height: menuHeight(answers, save),
   });
 
   /** Where a menu goes beside a field, or null where there's no room that covers nothing. */
@@ -469,7 +472,7 @@ export function startScript(
       tries.push({ at, answers: true, save: true });
     if (saveAt !== null) tries.push({ at: saveAt, answers: false, save: true });
     if (at !== null && answers > 0) tries.push({ at, answers: true, save: false });
-    const fits = tries.find((each) => placeFor(each.at, sizeFor(each.save)) !== null);
+    const fits = tries.find((each) => placeFor(each.at, sizeFor(each.answers, each.save)) !== null);
     const field = fits ? form?.fields[fits.at] : null;
     if (!fits || !field) {
       closeMenu();
@@ -499,7 +502,7 @@ export function startScript(
     if (said.save) pendingSave = null;
     closeMenu();
     // What the background has to show, which is what it was asked for, unless that's changed.
-    const size = sizeFor(said.save);
+    const size = sizeFor(said.answers > 0, said.save);
     const place = placeFor(fits.at, size);
     if (!place) {
       void ask({ type: 'job-site', do: 'closed', token });
