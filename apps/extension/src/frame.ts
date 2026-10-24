@@ -86,7 +86,7 @@ function fillButton(): void {
             title: 'Hide on this page',
             on: {
               click: (event) => {
-                if (takes(event)) void ask({ type: 'job-site', do: 'hide-button' });
+                if (takes(event)) void ask({ type: 'job-site', do: 'hide-button', token });
               },
             },
           },
@@ -99,7 +99,7 @@ function fillButton(): void {
     if (!takes(event) || busy) return;
     busy = true;
     render();
-    void ask({ type: 'job-site', do: 'fill' }).then((said) => {
+    void ask({ type: 'job-site', do: 'fill', token }).then((said) => {
       busy = false;
       const done = said as FilledHere | null;
       says = done && done.did !== 'panel' ? done.says : '';

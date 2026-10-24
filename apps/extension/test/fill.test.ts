@@ -9,6 +9,7 @@ import {
   isCopyOnly,
   looksLikeApplication,
   newAnswers,
+  placeNames,
   planFill,
   sentAnswers,
 } from '../src/fill.ts';
@@ -91,6 +92,41 @@ describe('what Factwright puts in a form', () => {
       },
       { ref: 3, key: fields[3]?.key, text: 'Gear that lasts.' },
       { ref: 4, key: fields[4]?.key, pick: ['she/her'], exact: true },
+    ]);
+  });
+
+  it('names a place in full too, as a site’s own list of places may, and has it picked as one', () => {
+    expect(placeNames(['Denver, CO', 'Denver', 'United States'])).toEqual([
+      'Denver, CO',
+      'Denver, Colorado',
+      'Denver',
+      'United States',
+    ]);
+    expect(placeNames(['Austin, tx, USA', 'Lyon, France'])).toEqual([
+      'Austin, tx, USA',
+      'Austin, Texas, USA',
+      'Lyon, France',
+    ]);
+    const fields = [
+      field('Location (City)', { ref: 0, control: 'combo' }),
+      field('Current location', { ref: 1, control: 'combo' }),
+      field('From where do you intend to work?', { ref: 2 }),
+    ];
+    const replies: FieldReply[] = [
+      { kind: 'location', pick: ['Denver, CO', 'Denver', 'United States'], source: 'profile' },
+      { kind: 'location', text: 'Denver, CO', source: 'profile' },
+      { kind: 'location', text: 'Denver, CO', source: 'profile' },
+    ];
+    expect(fillAnswers(form(fields), replies, {})).toEqual([
+      {
+        ref: 0,
+        key: fields[0]?.key,
+        pick: ['Denver, CO', 'Denver, Colorado', 'Denver', 'United States'],
+        place: true,
+      },
+      { ref: 1, key: fields[1]?.key, pick: ['Denver, CO', 'Denver, Colorado'], place: true },
+      // A box to type in takes it as you'd type it.
+      { ref: 2, key: fields[2]?.key, text: 'Denver, CO' },
     ]);
   });
 

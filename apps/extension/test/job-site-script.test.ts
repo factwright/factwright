@@ -162,7 +162,12 @@ describe('the script on a job site you allowed', () => {
     script = startScript(() => true, 0);
     await vi.waitFor(() => expect(frames()).toHaveLength(1));
     const [{ host, frame }] = frames() as [{ host: HTMLElement; frame: HTMLIFrameElement }];
-    expect(frame.src).toBe('chrome-extension://factwright/frame.html#button');
+    // Named by the script's own name for the page, which it said hello by, as a frame of another
+    // page's needs, and the sites of the pages around it, where the browser says them.
+    const [said] = sentOf('hello') as [{ doc: string; around: string[] }];
+    expect(said.doc).toMatch(/^[0-9a-f-]{36}$/);
+    expect(said.around).toEqual([]);
+    expect(frame.src).toBe(`chrome-extension://factwright/frame.html#button:${said.doc}`);
     // On the page itself, a box with a closed shadow root: the page can't open it.
     expect(host.parentElement).toBe(document.documentElement);
     expect(host.shadowRoot).toBeNull();
@@ -191,6 +196,17 @@ describe('the script on a job site you allowed', () => {
     root.append(document.createElement('head'), document.body.cloneNode(true));
     document.replaceChild(root, document.documentElement);
     await vi.waitFor(() => expect(host.parentElement).toBe(root));
+  });
+
+  it('says goodbye as its page goes, by its own name for it, and hello again as it comes back', async () => {
+    script = startScript(() => true, 0);
+    await vi.waitFor(() => expect(sentOf('hello')).toHaveLength(1));
+    const [{ doc }] = sentOf('hello') as [{ doc: string }];
+    window.dispatchEvent(new PageTransitionEvent('pagehide', { persisted: true }));
+    expect(sentOf('bye')).toEqual([{ type: 'job-site', do: 'bye', doc }]);
+    window.dispatchEvent(new PageTransitionEvent('pageshow', { persisted: true }));
+    await vi.waitFor(() => expect(sentOf('hello')).toHaveLength(2));
+    expect(sentOf('hello')[1]).toMatchObject({ doc });
   });
 
   it('does nothing on a site the background doesn’t allow', async () => {

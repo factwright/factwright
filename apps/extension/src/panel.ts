@@ -6,9 +6,11 @@ import {
   allowJobSites,
   careersSiteOf,
   chosen,
+  framedSystem,
   isAllowedPage,
   onJobSite,
   removeCareersSite,
+  runInFrames,
   stopJobSites,
 } from './application-sites.ts';
 import { askComputer, canReachComputer, saveOnComputer } from './computer.ts';
@@ -20,25 +22,27 @@ import {
   draftable,
   draftsSoFar,
   type FillPlan,
+  type FormPlace,
   fieldsToRead,
   fillAnswers,
   filledSummary,
   fillForm,
   fillInPasses,
+  findForm,
   formValues,
   isCopyOnly,
+  looksLikeApplication,
   type NewAnswer,
   newAnswers,
   outlineFields,
   planFill,
-  readForm,
   replyText,
   sentAnswers,
   showField,
 } from './fill.ts';
 import { isToPanel } from './job-site-messages.ts';
 import type { FieldFilled, FieldValue, PageField, PageForm } from './page/form.ts';
-import { isWebPage, readTab } from './read-tab.ts';
+import { isWebPage, readFormJob, readFormPage } from './read-tab.ts';
 import { settings } from './settings.ts';
 import { toSave } from './tab-job.ts';
 
@@ -74,9 +78,13 @@ interface Drafting {
   since: number;
 }
 
-/** A form being filled: the tab it's in, what was read and answered, and how filling went. */
+/**
+ * A form being filled: the tab it's in, and the frame, as a company's careers page can show an
+ * applicant system's form in one, what was read and answered, and how filling went.
+ */
 interface Filling {
   tabId: number;
+  place: FormPlace;
   form: PageForm;
   plan: FillPlan;
   /** The company and job title the page shows, which the job the form is for is found by. */
@@ -281,7 +289,7 @@ function fieldRow(state: Filling, at: number): HTMLElement {
         { class: 'row-actions' },
         small(
           'Go to',
-          () => void showField(state.tabId, field),
+          () => void showField(state.place, field),
           `Go to ${field.question || 'the field'} on the page`,
         ),
         copyButton,
@@ -559,7 +567,7 @@ async function saveFirst(state: Filling): Promise<void> {
     render(state);
     return;
   }
-  const { page } = await readTab(tab);
+  const page = await readFormPage(tab, state.place.frameId);
   const saved = await saveOnComputer(toSave(page));
   if (filling !== state) return;
   if (!saved.ok) {
@@ -580,7 +588,7 @@ async function markApplied(state: Filling): Promise<void> {
   }
   const latest = state.moved
     ? null
-    : await formValues(state.tabId, fieldsToRead(state.form, state.plan.replies));
+    : await formValues(state.place, fieldsToRead(state.form, state.plan.replies));
   if (filling !== state) return;
   // What it read as you went, with what's there now, when it's still the form.
   const values = merged(
@@ -708,14 +716,14 @@ async function fillDrafts(state: Filling, drafting: Drafting): Promise<void> {
   const drafted = fields.filter((_, i) => planned.replies[i]?.source === 'claude');
   if (!state.copyOnly && drafted.length > 0) {
     // What you typed while your Claude drafted stays.
-    const read = await formValues(state.tabId, drafted);
+    const read = await formValues(state.place, drafted);
     if (filling !== state) return;
     const typed = new Set(
       (read?.values ?? []).filter((each) => each.value.trim()).map((each) => each.key),
     );
     const empty = drafted.filter((field) => !typed.has(field.key));
     const filled = await fillForm(
-      state.tabId,
+      state.place,
       state.form.url,
       fillAnswers({ ...state.form, fields: empty }, empty.map(replyFor(state)), {}),
     );
@@ -729,7 +737,7 @@ async function fillDrafts(state: Filling, drafting: Drafting): Promise<void> {
     const left = state.form.fields.filter(
       (field) => field.required && !state.filled.get(field.key)?.ok,
     );
-    await outlineFields(state.tabId, left);
+    await outlineFields(state.place, left);
     if (filling !== state) return;
   }
   state.status =
@@ -757,7 +765,7 @@ function keepLooking(state: Filling): void {
   const fields = fieldsToRead(state.form, state.plan.replies);
   looking = setInterval(() => {
     if (document.visibilityState !== 'visible' || state.moved || state.applied) return;
-    void formValues(state.tabId, fields).then((read) => {
+    void formValues(state.place, fields).then((read) => {
       if (filling !== state || state.moved || state.applied) return;
       if (!read || !samePage(read.url, state.form.url)) {
         state.moved = true;
@@ -799,7 +807,7 @@ async function fill(state: Filling): Promise<boolean> {
 /** Each pass of filling the form, then the outlines for what's left: or why it stopped. */
 const fillPasses = (state: Filling) =>
   fillInPasses({
-    tabId: state.tabId,
+    place: state.place,
     form: state.form,
     plan: state.plan,
     shows: state.shows,
@@ -826,7 +834,9 @@ async function begin(): Promise<void> {
   show(app, heading('Fill this application'), h('p', { class: 'muted' }, 'Reading the form…'));
   const [tab] = await ext.tabs.query({ active: true, currentWindow: true });
   if (later()) return;
-  if (!tab?.id || !isWebPage(tab.url)) {
+  // The browser keeps the address of a page the extension wasn't clicked on from it, as a company's
+  // careers page, opened beside the Fill button in a frame of it from a job site you allowed.
+  if (!tab?.id || (tab.url !== undefined && !isWebPage(tab.url))) {
     message(
       'Open an application form, then click the Factwright button and Fill this application.',
     );
@@ -863,13 +873,24 @@ async function begin(): Promise<void> {
     );
     return;
   }
-  const form = await readForm(tab.id);
+  const found = await findForm(tab.id);
   if (later()) return;
-  if (!form) {
+  if (!found) {
     message(
       'Factwright can’t read this page. Click the Factwright button on the application’s tab, then Fill this application.',
     );
     return;
+  }
+  const { place, form } = found;
+  // The application is in a frame from an applicant system's site you haven't turned on, as a
+  // company's careers page shows one: the panel offers to turn the sites on, to reach it.
+  if (place.frameId === 0 && !isCopyOnly(form.url) && !looksLikeApplication(form)) {
+    const system = await framedSystem(tab.id);
+    if (later()) return;
+    if (system) {
+      offerFramed(tab.id, system);
+      return;
+    }
   }
   if (form.fields.length === 0) {
     message(
@@ -877,9 +898,9 @@ async function begin(): Promise<void> {
     );
     return;
   }
-  const { page } = await readTab(tab);
+  const shows = await readFormJob(tab, place.frameId);
   if (later()) return;
-  const planned = await planFill(form, { company: page.company, role: page.title });
+  const planned = await planFill(form, shows);
   if (later()) return;
   const site = await siteChoice(form.url);
   if (later()) return;
@@ -896,9 +917,10 @@ async function begin(): Promise<void> {
   }
   const state: Filling = {
     tabId: tab.id,
+    place,
     form,
     plan: planned,
-    shows: { company: page.company, role: page.title },
+    shows,
     filled: new Map(),
     copyOnly: isCopyOnly(form.url),
     values: null,
@@ -914,6 +936,32 @@ async function begin(): Promise<void> {
   render(state);
   // A form it couldn't fill isn't one you submitted: it only looks once it's filled.
   if (state.copyOnly || (await fill(state))) keepLooking(state);
+}
+
+/**
+ * The offer to turn on the job application sites, for an application a tab's page shows in a frame
+ * from one of them, which the panel can reach only once they're on. The browser is asked on the
+ * click itself, before anything is waited on, as Firefox wants.
+ */
+function offerFramed(tabId: number, system: string): void {
+  message(
+    `This page shows ${system}’s application form in a frame. To fill it, turn Factwright on for job application sites: then it can reach their forms, here too, and show its menus and Fill button on them.`,
+    h(
+      'div',
+      { class: 'actions' },
+      button(
+        'Turn on for job application sites',
+        () => {
+          void allowJobSites().then(async (allowed) => {
+            if (!allowed) return;
+            await runInFrames(tabId);
+            void begin();
+          });
+        },
+        true,
+      ),
+    ),
+  );
 }
 
 // Another tab in front: the panel says which page it's for, until that tab's back.

@@ -11,14 +11,20 @@ import {
 } from '../src/applicant-systems.ts';
 import {
   allowCareersSite,
+  allowedFrames,
   allowedSites,
   allowJobSites,
   chosen,
+  forgetFrame,
+  framedSystem,
+  framesOnAllowedSites,
   isAllowedPage,
   isChosenSite,
   JOB_SITES,
+  keepFrame,
   registerScripts,
   removeCareersSite,
+  runInFrames,
   stopJobSites,
 } from '../src/application-sites.ts';
 import type { ContentScript } from '../src/ext.ts';
@@ -41,7 +47,11 @@ const browser = vi.hoisted(() => {
     scripts: [] as ContentScript[],
     tabs: [] as { id: number; url: string }[],
     calls: [] as string[],
-    ran: [] as { tabId: number; files: string[] }[],
+    ran: [] as { tabId: number; files: string[]; frameIds?: number[] }[],
+    /** Each tab's frames, its top one 0, by the page each shows, and the frames its page names. */
+    frames: {} as Record<number, { frameId: number; url: string }[]>,
+    framed: {} as Record<number, string[]>,
+    session: {} as Record<string, unknown>,
   };
   const covers = (granted: string, site: string) => granted === site || granted === 'https://*/*';
   (globalThis as { chrome?: unknown }).chrome = {
@@ -72,6 +82,14 @@ const browser = vi.hoisted(() => {
           Object.assign(state.items, structuredClone(more));
         },
       },
+      session: {
+        get: async (key: string) =>
+          key in state.session ? { [key]: structuredClone(state.session[key]) } : {},
+        set: async (more: Record<string, unknown>) => {
+          Object.assign(state.session, structuredClone(more));
+        },
+        remove: async () => {},
+      },
     },
     scripting: {
       getRegisteredContentScripts: async ({ ids }: { ids?: string[] } = {}) =>
@@ -96,8 +114,38 @@ const browser = vi.hoisted(() => {
         state.calls.push('unregister');
         state.scripts = state.scripts.filter((each) => ids && !ids.includes(each.id));
       },
-      executeScript: async ({ target, files }: { target: { tabId: number }; files: string[] }) => {
-        state.ran.push({ tabId: target.tabId, files });
+      executeScript: async ({
+        target,
+        files,
+        func,
+      }: {
+        target: { tabId: number; frameIds?: number[]; allFrames?: boolean };
+        files?: string[];
+        func?: (...args: unknown[]) => unknown;
+      }) => {
+        const frames = state.frames[target.tabId] ?? [];
+        const reaches = (url: string) =>
+          [...state.granted].some((granted) => onSite(url, granted) || granted === 'https://*/*');
+        if (files) {
+          state.ran.push({
+            tabId: target.tabId,
+            files,
+            ...(target.frameIds && { frameIds: target.frameIds }),
+          });
+          return [];
+        }
+        // As Chrome: no frame of a tab whose own page it can't reach, all frames asked for.
+        const top = frames.find((frame) => frame.frameId === 0);
+        if (target.allFrames) {
+          if (!top || !reaches(top.url)) throw new Error('Cannot access contents of the page.');
+          return frames
+            .filter((frame) => reaches(frame.url))
+            .map((frame) => ({ frameId: frame.frameId, result: frame.url }));
+        }
+        if (func?.name === 'framedAddresses') {
+          if (!top || !reaches(top.url)) throw new Error('Cannot access contents of the page.');
+          return [{ frameId: 0, result: state.framed[target.tabId] ?? [] }];
+        }
         return [];
       },
     },
@@ -123,6 +171,9 @@ beforeEach(() => {
   browser.tabs = [];
   browser.calls.length = 0;
   browser.ran.length = 0;
+  browser.frames = {};
+  browser.framed = {};
+  for (const key of Object.keys(browser.session)) delete browser.session[key];
 });
 
 describe('the job application sites', () => {
@@ -345,7 +396,7 @@ describe('careers sites you add', () => {
 });
 
 describe('the script on the sites you allowed', () => {
-  it('is registered for those sites alone, in their pages’ top frame, never LinkedIn or Indeed', async () => {
+  it('is registered for those sites alone, in their pages and frames, never LinkedIn or Indeed', async () => {
     await allowJobSites();
     expect(await registerScripts()).toEqual(JOB_SITES);
     expect(browser.scripts).toEqual([
@@ -355,7 +406,7 @@ describe('the script on the sites you allowed', () => {
         excludeMatches: NOT_JOB_SITES,
         js: ['content.js'],
         runAt: 'document_idle',
-        allFrames: false,
+        allFrames: true,
         persistAcrossSessions: true,
       },
     ]);
@@ -403,5 +454,66 @@ describe('the script on the sites you allowed', () => {
     await Promise.all([registerScripts(), registerScripts(), registerScripts()]);
     expect(browser.calls.filter((call) => call === 'register')).toHaveLength(1);
     expect(browser.scripts).toHaveLength(1);
+  });
+});
+
+describe('the frames of a tab, as a careers page shows an applicant system’s form in one', () => {
+  const FORM = 'https://jobs.lever.co/acme/7a1c9e40/apply';
+  const PAGE = 'https://careers.example.com/jobs/engineer';
+  const DOC = '5b2e7c1a-9d3f-4e8b-a6c0-7f1e2d3c4b5a';
+
+  beforeEach(() => {
+    browser.frames[1] = [
+      { frameId: 0, url: PAGE },
+      { frameId: 4, url: FORM },
+      { frameId: 6, url: 'https://ads.example.net/slot' },
+    ];
+  });
+
+  it('finds those on sites you allowed, as the browser finds them where it reaches the page', async () => {
+    // Reached once you've clicked, as the browser lets the extension reach the tab's own page.
+    browser.granted.add(CAREERS);
+    expect(await framesOnAllowedSites(1)).toEqual([]);
+    await allowJobSites();
+    expect(await framesOnAllowedSites(1)).toEqual([{ frameId: 4, url: FORM }]);
+    // A site the browser lets it reach, but you didn't choose, has none of its frames read.
+    browser.granted.add('https://*/*');
+    expect(await framesOnAllowedSites(1)).toEqual([{ frameId: 4, url: FORM }]);
+  });
+
+  it('else takes those the script said hello from, as Chrome reaches no frame of a page it can’t', async () => {
+    await allowJobSites();
+    expect(await framesOnAllowedSites(1)).toEqual([]);
+    await keepFrame(1, { frameId: 4, url: FORM, doc: DOC });
+    expect(await framesOnAllowedSites(1)).toEqual([{ frameId: 4, url: FORM, doc: DOC }]);
+    // Once the sites are off, it's not one.
+    await stopJobSites();
+    expect(await allowedFrames(1)).toEqual([]);
+    await forgetFrame(1);
+    expect(browser.session.jobFrames).toEqual({});
+  });
+
+  it('runs the script in those frames alone, never the page around them', async () => {
+    browser.granted.add(CAREERS);
+    await allowJobSites();
+    browser.ran.length = 0;
+    await runInFrames(1);
+    expect(browser.ran).toEqual([{ tabId: 1, files: ['content.js'], frameIds: [4] }]);
+  });
+
+  it('names the applicant system whose form a page shows in a frame, on a site you haven’t allowed', async () => {
+    browser.granted.add(CAREERS);
+    browser.framed[1] = [
+      'https://ads.example.net/slot',
+      'https://www.linkedin.com/embed/1',
+      'https://boards.greenhouse.io/embed/job_app?for=acme&token=4012345',
+    ];
+    expect(await framedSystem(1)).toBe('Greenhouse');
+    await allowJobSites();
+    expect(await framedSystem(1)).toBeNull();
+    // A page the browser doesn't let it read says nothing.
+    browser.granted.delete(CAREERS);
+    await stopJobSites();
+    expect(await framedSystem(1)).toBeNull();
   });
 });

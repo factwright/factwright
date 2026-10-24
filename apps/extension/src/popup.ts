@@ -2,10 +2,11 @@ import 'virtual:theme.css';
 import './ui.css';
 import { JOB_LIMITS } from '@factwright/core';
 import { canReachSync } from './account.ts';
+import { framedSystem } from './application-sites.ts';
 import { canReachComputer, type Destination, destination, saveOnComputer } from './computer.ts';
 import { type Child, h, heading, show } from './dom.ts';
 import { ext, type Tab } from './ext.ts';
-import { looksLikeApplication, readForm } from './fill.ts';
+import { findForm, looksLikeApplication } from './fill.ts';
 import { askToSave } from './messages.ts';
 import type { PageJob } from './page/read-job.ts';
 import { openPanel } from './panel-open.ts';
@@ -389,7 +390,11 @@ async function start(): Promise<void> {
   const { page, unread } = await readTab(tab);
   // Filling a form reads the page's fields too, which LinkedIn's link-only setting leaves alone.
   if (tab.id !== undefined && unread !== 'linkedin-link-only') {
-    fillable = looksLikeApplication(await readForm(tab.id)) ? tab : null;
+    // The form may be in a frame, as a company's careers page shows an applicant system's form,
+    // which the panel fills, or offers to reach, as one on a job site you haven't turned on.
+    const found = await findForm(tab.id);
+    const framed = found && looksLikeApplication(found.form) ? null : await framedSystem(tab.id);
+    fillable = (found && looksLikeApplication(found.form)) || framed ? tab : null;
   }
   form(to, page, unread);
 }

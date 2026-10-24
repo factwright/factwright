@@ -6,9 +6,11 @@
 // applied records what was sent, marks the job Applied, and offers to keep a new answer in
 // Profile. Then the job application sites: turned on from the panel, they put a Fill button on
 // the form, which opens Chromium's side panel and fills it, and menus in its fields, whose answers
-// go in a field only once you pick one, and which offer to keep a new answer you typed; turned off
-// in setup, they're gone. On a form with fields you can't see, as a page's traps for bots, it
-// reads only those you can. Nothing is submitted, and nothing leaves this computer.
+// go in a field only once you pick one, and which offer to keep a new answer you typed. A company's
+// careers page on another site that shows the form in a frame gets them in the frame, where the
+// panel fills it, and Lever's location box gets the place it suggests. Turned off in setup,
+// they're gone. On a form with fields you can't see, as a page's traps for bots, it reads only
+// those you can. Nothing is submitted, and nothing leaves this computer.
 // `pnpm --filter @factwright/extension e2e:fill` (it needs Playwright's Chromium, as `e2e` does,
 // and a C compiler, for the helper). With `-- --shots <folder>`, it saves the panel and the filled
 // form there as pictures, to look over a change.
@@ -44,6 +46,7 @@ import { JobsService } from '../../desktop/src/main/jobs/service.ts';
 import { Tracker } from '../../desktop/src/main/jobs/tracker.ts';
 import { type AboutYou, applyChanges, NO_ANSWERS } from '../../desktop/src/shared/about.ts';
 import { PRIVATE_FILE } from '../../desktop/src/shared/private.ts';
+import { LEVER_LOOKS_UP, withOwnCode } from './sites-own-code.ts';
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
 const DESKTOP = fileURLToPath(new URL('../../desktop', import.meta.url));
@@ -69,10 +72,17 @@ const FORM_PATH = '/northwind/7a1c9e40-2b6d-4f1e-9c3a-5d8e0f2b4a71/apply';
 const TRAPS_PATH = '/fernway/apply';
 const SEEN = ['Full name', 'Are you willing to relocate?', 'Country', 'City'];
 
+/** The company's own careers page, on another site, which shows the job's form in a frame. */
+const CAREERS_PATH = '/careers/northwind';
+
+/** A careers page on the form's own site, which shows it in a frame too, and could read it. */
+const SAME_SITE_PATH = '/careers/same-site';
+
 /** A site on this computer: the application forms, and "Not found" for anything else. */
 async function site() {
+  const lever = readFileSync(join(FIXTURES, 'lever-application.html'), 'utf8');
   const pages: Record<string, Buffer> = {
-    [FORM_PATH]: readFileSync(join(FIXTURES, 'lever-application.html')),
+    [FORM_PATH]: Buffer.from(withOwnCode(lever, LEVER_LOOKS_UP)),
     [TRAPS_PATH]: readFileSync(join(FIXTURES, 'hidden-fields.html')),
   };
   let requests = 0;
@@ -89,8 +99,26 @@ async function site() {
     response.end('<!doctype html><h1>Not found</h1>');
   });
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
-  const origin = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
-  return { origin, requests: () => requests, close: () => server.close() };
+  const port = (server.address() as AddressInfo).port;
+  const origin = `http://127.0.0.1:${port}`;
+  // The careers page is at this computer's other name, another site to the browser, which the
+  // extension may not reach: only the form in its frame is on a job site, as a test counts it.
+  const careers = `http://localhost:${port}`;
+  pages[CAREERS_PATH] = Buffer.from(
+    [
+      '<!doctype html><html lang="en"><head><meta charset="utf-8">',
+      '<title>Senior Product Manager, Data · Careers at Northwind Labs</title></head>',
+      '<body style="margin:0;font-family:sans-serif">',
+      '<header style="height:240px;padding:0 24px"><h1>Careers at Northwind Labs</h1>',
+      '<p>Senior Product Manager, Data · Denver, CO</p></header>',
+      `<iframe title="Apply for this job" src="${origin}${FORM_PATH}" style="display:block;width:100%;height:2600px;border:0"></iframe>`,
+      '</body></html>',
+    ].join(''),
+  );
+  pages[SAME_SITE_PATH] = Buffer.from(
+    `<!doctype html><title>Careers at Northwind Labs</title><h1>Careers at Northwind Labs</h1><iframe title="Apply for this job" src="${FORM_PATH}" style="display:block;width:100%;height:2600px;border:0"></iframe>`,
+  );
+  return { origin, careers, requests: () => requests, close: () => server.close() };
 }
 
 const work = mkdtempSync(join(tmpdir(), 'fw-fill-'));
@@ -314,22 +342,20 @@ try {
   if (!formTab) throw new Error('No tab with the form.');
 
   /** The panel, as clicking Fill this application opens it beside the form's tab. */
-  const panelOn = async (): Promise<Page> => {
+  const formTabAt = {
+    id: formTab.id,
+    windowId: formTab.windowId,
+    url: `${local.origin}${FORM_PATH}`,
+    title: await form.title(),
+  };
+  const panelOn = async (tab = formTabAt): Promise<Page> => {
     const panel = await context.newPage();
     panel.on('pageerror', (error) => errors.push(error.message));
     await panel.setViewportSize({ width: 380, height: 900 });
-    await panel.addInitScript(
-      (tab) => {
-        const api = (globalThis as unknown as { chrome: { tabs: { query: unknown } } }).chrome;
-        api.tabs.query = async () => [{ ...tab, url: tab.url, title: tab.title }];
-      },
-      {
-        id: formTab.id,
-        windowId: formTab.windowId,
-        url: `${local.origin}${FORM_PATH}`,
-        title: await form.title(),
-      },
-    );
+    await panel.addInitScript((tab) => {
+      const api = (globalThis as unknown as { chrome: { tabs: { query: unknown } } }).chrome;
+      api.tabs.query = async () => [{ ...tab, url: tab.url, title: tab.title }];
+    }, tab);
     await panel.goto(`chrome-extension://${id}/sidepanel.html`);
     return panel;
   };
@@ -367,6 +393,13 @@ try {
     'and where you work now, from the job’s resume',
   );
   check((await value('input[name="urls[GitHub]"]')) === 'https://github.com/anaruiz', 'and links');
+  // Lever's location box takes only one of its own suggestions: of those Lever's code here
+  // suggests for Denver, the one in Colorado.
+  check(
+    (await value('input[name="location"]')) === 'Denver, Colorado, United States' &&
+      (await value('input[name="selectedLocation"]')).includes('Denver, Colorado'),
+    'it picks the place Lever’s location box suggests for where you live, which Lever keeps',
+  );
   const uploaded = await form
     .locator('input[type="file"][name="resume"]')
     .evaluate((input) =>
@@ -460,10 +493,10 @@ try {
   await offering.close();
 
   /** The extension's frame on the form, its Fill button or a menu, once it shows `words`. */
-  const frameOn = async (mode: 'button' | 'menu', words = '', ms = 20_000) => {
+  const frameOn = async (mode: 'button' | 'menu', words = '', ms = 20_000, on = form) => {
     const until = Date.now() + ms;
     for (;;) {
-      for (const frame of form.frames()) {
+      for (const frame of on.frames()) {
         if (!frame.url().includes(`/frame.html#${mode}`) || frame.isDetached()) continue;
         const text = await frame
           .locator('body')
@@ -480,7 +513,7 @@ try {
         }
       }
       if (Date.now() > until) throw new Error(`No ${mode} frame on the form with ${words}.`);
-      await form.waitForTimeout(100);
+      await on.waitForTimeout(100);
     }
   };
   /**
@@ -488,11 +521,11 @@ try {
    * the window narrower than the form's page, so a click by place wouldn't reach a frame from
    * another process, as it does in a window as big as its page.
    */
-  const press = async (button: ReturnType<Page['locator']>) => {
+  const press = async (button: ReturnType<Page['locator']>, on = form) => {
     // The frame takes a click only once it's shown for half a second, as a person sees it first.
-    await form.waitForTimeout(600);
+    await on.waitForTimeout(600);
     await button.focus();
-    await form.keyboard.press('Enter');
+    await on.keyboard.press('Enter');
   };
   const fieldValue = (name: string) =>
     form.locator(`[name="${name}"]`).evaluate((input) => (input as HTMLInputElement).value);
@@ -584,6 +617,154 @@ try {
   await press(saving.getByRole('button', { name: 'Save', exact: true }));
   await saving.getByText('Saved to Factwright.').waitFor({ timeout: 20_000 });
   check(about.you.phone === '(720) 555-0123', 'Save keeps it in Profile');
+
+  // A company's careers page on another site, which shows the form in a frame from a job site:
+  // the Fill button and the menus are in the frame, and the panel fills the form there.
+  const careers = await context.newPage();
+  careers.on('pageerror', (error) => errors.push(error.message));
+  await careers.goto(`${local.careers}${CAREERS_PATH}`);
+  await careers.bringToFront();
+  const applying = () => {
+    const found = careers.frames().find((each) => each.url() === `${local.origin}${FORM_PATH}`);
+    if (!found) throw new Error('No frame with the form on the careers page.');
+    return found;
+  };
+  const framedValue = (name: string) =>
+    applying()
+      .locator(`[name="${name}"]`)
+      .evaluate((input) => (input as HTMLInputElement).value);
+  const framedButton = await frameOn('button', '', 20_000, careers);
+  /** The extension's frames in the form's frame: each one's box, as the form's frame lays it out. */
+  const ownBoxes = () =>
+    applying().evaluate(() =>
+      [...document.documentElement.children]
+        .filter((each) => {
+          const style = getComputedStyle(each);
+          return style.position === 'fixed' && style.visibility !== 'hidden';
+        })
+        .map((each) => each.getBoundingClientRect().toJSON() as DOMRect),
+    );
+  /** The part of the form's frame that shows, from its own top. */
+  const showing = () =>
+    careers.evaluate(() => {
+      const frame = document.querySelector('iframe')?.getBoundingClientRect();
+      return { top: -(frame?.top ?? 0), bottom: innerHeight - (frame?.top ?? 0) };
+    });
+  const inShown = async () => {
+    const [box] = await ownBoxes();
+    const shown = await showing();
+    return Boolean(box) && (box?.top ?? 0) >= shown.top && (box?.bottom ?? 0) <= shown.bottom;
+  };
+  check(
+    await inShown(),
+    'a form in a frame of a careers page on another site gets its Fill button, in the part of the frame that shows',
+  );
+  await careers.mouse.wheel(0, 700);
+  const until2 = Date.now() + 5000;
+  while (!(await inShown()) || (await showing()).top < 400) {
+    if (Date.now() > until2) throw new Error('The Fill button stayed where the frame scrolled.');
+    await careers.waitForTimeout(100);
+  }
+  check(true, 'and it stays there as the careers page scrolls the frame');
+  const frames = (await setup.evaluate(() =>
+    (
+      globalThis as unknown as {
+        chrome: { storage: { session: { get(key: string): Promise<Record<string, unknown>> } } };
+      }
+    ).chrome.storage.session.get('jobFrames'),
+  )) as { jobFrames?: Record<string, { url: string }[]> };
+  check(
+    Object.values(frames.jobFrames ?? {})
+      .flat()
+      .some((each) => each.url === `${local.origin}${FORM_PATH}`),
+    'the frame is kept, while the browser runs, for the panel to find its form',
+  );
+  await shoot(careers, 'fill-7-framed-button', false);
+  await press(framedButton.getByRole('button', { name: 'Fill', exact: true }), careers);
+  // Each field in turn, the location last of these, once Lever's code here has suggested it.
+  const until3 = Date.now() + 40_000;
+  while ((await framedValue('location')) !== 'Denver, Colorado, United States') {
+    if (Date.now() > until3) {
+      throw new Error(
+        `The form in the frame was never filled: ${JSON.stringify({
+          email: await framedValue('email'),
+          location: await framedValue('location'),
+        })}`,
+      );
+    }
+    await careers.waitForTimeout(100);
+  }
+  check(
+    (await framedValue('name')) === 'Ana María Ruiz' &&
+      (await framedValue('email')) === 'ana@example.com',
+    'its Fill button opens the side panel, which fills the form in the frame',
+  );
+  check(
+    !(await careers.content()).includes('ana@example.com'),
+    'and the careers page around it never has an answer',
+  );
+  // A field's menu in the frame, whose answer goes in the field once you pick it.
+  await careers.reload();
+  await frameOn('button', '', 20_000, careers);
+  await applying().locator('input[name="name"]').click();
+  const framedMenu = await frameOn('menu', 'Ana María Ruiz', 20_000, careers);
+  check((await framedValue('name')) === '', 'a field’s menu in the frame fills nothing yet');
+  await shoot(careers, 'fill-8-framed-menu', false);
+  await press(framedMenu.getByRole('button', { name: /Ana María Ruiz/ }), careers);
+  const until4 = Date.now() + 10_000;
+  while ((await framedValue('name')) !== 'Ana María Ruiz') {
+    if (Date.now() > until4) throw new Error('The pick in the frame never went in its field.');
+    await careers.waitForTimeout(100);
+  }
+  check(true, 'and picking its answer puts it in the field, in the frame');
+
+  // A careers page on the form's own site, which could read what's put in the form in its frame,
+  // fades the frame as you pick: the pick goes nowhere, as the script checks the page around it.
+  await careers.goto(`${local.origin}${SAME_SITE_PATH}`);
+  await frameOn('button', '', 20_000, careers);
+  await applying().locator('input[name="name"]').click();
+  const sameSiteMenu = await frameOn('menu', 'Ana María Ruiz', 20_000, careers);
+  await careers.evaluate(() => {
+    const frame = document.querySelector('iframe');
+    if (frame) frame.style.opacity = '0.3';
+  });
+  await press(sameSiteMenu.getByRole('button', { name: /Ana María Ruiz/ }), careers);
+  await careers.waitForTimeout(500);
+  check(
+    (await framedValue('name')) === '',
+    'a page of the form’s own site around its frame that fades it gets no pick',
+  );
+  // Fill this application on that page, which the extension may read: it finds the frames of the
+  // page itself, and fills the form in the one from a job site.
+  await careers.reload();
+  const sameSite = (
+    await setup.evaluate(
+      (url) =>
+        (
+          globalThis as unknown as {
+            chrome: { tabs: { query(query: object): Promise<{ id: number; windowId: number }[]> } };
+          }
+        ).chrome.tabs.query({ url }),
+      `${local.origin}${SAME_SITE_PATH}`,
+    )
+  )[0];
+  if (!sameSite) throw new Error('No tab with the careers page.');
+  const besideCareers = await panelOn({
+    id: sameSite.id,
+    windowId: sameSite.windowId,
+    url: `${local.origin}${SAME_SITE_PATH}`,
+    title: await careers.title(),
+  });
+  await besideCareers.getByText(/^Filled \d+ of \d+ fields/).waitFor({ timeout: 40_000 });
+  check(
+    (await framedValue('email')) === 'ana@example.com' &&
+      (await besideCareers
+        .locator('.question')
+        .filter({ hasText: /^Current location/ })
+        .count()) === 1,
+    'Fill this application on a careers page fills the form in its frame, and the panel lists its fields',
+  );
+  await besideCareers.close();
 
   // Turned off in setup, the Fill button and the menus are gone, there and then.
   await setup.reload();

@@ -486,3 +486,224 @@ describe('filling a form', () => {
     expect(box.style.outline).toBe('');
   });
 });
+
+describe('the boxes applicant systems make of their own', () => {
+  /** An option's words as compared: lowercase, letters and digits. */
+  const plainly = (text: string) =>
+    text
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, ' ')
+      .trim();
+  const fieldOf = (form: PageForm, question: string) => {
+    const field = form.fields.find((each) => each.question === question);
+    if (!field) throw new Error(`No ${question}`);
+    return field;
+  };
+  const filledOf = (answer: FormAnswer) => {
+    if (answer.did !== 'fill') throw new Error('It didn’t fill the form.');
+    return answer.filled;
+  };
+  const DENVER = ['Denver, CO', 'Denver, Colorado', 'Denver', 'United States'];
+
+  /**
+   * Lever's location box, as its own code works: as you type, it looks the city up, saying it's
+   * loading, then lists the places it found, or says it found none; a click on one keeps it, in
+   * the box and in a hidden field, which is what Lever takes.
+   */
+  function leverLooksUp(doc: Document, places: string[]) {
+    const box = doc.getElementById('location-input') as HTMLInputElement;
+    const kept = doc.getElementById('selected-location') as HTMLInputElement;
+    const results = doc.querySelector('.dropdown-results') as HTMLElement;
+    const none = doc.querySelector('.dropdown-no-results') as HTMLElement;
+    const loading = doc.querySelector('.dropdown-loading-results') as HTMLElement;
+    none.style.display = 'none';
+    loading.style.display = 'none';
+    box.addEventListener('keyup', () => {
+      loading.style.display = '';
+      none.style.display = 'none';
+      results.replaceChildren();
+      setTimeout(() => {
+        loading.style.display = 'none';
+        const city = plainly(box.value.split(',')[0] ?? '');
+        const found = places.filter((place) => city && plainly(place).includes(city));
+        if (found.length === 0) none.style.display = '';
+        for (const place of found) {
+          const option = doc.createElement('div');
+          option.className = 'dropdown-location';
+          option.textContent = place;
+          option.addEventListener('click', () => {
+            box.value = place;
+            kept.value = JSON.stringify({ name: place });
+            results.replaceChildren();
+          });
+          results.append(option);
+        }
+      }, 100);
+    });
+    return { box, kept };
+  }
+
+  it('reads Lever’s location box as one that takes only its own suggestions', async () => {
+    const field = fieldOf(await read(fixture('lever-application')), 'Current location');
+    expect(field).toMatchObject({ control: 'combo', options: [] });
+    expect(fieldKind(field)).toBe('location');
+  });
+
+  it('types the place in Lever’s location box, picks the one it suggests, and checks Lever kept it', async () => {
+    const doc = fixture('lever-application');
+    const { box, kept } = leverLooksUp(doc, [
+      'Denver City, Texas, United States',
+      'Denver, Colorado, United States',
+    ]);
+    const { ref, key } = fieldOf(await read(doc), 'Current location');
+    const filled = filledOf(
+      await run({ do: 'fill', url: HERE, answers: [{ ref, key, pick: DENVER, place: true }] }, doc),
+    );
+    expect(filled).toEqual([{ ref, ok: true, shown: 'Denver, Colorado, United States', why: '' }]);
+    expect(box.value).toBe('Denver, Colorado, United States');
+    expect(JSON.parse(kept.value)).toEqual({ name: 'Denver, Colorado, United States' });
+  });
+
+  it('leaves Lever’s location box empty where it suggests no such place, as it takes nothing typed', async () => {
+    const doc = fixture('lever-application');
+    const { box, kept } = leverLooksUp(doc, ['Boulder, Colorado, United States']);
+    const { ref, key } = fieldOf(await read(doc), 'Current location');
+    const filled = filledOf(
+      await run({ do: 'fill', url: HERE, answers: [{ ref, key, pick: DENVER, place: true }] }, doc),
+    );
+    expect(filled).toEqual([{ ref, ok: false, shown: '', why: 'no-option' }]);
+    expect(box.value).toBe('');
+    expect(kept.value).toBe('');
+  });
+
+  it('picks the matching place Greenhouse suggests for Location (City), and checks it shows', async () => {
+    const doc = fixture('greenhouse-application');
+    const box = doc.getElementById('candidate-location') as HTMLInputElement;
+    const shell = box.closest('.select-shell') as HTMLElement;
+    const places = [
+      'Denver City, Texas, United States',
+      'Denver, Denver County, Colorado, United States',
+      'Denver, Pennsylvania, United States',
+    ];
+    // Greenhouse's own code, a box of react-select's: as you type, a moment later, the places it
+    // found, in a list it names; a click shows the one picked beside the box.
+    box.addEventListener('input', () => {
+      setTimeout(() => {
+        shell.querySelector('.select__menu')?.remove();
+        const menu = doc.createElement('div');
+        menu.className = 'select__menu';
+        const list = doc.createElement('div');
+        list.setAttribute('role', 'listbox');
+        list.id = 'react-select-candidate-location-listbox';
+        const typed = plainly(box.value.split(',')[0] ?? '');
+        for (const place of places.filter((each) => typed && plainly(each).includes(typed))) {
+          const option = doc.createElement('div');
+          option.setAttribute('role', 'option');
+          option.textContent = place;
+          option.addEventListener('click', () => {
+            const shown = doc.createElement('div');
+            shown.className = 'select__single-value';
+            shown.textContent = place;
+            shell.querySelector('.select__value-container')?.prepend(shown);
+            box.value = '';
+            menu.remove();
+            box.setAttribute('aria-expanded', 'false');
+            box.removeAttribute('aria-controls');
+          });
+          list.append(option);
+        }
+        menu.append(list);
+        shell.append(menu);
+        box.setAttribute('aria-expanded', 'true');
+        box.setAttribute('aria-controls', list.id);
+      }, 100);
+    });
+    const field = fieldOf(await read(doc), 'Location (City)');
+    const filled = filledOf(
+      await run(
+        {
+          do: 'fill',
+          url: HERE,
+          answers: [{ ref: field.ref, key: field.key, pick: DENVER, place: true }],
+        },
+        doc,
+      ),
+    );
+    // Not Denver City, Texas, though it starts with Denver and comes first.
+    expect(filled).toEqual([
+      {
+        ref: field.ref,
+        ok: true,
+        shown: 'Denver, Denver County, Colorado, United States',
+        why: '',
+      },
+    ]);
+  });
+
+  it('reads Ashby’s Yes and No as a choice of one, never the hidden box it keeps the answer in', async () => {
+    const form = await read(fixture('ashby-application'));
+    const asked = fieldOf(form, 'Are you based in a EU or equivalent timezone?');
+    expect(asked).toMatchObject({ control: 'choice', options: ['Yes', 'No'] });
+    expect(form.fields.filter((field) => field.control === 'check')).toEqual([]);
+  });
+
+  it('picks Ashby’s Yes or No as a click does, and checks it stayed pressed', async () => {
+    const doc = fixture('ashby-application');
+    // Ashby's own code: a click presses the one, and lets the other go.
+    for (const button of doc.querySelectorAll('button[aria-pressed]')) {
+      button.addEventListener('click', () => {
+        for (const each of button.parentElement?.querySelectorAll('button[aria-pressed]') ?? []) {
+          each.setAttribute('aria-pressed', String(each === button));
+        }
+      });
+    }
+    const asked = fieldOf(await read(doc), 'Are you based in a EU or equivalent timezone?');
+    const answer = { ref: asked.ref, key: asked.key, pick: ['No'] };
+    expect(filledOf(await run({ do: 'fill', url: HERE, answers: [answer] }, doc))).toEqual([
+      { ref: asked.ref, ok: true, shown: 'No', why: '' },
+    ]);
+    const values = await run({ do: 'values', fields: [answer] }, doc);
+    expect(values).toMatchObject({ values: [{ ref: asked.ref, value: 'No' }] });
+    // A page that never presses it hasn't taken it.
+    const still = fixture('ashby-application');
+    const again = fieldOf(await read(still), 'Are you based in a EU or equivalent timezone?');
+    expect(
+      filledOf(
+        await run(
+          { do: 'fill', url: HERE, answers: [{ ref: again.ref, key: again.key, pick: ['Yes'] }] },
+          still,
+        ),
+      ),
+    ).toEqual([{ ref: again.ref, ok: false, shown: '', why: 'not-taken' }]);
+  });
+
+  it('presses Yes or No in a form that would submit on such a button, and the form isn’t submitted', async () => {
+    document.body.innerHTML = `
+      <form id="apply">
+        <label for="relocate">Would you relocate?</label>
+        <div class="yesno"><button aria-pressed="false">Yes</button><button aria-pressed="false">No</button></div>
+        <label for="name">Full name</label><input id="name" name="name" />
+      </form>`;
+    const apply = document.getElementById('apply') as HTMLFormElement;
+    let submitted = 0;
+    apply.addEventListener('submit', (event) => {
+      submitted += 1;
+      event.preventDefault();
+    });
+    for (const button of document.querySelectorAll('button[aria-pressed]')) {
+      button.addEventListener('click', () => button.setAttribute('aria-pressed', 'true'));
+    }
+    const read = await formPage({ do: 'read' }, document, HERE);
+    if (read.did !== 'read') throw new Error('It didn’t read the form.');
+    const asked = read.form.fields.find((field) => field.question === 'Would you relocate?');
+    if (!asked) throw new Error('No question');
+    const filled = await formPage(
+      { do: 'fill', url: HERE, answers: [{ ref: asked.ref, key: asked.key, pick: ['Yes'] }] },
+      document,
+      HERE,
+    );
+    expect(filledOf(filled)).toEqual([{ ref: asked.ref, ok: true, shown: 'Yes', why: '' }]);
+    expect(submitted).toBe(0);
+    document.body.innerHTML = '';
+  });
+});
