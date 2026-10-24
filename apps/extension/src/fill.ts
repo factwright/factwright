@@ -2,10 +2,7 @@ import {
   ASK_FIELDS,
   type AskedField,
   DRAFT_QUESTIONS,
-  type FieldKind,
   type FieldReply,
-  fieldKind,
-  fieldPart,
   type InboxAskAnswer,
   isEqualOpportunity,
   isRemembered,
@@ -166,45 +163,6 @@ export async function addParts(
   return answer?.did === 'add' ? answer.added : null;
 }
 
-/** A part of a form for each job, or for each school. */
-export type Part = 'job' | 'school';
-
-/** The kinds of field a part for a job, or a school, asks once for each. */
-const ONE_EACH: Record<Part, FieldKind[]> = {
-  job: ['current-title', 'current-company'],
-  school: ['school', 'degree'],
-};
-
-/**
- * How many parts for a job, or for a school, a form has now: as many as it asks one job's title or
- * company, or one school's name or degree, in such a part.
- */
-export function partsOf(form: PageForm, part: Part): number {
-  return Math.max(
-    ...ONE_EACH[part].map(
-      (kind) =>
-        form.fields.filter((field) => fieldPart(field) === part && fieldKind(field) === kind)
-          .length,
-    ),
-  );
-}
-
-/**
- * Which part of the form a button that adds one adds to, a job's, a school's, or neither, by the
- * part it's in itself, never one around that, as Workday's My Experience is around its Websites.
- */
-export function adderPart(adder: PageAdder): Part | null {
-  return fieldPart({
-    question: adder.words,
-    hint: '',
-    control: 'text',
-    type: '',
-    autocomplete: '',
-    name: '',
-    section: adder.section.split(' › ').at(-1) ?? '',
-  });
-}
-
 /** Outlines fields in orange on the page, as left for you. */
 export async function outlineFields(place: FormPlace, fields: PageField[]): Promise<void> {
   await inPage(place, { do: 'outline', fields: fields.map(({ ref, key }) => ({ ref, key })) });
@@ -363,45 +321,33 @@ export function fillAnswers(
   files: Partial<Record<'resume' | 'cover-letter', { name: string; base64: string }>>,
   onlyEmpty = false,
 ): FieldAnswer[] {
-  const ifEmpty = onlyEmpty || form.step !== '';
-  return form.fields.flatMap((field, at): FieldAnswer[] => {
+  const answers = form.fields.flatMap((field, at): FieldAnswer[] => {
     const reply = replies[at];
     if (!reply || reply.source === 'you') return [];
     const { ref, key } = field;
-    return answerFor(field, reply, files).map((answer) => ({
-      ref,
-      key,
-      ...answer,
-      ...(ifEmpty && { ifEmpty: true }),
-    }));
+    if (reply.file) {
+      const file = files[reply.file];
+      return file ? [{ ref, key, file: { ...file, type: 'application/pdf' } }] : [];
+    }
+    if (reply.pick) {
+      return [
+        {
+          ref,
+          key,
+          pick: picksOf(reply),
+          ...(reply.exact && { exact: true }),
+          ...(isPlace(reply.kind) && { place: true }),
+        },
+      ];
+    }
+    if (!reply.text) return [];
+    // A place in a box that offers places as you type is one of its own to pick.
+    if (isPlace(reply.kind) && field.control === 'combo') {
+      return [{ ref, key, pick: placeNames([reply.text]), place: true }];
+    }
+    return [{ ref, key, text: reply.text }];
   });
-}
-
-/** What to put in one field, by Factwright's reply for it, without the field's place and key. */
-function answerFor(
-  field: PageField,
-  reply: FieldReply,
-  files: Partial<Record<'resume' | 'cover-letter', { name: string; base64: string }>>,
-): Omit<FieldAnswer, 'ref' | 'key'>[] {
-  if (reply.file) {
-    const file = files[reply.file];
-    return file ? [{ file: { ...file, type: 'application/pdf' } }] : [];
-  }
-  if (reply.pick) {
-    return [
-      {
-        pick: picksOf(reply),
-        ...(reply.exact && { exact: true }),
-        ...(isPlace(reply.kind) && { place: true }),
-      },
-    ];
-  }
-  if (!reply.text) return [];
-  // A place in a box that offers places as you type is one of its own to pick.
-  if (isPlace(reply.kind) && field.control === 'combo') {
-    return [{ pick: placeNames([reply.text]), place: true }];
-  }
-  return [{ text: reply.text }];
+  return onlyEmpty || form.step ? answers.map((answer) => ({ ...answer, ifEmpty: true })) : answers;
 }
 
 /** The words Factwright put in a field, as the panel shows them and you can copy them. */

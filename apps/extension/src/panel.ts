@@ -23,7 +23,6 @@ import { askComputer, canReachComputer, saveOnComputer } from './computer.ts';
 import { type Child, h, heading, show } from './dom.ts';
 import { ext } from './ext.ts';
 import {
-  adderPart,
   addParts,
   answerSource,
   askForDrafts,
@@ -44,8 +43,6 @@ import {
   type NewAnswer,
   newAnswers,
   outlineFields,
-  type Part,
-  partsOf,
   planFill,
   replyText,
   sentAnswers,
@@ -55,6 +52,17 @@ import { isToPanel } from './job-site-messages.ts';
 import type { FieldFilled, FieldValue, PageAdder, PageField, PageForm } from './page/form.ts';
 import { isWebPage, readFormJob, readFormPage } from './read-tab.ts';
 import { settings } from './settings.ts';
+import {
+  carriedOn,
+  type Earlier,
+  joinOffers,
+  joinSent,
+  type NextPage,
+  NO_EARLIER,
+  nextPageOf,
+  partsOffers,
+  siteOf,
+} from './several-pages.ts';
 import { toSave } from './tab-job.ts';
 
 /**
@@ -79,9 +87,6 @@ const DRAFTS_EVERY_MS = 3000;
 /** How long it follows your Claude's drafts: a long application's take a few minutes. */
 const DRAFTS_FOR_MS = 20 * 60 * 1000;
 
-/** The most parts it adds to a form at once, for jobs or schools on file: more take another click. */
-const MOST_PARTS = 10;
-
 /** Your Claude drafting the form's own questions in Factwright, as the panel follows it. */
 interface Drafting {
   /** The fields it's drafting, by their keys. */
@@ -91,20 +96,6 @@ interface Drafting {
   /** When it started. */
   since: number;
 }
-
-/**
- * What an application's earlier pages gave, in a tab, as one that runs over several pages, as
- * Workday's does, goes on to the next: the answers to their own questions, to keep with the job
- * once you mark it applied, and the new answers you gave, to offer to keep then.
- */
-interface Earlier {
-  /** The job they were for, or null when it isn't one you saved. */
-  job: string | null;
-  sent: { question: string; text: string }[];
-  offers: NewAnswer[];
-}
-
-const NO_EARLIER: Earlier = { job: null, sent: [], offers: [] };
 
 /**
  * A form being filled: the tab it's in, and the frame, as a company's careers page can show an
@@ -143,7 +134,7 @@ interface Filling {
    * The page the application went on to in the tab, as you pressed its own Save and Continue, by
    * the name its steps give it, with how many fields it has: the panel offers to fill it.
    */
-  next: { step: string; fields: number } | null;
+  next: NextPage | null;
 }
 
 /**
@@ -215,35 +206,21 @@ function merged(before: readonly FieldValue[] | null, now: readonly FieldValue[]
   return [...(before ?? []).filter((each) => !keys.has(each.key)), ...now];
 }
 
-/** Answers to a form's own questions, a later one in place of an earlier one to the same question. */
-function joinSent(
-  earlier: readonly { question: string; text: string }[],
-  later: readonly { question: string; text: string }[],
-): { question: string; text: string }[] {
-  const asked = new Set(later.map((each) => each.question));
-  return [...earlier.filter((each) => !asked.has(each.question)), ...later];
-}
-
-/** New answers to offer to keep, a later one in place of an earlier one of the same kind. */
-function joinOffers(earlier: readonly NewAnswer[], later: readonly NewAnswer[]): NewAnswer[] {
-  const kinds = new Set(later.map((each) => each.kind));
-  return [...earlier.filter((each) => !kinds.has(each.kind)), ...later];
-}
-
 /**
- * What this page of an application that runs over several, and its earlier pages, gave, as you
- * last left their fields, for the next page the panel fills in the same tab. Nothing, for a form
- * on one page.
+ * What this page of an application that runs over several, and its earlier pages, gave, for the
+ * next page the panel fills in the same tab (several-pages.ts).
  */
-function carried(state: Filling): Earlier {
-  if (!state.form.step || state.copyOnly) return NO_EARLIER;
-  const values = state.values ?? [];
-  return {
-    job: state.plan.job?.id ?? state.earlier.job,
-    sent: joinSent(state.earlier.sent, sentAnswers(state.form, state.plan.replies, values)),
-    offers: joinOffers(state.earlier.offers, newAnswers(state.form, state.plan.replies, values)),
-  };
-}
+const carried = (state: Filling): Earlier =>
+  carriedOn(
+    {
+      form: state.form,
+      replies: state.plan.replies,
+      values: state.values,
+      job: state.plan.job?.id ?? null,
+      copyOnly: state.copyOnly,
+    },
+    state.earlier,
+  );
 
 /** What only a resume answers, which a field Profile can't fill is left for when none says. */
 const FROM_RESUMES = new Set<FieldReply['kind']>(['skills', 'certifications', 'summary']);
@@ -550,45 +527,25 @@ function nextLine(state: Filling): Child[] {
   ];
 }
 
-/** What a part of the form is for, as many as there are: "job" or "jobs", "school" or "schools". */
-const partWord = (count: number, part: Part) => `${part}${count === 1 ? '' : 's'}`;
-
 /**
- * The offer to add a part to the form for each job, or school, on file that it has none for yet,
+ * The offers to add a part to the form for each job, or school, on file that it has none for yet,
  * as Workday's My Experience starts with one, or none: the form's own Add is pressed only when
  * you choose this, and then the new parts are filled.
  */
 function partsLine(state: Filling): Child[] {
-  const onFile = state.plan.blocks;
-  if (!onFile || state.copyOnly || state.next) return [];
-  return (['job', 'school'] as const).flatMap((part) => {
-    const adder = state.form.adders.find((each) => adderPart(each) === part);
-    const has = partsOf(state.form, part);
-    const want = part === 'job' ? onFile.jobs : onFile.schools;
-    if (!adder || want <= has) return [];
-    const more = Math.min(want - has, MOST_PARTS);
-    return [
+  if (state.copyOnly || state.next) return [];
+  return partsOffers(state.form, state.plan.blocks).map((offer) =>
+    h(
+      'div',
+      { class: 'card' },
+      h('p', { class: 'small' }, offer.says),
       h(
         'div',
-        { class: 'card' },
-        h(
-          'p',
-          { class: 'small' },
-          `Factwright has ${want} ${partWord(want, part)} on file, and ${adder.section} has room for ${has === 0 ? 'none' : has} yet. Add a part for each of the others, and Factwright fills them in.`,
-        ),
-        h(
-          'div',
-          { class: 'actions' },
-          button(
-            `Add ${more} for your other ${partWord(more, part)}`,
-            () => void addMore(state, adder, more),
-            false,
-            state.busy,
-          ),
-        ),
+        { class: 'actions' },
+        button(offer.label, () => void addMore(state, offer.adder, offer.more), false, state.busy),
       ),
-    ];
-  });
+    ),
+  );
 }
 
 function render(state: Filling): void {
@@ -956,9 +913,10 @@ function heard(state: Filling, read: FormValues | null): void {
   if (filling !== state || state.moved || state.applied) return;
   // Another page of the application: the panel offers to fill it, and keeps what it last read of
   // this one.
-  if (read?.step && read.step !== state.form.step) {
-    if (state.next?.step !== read.step || state.next.fields !== read.fields) {
-      state.next = { step: read.step, fields: read.fields };
+  const next = nextPageOf(state.form, read);
+  if (next) {
+    if (state.next?.step !== next.step || state.next.fields !== next.fields) {
+      state.next = next;
       render(state);
     }
     return;
@@ -1155,15 +1113,6 @@ async function begin(how: Start = {}): Promise<void> {
   render(state);
   // A form it couldn't fill isn't one you submitted: it only looks once it's filled.
   if (state.copyOnly || (await fill(state, how.onlyEmpty))) keepLooking(state);
-}
-
-/** A page's site, as its address's origin, or "" for one that isn't an address. */
-function siteOf(url: string): string {
-  try {
-    return new URL(url).origin;
-  } catch {
-    return '';
-  }
 }
 
 /**

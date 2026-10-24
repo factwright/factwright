@@ -1,7 +1,6 @@
 import type { FieldReply, InboxAsk } from '@factwright/core';
 import { describe, expect, it, vi } from 'vitest';
 import {
-  adderPart,
   askedFields,
   draftable,
   fieldsToRead,
@@ -10,12 +9,12 @@ import {
   isCopyOnly,
   looksLikeApplication,
   newAnswers,
-  partsOf,
   placeNames,
   planFill,
   sentAnswers,
 } from '../src/fill.ts';
 import type { FieldValue, PageField, PageForm } from '../src/page/form.ts';
+import { adderPart, partsOf } from '../src/several-pages.ts';
 
 /** Factwright on this computer, as the extension asks it: what it was asked, and its answers. */
 const computer = vi.hoisted(() => ({

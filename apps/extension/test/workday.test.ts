@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { fieldKind } from '@factwright/core';
 import { describe, expect, it } from 'vitest';
 import { workdayActs } from '../scripts/sites-own-code.ts';
-import { looksLikeApplication, partsOf } from '../src/fill.ts';
+import { looksLikeApplication } from '../src/fill.ts';
 import {
   type FieldAnswer,
   type FormAnswer,
@@ -11,6 +11,7 @@ import {
   formPage,
   type PageForm,
 } from '../src/page/form.ts';
+import { partsOf } from '../src/several-pages.ts';
 
 // Workday's application, a page at a time, built from Workday's markup as public sources show it
 // in 2025 and 2026, for a made-up company, Larkspur Energy: its data-automation-id and
