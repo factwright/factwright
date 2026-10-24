@@ -1451,7 +1451,15 @@ export async function formPage(
     find: () => Element | undefined,
   ): Promise<Element | undefined> => {
     press(box);
-    const first = await waitFor(() => groupsIn(box).length > 0 && groupsIn(box), 800);
+    let first = await waitFor(() => groupsIn(box).length > 0 && groupsIn(box), 800);
+    // Some of Workday's sites open the list from its icon beside the box, not the box.
+    const icon = box
+      .closest('[data-automation-id="multiselectInputContainer"]')
+      ?.querySelector('[data-automation-id="promptIcon"]');
+    if (!first && icon) {
+      press(icon);
+      first = await waitFor(() => groupsIn(box).length > 0 && groupsIn(box), 800);
+    }
     if (!first) return undefined;
     const names = first.map((row) => squash(row.textContent ?? '')).slice(0, MOST_GROUPS);
     for (const name of names) {

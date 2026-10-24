@@ -113,8 +113,8 @@ export function workdayActs(doc: Document, pages: string): void {
     ],
     hispanicOrLatino: ['Yes', 'No'],
     gender: ['Female', 'Male', 'Not declared'],
-    a1f3c2e0b9d84e5f9a7c6b5d4e3f2a10: ['Yes', 'No'],
-    b2e4d3f1c0e95f6a0b8d7c6e5f4a3b21: ['Yes', 'No'],
+    a1f3c2e0b9d84e5f9a7c6b5d: ['Yes', 'No'],
+    b2e4d3f1c0e95f6a0b8d7c6e: ['Yes', 'No'],
   };
   /** Each list you search's options, by its box's id: in groups, or not. */
   const SEARCHED: Record<string, Record<string, string[]>> = {

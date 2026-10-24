@@ -986,13 +986,13 @@ try {
   await nextPage('Application Questions');
   await fillThisPage();
   check(
-    (await shows('primaryQuestionnaire--a1f3c2e0b9d84e5f9a7c6b5d4e3f2a10')) === 'Yes' &&
-      (await shows('primaryQuestionnaire--b2e4d3f1c0e95f6a0b8d7c6e5f4a3b21')) === 'No',
+    (await shows('primaryQuestionnaire--a1f3c2e0b9d84e5f9a7c6b5d')) === 'Yes' &&
+      (await shows('primaryQuestionnaire--b2e4d3f1c0e95f6a0b8d7c6e')) === 'No',
     'Application Questions: whether you can work here, and need sponsorship, from Profile',
   );
   // You answer the form's own question, as you would; the panel reads it as you go.
   const why = 'Larkspur’s grid work is what I want to build next.';
-  await workday.locator('[id="primaryQuestionnaire--c3f5e4a2d1f06a7b1c9e8d7f6a5b4c32"]').fill(why);
+  await workday.locator('[id="primaryQuestionnaire--c3f5e4a2d1f06a7b1c9e8d7f"]').fill(why);
   await workday.waitForTimeout(3500);
 
   await nextPage('Voluntary Disclosures');
