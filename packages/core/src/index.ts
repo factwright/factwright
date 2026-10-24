@@ -30,6 +30,7 @@ export {
   readBoard,
 } from './boards.ts';
 export { callInvite, callInviteName, callStart, callTitle, isClockTime } from './calendar.ts';
+export { US_STATES } from './countries.ts';
 export { addDays, daysBetween, firstDate, isIsoDate, localDate } from './dates.ts';
 export {
   askAnswer,

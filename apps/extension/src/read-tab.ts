@@ -34,3 +34,40 @@ export async function readTab(tab: Tab): Promise<{ page: PageJob; unread: Unread
   }
   return { page: jobFromTab(href, title), unread: 'unreadable' };
 }
+
+/**
+ * The job a form is for: as the tab's page shows it, or, for a form in a frame of a page the
+ * browser keeps the extension out of, as a company's careers page can be, as the frame's own page
+ * shows it, as an applicant system's form says what it's for. The tab's page gets the frame's
+ * company and job title where it doesn't say them.
+ */
+export async function readFormPage(tab: Tab, frameId: number): Promise<PageJob> {
+  const { page, unread } = await readTab(tab);
+  if (frameId === 0 || tab.id === undefined || (unread === null && page.company && page.title)) {
+    return page;
+  }
+  try {
+    const [first] = await ext.scripting.executeScript({
+      target: { tabId: tab.id, frameIds: [frameId] },
+      func: readJobPage,
+    });
+    const framed = first?.result;
+    if (framed) {
+      return unread === null
+        ? { ...page, company: page.company || framed.company, title: page.title || framed.title }
+        : framed;
+    }
+  } catch {
+    // The frame's gone, or shows a page of another site now.
+  }
+  return page;
+}
+
+/** The company and job title a form is for, as `readFormPage` finds them. */
+export async function readFormJob(
+  tab: Tab,
+  frameId: number,
+): Promise<{ company: string; role: string }> {
+  const page = await readFormPage(tab, frameId);
+  return { company: page.company, role: page.title };
+}

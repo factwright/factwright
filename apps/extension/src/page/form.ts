@@ -69,6 +69,12 @@ export interface FieldAnswer {
   pick?: string[];
   /** Pick only an option with these words exactly, as for an answer given to another form. */
   exact?: boolean;
+  /**
+   * A place, as a city: a box that offers places from the site's own server gets each pick, or
+   * its city alone, typed in, and the place it offers whose words start the same and say the rest
+   * in order, as "Denver, Colorado, United States" for "Denver, Colorado".
+   */
+  place?: boolean;
   /** For a file field: the file, as base64. */
   file?: { name: string; type: string; base64: string };
 }
@@ -163,6 +169,14 @@ export async function formPage(
     /thank(s| you) for (applying|your application|submitting)|application (has been |was )?(submitted|received|sent)|we(’|')?ve received your application|we have received your application|you(’|')?ve (successfully )?applied|your application is (in|complete)/i;
   /** Orange, as the app marks what needs you. */
   const ORANGE = '#e8590c';
+  /**
+   * How long a list that comes as you type may take to show, from the site's own server: a list
+   * of places the longest. A list that's shown its options without the one, or said it found
+   * none, for this long, has settled.
+   */
+  const LIST_MS = 3000;
+  const PLACE_MS = 5000;
+  const SETTLED_MS = 700;
 
   const squash = (text: string) => text.replace(/\s+/g, ' ').trim();
   const cut = (text: string) => (text.length > MAX_TEXT ? `${text.slice(0, MAX_TEXT - 1)}…` : text);
@@ -525,6 +539,8 @@ export async function formPage(
 
   /** The words of an option of a radio button or checkbox: its label, or the words beside it. */
   const optionWords = (control: Element): string => {
+    // A button that stays pressed, as Ashby's Yes and No, says its own.
+    if (control.matches('button')) return cut(squash(control.textContent ?? ''));
     for (const label of labelsOf(control)) {
       const words = wordsOf(label);
       if (words) return cut(words);
@@ -547,23 +563,79 @@ export async function formPage(
       .slice(0, MAX_FIELDS)
       .map(cut);
 
-  /** The list a box that offers choices shows once it's open, and the options in it. */
+  /** The fields a box around a control holds besides it, but for those kept from you. */
+  const holdsOther = (box: Element, control: Element) =>
+    [
+      ...box.querySelectorAll(
+        'input:not([type="hidden"]):not([aria-hidden="true"]), select, textarea',
+      ),
+    ].some((each) => each !== control);
+
+  /** The boxes around a control that hold no other field, the nearest first, a few at most. */
+  const ownBoxes = (control: Element): Element[] => {
+    const boxes: Element[] = [];
+    for (
+      let up = control.parentElement, level = 0;
+      up && up !== doc.body && level < 6 && !holdsOther(up, control);
+      up = up.parentElement, level++
+    ) {
+      boxes.push(up);
+    }
+    return boxes;
+  };
+
+  /**
+   * The suggestions a box of words shows of its own as you type, such as places from the site's
+   * server, and takes only one of, as Lever's location does: a box of results beside it, and a
+   * hidden field that keeps the one you pick, in the box around it that holds no other field.
+   */
+  const suggestionsOf = (
+    control: Element,
+  ): { results: Element; picked: HTMLInputElement } | null => {
+    if (!(control instanceof HTMLInputElement) || control.type !== 'text') return null;
+    if (control.getAttribute('role') === 'combobox') return null;
+    for (const box of ownBoxes(control).slice(0, 3)) {
+      const results = box.querySelector(
+        '[class*="dropdown-results"], [class*="suggestions"], [class*="autocomplete-results"]',
+      );
+      const picked = box.querySelector<HTMLInputElement>('input[type="hidden"]');
+      if (results && picked && !results.contains(control)) return { results, picked };
+    }
+    return null;
+  };
+
+  /**
+   * The list a box that offers choices shows once it's open, and the options in it: the one it
+   * names, or one in the box around it, or the suggestions it shows as you type.
+   */
   const listOf = (control: Element): Element[] => {
     const lists = [
       ...named(control, 'aria-controls'),
       ...named(control, 'aria-owns'),
-      ...[
-        ...(control
-          .closest('[class*="select"], [class*="combobox"], [class*="dropdown"]')
-          ?.querySelectorAll('[role="listbox"]') ?? []),
-      ],
+      ...ownBoxes(control).flatMap((box) => [...box.querySelectorAll('[role="listbox"]')]),
     ];
     for (const list of lists) {
       const options = [...list.querySelectorAll('[role="option"]')].filter(shown);
       if (options.length > 0) return options;
     }
-    return [];
+    const suggests = suggestionsOf(control);
+    if (!suggests) return [];
+    return [...suggests.results.children].filter(
+      (each) => shown(each) && squash(each.textContent ?? '') !== '',
+    );
   };
+
+  /**
+   * Whether the list a box offers says it's still looking, as one from the site's server loads,
+   * or that it found none: as a notice in the list, or in the box around it, says it.
+   */
+  const listSays = (control: Element, words: RegExp): boolean =>
+    [...named(control, 'aria-controls'), ...named(control, 'aria-owns'), ...ownBoxes(control)].some(
+      (box) =>
+        [...box.querySelectorAll('[class]')].some(
+          (each) => words.test(each.getAttribute('class') ?? '') && shown(each),
+        ),
+    );
 
   /** The box a box that offers choices shows as, around its own input, which may be see-through. */
   const comboBox = (control: Element): Element | null =>
@@ -587,9 +659,36 @@ export async function formPage(
   /** A field, found by reading the page, with the elements it's made of. */
   interface Found {
     field: PageField;
-    /** The control, or for radio buttons and checkboxes, each of the group's. */
+    /**
+     * The control, or for radio buttons, checkboxes and buttons that stay pressed, each of the
+     * group's.
+     */
     controls: HTMLElement[];
+    /** Whether its options are buttons that stay pressed, as Ashby's Yes and No. */
+    pressed?: boolean;
   }
+
+  /** The most buttons a set that stays pressed has, and the longest words of one. */
+  const MOST_PRESSED = 12;
+  const PRESSED_WORDS = 60;
+
+  /**
+   * Sets of buttons that each stay pressed once clicked, as a form's Yes and No are on Ashby: two
+   * or more side by side, each with a few words, as a choice of one of them. A hidden field beside
+   * them, that keeps the answer for the page, isn't a field of its own.
+   */
+  const pressedSets = (): HTMLElement[][] => {
+    const sets = new Map<Element, HTMLElement[]>();
+    for (const button of doc.querySelectorAll<HTMLElement>('button[aria-pressed]')) {
+      const parent = button.parentElement;
+      if (!parent || button.closest(AROUND) || (button as HTMLButtonElement).disabled) continue;
+      if (button.closest('[aria-hidden="true"], [inert]') || !visible(button)) continue;
+      const words = squash(button.textContent ?? '');
+      if (!words || words.length > PRESSED_WORDS) continue;
+      sets.set(parent, [...(sets.get(parent) ?? []), button]);
+    }
+    return [...sets.values()].filter((set) => set.length >= 2 && set.length <= MOST_PRESSED);
+  };
 
   /** Whether a control is one of the form's fields: shown, outside the page's own parts. */
   const isField = (control: HTMLElement): boolean => {
@@ -630,11 +729,23 @@ export async function formPage(
 
   /** Every field on the form, in the page's order, with radio buttons and checkboxes grouped. */
   const readFields = (): Found[] => {
+    const pressed = pressedSets();
+    const pressedFirst = new Map(pressed.map((set) => [set[0] as HTMLElement, set]));
+    const holders = pressed.map((set) => set[0]?.parentElement as Element);
     const controls = [
       ...doc.querySelectorAll<HTMLElement>(
         'input, select, textarea, [role="combobox"]:not(input), [contenteditable="true"][role="textbox"]',
       ),
-    ].filter(isField);
+    ]
+      .filter((control) => !holders.some((holder) => holder.contains(control)))
+      .filter(isField);
+    // Each set of buttons that stays pressed goes in the page's order, by its first.
+    for (const first of pressedFirst.keys()) {
+      const after = controls.findIndex(
+        (control) => first.compareDocumentPosition(control) & FOLLOWS,
+      );
+      controls.splice(after < 0 ? controls.length : after, 0, first);
+    }
     const groups = new Map<string, HTMLElement[]>();
     for (const control of controls) {
       const type = (control.getAttribute('type') ?? '').toLowerCase();
@@ -654,6 +765,40 @@ export async function formPage(
       const group = groups.get(`${type}:${name}`);
       let field: Omit<PageField, 'ref' | 'key' | 'section'>;
       let members = [control];
+      const set = pressedFirst.get(control);
+      if (set) {
+        members = set;
+        for (const each of set) done.add(each);
+        const holder = control.parentElement as Element;
+        // The hidden field beside them, as the page keeps the answer in, names the question.
+        const kept = holder.querySelector('input[name]')?.getAttribute('name') ?? '';
+        const raw =
+          groupWords(control.closest('[role="radiogroup"], [role="group"]')) ||
+          groupWords(holder) ||
+          wordsAbove(holder);
+        const own = cut(squash(`${kept} ${holder.getAttribute('id') ?? ''}`));
+        const question = cut(cleanQuestion(raw));
+        const ref = found.length;
+        found.push({
+          field: {
+            ref,
+            key: cut(`BUTTON|pressed||${own}|${question}`),
+            question,
+            hint: '',
+            section: sectionOf(members, question),
+            control: 'choice',
+            type: '',
+            autocomplete: '',
+            name: own,
+            options: set.map(optionWords),
+            required: holder.getAttribute('aria-required') === 'true' || marksRequired(raw),
+            limit: null,
+          },
+          controls: members,
+          pressed: true,
+        });
+        continue;
+      }
       if (group && (type === 'radio' || group.length > 1)) {
         members = group;
         for (const each of group) done.add(each);
@@ -700,7 +845,9 @@ export async function formPage(
               ? (control as HTMLSelectElement).multiple
                 ? 'choices'
                 : 'choice'
-              : role === 'combobox' || control.getAttribute('aria-autocomplete') === 'list'
+              : role === 'combobox' ||
+                  control.getAttribute('aria-autocomplete') === 'list' ||
+                  suggestionsOf(control) !== null
                 ? 'combo'
                 : type === 'checkbox'
                   ? 'check'
@@ -787,6 +934,39 @@ export async function formPage(
     return undefined;
   };
 
+  /**
+   * The option that's a place, each pick in turn, the first best: one that says it exactly, then
+   * one that starts with it, as a word, then one that starts with its first word and says the
+   * rest in order, as a site's list of places puts a county between a city and its state.
+   */
+  const placeOf = (options: Element[], picks: string[]): Element | undefined => {
+    const each = options.map((option) => {
+      const said = plain(option.textContent ?? '');
+      return { option, said, words: said.split(' ') };
+    });
+    for (const pick of picks.map(plain).filter(Boolean)) {
+      const [first, ...rest] = pick.split(' ');
+      const found =
+        each.find(({ said }) => said === pick) ??
+        each.find(({ said }) => said.startsWith(`${pick} `)) ??
+        each.find(({ words }) => {
+          if (words[0] !== first) return false;
+          let at = 1;
+          for (const word of rest) {
+            const next = words.indexOf(word, at);
+            if (next < 0) return false;
+            at = next + 1;
+          }
+          return true;
+        });
+      if (found) return found.option;
+    }
+    return undefined;
+  };
+
+  /** A place's city, as it starts: "Denver" of "Denver, CO". */
+  const cityOf = (place: string) => (place.split(',')[0] ?? '').trim();
+
   /** Puts text in a box as typing would, so the page's own code keeps it. */
   const typeInto = (box: HTMLInputElement | HTMLTextAreaElement, text: string, leave = true) => {
     const proto =
@@ -804,9 +984,12 @@ export async function formPage(
 
   /**
    * Clicks an element as a person would: the mouse goes down, comes up, then it's a click. A
-   * button that would submit its form only has the mouse go down and up on it, never the click.
+   * button that would submit its form only has the mouse go down and up on it, never the click,
+   * but for one of a pair that stays pressed, as Ashby's Yes and No, which a page may leave to
+   * submit, as a button in a form does unless it says otherwise: filling stops the form being
+   * submitted meanwhile (`evenSubmit`).
    */
-  const press = (element: Element) => {
+  const press = (element: Element, evenSubmit = false) => {
     const view = doc.defaultView;
     const Pointer = typeof PointerEvent === 'function' ? PointerEvent : MouseEvent;
     const like = {
@@ -827,7 +1010,7 @@ export async function formPage(
       }
       element.dispatchEvent(event);
     }
-    if (!submits(element)) (element as HTMLElement).click();
+    if (evenSubmit || !submits(element)) (element as HTMLElement).click();
   };
 
   /** Waits for something to show, looking every so often, up to a limit. */
@@ -845,12 +1028,66 @@ export async function formPage(
   };
 
   /**
+   * Types words in a box that offers what it has as you type, as typing ends: the key goes down,
+   * the words are in, the key comes up, as the page's own code may look for either. Nothing says
+   * it changed, as typing doesn't till you leave the box.
+   */
+  const typeToFind = (box: HTMLInputElement, text: string) => {
+    box.focus({ preventScroll: true });
+    const key = text.slice(-1);
+    box.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true }));
+    const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
+    if (set) set.call(box, text);
+    else box.value = text;
+    box.dispatchEvent(
+      new InputEvent('input', { bubbles: true, inputType: 'insertText', data: text }),
+    );
+    box.dispatchEvent(new KeyboardEvent('keyup', { key, bubbles: true, cancelable: true }));
+  };
+
+  /** What a box's list says while it looks, and once it found nothing. */
+  const LOOKING = /loading|searching/i;
+  const NONE = /no[-_]?(options|results)/i;
+
+  /**
+   * Waits for the option to pick in a list that shows as you type, from the site's own server:
+   * until it shows, or the list settles without it, no longer looking, with other options, or
+   * saying it found none, as it didn't before the words went in.
+   */
+  const waitForList = async (
+    box: Element,
+    find: () => Element | undefined,
+    ms: number,
+    noneBefore: boolean,
+  ): Promise<Element | undefined> => {
+    const until = Date.now() + ms;
+    let looked = false;
+    let settledAt = 0;
+    for (;;) {
+      const found = find();
+      if (found) return found;
+      const now = Date.now();
+      if (now >= until) return undefined;
+      const looking = listSays(box, LOOKING);
+      looked = looked || looking;
+      const none = listSays(box, NONE) && (looked || !noneBefore);
+      const settled = !looking && (listOf(box).length > 0 || none);
+      if (!settled) settledAt = 0;
+      else if (!settledAt) settledAt = now;
+      else if (now - settledAt >= SETTLED_MS) return undefined;
+      await sleep(50);
+    }
+  };
+
+  /**
    * The words a box that offers choices shows: what's typed in it, or the option picked, which
    * such a box shows beside its input. The nearest box around it with words, and no other field,
    * says it. Words that only say to pick, as "Select…", are none.
    */
   const comboShows = (control: HTMLElement): string => {
     const value = (control as HTMLInputElement).value ?? '';
+    // A box that takes one of its own suggestions shows the one picked in itself.
+    if (suggestionsOf(control)) return value;
     let up = control.parentElement;
     for (let level = 0; level < 4 && up && up !== doc.body; level++, up = up.parentElement) {
       const fields = up.querySelectorAll(
@@ -868,6 +1105,12 @@ export async function formPage(
     const [control] = found.controls;
     if (!control) return '';
     const { field } = found;
+    if (found.pressed) {
+      return found.controls
+        .filter((each) => each.getAttribute('aria-pressed') === 'true')
+        .map(optionWords)
+        .join(', ');
+    }
     if (field.control === 'choice' || field.control === 'choices') {
       if (control instanceof HTMLSelectElement) {
         // An option with no value, such as "Select…", is none picked.
@@ -913,6 +1156,13 @@ export async function formPage(
       return done((input.files?.length ?? 0) === 1);
     }
     const picks = answer.pick ?? (answer.text !== undefined ? [answer.text] : []);
+    if (found.pressed) {
+      const option = pickOf(controls, optionWords, picks, answer.exact);
+      if (!option) return done(false, 'no-option');
+      if (option.getAttribute('aria-pressed') !== 'true') press(option, true);
+      const took = await waitFor(() => option.getAttribute('aria-pressed') === 'true', 1000);
+      return done(Boolean(took));
+    }
     if (field.control === 'choice' || field.control === 'choices') {
       if (control instanceof HTMLSelectElement) {
         const option = pickOf([...control.options], (each) => each.text, picks, answer.exact);
@@ -941,15 +1191,22 @@ export async function formPage(
     if (field.control === 'combo') {
       const box = control as HTMLInputElement;
       const optionWords = (each: Element) => each.textContent ?? '';
+      const suggests = suggestionsOf(box);
+      const find = () =>
+        answer.place && !answer.exact
+          ? placeOf(listOf(box), picks)
+          : pickOf(listOf(box), optionWords, picks, answer.exact);
       /**
        * Picks an option, as a person would, and says whether the box shows it then: its words, or
-       * anything new, as a box for a phone's country shows only its code.
+       * anything new, as a box for a phone's country shows only its code. A box that takes only
+       * one of its own suggestions keeps the one picked in its hidden field too.
        */
       const choose = async (option: Element) => {
         const words = squash(option.textContent ?? '');
         const before = comboShows(box);
         press(option);
         const took = await waitFor(() => {
+          if (suggests && suggests.picked.value === '') return false;
           const shows = comboShows(box);
           return plain(shows).includes(plain(words)) || (shows !== '' && shows !== before);
         }, 1000);
@@ -957,27 +1214,30 @@ export async function formPage(
         return Boolean(took);
       };
       // Opened with a press, as a person would: its list shows at once when it's the page's own.
-      press(box);
-      const listed = await waitFor(
-        () => pickOf(listOf(box), optionWords, picks, answer.exact),
-        800,
-      );
-      if (listed && (await choose(listed))) return done(true);
+      // A box that only suggests as you type has nothing to show till then.
+      if (!suggests) {
+        press(box);
+        const listed = await waitFor(find, 800);
+        if (listed && (await choose(listed))) return done(true);
+      }
       // A list that comes from the site's own server, such as of places, shows as you type, in a
-      // box you can see.
-      for (const pick of picks.slice(0, 3)) {
-        if (!pick || !(box instanceof HTMLInputElement) || !visible(box)) continue;
-        if (box.getAttribute('aria-expanded') !== 'true') press(box);
-        typeInto(box, pick, false);
-        const option = await waitFor(
-          () => pickOf(listOf(box), optionWords, picks, answer.exact),
-          3000,
-        );
+      // box you can see: a place's picks, and its city alone, as a site's list may name it its
+      // own way.
+      const typed = answer.place
+        ? [...new Set([picks[0] ?? '', cityOf(picks[0] ?? ''), ...picks.slice(1)])]
+        : picks;
+      for (const pick of typed.filter(Boolean).slice(0, 3)) {
+        if (!(box instanceof HTMLInputElement) || !visible(box)) continue;
+        if (!suggests && box.getAttribute('aria-expanded') !== 'true') press(box);
+        const noneBefore = listSays(box, NONE);
+        typeToFind(box, pick);
+        const option = await waitForList(box, find, answer.place ? PLACE_MS : LIST_MS, noneBefore);
         if (option && (await choose(option))) return done(true);
       }
       box.dispatchEvent(
         new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', bubbles: true }),
       );
+      // A box that takes only one of its own suggestions never keeps what was typed.
       if (box instanceof HTMLInputElement && box.value) typeInto(box, '');
       box.blur();
       return done(false, picks.length > 0 ? 'no-option' : 'not-taken');
@@ -1003,8 +1263,9 @@ export async function formPage(
   const outline = (found: Found) => {
     const [first] = found.controls;
     if (!first) return;
-    const target =
-      found.controls.length > 1
+    const target = found.pressed
+      ? (first.parentElement ?? first)
+      : found.controls.length > 1
         ? (found.controls[0]?.closest('fieldset, [role="radiogroup"], [role="group"], ul, ol') ??
           first)
         : found.field.control === 'combo'
@@ -1022,6 +1283,7 @@ export async function formPage(
     for (const control of found.controls) {
       control.addEventListener('input', clear);
       control.addEventListener('change', clear);
+      if (found.pressed) control.addEventListener('click', () => setTimeout(clear, 0));
     }
   };
 

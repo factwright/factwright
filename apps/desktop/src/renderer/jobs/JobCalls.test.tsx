@@ -16,6 +16,10 @@ import type { ReminderSwitch } from './useCallReminders.ts';
 
 const TODAY = localDate();
 
+// Each test draws the whole job panel, which CI's runners, busy with every package's tests at
+// once, take five times longer for or more: two of them ran past vitest's usual 5 seconds there.
+vi.setConfig({ testTimeout: 20_000 });
+
 beforeAll(() => {
   // jsdom doesn't open dialogs on its own.
   HTMLDialogElement.prototype.showModal ??= function showModal(this: HTMLDialogElement) {

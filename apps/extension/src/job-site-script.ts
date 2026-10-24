@@ -5,12 +5,13 @@ import {
   type FieldMenu,
   type FromScript,
   isToScript,
+  MOST_AROUND,
   MOST_URL,
   type Written,
 } from './job-site-messages.ts';
 import { type FieldAnswer, type FormAnswer, formPage, type PageForm } from './page/form.ts';
 import { readJobPage } from './page/read-job.ts';
-import { type Box, EDGE, overlaps, placeButton, placeMenu, type Size } from './place.ts';
+import { type Area, type Box, EDGE, overlaps, placeButton, placeMenu, type Size } from './place.ts';
 
 /**
  * The extension's script on the job sites you allowed (src/application-sites.ts), and only there.
@@ -24,6 +25,9 @@ import { type Box, EDGE, overlaps, placeButton, placeMenu, type Size } from './p
  * It reads the form as the panel does (page/form.ts), without what's in its fields, and what's in
  * a field only once you've typed in it and left it, for one whose answer Profile keeps, to offer
  * to save it. It never fills a password, never submits, and never clicks a button that would.
+ * It runs in a frame from such a site too, as a company's careers page shows an applicant
+ * system's form in one: there, the button and menus go in the part of the frame that shows, as
+ * the page around it scrolls it, and the page around it, of another site, can't see in.
  */
 
 /** How soon after your own click, or your Tab, a field you land in counts as one you chose. */
@@ -95,8 +99,18 @@ const CONTROLS = [
  */
 const MAYBE_CONTROLS = '[tabindex]:not([tabindex="-1"]), [onclick]';
 
-/** What a page's own control looks like, at most: no wider than half the window, nor taller than a quarter. */
-const controlSized = (box: Box) => box.width <= innerWidth / 2 && box.height <= innerHeight / 4;
+/**
+ * What a page's own control looks like, at most: no wider than half the window, nor taller than a
+ * quarter, or a quarter of the screen, in a frame as tall as its form.
+ */
+const controlSized = (box: Box) =>
+  box.width <= innerWidth / 2 && box.height <= Math.min(innerHeight, screen.availHeight) / 4;
+
+/** How finely it follows the part of its frame that shows: in steps of this much of the frame. */
+const SHOWN_STEPS = 500;
+
+/** How many pages around the frame it checks, as far as they're of its own site. */
+const MOST_NESTED = 10;
 
 /** The options a label can be for, which clicking anywhere on the label picks. */
 const OPTIONS = 'input[type="checkbox"], input[type="radio"]';
@@ -130,6 +144,15 @@ export function startScript(
   let stopped = false;
   /** Whether the page has loaded, and settled a moment, so the script may put its frames on it. */
   let ready = false;
+  /** Its own name for the page it's on, which its Fill button's frame says, and its goodbye. */
+  const doc = crypto.randomUUID();
+  /** Whether it's in a frame of another page, as a company's careers page shows a form in one. */
+  const framed = window !== window.top;
+  /**
+   * The part of its frame that shows, as the page around it scrolls it, once the browser says; the
+   * window, for a tab's own page.
+   */
+  let shown: Box | null = null;
   /** The form as last read, and each field's elements, by its place. */
   let form: PageForm | null = null;
   let elements: HTMLElement[][] = [];
@@ -293,14 +316,30 @@ export function startScript(
     return { left, top, width: right - left, height: bottom - top };
   }
 
-  /** Whether a box is in the window, at least in part. */
-  const inView = (box: Box) =>
-    box.width > 0 &&
-    box.height > 0 &&
-    box.left < innerWidth &&
-    box.top < innerHeight &&
-    box.left + box.width > 0 &&
-    box.top + box.height > 0;
+  /**
+   * Where the frame may go: the window, or in a frame of another page, the part of it that shows.
+   * Null while that's unknown, and where none of it shows.
+   */
+  const area = (): Area | null => {
+    if (!framed) return { left: 0, top: 0, width: innerWidth, height: innerHeight };
+    return shown && shown.width > 0 && shown.height > 0 ? shown : null;
+  };
+
+  /** Whether a box is in the window, or the part of the frame that shows, at least in part. */
+  const inView = (box: Box) => {
+    const room = area();
+    if (!room) return false;
+    const left = room.left ?? 0;
+    const top = room.top ?? 0;
+    return (
+      box.width > 0 &&
+      box.height > 0 &&
+      box.left < left + room.width &&
+      box.top < top + room.height &&
+      box.left + box.width > left &&
+      box.top + box.height > top
+    );
+  };
 
   /**
    * The page's own controls, and its labels and legends: in the page, and in each part of it that
@@ -432,10 +471,9 @@ export function startScript(
       return;
     }
     const field = fieldBox(menu.at);
+    const room = area();
     const place =
-      field && inView(field)
-        ? placeMenu(menu.size, field, forMenu(), { width: innerWidth, height: innerHeight })
-        : null;
+      field && room && inView(field) ? placeMenu(menu.size, field, forMenu(), room) : null;
     if (!place) {
       closeMenu();
       return;
@@ -456,16 +494,15 @@ export function startScript(
    * many answers it has.
    */
   const sizeFor = (answers: boolean, save: boolean): Size => ({
-    width: Math.min(MENU_WIDTH, innerWidth - 2 * EDGE),
+    width: Math.min(MENU_WIDTH, (area()?.width ?? innerWidth) - 2 * EDGE),
     height: menuHeight(answers, save),
   });
 
   /** Where a menu goes beside a field, or null where there's no room that covers nothing. */
   const placeFor = (at: number, size: Size) => {
     const box = fieldBox(at);
-    return box && inView(box)
-      ? placeMenu(size, box, forMenu(), { width: innerWidth, height: innerHeight })
-      : null;
+    const room = area();
+    return box && room && inView(box) ? placeMenu(size, box, forMenu(), room) : null;
   };
 
   /**
@@ -594,17 +631,68 @@ export function startScript(
       if (over(next) || [...next.querySelectorAll('*')].some(over)) return false;
     }
     if (typeof document.elementFromPoint !== 'function') return true;
-    return [
-      [0.5, 0.5],
-      [0.15, 0.15],
-      [0.85, 0.15],
-      [0.15, 0.85],
-      [0.85, 0.85],
-    ].every(
-      ([x = 0, y = 0]) =>
-        document.elementFromPoint(box.left + box.width * x, box.top + box.height * y) ===
-        frame.host,
+    return (
+      [
+        [0.5, 0.5],
+        [0.15, 0.15],
+        [0.85, 0.15],
+        [0.15, 0.85],
+        [0.85, 0.85],
+      ].every(
+        ([x = 0, y = 0]) =>
+          document.elementFromPoint(box.left + box.width * x, box.top + box.height * y) ===
+          frame.host,
+      ) && aroundShows(box)
     );
+  }
+
+  /**
+   * Whether the pages around this one, as far as they're of its own site and could read what's
+   * put in its form, show the frame they hold it in at the menu's place: nothing of theirs fades
+   * it, filters it or cuts it, nothing else of theirs lies there, and their own test of what's at
+   * the menu's middle finds the frame. A page of another site can't see into this one, nor read
+   * what's put in its form, and Chrome's own check in the extension's frame takes it in too.
+   */
+  function aroundShows(box: Box): boolean {
+    let view: Window = window;
+    let at = box;
+    for (let depth = 0; depth < MOST_NESTED && view !== view.parent; depth++) {
+      let holder: Element | null = null;
+      try {
+        holder = view.frameElement;
+      } catch {
+        holder = null;
+      }
+      // A page of another site.
+      if (!holder) return true;
+      const page = holder.ownerDocument;
+      const outer = page.defaultView;
+      if (!outer) return false;
+      for (let up: Element | null = holder; up; up = up.parentElement) {
+        if (!leavesIt(outer.getComputedStyle(up))) return false;
+      }
+      const frameBox = boxOf(holder);
+      at = {
+        left: frameBox.left + holder.clientLeft + at.left,
+        top: frameBox.top + holder.clientTop + at.top,
+        width: at.width,
+        height: at.height,
+      };
+      const there = at;
+      const lies = [...page.querySelectorAll('body *')].some(
+        (other) =>
+          other !== holder &&
+          !other.contains(holder) &&
+          showsIt(other) &&
+          overlaps(boxOf(other), there),
+      );
+      if (lies) return false;
+      if (page.elementFromPoint(at.left + at.width / 2, at.top + at.height / 2) !== holder) {
+        return false;
+      }
+      view = outer;
+    }
+    return true;
   }
 
   /**
@@ -712,14 +800,15 @@ export function startScript(
     // A page that took it away, as one that builds itself again, gets it back.
     if (!button.host.isConnected) document.documentElement.append(button.host);
     const size = button.card ? BUTTON_CARD : BUTTON;
+    const room = area();
     const covered = [...controlBoxes(), ...(menu ? [boxOf(menu.host)] : [])];
-    put(button, size, placeButton(size, covered, { width: innerWidth, height: innerHeight }));
+    put(button, size, room ? placeButton(size, covered, room) : null);
   }
 
   function showButton(): void {
     if (!button) {
       button = {
-        ...makeFrame(`${ext.runtime.getURL('frame.html')}#button`, 'Factwright'),
+        ...makeFrame(`${ext.runtime.getURL('frame.html')}#button:${doc}`, 'Factwright'),
         card: false,
       };
     }
@@ -806,6 +895,7 @@ export function startScript(
     requestAnimationFrame(() => {
       frameQueued = false;
       if (stopped) return;
+      keepFollowing();
       placeOpenMenu();
       placeTheButton();
     });
@@ -818,6 +908,70 @@ export function startScript(
       onMove();
     }, RESTYLED_MS);
   };
+  /** The part of its frame that shows, in a frame of another page, as the browser follows it. */
+  const showing = framed
+    ? new IntersectionObserver(
+        (entries) => {
+          const entry = entries.at(-1);
+          if (!entry) return;
+          const { left, top, width, height } = entry.intersectionRect;
+          shown = entry.isIntersecting ? { left, top, width, height } : null;
+          onMove();
+        },
+        { threshold: Array.from({ length: SHOWN_STEPS + 1 }, (_, step) => step / SHOWN_STEPS) },
+      )
+    : null;
+  /**
+   * What the browser follows the part that shows by: a box as big as the frame, unseen, and never
+   * in the way.
+   */
+  const sentinel = framed ? document.createElement('div') : null;
+  if (sentinel) {
+    for (const [name, value] of Object.entries({
+      all: 'initial',
+      position: 'fixed',
+      inset: '0',
+      visibility: 'hidden',
+      'pointer-events': 'none',
+    })) {
+      sentinel.style.setProperty(name, value, 'important');
+    }
+    mine.add(sentinel);
+  }
+  /**
+   * Follows the part of its frame that shows, once it may put anything on the page, and again
+   * once the page took away the box it follows it by.
+   */
+  function keepFollowing(): void {
+    if (!ready || !sentinel || !showing || sentinel.isConnected) return;
+    document.documentElement.append(sentinel);
+    showing.unobserve(sentinel);
+    showing.observe(sentinel);
+  }
+
+  /**
+   * Says hello, by its own name for the page, and the sites of the pages around it, as Chrome
+   * says them, or in Firefox, which doesn't, in a frame, the address the frame was opened from,
+   * where the page around it gives it, which is that page's.
+   */
+  const hello = () => {
+    const ancestors = (location as { ancestorOrigins?: DOMStringList }).ancestorOrigins;
+    const opener = framed && document.referrer ? [document.referrer.slice(0, MOST_URL)] : [];
+    const around = (ancestors ? Array.from(ancestors) : opener).slice(0, MOST_AROUND);
+    return ask<{ allowed: boolean }>({ type: 'job-site', do: 'hello', doc, around });
+  };
+  /** The page is going: the background forgets it, unless the browser keeps it to come back to. */
+  const onHide = () => {
+    void send({ type: 'job-site', do: 'bye', doc });
+  };
+  const onShow = (event: PageTransitionEvent) => {
+    if (!event.persisted) return;
+    void hello().then((said) => {
+      if (said?.allowed) void look();
+      else stop();
+    });
+  };
+
   const observer = new MutationObserver((changes) => {
     const ours = (node: Node) => mine.has(node);
     // The page took away one of its frames, as a page that tidies what it doesn't know of: it
@@ -889,6 +1043,10 @@ export function startScript(
     removeEventListener('change', onTyped, true);
     removeEventListener('scroll', onMove, true);
     removeEventListener('resize', onMove);
+    removeEventListener('pagehide', onHide);
+    removeEventListener('pageshow', onShow);
+    showing?.disconnect();
+    sentinel?.remove();
     try {
       ext.runtime.onMessage.removeListener?.(onMessage);
     } catch {
@@ -905,6 +1063,8 @@ export function startScript(
   addEventListener('change', onTyped, true);
   addEventListener('scroll', onMove, { capture: true, passive: true });
   addEventListener('resize', onMove, { passive: true });
+  addEventListener('pagehide', onHide);
+  addEventListener('pageshow', onShow);
   ext.runtime.onMessage.addListener(onMessage);
   // The whole document, as a page may put another in place of its own root as it builds itself.
   observer.observe(document, {
@@ -917,7 +1077,7 @@ export function startScript(
     if (document.readyState === 'complete') resolve();
     else addEventListener('load', () => resolve(), { once: true });
   });
-  void ask<{ allowed: boolean }>({ type: 'job-site', do: 'hello' }).then(async (said) => {
+  void hello().then(async (said) => {
     if (!said?.allowed) {
       stop();
       return;
@@ -927,6 +1087,7 @@ export function startScript(
     await new Promise((resolve) => setTimeout(resolve, readyMs));
     if (stopped) return;
     ready = true;
+    keepFollowing();
     await look();
   });
   return script;

@@ -1,6 +1,6 @@
 import type { FieldReply } from '@factwright/core';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { JOB_SITES } from '../src/application-sites.ts';
+import { allowedFrames, JOB_SITES } from '../src/application-sites.ts';
 import { MENU_ROWS } from '../src/frame-size.ts';
 import { isFromFrame, isFromScript, isToScript } from '../src/job-site-messages.ts';
 import {
@@ -10,6 +10,7 @@ import {
   keepsAnswer,
   menuAnswers,
   newAnswerFor,
+  stopWhereNotAllowed,
 } from '../src/on-job-sites.ts';
 import type { PageField, PageForm } from '../src/page/form.ts';
 
@@ -25,6 +26,7 @@ const browser = vi.hoisted(() => {
     asks: [] as Record<string, unknown>[],
     replies: [] as FieldReply[],
     told: [] as { tabId: number; message: Record<string, unknown>; frameId?: number }[],
+    session: {} as Record<string, unknown>,
   };
   (globalThis as { chrome?: unknown }).chrome = {
     runtime: {
@@ -59,6 +61,14 @@ const browser = vi.hoisted(() => {
           Object.assign(state.items, structuredClone(more));
         },
       },
+      session: {
+        get: async (key: string) =>
+          key in state.session ? { [key]: structuredClone(state.session[key]) } : {},
+        set: async (more: Record<string, unknown>) => {
+          Object.assign(state.session, structuredClone(more));
+        },
+        remove: async () => {},
+      },
     },
     tabs: {
       sendMessage: async (
@@ -77,6 +87,14 @@ const browser = vi.hoisted(() => {
 const PAGE = 'https://jobs.lever.co/acme/7a1c9e40/apply';
 const TAB = 7;
 const TOKEN = '0f3c9a8e-4b1d-4c2e-9f6a-1a2b3c4d5e6f';
+/** The script's own name for the page it's on. */
+const DOC = '5b2e7c1a-9d3f-4e8b-a6c0-7f1e2d3c4b5a';
+const hello = {
+  type: 'job-site' as const,
+  do: 'hello' as const,
+  doc: DOC,
+  around: [] as string[],
+};
 
 /** A field, as the page's form function reads one. */
 const field = (ref: number, question: string, more: Partial<PageField> = {}): PageField => ({
@@ -114,12 +132,13 @@ const REPLIES: FieldReply[] = [
   { kind: 'question', source: 'you', left: 'new' },
 ];
 
-const fromScript = { tabId: TAB, url: PAGE };
-const fromFrame = { tab: { id: TAB, url: PAGE, windowId: 1 }, url: PAGE };
+const fromScript = { tabId: TAB, frameId: 0, url: PAGE, top: PAGE };
+const fromFrame = { tab: { id: TAB, url: PAGE, windowId: 1 } };
 const job = { company: 'Acme', role: 'Engineer' };
 
 beforeEach(() => {
   forgetTab(TAB);
+  for (const key of Object.keys(browser.session)) delete browser.session[key];
   for (const key of Object.keys(browser.items)) delete browser.items[key];
   browser.items.jobSites = { all: true, sites: [] };
   browser.granted = new Set(JOB_SITES);
@@ -279,15 +298,16 @@ describe('what you give a field, offered to keep', () => {
 describe('the script and the frame, as the background answers them', () => {
   it('is told to stop on a site you didn’t allow, or LinkedIn, whatever the browser allows', async () => {
     browser.items.jobSites = { all: false, sites: [] };
-    expect(await answerScript({ type: 'job-site', do: 'hello' }, fromScript)).toEqual({
-      allowed: false,
-    });
+    expect(await answerScript(hello, fromScript)).toEqual({ allowed: false });
     browser.items.jobSites = { all: true, sites: [] };
     browser.granted.add('https://*.linkedin.com/*');
-    const linkedIn = { tabId: TAB, url: 'https://www.linkedin.com/jobs/view/1/apply' };
-    expect(await answerScript({ type: 'job-site', do: 'hello' }, linkedIn)).toEqual({
-      allowed: false,
-    });
+    const linkedIn = {
+      tabId: TAB,
+      frameId: 0,
+      url: 'https://www.linkedin.com/jobs/view/1/apply',
+      top: 'https://www.linkedin.com/jobs/view/1/apply',
+    };
+    expect(await answerScript(hello, linkedIn)).toEqual({ allowed: false });
     expect(await answerScript({ type: 'job-site', do: 'form', form: FORM, job }, linkedIn)).toEqual(
       { stop: true },
     );
@@ -339,7 +359,7 @@ describe('the script and the frame, as the background answers them', () => {
       save: null,
     });
     // Only this tab's frame, by this menu's token.
-    const other = { tab: { id: 8, url: PAGE, windowId: 1 }, url: PAGE };
+    const other = { tab: { id: 8, url: PAGE, windowId: 1 } };
     expect(await answerFrame({ type: 'job-site', do: 'shows', token: TOKEN }, other)).toBeNull();
     expect(
       await answerFrame(
@@ -477,9 +497,109 @@ describe('the script and the frame, as the background answers them', () => {
   });
 });
 
+describe('a form in a frame, as a company’s careers page shows an applicant system’s', () => {
+  /** The script in a frame of a careers page you didn't allow, on Lever's site, which you did. */
+  const inFrame = { tabId: TAB, frameId: 3, url: PAGE, top: '' };
+  const careers = ['https://careers.example.com'];
+
+  it('says hello from the frame of a site you allowed, which the panel can then find', async () => {
+    expect(await answerScript({ ...hello, around: careers }, inFrame)).toEqual({ allowed: true });
+    expect(await allowedFrames(TAB)).toEqual([{ frameId: 3, url: PAGE, doc: DOC }]);
+    // Its page going, it's forgotten, but not the page it shows since, by its own name.
+    const next = '9a8b7c6d-5e4f-4a3b-9c2d-1e0f9a8b7c6d';
+    await answerScript({ ...hello, doc: next }, inFrame);
+    await answerScript({ type: 'job-site', do: 'bye', doc: DOC }, inFrame);
+    expect(await allowedFrames(TAB)).toEqual([{ frameId: 3, url: PAGE, doc: next }]);
+    await answerScript({ type: 'job-site', do: 'bye', doc: next }, inFrame);
+    expect(await allowedFrames(TAB)).toEqual([]);
+  });
+
+  it('is told to stop in a page of LinkedIn’s or Indeed’s, as the browser or Chrome’s frame says', async () => {
+    const underLinkedIn = { ...inFrame, top: 'https://www.linkedin.com/jobs/view/1' };
+    expect(await answerScript(hello, underLinkedIn)).toEqual({ allowed: false });
+    expect(await answerScript({ ...hello, around: ['https://www.indeed.com'] }, inFrame)).toEqual({
+      allowed: false,
+    });
+    expect(await allowedFrames(TAB)).toEqual([]);
+  });
+
+  it('keeps each frame’s form and menu apart, and writes your pick in its own frame', async () => {
+    await answerScript({ ...hello, around: careers }, inFrame);
+    await answerScript({ type: 'job-site', do: 'form', form: FORM, job }, inFrame);
+    const key = FORM.fields[0]?.key as string;
+    // The tab's own page has no form the background knows of.
+    expect(
+      await answerScript(
+        { type: 'job-site', do: 'menu', ref: 0, key, token: TOKEN, answers: true, save: false },
+        fromScript,
+      ),
+    ).toEqual({ again: true });
+    expect(
+      await answerScript(
+        { type: 'job-site', do: 'menu', ref: 0, key, token: TOKEN, answers: true, save: false },
+        inFrame,
+      ),
+    ).toEqual({ answers: 1, save: false });
+    expect(
+      await answerFrame({ type: 'job-site', do: 'pick', token: TOKEN, at: 0 }, fromFrame),
+    ).toEqual({ ok: true });
+    expect(browser.told).toEqual([
+      {
+        tabId: TAB,
+        frameId: 3,
+        message: { type: 'job-site', do: 'write', answer: { ref: 0, key, text: 'Ana María Ruiz' } },
+      },
+    ]);
+  });
+
+  it('takes the Fill button’s clicks by its script’s name for its page, from its own tab alone', async () => {
+    await answerScript({ ...hello, around: careers }, inFrame);
+    expect(
+      await answerFrame({ type: 'job-site', do: 'hide-button', token: TOKEN }, fromFrame),
+    ).toBeNull();
+    expect(
+      await answerFrame(
+        { type: 'job-site', do: 'hide-button', token: DOC },
+        { tab: { id: 8, url: PAGE, windowId: 1 } },
+      ),
+    ).toBeNull();
+    expect(browser.told).toEqual([]);
+    expect(
+      await answerFrame({ type: 'job-site', do: 'hide-button', token: DOC }, fromFrame),
+    ).toEqual({});
+    expect(browser.told).toEqual([
+      { tabId: TAB, frameId: 3, message: { type: 'job-site', do: 'hide-button' } },
+    ]);
+  });
+
+  it('finds the Fill button’s script once the background has started again, as the browser keeps it', async () => {
+    await answerScript({ ...hello, around: careers }, inFrame);
+    // The background, idle a while, starts again with nothing in its memory.
+    vi.resetModules();
+    const again = await import('../src/on-job-sites.ts');
+    expect(
+      await again.answerFrame({ type: 'job-site', do: 'hide-button', token: DOC }, fromFrame),
+    ).toEqual({});
+    expect(browser.told).toEqual([
+      { tabId: TAB, frameId: 3, message: { type: 'job-site', do: 'hide-button' } },
+    ]);
+  });
+
+  it('tells each frame’s script to stop once its site isn’t allowed', async () => {
+    await answerScript({ ...hello, around: careers }, inFrame);
+    browser.items.jobSites = { all: false, sites: [] };
+    await stopWhereNotAllowed();
+    expect(browser.told).toEqual([
+      { tabId: TAB, frameId: 3, message: { type: 'job-site', do: 'stop' } },
+    ]);
+  });
+});
+
 describe('each message, checked', () => {
   it('takes only what the script sends, as it sends it', () => {
-    expect(isFromScript({ type: 'job-site', do: 'hello' })).toBe(true);
+    expect(isFromScript(hello)).toBe(true);
+    expect(isFromScript({ ...hello, around: ['https://careers.example.com'] })).toBe(true);
+    expect(isFromScript({ type: 'job-site', do: 'bye', doc: DOC })).toBe(true);
     expect(isFromScript({ type: 'job-site', do: 'form', form: FORM, job })).toBe(true);
     for (const bad of [
       null,
@@ -501,6 +621,11 @@ describe('each message, checked', () => {
       { type: 'job-site', do: 'menu', ref: 0, key: 'k', token: 'guess', answers: true, save: true },
       { type: 'job-site', do: 'left', ref: -1, key: 'k', value: 'x' },
       { type: 'job-site', do: 'left', ref: 0, key: 'k', value: 'x'.repeat(10_001) },
+      { type: 'job-site', do: 'hello' },
+      { ...hello, doc: 'mine' },
+      { ...hello, around: 'https://careers.example.com' },
+      { ...hello, around: Array.from({ length: 21 }, () => 'https://careers.example.com') },
+      { type: 'job-site', do: 'bye' },
     ]) {
       expect(isFromScript(bad)).toBe(false);
     }
@@ -510,6 +635,9 @@ describe('each message, checked', () => {
     expect(isFromFrame({ type: 'job-site', do: 'pick', token: TOKEN, at: 1 })).toBe(true);
     expect(isFromFrame({ type: 'job-site', do: 'pick', token: TOKEN, at: '1' })).toBe(false);
     expect(isFromFrame({ type: 'job-site', do: 'dismiss', token: TOKEN })).toBe(false);
+    expect(isFromFrame({ type: 'job-site', do: 'fill', token: DOC })).toBe(true);
+    expect(isFromFrame({ type: 'job-site', do: 'fill' })).toBe(false);
+    expect(isFromFrame({ type: 'job-site', do: 'hide-button', token: 'guess' })).toBe(false);
     expect(isFromFrame({ type: 'job-site', do: 'write', answer: {} })).toBe(false);
     expect(
       isToScript({ type: 'job-site', do: 'write', answer: { ref: 0, key: 'k', text: 'x' } }),

@@ -35,6 +35,13 @@ export interface Sender {
   frameId?: number;
 }
 
+/** Where in a tab a script runs: its top frame, unless it names frames, or all of them. */
+export interface InjectionTarget {
+  tabId: number;
+  frameIds?: number[];
+  allFrames?: boolean;
+}
+
 /**
  * A script the browser runs on the sites it names, as each of their pages loads, which the
  * extension registers for the job sites you allowed, and only those.
@@ -102,12 +109,15 @@ export interface Ext {
     onRemoved: Event<(tabId: number) => void>;
   };
   scripting: {
-    /** Runs one function in a tab's page, given what it's passed, and waits for what it gives back. */
+    /**
+     * Runs one function in a tab's page, or a frame of it, given what it's passed, and waits for
+     * what it gives back, from each frame it ran in.
+     */
     executeScript<Result, Args extends unknown[] = []>(
       injection:
-        | { target: { tabId: number }; func: (...args: Args) => Result; args?: Args }
-        | { target: { tabId: number }; files: string[] },
-    ): Promise<{ result?: Awaited<Result> }[]>;
+        | { target: InjectionTarget; func: (...args: Args) => Result; args?: Args }
+        | { target: InjectionTarget; files: string[] },
+    ): Promise<{ result?: Awaited<Result>; frameId?: number }[]>;
     /** Has the browser run a script on the sites it names, as their pages load, from now on. */
     registerContentScripts(scripts: ContentScript[]): Promise<void>;
     getRegisteredContentScripts(filter?: { ids?: string[] }): Promise<ContentScript[]>;
@@ -148,6 +158,15 @@ export interface Ext {
   };
   storage: {
     local: {
+      get(keys: string | string[] | null): Promise<Record<string, unknown>>;
+      set(items: Record<string, unknown>): Promise<void>;
+      remove(keys: string | string[]): Promise<void>;
+    };
+    /**
+     * What the extension keeps only while the browser runs, in memory, which only its own pages and
+     * its background can read: never written to the disk, and gone once the browser closes.
+     */
+    session?: {
       get(keys: string | string[] | null): Promise<Record<string, unknown>>;
       set(items: Record<string, unknown>): Promise<void>;
       remove(keys: string | string[]): Promise<void>;

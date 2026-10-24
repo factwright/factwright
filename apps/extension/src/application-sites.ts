@@ -1,4 +1,5 @@
 import {
+  APPLICANT_SYSTEMS,
   careersSite,
   isCareersSite,
   isCopyOnlySite,
@@ -162,14 +163,18 @@ export async function isChosenSite(site: string): Promise<boolean> {
 const SCRIPT = 'job-sites';
 export const SCRIPT_FILE = 'content.js';
 
-/** The script as the browser runs it: on each page of the sites, once it's loaded, in its top frame. */
+/**
+ * The script as the browser runs it: on each page of the sites, once it's loaded, whether it's a
+ * tab's page or in a frame of another site's page, as a company's careers page shows an applicant
+ * system's form. A frame from any other site never gets it.
+ */
 const scriptFor = (sites: string[]): ContentScript => ({
   id: SCRIPT,
   matches: sites,
   excludeMatches: NOT_JOB_SITES,
   js: [SCRIPT_FILE],
   runAt: 'document_idle',
-  allFrames: false,
+  allFrames: true,
   persistAcrossSessions: true,
 });
 
@@ -207,7 +212,10 @@ async function register(): Promise<string[]> {
   return sites;
 }
 
-/** Runs the script on the pages open on newly allowed sites. */
+/**
+ * Runs the script on the pages open on newly allowed sites, and in the frames from those sites in
+ * them. A frame from such a site in another site's page gets it once that page loads again.
+ */
 async function runOnOpenPages(sites: string[]): Promise<void> {
   let tabs: { id?: number; url?: string }[] = [];
   try {
@@ -220,10 +228,198 @@ async function runOnOpenPages(sites: string[]): Promise<void> {
       .filter((tab) => tab.id !== undefined && onAnySite(tab.url ?? '', sites))
       .map((tab) =>
         ext.scripting
-          .executeScript({ target: { tabId: tab.id as number }, files: [SCRIPT_FILE] })
+          .executeScript({
+            target: { tabId: tab.id as number, allFrames: true },
+            files: [SCRIPT_FILE],
+          })
           .catch(() => {
             // A page the browser keeps extensions out of, or one that closed meanwhile.
           }),
       ),
   );
+}
+
+/**
+ * A frame of a tab on a job site you allowed, where the extension's script runs, as the script
+ * said: a tab's top frame is 0, and one in it, as a company's page shows an applicant system's
+ * form, another number. The panel finds a form in such a frame by it, as Chrome lets the extension
+ * reach a frame on an allowed site in a page it can't otherwise read, by the frame's number alone.
+ */
+export interface JobFrame {
+  frameId: number;
+  url: string;
+  /** The script's own name for the page it's on, so a page that's gone forgets only itself. */
+  doc: string;
+}
+
+/** Where the frames are kept: in the browser's memory, while it runs, never on the disk. */
+const FRAMES = 'jobFrames';
+
+/** The most frames kept for a tab: more than any page has with forms in them. */
+const MOST_FRAMES = 20;
+
+/** Changes to the frames kept, each after the one before it. */
+let framesQueue: Promise<unknown> = Promise.resolve();
+
+/** The frames kept, by tab, as the browser has them, or none where it keeps nothing for a session. */
+async function framesKept(): Promise<Record<string, JobFrame[]>> {
+  const session = ext.storage.session;
+  if (!session) return {};
+  const { [FRAMES]: kept } = await session.get(FRAMES).catch(() => ({}) as Record<string, unknown>);
+  if (!kept || typeof kept !== 'object') return {};
+  const all: Record<string, JobFrame[]> = {};
+  for (const [tab, frames] of Object.entries(kept as Record<string, unknown>)) {
+    if (!Array.isArray(frames)) continue;
+    all[tab] = frames.filter(
+      (frame): frame is JobFrame =>
+        typeof frame === 'object' &&
+        frame !== null &&
+        Number.isInteger((frame as JobFrame).frameId) &&
+        typeof (frame as JobFrame).url === 'string' &&
+        typeof (frame as JobFrame).doc === 'string',
+    );
+  }
+  return all;
+}
+
+/** Changes the frames kept for a tab, after the changes before. */
+function changeFrames(tabId: number, change: (frames: JobFrame[]) => JobFrame[]): Promise<void> {
+  const next = framesQueue.then(async () => {
+    const session = ext.storage.session;
+    if (!session) return;
+    const all = await framesKept();
+    const frames = change(all[tabId] ?? []).slice(-MOST_FRAMES);
+    if (frames.length > 0) all[tabId] = frames;
+    else delete all[tabId];
+    await session.set({ [FRAMES]: all });
+  });
+  framesQueue = next.catch(() => {});
+  return next;
+}
+
+/**
+ * The frame whose script names its page so, in a tab, as the Fill button's frame names it: kept
+ * while the browser runs, as the background forgets what it held once it's been idle a while.
+ */
+export async function keptFrame(tabId: number, doc: string): Promise<JobFrame | null> {
+  await framesQueue;
+  return (await framesKept())[tabId]?.find((frame) => frame.doc === doc) ?? null;
+}
+
+/** Keeps a frame where the script runs, its tab's own page too, as its script says hello. */
+export const keepFrame = (tabId: number, frame: JobFrame) =>
+  changeFrames(tabId, (frames) => [
+    ...frames.filter((each) => each.frameId !== frame.frameId),
+    frame,
+  ]);
+
+/**
+ * Forgets a frame's page, as it goes, unless the frame shows another since, or all of a tab's
+ * frames, as the tab closes.
+ */
+export const forgetFrame = (tabId: number, page?: { frameId: number; doc: string }) =>
+  changeFrames(tabId, (frames) =>
+    page ? frames.filter((each) => each.frameId !== page.frameId || each.doc !== page.doc) : [],
+  );
+
+/**
+ * The frames of a tab, other than its top one, where the extension's script runs on a site you
+ * still allow: the only frames the panel reads a form in, as a tab's top page is the only one it
+ * reads otherwise, once you've clicked.
+ */
+export async function allowedFrames(tabId: number): Promise<JobFrame[]> {
+  const frames = (await framesKept())[tabId] ?? [];
+  const sites = await allowedSites();
+  return frames.filter(
+    (frame) => frame.frameId !== 0 && !isCopyOnlySite(frame.url) && onAnySite(frame.url, sites),
+  );
+}
+
+/** A frame of a tab, by its number, and the page it shows. */
+export interface FrameAt {
+  frameId: number;
+  url: string;
+}
+
+/** The address each frame of a tab shows, as the page's own. */
+const hereIs = () => location.href;
+
+/**
+ * The frames of a tab, other than its top one, that show a page on a job site you allowed: as the
+ * browser finds them, where it lets the extension reach the tab's own page, as once you've
+ * clicked; or else the frames the script said hello from, as Chrome reaches no frame of a page it
+ * can't reach, but by its number.
+ */
+export async function framesOnAllowedSites(tabId: number): Promise<FrameAt[]> {
+  let found: FrameAt[];
+  try {
+    const each = await ext.scripting.executeScript({
+      target: { tabId, allFrames: true },
+      func: hereIs,
+    });
+    found = each.flatMap(({ frameId, result }) =>
+      frameId && typeof result === 'string' ? [{ frameId, url: result }] : [],
+    );
+  } catch {
+    return allowedFrames(tabId);
+  }
+  const sites = await allowedSites();
+  return found.filter((frame) => !isCopyOnlySite(frame.url) && onAnySite(frame.url, sites));
+}
+
+/**
+ * Runs the script in the frames of a tab that show a page on a job site you allowed, as once you
+ * turn the sites on from the panel, beside a form in such a frame: the page around it doesn't get
+ * it, and a frame that has it already keeps the one it has.
+ */
+export async function runInFrames(tabId: number): Promise<void> {
+  const frames = await framesOnAllowedSites(tabId);
+  if (frames.length === 0) return;
+  await ext.scripting
+    .executeScript({
+      target: { tabId, frameIds: frames.map((frame) => frame.frameId) },
+      files: [SCRIPT_FILE],
+    })
+    .catch(() => {
+      // A frame that's gone meanwhile.
+    });
+}
+
+/** The frames' addresses on a tab's own page, as its elements say them, at most this many. */
+const MOST_FRAMED = 50;
+
+/** The addresses of the frames on a page, as its elements say them, read in the page. */
+function framedAddresses(most: number): string[] {
+  return [...document.querySelectorAll('iframe[src], frame[src]')]
+    .map((frame) => (frame as HTMLIFrameElement).src)
+    .filter((src) => /^https?:\/\//i.test(src))
+    .slice(0, most);
+}
+
+/**
+ * The applicant system whose form a tab's page shows in a frame, on a job application site you
+ * haven't allowed, by the frame's address on the page: the panel offers to turn the sites on to
+ * fill it. Null where there's none, or the browser doesn't let the extension read the page.
+ */
+export async function framedSystem(tabId: number): Promise<string | null> {
+  let addresses: string[] = [];
+  try {
+    const [first] = await ext.scripting.executeScript({
+      target: { tabId },
+      func: framedAddresses,
+      args: [MOST_FRAMED],
+    });
+    addresses = Array.isArray(first?.result) ? first.result : [];
+  } catch {
+    return null;
+  }
+  const sites = await allowedSites();
+  for (const address of addresses) {
+    if (typeof address !== 'string' || isCopyOnlySite(address) || onAnySite(address, sites)) {
+      continue;
+    }
+    const system = APPLICANT_SYSTEMS.find((each) => onAnySite(address, each.sites));
+    if (system) return system.name;
+  }
+  return null;
 }
