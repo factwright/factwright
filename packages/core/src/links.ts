@@ -64,7 +64,8 @@ export function isJobLink(url: string): boolean {
   const host = trimEndOf(normal.split(/[/?#]/, 1)[0] ?? '', '.');
   // A company's own page, or a part of it, as LinkedIn's /company/acme/jobs is, lists its jobs;
   // a page further in, as SmartRecruiters' form at /company/acme/publication/<id>, is one job's.
-  const companyPage = /\/(company|cmp)\/[^/?#]+(\/(jobs|about|life|people|posts|reviews|salaries|benefits|photos|faq|insights|videos))?\/?($|[?#])/;
+  const companyPage =
+    /\/(company|cmp)\/[^/?#]+(\/(jobs|about|life|people|posts|reviews|salaries|benefits|photos|faq|insights|videos))?\/?($|[?#])/;
   if (host === 'news.ycombinator.com' || companyPage.test(normal)) return false;
   const [path = '', query] = normal.split('?');
   return Boolean(query) || path.split('/').filter(Boolean).length >= 3;
