@@ -7,8 +7,11 @@
 // button on the form, and Firefox, which opens its sidebar only from a click of its own, has the
 // button fill the form there, which, with no Factwright on this computer, says so. A careers page
 // on another site that shows the form in a frame gets the button in the frame, and the extension
-// reads the form there. Turned off, the script and its button are gone. Nothing is submitted. As e2e:firefox does, it
-// needs Mozilla's Firefox 158 or later, which FIREFOX names, or on a Mac the one in Applications.
+// reads the form there. Then, linked through sync to a job hunt Factwright on another computer
+// synced, to a local copy of the sync server, the button fills the form from it, the job's resume
+// uploaded from what sync holds, as on a computer without Factwright. Turned off, the script and
+// its button are gone. Nothing is submitted. As e2e:firefox does, it needs Mozilla's Firefox 158
+// or later, which FIREFOX names, or on a Mac the one in Applications.
 // `pnpm --filter @factwright/extension e2e:firefox-fill`.
 import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs';
@@ -18,6 +21,7 @@ import { tmpdir } from 'node:os';
 import { delimiter, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { SAVE_HELPER } from '@factwright/core';
+import { startServer, type TestServer } from '@factwright/server/testing';
 import { FIREFOX_ID } from '../src/manifest.ts';
 import type {
   FieldAnswer,
@@ -28,6 +32,7 @@ import type {
 } from '../src/page/form.ts';
 import { Firefox, waitFor } from './bidi.ts';
 import { ASHBY_PRESSES, LEVER_LOOKS_UP, withOwnCode } from './sites-own-code.ts';
+import { PDF, syncedHunt } from './synced-hunt.ts';
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
 const FIXTURES = join(ROOT, 'test', 'fixtures');
@@ -99,13 +104,16 @@ origin = `http://127.0.0.1:${port}`;
 const careers = `http://localhost:${port}`;
 const work = mkdtempSync(join(tmpdir(), 'fw-firefox-fill-'));
 let firefox: Firefox | null = null;
+let sync: TestServer | null = null;
 let failed = false;
 try {
-  // Built for this computer's site as its sync server, which it may reach, so it may read the
-  // pages here without a click on its button, which WebDriver BiDi can't make.
+  // Built for a local copy of the sync server, on this computer, whose site it may reach, as the
+  // pages' here is, so it may read them without a click on its button, which WebDriver BiDi can't
+  // make.
+  sync = await startServer();
   execFileSync('node', ['scripts/build.ts'], {
     cwd: ROOT,
-    env: { ...process.env, VITE_FACTWRIGHT_SYNC_SERVER: origin },
+    env: { ...process.env, VITE_FACTWRIGHT_SYNC_SERVER: sync.url.origin },
     stdio: 'ignore',
   });
   const extension = join(ROOT, 'dist', 'firefox');
@@ -459,6 +467,85 @@ try {
     'and its Fill button there fills the form in the frame, as it does on the form’s own page',
   );
 
+  // Through sync, as on a computer without Factwright: Factwright on another computer synced its
+  // job hunt. The extension is signed in to the account, as setup's sign-in leaves it, which in
+  // Firefox is through its sign-in window (Chromium's run signs in through setup itself), and
+  // setup links it with a link code, which gives native messaging back. Then the Fill button, as
+  // Firefox opens no sidebar for it, fills the form from the job hunt.
+  const server = sync;
+  const hunt = await syncedHunt(server, join(work, 'computer'), lever);
+  const session = await server.newSession(
+    hunt.sam.id,
+    `Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:${running.version}) Gecko/20100101 Firefox/${running.version}`,
+    'device',
+  );
+  await running.run(
+    setup,
+    (account: object) =>
+      new Promise((done, failed) => {
+        const opened = indexedDB.open('save-to-factwright', 1);
+        opened.onupgradeneeded = () => opened.result.createObjectStore('account');
+        opened.onerror = () => failed(opened.error);
+        opened.onsuccess = () => {
+          const put = opened.result
+            .transaction('account', 'readwrite')
+            .objectStore('account')
+            .put(account, 'current');
+          put.onsuccess = () => done(true);
+          put.onerror = () => failed(put.error);
+        };
+      }),
+    {
+      server: server.url.origin,
+      user: hunt.sam.id,
+      email: hunt.sam.email,
+      token: session.token,
+      keys: null,
+    },
+  );
+  await running.send('browsingContext.reload', { context: setup, wait: 'complete' });
+  await says(setup, 'Use a link code or your recovery key instead');
+  await running.run(
+    setup,
+    (code: string) => {
+      const details = document.querySelector('details');
+      if (details) details.open = true;
+      (document.querySelector('#code') as HTMLInputElement).value = code;
+    },
+    await hunt.linkCode(),
+  );
+  await click(setup, 'Link with the code');
+  await says(setup, 'Filling an application');
+  check(true, 'signed in to sync, setup links it with a link code, in Firefox');
+  await running.send('browsingContext.navigate', { context: tab, url: lever, wait: 'complete' });
+  const syncButton = await frameOn(tab, 'button');
+  await new Promise((resolve) => setTimeout(resolve, 600));
+  await click(syncButton, 'Fill');
+  await says(syncButton, 'Filled ');
+  const inForm = (name: string) =>
+    running.run(
+      tab,
+      (field: string) =>
+        (document.querySelector(`[name="${field}"]`) as HTMLInputElement | null)?.value ?? null,
+      name,
+    );
+  check(
+    (await inForm('name')) === 'Ana María Ruiz' &&
+      (await inForm('email')) === 'ana@example.com' &&
+      (await inForm('org')) === 'Tidewater Analytics',
+    'its Fill button fills the form from your job hunt, through sync, with no Factwright here',
+  );
+  const uploaded = await running.run(tab, () =>
+    [
+      ...((document.querySelector('input[type="file"][name="resume"]') as HTMLInputElement | null)
+        ?.files ?? []),
+    ].map((file) => `${file.name} ${file.size}`),
+  );
+  check(
+    JSON.stringify(uploaded) === JSON.stringify([`Ana María Ruiz - Resume.pdf ${PDF.length}`]),
+    'and uploads the job’s resume from what sync holds, through Firefox’s content-script sandbox',
+  );
+
   await click(setup, 'Turn off');
   await says(setup, 'Off for job application sites.');
   await waitFor('the Fill button to go', async () => {
@@ -477,6 +564,7 @@ try {
 } finally {
   await firefox?.close().catch(() => {});
   site.close();
+  sync?.close();
   // Firefox may hold its profile a moment after it stops.
   try {
     rmSync(work, { recursive: true, force: true, maxRetries: 10, retryDelay: 300 });

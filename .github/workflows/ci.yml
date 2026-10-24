@@ -74,6 +74,9 @@ jobs:
       # The panel fills a form served on the runner, through the desktop app's helper, built with
       # gcc, and the app's own inbox and fill code.
       - run: pnpm --filter @factwright/extension e2e:fill
+      # And through sync, from a job hunt the app's own sync put on a local sync server, as on a
+      # computer without Factwright.
+      - run: pnpm --filter @factwright/extension e2e:sync-fill
 
   firefox:
     name: The extension in Firefox

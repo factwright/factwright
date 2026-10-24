@@ -31,6 +31,7 @@ import {
   trackedNote,
   trackedRow,
   wholeJobId,
+  withSentAnswers,
 } from '@factwright/core';
 import type { RowValues } from '@factwright/sync';
 import type {
@@ -508,18 +509,7 @@ export class Tracker {
   ): RecordedAnswers {
     const job = this.row(jobId);
     if (!job) return NOT_FOUND;
-    let sent = job.sent;
-    let recorded = 0;
-    for (const { question, nth, text } of answers) {
-      const key = questionKey(question);
-      if (!key || !text.trim()) continue;
-      const same = (each: SentAnswer) => questionKey(each.question) === key && each.nth === nth;
-      const at = sent.findIndex(same);
-      if (at < 0 && sent.length >= LIMITS.questions) continue;
-      const answer = { question, nth, text, on: context.today, at: context.now };
-      sent = at < 0 ? [...sent, answer] : sent.map((each, index) => (index === at ? answer : each));
-      recorded += 1;
-    }
+    const { sent, recorded } = withSentAnswers(job.sent, answers, context);
     if (recorded > 0) {
       this.db
         .prepare('UPDATE jobs SET sent = ?, updated_at = ? WHERE id = ?')

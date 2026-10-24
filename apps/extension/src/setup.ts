@@ -1113,6 +1113,29 @@ const savingSteps = (shows: string) => [
   ),
 ];
 
+/**
+ * How filling an application works through sync, in a browser where Factwright may not be: from
+ * your job hunt, but for what Profile keeps on your computer alone.
+ */
+const fillingSteps = () => [
+  h('h2', {}, 'Filling an application'),
+  h(
+    'ul',
+    { class: 'steps' },
+    h(
+      'li',
+      {},
+      'On an application form, click the Factwright button, then Fill this application. It fills the form from your job hunt: Profile, your resumes and work history, and what you sent before, and it uploads the job’s resume and cover letter.',
+    ),
+    h(
+      'li',
+      {},
+      'Your street, postal code and equal-opportunity answers stay on your computer with Factwright, so they’re left for you. The form’s new questions can be left with the job, for your Claude in Factwright to draft.',
+    ),
+    h('li', {}, 'It never submits a form. Check each answer, then submit it yourself.'),
+  ),
+];
+
 /** What it reads and when, with `sent`, where what it saves goes. */
 const whatItReads = (sent: string) => [
   h('h2', {}, 'What it reads, and when'),
@@ -1168,7 +1191,7 @@ async function showJobSites(box: HTMLElement): Promise<void> {
     h(
       'p',
       { class: 'small' },
-      'On the job application sites you allow, Factwright shows its answers in a form’s fields as you fill it in, offers to keep a new answer you type, and puts a Fill button on the form. Nothing goes in a field until you pick it. The answers come from Factwright on this computer, as Fill’s do. Everywhere else, click Fill this application, as now.',
+      'On the job application sites you allow, Factwright shows its answers in a form’s fields as you fill it in, and puts a Fill button on the form. Nothing goes in a field until you pick it. The answers come from Factwright on this computer, or your job hunt through sync, as Fill’s do, and with Factwright on this computer, it offers to keep a new answer you type. Everywhere else, click Fill this application, as now.',
     ),
     h(
       'p',
@@ -1222,7 +1245,7 @@ async function showJobSites(box: HTMLElement): Promise<void> {
     h(
       'p',
       { class: 'small muted' },
-      'There, its script sees a form’s fields and their questions, as Fill does, and what you type in a field Profile can keep, once you leave it, to offer to save it. Your answers show in its own menu, which the site can’t read, and the site can tell the extension is there. It never fills a password and never submits a form.',
+      'There, its script sees a form’s fields and their questions, as Fill does, and with Factwright on this computer, what you type in a field Profile can keep, once you leave it, to offer to save it. Your answers show in its own menu, which the site can’t read, and the site can tell the extension is there. It never fills a password and never submits a form.',
     ),
   );
 }
@@ -1236,8 +1259,9 @@ async function linked(account: Account): Promise<void> {
     ...savingSteps(
       'It shows in Factwright on your computer as a New job once it syncs, with its link and its posting.',
     ),
+    ...fillingSteps(),
     ...whatItReads(
-      'What it saves is locked with your job hunt’s key, which it keeps in this browser where it can’t be copied out.',
+      'What it saves is locked with your job hunt’s key, which it keeps in this browser where it can’t be copied out. To fill a form, it opens your job hunt with that key, and keeps what it reads only while it fills.',
     ),
     ...linkedInSetting(linkedInText),
     ...jobSitesSetting(),

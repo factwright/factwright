@@ -15,8 +15,9 @@ import { DEFAULT_SERVER, isOwn } from './server.ts';
  * What the extension keeps once it's set up: its own sign-in to sync, and the account's keys. The
  * keys open the whole job hunt, as each linked device's do, so they're kept as Web Crypto keys that
  * can't be read back out: this browser's copy of the extension can use them, but nothing can copy
- * them. It only ever uses them to lock what it saves, and to open the job already at the ID it
- * would save to, which may be one the app made, to tell whether it's the same job.
+ * them. It uses them to lock what it saves, to open the job already at the ID it would save to,
+ * which may be one the app made, to tell whether it's the same job, and to read the job hunt when
+ * it fills a form, in memory alone (src/sync-fill.ts).
  */
 export interface Account {
   /**

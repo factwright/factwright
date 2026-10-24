@@ -13,11 +13,11 @@ import {
 } from '@factwright/core';
 import { looksLikeApplication } from './application-form.ts';
 import { framesOnAllowedSites, isAllowedPage } from './application-sites.ts';
-import { askComputer } from './computer.ts';
 
 export { looksLikeApplication } from './application-form.ts';
 
 import { ext } from './ext.ts';
+import type { FillWay } from './fill-way.ts';
 import {
   type FieldAnswer,
   type FieldFilled,
@@ -32,8 +32,9 @@ import {
 
 /**
  * Filling an application form, as the side panel does it: it reads the form in the tab you asked
- * it to fill, asks Factwright on this computer for an answer to each field, fetches the job's
- * resume and cover letter to upload, fills the form, and later reads the answers you sent. The
+ * it to fill, asks Factwright on this computer, or your job hunt through sync (src/fill-way.ts),
+ * for an answer to each field, fetches the job's resume and cover letter to upload, fills the
+ * form, and later reads the answers you sent. The
  * page's own function does the reading and filling (page/form.ts), sent into the page each time,
  * only while the browser lets the extension reach that tab. The form may be in a frame of the
  * tab's page, as a company's careers page shows an applicant system's form, but only a frame from
@@ -177,15 +178,16 @@ function asked(url: string): string {
 export type FillPlan = Extract<InboxAskAnswer, { did: 'fill' }>;
 
 /**
- * Asks Factwright on this computer how to fill a form. Factwright 0.13 takes a form's fields
- * without the part of the form each is in, so it's asked again without them, when it refuses.
+ * Asks how to fill a form, the way it's filled. Factwright 0.13 takes a form's fields without the
+ * part of the form each is in, so it's asked again without them, when it refuses.
  */
 export async function planFill(
   form: PageForm,
   job: { company: string; role: string },
-): ReturnType<typeof askComputer> {
+  way: FillWay,
+): ReturnType<FillWay['ask']> {
   const ask = (fields: AskedField[]) =>
-    askComputer({
+    way.ask({
       ask: 'fill',
       url: asked(form.url),
       title: form.title.slice(0, 1000),
@@ -227,11 +229,12 @@ export function draftable(
 }
 
 /**
- * Asks Factwright on this computer to have your Claude draft answers to some of a form's own
- * questions, in its window, for the job the form is for.
+ * Asks for your Claude to draft answers to some of a form's own questions, for the job the form is
+ * for: Factwright on this computer starts it in its window, and through sync, they're left with the
+ * job, for your Claude in Factwright on your computer.
  */
-export const askForDrafts = (form: PageForm, jobId: string, fields: PageField[]) =>
-  askComputer({
+export const askForDrafts = (form: PageForm, jobId: string, fields: PageField[], way: FillWay) =>
+  way.ask({
     ask: 'draft',
     job: jobId,
     url: asked(form.url),
@@ -239,17 +242,18 @@ export const askForDrafts = (form: PageForm, jobId: string, fields: PageField[])
   });
 
 /** How your Claude's drafts for a job are coming along, as Factwright on this computer says. */
-export const draftsSoFar = (jobId: string) => askComputer({ ask: 'drafts', job: jobId });
+export const draftsSoFar = (jobId: string, way: FillWay) => way.ask({ ask: 'drafts', job: jobId });
 
-/** One of a job's files, fetched from Factwright on this computer in its parts, as base64. */
+/** One of a job's files, fetched the way the form's filled, in its parts, as base64. */
 export async function fetchFile(
   jobId: string,
   kind: 'resume' | 'cover-letter',
   offered: OfferedFile,
+  way: FillWay,
 ): Promise<string | null> {
   let base64 = '';
   for (let part = 0; part < offered.parts; part++) {
-    const answer = await askComputer({
+    const answer = await way.ask({
       ask: 'file',
       job: jobId,
       file: kind,
@@ -349,6 +353,8 @@ const PASSES = 3;
 /** A form being filled, as filling it in passes goes along. */
 export interface Passes {
   place: FormPlace;
+  /** The way its answers came, which its files and later answers come the same way. */
+  way: FillWay;
   /** The form as read, which gains the fields the form shows as it's filled. */
   form: PageForm;
   /** Factwright's answers, which gain the replies for those fields. */
@@ -375,7 +381,7 @@ export interface Passes {
 export async function fillInPasses(
   passes: Passes,
 ): Promise<true | 'elsewhere' | 'unreachable' | 'stale'> {
-  const { place, form, plan, shows, filled, stale } = passes;
+  const { place, way, form, plan, shows, filled, stale } = passes;
   const { job, files } = plan;
   const replies = plan.replies;
   const fetched: Partial<Record<'resume' | 'cover-letter', { name: string; base64: string }>> = {};
@@ -386,7 +392,7 @@ export async function fillInPasses(
       passes.status?.(
         kind === 'resume' ? 'Getting the job’s resume…' : 'Getting the job’s cover letter…',
       );
-      const base64 = await fetchFile(job.id, kind, offered);
+      const base64 = await fetchFile(job.id, kind, offered, way);
       if (stale()) return 'stale';
       if (base64) fetched[kind] = { name: offered.name, base64 };
     }
@@ -411,7 +417,7 @@ export async function fillInPasses(
     const known = new Set(form.fields.map((field) => field.key));
     const added = again.fields.filter((field) => !known.has(field.key));
     if (added.length === 0) break;
-    const planned = await planFill({ ...again, fields: added }, shows);
+    const planned = await planFill({ ...again, fields: added }, shows, way);
     if (stale()) return 'stale';
     if (!planned.ok || planned.did !== 'fill') break;
     from = form.fields.length;

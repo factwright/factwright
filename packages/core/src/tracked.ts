@@ -355,13 +355,16 @@ interface Kept {
 
 /**
  * Every job to show: each tracker row joined with what the workspace says about it. A job whose
- * files are gone stays listed only while the user has tracked something about it, and a job the
- * user merged into another isn't listed on its own.
+ * files are gone stays listed only while the user has tracked something about it, unless
+ * `untracked` keeps those too, as filling a form through sync does, which reads no job search's
+ * files, so it finds a job only a search turned up by its row. A job the user merged into another
+ * isn't listed on its own.
  */
 export function jobList(
   rows: readonly TrackedRow[],
   found: ReadonlyMap<string, CollectedJob>,
   items: TrackedItems,
+  { untracked = false }: { untracked?: boolean } = {},
 ): Job[] {
   const merged = mergedTargets(rows);
   return rows.flatMap((row) => {
@@ -377,7 +380,7 @@ export function jobList(
         calls.some((call) => call.id === doc.callId),
       ),
     };
-    if (!job && !isTracked(row, kept.calls.length + kept.notes.length)) return [];
+    if (!job && !untracked && !isTracked(row, kept.calls.length + kept.notes.length)) return [];
     return [assemble(row, job, kept)];
   });
 }

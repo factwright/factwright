@@ -1,6 +1,6 @@
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative, sep } from 'node:path';
-import { factBlocks, localDate, UNCONFIRMED } from '@factwright/core';
+import { factBlocks, localDate, PROFILE_FILES, UNCONFIRMED } from '@factwright/core';
 import { DEFAULT_TEMPLATE } from '@factwright/engine';
 import type { AboutYou } from '../../shared/about.ts';
 import { BEYOND_FILE, PROJECTS_CHANGED } from '../../shared/beyond.ts';
@@ -10,7 +10,7 @@ import { untouched } from '../../shared/stamp.ts';
 
 /** Where the about-me files live in the workspace. */
 export const ABOUT = {
-  answers: 'about-me/answers.json',
+  answers: PROFILE_FILES.answers,
   notes: 'about-me/notes.md',
   /** What Claude has read, which it keeps as it goes: "- <path> · <YYYY-MM-DD>" per line. */
   read: 'about-me/read.md',
