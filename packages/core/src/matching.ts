@@ -40,6 +40,8 @@ export function postingKey(address: string): string | null {
     if (board.kind === 'gem') return `gem:${board.board.toLowerCase()}:${id}`;
     return `${board.kind}:${id.toLowerCase()}`;
   }
+  const workday = workdayPosting(host, url.pathname);
+  if (workday) return workday;
   if (/(^|\.)linkedin\.com$/.test(host) && /^\/jobs(\/|$)/.test(url.pathname)) {
     // jobs/view/<id>, or jobs/view/<its title>-<id>.
     const view = url.pathname.match(/^\/jobs\/view\/([^/]+)/)?.[1];
@@ -51,6 +53,30 @@ export function postingKey(address: string): string | null {
     return id && OPAQUE_ID.test(id) ? `indeed:${id.toLowerCase()}` : null;
   }
   return null;
+}
+
+/**
+ * A Workday posting's key, by the company's own site on Workday and the posting's ID, which ends
+ * its job's part of the address, after the last "_": the same for the posting and its
+ * application, as "…/job/Denver/Product-Manager_R101" and "…/Product-Manager_R101/apply" are. A
+ * company's site is its own name at myworkdayjobs.com, or the part after "recruiting" at
+ * myworkdaysite.com.
+ */
+function workdayPosting(host: string, path: string): string | null {
+  const parts = path.split('/').filter(Boolean);
+  let site = '';
+  if (/^[a-z0-9-]+\.wd\d+\.myworkdayjobs\.com$/.test(host)) site = host.split('.')[0] ?? '';
+  else if (/^(wd\d+\.)?myworkdaysite\.com$/.test(host)) {
+    const at = parts.indexOf('recruiting');
+    site = at < 0 ? '' : (parts[at + 1] ?? '');
+  } else return null;
+  const job = parts.findIndex((part) => part === 'job' || part === 'details');
+  if (!site || job < 0) return null;
+  const after = parts.slice(job + 1);
+  const ends = after.indexOf('apply');
+  const posting = (ends < 0 ? after : after.slice(0, ends)).at(-1) ?? '';
+  const id = /_([A-Za-z0-9-]{1,40})$/.exec(posting)?.[1];
+  return id ? `workday:${site.toLowerCase()}:${id.toLowerCase()}` : null;
 }
 
 /** The site a posting's key is on, such as "greenhouse" or "linkedin". */

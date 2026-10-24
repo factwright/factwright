@@ -6,6 +6,7 @@ import {
   type AskedJob,
   answerForm,
   applicationAnswers,
+  blocksOnFile,
   FILE_LIMIT,
   FILE_PART_BYTES,
   fieldKind,
@@ -251,6 +252,7 @@ async function fill(
     job: job ? asked(job) : null,
     replies: answerForm(ask.fields, onFile),
     files: { resume: cv, 'cover-letter': coverLetter },
+    blocks: blocksOnFile(onFile),
   };
 }
 

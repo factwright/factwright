@@ -37,6 +37,7 @@ import {
   NO_EQUAL_OPPORTUNITY,
   NO_HISTORY,
   SAVE_HELPER,
+  type WorkHistory,
 } from '@factwright/core';
 import { type BrowserContext, chromium, type Page } from '@playwright/test';
 import { PrivateAnswers } from '../../desktop/src/main/about/private.ts';
@@ -46,7 +47,7 @@ import { JobsService } from '../../desktop/src/main/jobs/service.ts';
 import { Tracker } from '../../desktop/src/main/jobs/tracker.ts';
 import { type AboutYou, applyChanges, NO_ANSWERS } from '../../desktop/src/shared/about.ts';
 import { PRIVATE_FILE } from '../../desktop/src/shared/private.ts';
-import { LEVER_LOOKS_UP, withOwnCode } from './sites-own-code.ts';
+import { LEVER_LOOKS_UP, withOwnCode, workdayCode } from './sites-own-code.ts';
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
 const DESKTOP = fileURLToPath(new URL('../../desktop', import.meta.url));
@@ -78,12 +79,40 @@ const CAREERS_PATH = '/careers/northwind';
 /** A careers page on the form's own site, which shows it in a frame too, and could read it. */
 const SAME_SITE_PATH = '/careers/same-site';
 
+/**
+ * A Workday application, at its own address, as its pages are built from Workday's markup, with
+ * its own code acted out: it runs over several pages in the tab, the next ones from here.
+ */
+const WORKDAY_PATH =
+  '/larkspur/job/Denver-CO/Senior-Product-Manager_R2026-0147/apply/applyManually';
+const WORKDAY_PAGES = '/workday-pages/';
+const WORKDAY_STEPS = [
+  'my-information',
+  'my-experience',
+  'application-questions',
+  'voluntary-disclosures',
+  'self-identify',
+  'review',
+];
+
 /** A site on this computer: the application forms, and "Not found" for anything else. */
 async function site() {
   const lever = readFileSync(join(FIXTURES, 'lever-application.html'), 'utf8');
   const pages: Record<string, Buffer> = {
     [FORM_PATH]: Buffer.from(withOwnCode(lever, LEVER_LOOKS_UP)),
     [TRAPS_PATH]: readFileSync(join(FIXTURES, 'hidden-fields.html')),
+    [WORKDAY_PATH]: Buffer.from(
+      withOwnCode(
+        readFileSync(join(FIXTURES, 'workday-my-information.html'), 'utf8'),
+        workdayCode(WORKDAY_PAGES),
+      ),
+    ),
+    ...Object.fromEntries(
+      WORKDAY_STEPS.map((step) => [
+        `${WORKDAY_PAGES}workday-${step}.html`,
+        readFileSync(join(FIXTURES, `workday-${step}.html`)),
+      ]),
+    ),
   };
   let requests = 0;
   const server = createServer((request, response) => {
@@ -184,6 +213,23 @@ try {
     createRequire(join(DESKTOP, 'package.json')).resolve('@factwright/xray/fixtures/engineer.pdf'),
   );
   writeFileSync(join(folder, 'AnaRuizResume10202026_Northwind.pdf'), pdf);
+  // The Workday job, found on LinkedIn, with its application's address on Workday.
+  const workdayFolder = join(
+    workspace,
+    'applications',
+    '2026-10-21-larkspur-energy-senior-product-manager',
+  );
+  mkdirSync(workdayFolder, { recursive: true });
+  writeFileSync(
+    join(workdayFolder, 'job.md'),
+    [
+      '# Larkspur Energy: Senior Product Manager',
+      '',
+      '- **Date:** 2026-10-21',
+      '- **Apply:** LinkedIn https://www.linkedin.com/jobs/view/4099999999/',
+      `- **Links:** Workday ${local.origin}${WORKDAY_PATH}`,
+    ].join('\n'),
+  );
   const tracker = new Tracker(join(home, 'tracker.db'));
   const jobs = new JobsService({ workspace, tracker, onChange: () => {} });
   jobs.read();
@@ -207,8 +253,10 @@ try {
       countries: ['United States'],
     },
   };
+  /** Profile's work history: none, until the Workday application, which asks for each job. */
+  let history: WorkHistory = NO_HISTORY;
   const aboutStore = {
-    history: () => NO_HISTORY,
+    history: () => history,
     answers: () => about,
     saveAnswers: (changes: Parameters<typeof applyChanges>[1]) => {
       about = applyChanges(about, changes);
@@ -765,6 +813,237 @@ try {
     'Fill this application on a careers page fills the form in its frame, and the panel lists its fields',
   );
   await besideCareers.close();
+
+  // Workday's application, which runs over several pages in one tab. Profile's work history has
+  // three positions at two companies, and two schools, and Workday's own code is acted out on its
+  // pages, as they're built from Workday's markup.
+  history = {
+    jobs: [
+      {
+        company: 'Tidewater Analytics',
+        location: 'Denver, CO',
+        positions: [
+          { title: 'Director of Product', start: '2023-04', end: 'present', summary: '' },
+          { title: 'Senior Product Manager', start: '2021-03', end: '2023-04', summary: '' },
+        ],
+      },
+      {
+        company: 'Fernway',
+        location: 'Boulder, CO',
+        positions: [{ title: 'Product Manager', start: '2018-06', end: '2021-03', summary: '' }],
+      },
+    ],
+    schools: [
+      {
+        school: 'CU Boulder',
+        degree: 'B.S.',
+        field: 'Computer Science',
+        start: '2013',
+        end: '2017',
+      },
+      { school: 'Denver East High School', degree: '', field: '', start: '2009', end: '2013' },
+    ],
+  };
+  about = {
+    ...about,
+    applications: { ...about.applications, howHeard: 'LinkedIn', sponsorship: 'no' },
+  };
+  kept.save({ street: '1420 Larimer St', postalCode: '80202' });
+  const workday = await context.newPage();
+  workday.on('pageerror', (error) => errors.push(error.message));
+  await workday.goto(`${local.origin}${WORKDAY_PATH}`);
+  await workday.bringToFront();
+  const workdayTab = (
+    await setup.evaluate(
+      (url) =>
+        (
+          globalThis as unknown as {
+            chrome: { tabs: { query(query: object): Promise<{ id: number; windowId: number }[]> } };
+          }
+        ).chrome.tabs.query({ url }),
+      `${local.origin}${WORKDAY_PATH}`,
+    )
+  )[0];
+  if (!workdayTab) throw new Error('No tab with the Workday application.');
+  await frameOn('button', '', 20_000, workday);
+  check(true, 'a page of Workday’s application gets the Fill button, with no file or email on it');
+  const workdayPanel = await panelOn({
+    id: workdayTab.id,
+    windowId: workdayTab.windowId,
+    url: `${local.origin}${WORKDAY_PATH}`,
+    title: await workday.title(),
+  });
+  /** What's in one of the Workday page's boxes, by its id. */
+  const typedIn = (id: string) =>
+    workday.locator(`[id="${id}"]`).evaluate((input) => (input as HTMLInputElement).value);
+  /** What one of its dropdowns shows, by its id. */
+  const shows = (id: string) =>
+    workday.locator(`[id="${id}"]`).evaluate((button) => button.textContent?.trim() ?? '');
+  /** What a date's part shows beside its box, by the part's id, as Workday shows what's typed. */
+  const dateShows = (id: string) =>
+    workday.locator(`[id="${id}-display"]`).evaluate((each) => each.textContent?.trim() ?? '');
+  /** What's in a box of one of Workday's parts, by the part's heading's id and the box's name. */
+  const inPart = (panel: string, name: string) =>
+    workday
+      .locator(`[aria-labelledby="${panel}"] [name="${name}"]`)
+      .evaluate((input) => (input as HTMLInputElement).value);
+  /** What one of its lists you search keeps, as pills, by the box's id. */
+  const pills = (id: string) =>
+    workday
+      .locator(`[id="${id}"]`)
+      .evaluate((input) =>
+        [
+          ...(input
+            .closest('[data-automation-id="multiselectInputContainer"]')
+            ?.querySelectorAll('[data-automation-id="selectedItem"]') ?? []),
+        ]
+          .map((pill) => pill.textContent?.trim() ?? '')
+          .join(', '),
+      );
+  /** Presses Workday's own Save and Continue, as you would, and waits for the panel's offer. */
+  const nextPage = async (step: string) => {
+    await workday.getByRole('button', { name: 'Save and Continue', exact: true }).click();
+    await workdayPanel
+      .getByText(`The application is on ${step} now`, { exact: false })
+      .waitFor({ timeout: 20_000 });
+  };
+  /** Fills the page the application's on, from the panel's offer, and waits until it's done. */
+  const fillThisPage = async () => {
+    await workdayPanel.getByRole('button', { name: 'Fill this page', exact: true }).click();
+    await workdayPanel.getByText(/^Filled \d+ of \d+ fields/).waitFor({ timeout: 40_000 });
+  };
+  await workdayPanel.getByText(/^Filled \d+ of \d+ fields/).waitFor({ timeout: 40_000 });
+  check(
+    (await workdayPanel.getByText('Senior Product Manager at Larkspur Energy').count()) === 1,
+    'the panel finds the Workday job by its application’s address',
+  );
+  check(
+    (await typedIn('name--legalName--firstName')) === 'Ana María' &&
+      (await typedIn('name--legalName--lastName')) === 'Ruiz' &&
+      (await typedIn('address--addressLine1')) === '1420 Larimer St' &&
+      (await typedIn('address--postalCode')) === '80202' &&
+      (await typedIn('phoneNumber--phoneNumber')) === about.you.phone,
+    'it fills My Information’s boxes, the address after Workday puts it in again for the country',
+  );
+  check(
+    (await shows('country--country')) === 'United States of America' &&
+      (await shows('address--countryRegion')) === 'Colorado',
+    'and picks from Workday’s dropdowns, Country and State',
+  );
+  check(
+    (await pills('source--source')) === 'LinkedIn',
+    'and from How Did You Hear About Us?, through its groups, as typing LinkedIn finds nothing there',
+  );
+  check(
+    (await pills('phoneNumber--countryPhoneCode')) === 'United States of America (+1)',
+    'and leaves Country Phone Code as Workday picked it',
+  );
+  await shoot(workdayPanel, 'fill-9-workday-panel');
+  await shoot(workday, 'fill-10-workday-my-information');
+
+  // Workday's own Save and Continue, pressed as you would: the panel offers to fill the next page,
+  // as the script on the page tells it, and the Fill button stays on it.
+  await nextPage('My Experience');
+  await frameOn('button', '', 20_000, workday);
+  check(
+    (await workdayPanel.getByRole('button', { name: 'Fill again', exact: true }).count()) === 0,
+    'Save and Continue brings My Experience in, and the panel offers to fill it, not the page before',
+  );
+  // Workday filled the first job's title from the resume, as Autofill with Resume does.
+  await workday.locator('[id="workExperience-225--jobTitle"]').fill('Sr. PM');
+  await fillThisPage();
+  check(
+    (await typedIn('workExperience-225--jobTitle')) === 'Sr. PM' &&
+      (await typedIn('workExperience-225--companyName')) === 'Tidewater Analytics' &&
+      (await dateShows('workExperience-225--startDate-dateSectionMonth')) === '04' &&
+      (await dateShows('workExperience-225--startDate-dateSectionYear')) === '2023',
+    'the first Work Experience takes your newest job, its dates typed a key at a time, and keeps what Workday filled',
+  );
+  check(
+    (await typedIn('education-247--schoolName')) === 'CU Boulder' &&
+      (await shows('education-247--degree')) === 'Bachelors' &&
+      (await pills('education-247--fieldOfStudy')) === 'Computer Science',
+    'and the first Education your newest school, its degree, by its own name, and its field',
+  );
+  await workdayPanel
+    .getByRole('button', { name: 'Add 2 for your other jobs', exact: true })
+    .click();
+  await workdayPanel.getByText(/^Filled \d+ of \d+ fields/).waitFor({ timeout: 40_000 });
+  check(
+    (await inPart('Work-Experience-2-panel', 'jobTitle')) === 'Senior Product Manager' &&
+      (await inPart('Work-Experience-3-panel', 'jobTitle')) === 'Product Manager' &&
+      (await inPart('Work-Experience-3-panel', 'companyName')) === 'Fernway' &&
+      (await typedIn('workExperience-225--jobTitle')) === 'Sr. PM',
+    'Add for your other jobs presses Workday’s Add Another, and fills each new part with the next job',
+  );
+  await workdayPanel
+    .getByRole('button', { name: 'Add 1 for your other school', exact: true })
+    .click();
+  await workdayPanel.getByText(/^Filled \d+ of \d+ fields/).waitFor({ timeout: 40_000 });
+  check(
+    (await inPart('Education-2-panel', 'schoolName')) === 'Denver East High School',
+    'and for your other school',
+  );
+  await shoot(workday, 'fill-11-workday-my-experience');
+
+  await nextPage('Application Questions');
+  await fillThisPage();
+  check(
+    (await shows('primaryQuestionnaire--a1f3c2e0b9d84e5f9a7c6b5d')) === 'Yes' &&
+      (await shows('primaryQuestionnaire--b2e4d3f1c0e95f6a0b8d7c6e')) === 'No',
+    'Application Questions: whether you can work here, and need sponsorship, from Profile',
+  );
+  // You answer the form's own question, as you would, and press Save and Continue straight
+  // after: the panel reads it as you leave its box, before the page goes on.
+  const why = 'Larkspur’s grid work is what I want to build next.';
+  await workday.locator('[id="primaryQuestionnaire--c3f5e4a2d1f06a7b1c9e8d7f"]').fill(why);
+
+  await nextPage('Voluntary Disclosures');
+  await fillThisPage();
+  const ticked = (selector: string) =>
+    workday
+      .locator(selector)
+      .evaluateAll((boxes) => boxes.filter((box) => (box as HTMLInputElement).checked).length);
+  check(
+    (await shows('personalInfoUS--gender')) === 'Female' &&
+      (await shows('personalInfoUS--veteranStatus')) === 'Select One' &&
+      (await ticked('input[id$="-ethnicityMulti"]')) === 0 &&
+      (await ticked('[id="termsAndConditions--acceptTermsAndAgreements"]')) === 0,
+    'Voluntary Disclosures: only the answer you set in Profile, and never its terms box',
+  );
+  await nextPage('Self Identify');
+  await fillThisPage();
+  check(
+    (await typedIn('selfIdentifiedDisabilityData--name')) === '' &&
+      (await ticked('input[id$="-disabilityStatus"]')) === 0,
+    'Self Identify: all yours, even your name, which signs it',
+  );
+  await workday.getByRole('button', { name: 'Save and Continue', exact: true }).click();
+  await workdayPanel
+    .getByText('The application is on Review now, with nothing to fill', { exact: false })
+    .waitFor({ timeout: 20_000 });
+  check(true, 'on Review, with nothing to fill, the panel says to check it and submit it yourself');
+  const pressed = await workday.evaluate(() => {
+    const page = globalThis as unknown as { workdaySubmits?: number; workdayNexts?: number };
+    return { submits: page.workdaySubmits, nexts: page.workdayNexts };
+  });
+  check(
+    pressed.submits === 0 && pressed.nexts === 5,
+    'Factwright never pressed Save and Continue or Submit: only you did, five times',
+  );
+  await workdayPanel.getByRole('button', { name: 'Mark as applied' }).click();
+  await workdayPanel.getByText('Marked applied.').waitFor({ timeout: 20_000 });
+  const appliedWorkday = jobs.list().jobs.find((each) => each.company === 'Larkspur Energy');
+  check(
+    appliedWorkday?.status === 'applied' &&
+      appliedWorkday.sent.some(
+        (each) =>
+          each.question === 'Why do you want to work at Larkspur Energy?' && each.text === why,
+      ),
+    'Mark as applied keeps what you sent on Application Questions, pages back, typed just before Save and Continue',
+  );
+  await workdayPanel.close();
+  await workday.close();
 
   // Turned off in setup, the Fill button and the menus are gone, there and then.
   await setup.reload();

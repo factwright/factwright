@@ -183,10 +183,12 @@ const AUTOCOMPLETE: Record<string, FieldKind> = {
 
 /**
  * Words that ask for what's never filled: passwords and codes, payment details, ID numbers, and
- * birthdays. A PIN code, as India's postal codes are called, is a postal code.
+ * birthdays, and a box only a robot would fill, as a page's trap for bots, such as Workday's
+ * "This input is for robots only", or one that says only "Leave this field blank". A PIN code, as
+ * India's postal codes are called, is a postal code.
  */
 const NEVER =
-  /\b(password|passcode|passphrase|social security|ssn|social insurance|sin number|national (id|identity|insurance)( number| card)?|(government|state)( issued)? id|id (number|no|card number)|identification (number|no)|passport (number|no|num|id|details)|drivers? licen[cs]e (number|no|id)|tax (id|number|file)|tin|itin|nhs number|medicare number|card number|credit card|debit card|cvv|cvc|security (code|question|answer)|secret (question|answer)|pin(?! ?code)|verification code|one time (code|password)|expiry date|expiration date|date of birth|birth ?date|birthday|dob|(year|month|day|place|country|city) of birth|birth (year|place|country)|bank account|account number|routing number|iban|swift|sort code|mothers maiden)\b|^(passport|id)$/;
+  /\b(robots? only|if you( a)?re (a )?human|password|passcode|passphrase|social security|ssn|social insurance|sin number|national (id|identity|insurance)( number| card)?|(government|state)( issued)? id|id (number|no|card number)|identification (number|no)|passport (number|no|num|id|details)|drivers? licen[cs]e (number|no|id)|tax (id|number|file)|tin|itin|nhs number|medicare number|card number|credit card|debit card|cvv|cvc|security (code|question|answer)|secret (question|answer)|pin(?! ?code)|verification code|one time (code|password)|expiry date|expiration date|date of birth|birth ?date|birthday|dob|(year|month|day|place|country|city) of birth|birth (year|place|country)|bank account|account number|routing number|iban|swift|sort code|mothers maiden)\b|^(passport|id)$|^(please )?leave this (field |box |input )?(blank|empty)$/;
 
 /** Words a single checkbox asks you to agree to something with, as "I agree to the terms" does. */
 const AGREE =
@@ -383,10 +385,11 @@ const RULES: { kind: FieldKind; words: RegExp; also?: RegExp; not?: RegExp }[] =
     words: /\be ?mail\b/,
     not: /\b(referr|reference|manager|recruiter|emergency|contact person)/,
   },
+  // The kind of phone, or its extension, as Workday asks them beside the number, isn't the number.
   {
     kind: 'phone',
     words: /\b(phone|mobile|cell ?phone|cell|telephone|tel)\b/,
-    not: /\b(referr|reference|manager|recruiter|emergency|screen|interview)/,
+    not: /\b(referr|reference|manager|recruiter|emergency|screen|interview)|\b(device|type|extension|ext)\b/,
   },
   // Where you live, an apartment or suite apart from the street.
   {
@@ -409,7 +412,7 @@ const RULES: { kind: FieldKind; words: RegExp; also?: RegExp; not?: RegExp }[] =
   {
     kind: 'country',
     words:
-      /^country( of residence)?$|\bwhat country\b|\bwhich country (do you|are you)\b|\bcountry (are you|do you) (based|live|reside)\b/,
+      /^country( or region| region)?( of residence)?$|\bwhat country\b|\bwhich country (do you|are you)\b|\bcountry (are you|do you) (based|live|reside)\b/,
     not: /\b(authori[sz]ed|eligible|citizen|passport)\b/,
   },
   {
@@ -427,7 +430,7 @@ const NAMES: { kind: FieldKind; name: RegExp }[] = [
   { kind: 'last-name', name: /\b(last ?name|lname|surname|family ?name)\b/ },
   { kind: 'preferred-name', name: /\bpreferred ?name\b/ },
   { kind: 'email', name: /\be ?mail\b/ },
-  { kind: 'phone', name: /\b(phone|mobile|tel)\b/ },
+  { kind: 'phone', name: /\b(phone|mobile|tel)\b(?!.*\b(device|type|extension|ext)\b)/ },
   { kind: 'linkedin', name: /\blinked ?in\b/ },
   { kind: 'github', name: /\bgit ?hub\b/ },
   { kind: 'website', name: /\b(portfolio|website)\b/ },
@@ -436,15 +439,105 @@ const NAMES: { kind: FieldKind; name: RegExp }[] = [
   { kind: 'cover-letter', name: /\bcover ?letter\b/ },
   { kind: 'gender', name: /^gender\b/ },
   { kind: 'hispanic', name: /^hispanic/ },
-  { kind: 'race', name: /^race\b/ },
+  { kind: 'race', name: /^(race|ethnicit)/ },
   { kind: 'veteran', name: /^veteran/ },
-  { kind: 'disability', name: /^disability/ },
+  // Workday's Self Identify names the form's own language "disabilityForm": that's no answer.
+  { kind: 'disability', name: /^disabilit(y|ies)\b(?! form)/ },
   { kind: 'school', name: /\b(school|university|college)\b/ },
   { kind: 'degree', name: /\bdegree\b/ },
   { kind: 'discipline', name: /\b(discipline|major)\b/ },
   { kind: 'full-name', name: /^(name|full ?name|systemfield name)\b/ },
   { kind: 'location', name: /^(location|candidate location)\b/ },
 ];
+
+/**
+ * The equal-opportunity question a choice's options say it asks, when its words don't, as a
+ * self-identification form's "Please check one of the boxes below:" asks about a disability by its
+ * options alone: two or more of its options answer that question, and only it. Each is matched as
+ * the option says it, in lowercase: a race is the whole option, or what comes before its brackets
+ * or a dash, as "Asian (Not Hispanic or Latino)", never "Asian communities".
+ */
+const SELF_ID_OPTIONS: { kind: EqualOpportunityKind; option: RegExp }[] = [
+  {
+    kind: 'disability',
+    option:
+      /\bi (do not |don['’]?t )?have (a )?disabilit(y|ies)\b|\b(had|have had) (a disability|one) in the past\b/,
+  },
+  {
+    kind: 'veteran',
+    option: /\b(protected veterans?|i am not a veteran|not a veteran|veterans? listed above)\b/,
+  },
+  {
+    kind: 'race',
+    option:
+      /^(american indian or alaska(n)? native|asian|black or african american|hispanic or latin[oax]|native hawaiian or (other )?pacific islander|two or more races|white)\s*($|[(:,–—-])/,
+  },
+  {
+    kind: 'gender',
+    option: /^(male|female|man|woman|men|women|non[- ]?binary)\s*($|[(:,–—-])/,
+  },
+];
+
+/**
+ * Words that only say how to answer, as "Please check one of the boxes below:" or "Select all that
+ * apply" do, and leave what a choice asks to its options.
+ */
+const HOW_TO_ANSWER =
+  /^((please )?(check|select|choose|pick|tick|mark)( (one|all|any|each|an?))?( (of|from))?( the)?( (boxes|box|options?|items?|answers?|choices?|following))?( (below|that apply|which apply|listed( below)?))?)?$/;
+
+/**
+ * A part of a form for self-identification, by its name: Workday's Voluntary Disclosures and Self
+ * Identify, or an equal-opportunity or demographic part.
+ */
+const SELF_ID_PART =
+  /\b(voluntary (self )?(disclosures?|identification|demographic)|self identif(y|ication)|equal (employment )?opportunit(y|ies)|eeoc?|demographics?|diversity)\b/;
+
+/** Whether a field is in a part of the form for self-identification. */
+const inSelfIdPart = (field: Pick<FormField, 'section'>) =>
+  (field.section ?? '')
+    .split(' › ')
+    .map(plain)
+    .some((part) => SELF_ID_PART.test(part));
+
+/**
+ * The equal-opportunity question a choice's options say it asks, or null: only for a question
+ * nothing else tells, whose words only say how to answer, or that's in a part of the form for
+ * self-identification, and never one whose words make it something else, as "Do you require an
+ * accommodation?" isn't about a disability, whatever its options say.
+ */
+function selfIdByOptions(field: FieldToTell, question: string): EqualOpportunityKind | null {
+  if (!HOW_TO_ANSWER.test(question) && !inSelfIdPart(field)) return null;
+  const said = (field.options ?? []).map((each) => each.toLowerCase().trim());
+  const kind =
+    SELF_ID_OPTIONS.find(({ option }) => said.filter((each) => option.test(each)).length >= 2)
+      ?.kind ?? null;
+  if (!kind || RULES.some((rule) => rule.kind === kind && rule.not?.test(question))) return null;
+  return kind;
+}
+
+/** A field's names and ids, as compared: "personalInfoUS--veteranStatus" is "personal info us veteran status". */
+const allNames = (name: string) => plain(name.replace(/([a-z])([A-Z])/g, '$1 $2'));
+
+/** What a name says after "--" when it only says which one it is: a number, or "select". */
+const WHICH_ONE =
+  /^((\d+|select|input|value|option|choice|field|answer|dropdown|radio|checkbox|text)( |$))*$/;
+
+/**
+ * A field's own names, as compared, without the part of the form a name says it's in first, as
+ * Workday's "personalInfoUS--veteranStatus" puts it before "--": "veteran status". A name that
+ * says only which one it is after "--", as "gender--0" or "race--select" does, keeps what's
+ * before.
+ */
+const ownNames = (name: string) =>
+  allNames(
+    name
+      .split(/\s+/)
+      .map((each) => {
+        const own = each.split('--').at(-1) ?? each;
+        return WHICH_ONE.test(allNames(own)) ? each : own;
+      })
+      .join(' '),
+  );
 
 /** The part of a form that asks for each job you held, by its heading, such as "Employment 2". */
 const JOB_PART =
@@ -525,13 +618,31 @@ function partKind(field: Omit<FormField, 'options' | 'required' | 'limit'>): Fie
   return rules.find(([, words]) => words.test(question))?.[0] ?? null;
 }
 
+/** A field as what it asks is told: its options, when it has them, tell more. */
+type FieldToTell = Omit<FormField, 'options' | 'required' | 'limit'> & {
+  options?: readonly string[];
+};
+
+/** The kinds that ask your name. */
+const YOUR_NAME = new Set<FieldKind>(['full-name', 'first-name', 'last-name']);
+
 /**
- * What a field asks for, by its type, the browser's words for it, its question and its name. A
- * field it can't tell is a question of the form's own. One that asks for a password, payment
- * details, an ID number or a date of birth is never filled, whatever else it says, and one that
- * asks you to agree to something is yours to answer, however it asks.
+ * What a field asks for, by its type, the browser's words for it, its question, its options and
+ * its name. A field it can't tell is a question of the form's own, or, in a part of the form for
+ * self-identification, a personal one. One that asks for a password, payment details, an ID number
+ * or a date of birth is never filled, whatever else it says, and one that asks you to agree to
+ * something is yours to answer, however it asks: a box among several that agrees, and your name
+ * where it signs a self-identification form, as the "Name" beside the date it's signed on the US
+ * government's disability form does. Options that answer an equal-opportunity question make one
+ * that says nothing else one.
  */
-export function fieldKind(field: Omit<FormField, 'options' | 'required' | 'limit'>): FieldKind {
+export function fieldKind(field: FieldToTell): FieldKind {
+  const kind = kindAsked(field);
+  return YOUR_NAME.has(kind) && inSelfIdPart(field) ? 'consent' : kind;
+}
+
+/** What a field asks for, as fieldKind says, before your name signs anything. */
+function kindAsked(field: FieldToTell): FieldKind {
   const question = plain(field.question);
   const said = `${question} ${plain(field.hint)}`;
   const type = field.type.toLowerCase();
@@ -550,6 +661,14 @@ export function fieldKind(field: Omit<FormField, 'options' | 'required' | 'limit
     return 'question';
   }
   if (field.control === 'check' && AGREE.test(question)) return 'consent';
+  // A box among several that agrees to something is yours to tick too, as "I agree to a
+  // background check" is under "Please confirm the following:".
+  if (
+    field.control === 'choices' &&
+    (field.options ?? []).map(plain).some((each) => AGREE.test(each) || CONSENT.test(each))
+  ) {
+    return 'consent';
+  }
   // In a part of the form for each job or school, "Start date" and "Location" are its own.
   const inPart = partKind(field);
   if (inPart) return inPart;
@@ -572,10 +691,15 @@ export function fieldKind(field: Omit<FormField, 'options' | 'required' | 'limit
       return rule.kind;
     }
   }
-  const name = plain(field.name.replace(/([a-z])([A-Z])/g, '$1 $2'));
+  const byOptions = selfIdByOptions(field, question);
+  if (byOptions) return byOptions;
+  const name = ownNames(field.name);
   for (const each of NAMES) {
     if (each.name.test(name))
       return each.kind === 'resume' || each.kind === 'cover-letter' ? 'question' : each.kind;
   }
+  // In a part for self-identification, as Workday's Voluntary Disclosures, a question it can't
+  // tell is one only you answer: never a question of the form's own, to keep or to draft.
+  if (inSelfIdPart(field)) return 'personal';
   return 'question';
 }
