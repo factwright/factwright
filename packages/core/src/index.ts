@@ -384,6 +384,7 @@ export {
   viewOf,
 } from './progress.ts';
 export {
+  folderFiles,
   JOB_DOCS,
   type JobDocKind,
   type JobDocs,

@@ -143,6 +143,9 @@ const MIGRATIONS = [
   // For a job the user merged into another, that job's ID. The row stays, so what the job went
   // by finds the one kept, and an earlier version on another device still shows it.
   `ALTER TABLE jobs ADD COLUMN merged_into TEXT;`,
+  // The job's folder under applications/, as the app last found it, so a browser filling a form
+  // through sync knows which folder is the job's without reading every folder's job.md.
+  `ALTER TABLE jobs ADD COLUMN folder TEXT;`,
 ];
 
 /** Latest first. Entries on the same day go by when they were added (SQLite's rowid). */
@@ -392,6 +395,26 @@ export class Tracker {
           firstSeen: job.firstSeen,
           now,
         });
+      }
+    });
+  }
+
+  /**
+   * Keeps each job's folder under applications/ in its row, as the skills' records joined them, so
+   * it syncs, and a browser filling a form through sync knows which folder is the job's. A job
+   * with no folder here has none. A folder this computer never had, as another computer named it,
+   * stays as it is: it may be on its way here, or never sync here, so this computer can't tell
+   * it's wrong, and two computers never undo each other's. `had` holds every job folder this
+   * computer has had since the app opened, so one renamed or deleted since is known to be gone.
+   */
+  saveFolders(jobs: readonly CollectedJob[], had: ReadonlySet<string>): void {
+    const folders = new Map(jobs.map((job) => [job.id, job.folder]));
+    const save = this.db.prepare('UPDATE jobs SET folder = ? WHERE id = ?');
+    this.transaction(() => {
+      for (const row of this.rows()) {
+        const folder = folders.get(row.id) ?? null;
+        if (row.folder === folder || (row.folder !== null && !had.has(row.folder))) continue;
+        save.run(folder, row.id);
       }
     });
   }

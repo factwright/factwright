@@ -38,6 +38,12 @@ export interface TrackedRow extends TrackerFields {
   firstSeen: string | null;
   /** For a job the user merged into another, that job's ID. It's no longer listed on its own. */
   mergedInto: string | null;
+  /**
+   * Its folder under applications/, as the app last found it, so a browser filling a form through
+   * sync knows which folder is the job's without reading every folder. None for a job without
+   * one, or a row from an app before it kept them.
+   */
+  folder: string | null;
 }
 
 /** A row of the tracker as SQLite keeps it, on this computer or synced from another. */
@@ -48,6 +54,14 @@ const required = (value: unknown) => (typeof value === 'string' ? value : '');
 
 /** A job's ID, as the app makes them. */
 const JOB_ID = /^[a-z0-9][a-z0-9-]{0,199}$/;
+
+/** A folder's name, as one folder in a path: no slash, and never "." or "..". */
+const isFolderName = (value: unknown): value is string =>
+  typeof value === 'string' &&
+  value.length <= 255 &&
+  /^[^/\\]+$/.test(value) &&
+  value !== '.' &&
+  value !== '..';
 
 function isOneOf<T extends string>(list: readonly T[], value: unknown): value is T {
   return typeof value === 'string' && (list as readonly string[]).includes(value);
@@ -129,6 +143,7 @@ export function trackedRow(row: StoredRow): TrackedRow {
     firstSeen: text(row.first_seen),
     mergedInto:
       typeof row.merged_into === 'string' && JOB_ID.test(row.merged_into) ? row.merged_into : null,
+    folder: isFolderName(row.folder) ? row.folder : null,
     status: readStatus(row.status),
     statusOn: text(row.status_on),
     backOn: isIsoDate(row.back_on) ? row.back_on : null,

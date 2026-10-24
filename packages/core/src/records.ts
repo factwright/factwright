@@ -317,6 +317,30 @@ function unmaskRecords(workspace: WorkspaceReader): UnmaskRecord[] {
   }));
 }
 
+/**
+ * A job's folder's resumes, cover letters and Projects pages, by name: each PDF and Word file in
+ * it. The app lists them from the folder on disk, and the extension from what sync holds.
+ */
+export function folderFiles(
+  workspace: WorkspaceReader,
+  folder: string,
+): Pick<FolderRecord, 'files' | 'letters' | 'projectPages'> {
+  const path = `${WORKSPACE_PATHS.jobs}/${folder}`;
+  const built: JobFile[] = workspace
+    .list(path)
+    .sort(byName)
+    .flatMap((file) => {
+      const format = file.name.match(/\.(pdf|docx)$/i)?.[1]?.toLowerCase();
+      if (file.folder || (format !== 'pdf' && format !== 'docx')) return [];
+      const { name, size, modified } = file;
+      return [{ path: `${path}/${name}`, name, format, size, modified }];
+    });
+  const letters = built.filter((file) => isCoverLetterFile(file.name));
+  const projectPages = built.filter((file) => isProjectsPageFile(file.name));
+  const files = built.filter((file) => !letters.includes(file) && !projectPages.includes(file));
+  return { files, letters, projectPages };
+}
+
 function folderRecords(workspace: WorkspaceReader): ToolRecord[] {
   const records: ToolRecord[] = [];
   for (const entry of workspace.list(WORKSPACE_PATHS.jobs).sort(byName)) {
@@ -331,18 +355,7 @@ function folderRecords(workspace: WorkspaceReader): ToolRecord[] {
       const content = workspace.readText(`${path}/${file}`);
       if (content) docs[kind] = content;
     }
-    const built: JobFile[] = workspace
-      .list(path)
-      .sort(byName)
-      .flatMap((file) => {
-        const format = file.name.match(/\.(pdf|docx)$/i)?.[1]?.toLowerCase();
-        if (file.folder || (format !== 'pdf' && format !== 'docx')) return [];
-        const { name, size, modified } = file;
-        return [{ path: `${path}/${name}`, name, format, size, modified }];
-      });
-    const letters = built.filter((file) => isCoverLetterFile(file.name));
-    const projectPages = built.filter((file) => isProjectsPageFile(file.name));
-    const files = built.filter((file) => !letters.includes(file) && !projectPages.includes(file));
+    const { files, letters, projectPages } = folderFiles(workspace, folder);
     const date = firstDate(notes.date) ?? firstDate(folder);
     records.push({
       tool: 'folder',

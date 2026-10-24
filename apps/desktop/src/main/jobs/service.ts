@@ -109,6 +109,8 @@ export class JobsService {
   private found = new Map<string, CollectedJob>();
   /** Claude's prep sheets and thank-you notes for each job's calls, by the job's ID. */
   private callDocs = new Map<string, CallDoc[]>();
+  /** Every job folder the workspace has had since the app opened, for the tracker's rows. */
+  private readonly folders = new Set<string>();
   private readAt: string | null = null;
   private stopWatching: (() => void) | undefined;
 
@@ -136,6 +138,8 @@ export class JobsService {
     const records = readRecords(workspace);
     const jobs = collectJobs(records, this.deps.tracker.knownJobs());
     this.deps.tracker.saveCollected(jobs, now);
+    for (const record of records) if (record.tool === 'folder') this.folders.add(record.folder);
+    this.deps.tracker.saveFolders(jobs, this.folders);
     this.found = new Map(jobs.map((job) => [job.id, job]));
     this.callDocs = readAllCallDocs(workspace);
     this.readAt = now;

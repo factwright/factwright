@@ -61,11 +61,12 @@ import { type Made, rowChange } from './save.ts';
 import {
   decoded,
   fileContents,
-  inTurns,
-  jobNotesPaths,
+  notesLocation,
+  notesPath,
   nothingSynced,
   openChange,
   pullSynced,
+  readJobNotes,
   resumePaths,
   type Synced,
   type SyncedFile,
@@ -91,6 +92,8 @@ const TRIES = 5;
 /** What fills read through sync, while it's kept. */
 interface Read {
   synced: Synced;
+  /** The job folders' job.md files it read, by their paths: those no job's row names. */
+  notes: Map<string, string>;
   /** Every job, as the app lists them. */
   jobs: Job[];
   /** The jobs the app lists only from job searches' files, which a fill doesn't read. */
@@ -246,25 +249,33 @@ export class SyncFill {
     const contents = last?.contents ?? new Map<string, Promise<Bytes | null>>();
     for (const id of contents.keys()) if (!current.has(id)) contents.delete(id);
     const read = { synced, contents } as Read;
-    const paths = jobNotesPaths(synced);
+    // Only the folders no job's row names are read by their job.md, as from an app before rows
+    // named them.
     const [notes, answers, history] = await Promise.all([
-      inTurns(paths, (path) => this.text(read, path)),
+      readJobNotes(synced, (path) => this.text(read, path)),
       this.text(read, PROFILE_FILES.answers),
       this.text(read, PROFILE_FILES.history),
     ]);
-    const texts = new Map<string, string>();
-    paths.forEach((path, at) => {
-      const text = notes[at];
-      if (text) texts.set(path, text);
-    });
-    const { listed, others } = syncedJobs(synced, texts);
+    const { listed, others } = syncedJobs(synced, notes);
     return {
       ...read,
+      notes,
       jobs: listed,
       others,
       profile: profileForForms(json(answers)),
       history: readHistory(json(history)),
     };
+  }
+
+  /**
+   * A job, with what only its folder's job.md says, such as where the job is, for one whose row
+   * named its folder, so its job.md wasn't read for the list.
+   */
+  private async withNotes(read: Read, job: Job): Promise<Job> {
+    const path = job.folder && notesPath(job.folder);
+    if (!job.folder || !path || read.notes.has(path)) return job;
+    const text = await this.text(read, path);
+    return text ? { ...job, location: notesLocation(read.synced, job.folder, text) } : job;
   }
 
   /** A job by its ID, among all the jobs read. */
@@ -342,9 +353,10 @@ export class SyncFill {
   private async fill(ask: Extract<InboxAsk, { ask: 'fill' }>): Promise<SyncAnswer> {
     const read = await this.latest();
     // The app's own list first, then a job a job search turned up, by its row.
-    const job =
+    const found =
       formJob(read.jobs, ask.url, ask.company, ask.role) ??
       formJob(read.others, ask.url, ask.company, ask.role);
+    const job = found && (await this.withNotes(read, found));
     const folder = job?.folder ?? null;
     const [answers, letterJson, resume] = await Promise.all([
       folder ? this.text(read, `applications/${folder}/answers.md`) : null,

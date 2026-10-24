@@ -17,6 +17,7 @@ import {
   accountKeys,
   encodeRecord,
   newAccountKey,
+  type RowValues,
   recordId,
   type SyncClient,
   sealRecord,
@@ -26,13 +27,20 @@ import { PrivateAnswers } from '../../desktop/src/main/about/private.ts';
 import { AboutStore } from '../../desktop/src/main/about/store.ts';
 import { answerAsk, type FillDeps } from '../../desktop/src/main/extension/fill.ts';
 import { JobsService } from '../../desktop/src/main/jobs/service.ts';
+import { trackerAsOf } from '../../desktop/src/main/jobs/testing.ts';
 import { Tracker } from '../../desktop/src/main/jobs/tracker.ts';
 import { SyncEngine } from '../../desktop/src/main/sync/engine.ts';
 import { SyncState } from '../../desktop/src/main/sync/state.ts';
 import type { Account } from '../src/account.ts';
 import { signInWatch } from '../src/fill-way.ts';
 import { KEEP_FOR_MS, type SyncAnswer, SyncFill, type SyncFillDeps } from '../src/sync-fill.ts';
-import { readSynced, syncedWorkspace } from '../src/synced.ts';
+import {
+  readJobNotes,
+  readSynced,
+  type Synced,
+  syncedJobs,
+  syncedWorkspace,
+} from '../src/synced.ts';
 
 let server: TestServer;
 const work = mkdtempSync(join(tmpdir(), 'fw-sync-fill-'));
@@ -48,7 +56,11 @@ afterAll(() => {
 
 const NOW = new Date(2026, 9, 23, 18, 30);
 const FORM_URL = 'https://jobs.lever.co/northwind/7a1c9e40-2b6d-4f1e-9c3a-5d8e0f2b4a71/apply';
+/** The Northwind Labs job's ID, as the app gives it. */
+const JOB = 'northwind-labs--senior-product-manager-data';
 const FOLDER = '2026-10-20-northwind-labs-senior-product-manager';
+/** Another job's folder, which a fill for Northwind Labs needn't read. */
+const LUMEN = '2026-10-18-lumen-health-product-manager-payments';
 /** A job a job search turned up, which only the search's files say anything of. */
 const SEARCHED = 'https://job-boards.greenhouse.io/harborandpine/jobs/5426468004';
 /**
@@ -112,9 +124,10 @@ const FILL: Extract<InboxAsk, { ask: 'fill' }> = {
 /**
  * Factwright on a computer, with a made-up job hunt: Profile, its private answers, a work history,
  * the job's folder with its resume, cover letter and Claude's draft, and another job with what was
- * sent for it. It syncs to the account with the app's own sync.
+ * sent for it. It syncs to the account with the app's own sync. `older` is an app from before a
+ * job's row named its folder, as 0.15 is: its rows have no folder.
  */
-async function computer() {
+async function computer({ older = false } = {}) {
   const home = mkdtempSync(join(work, 'home-'));
   const workspace = join(home, 'workspace');
   const write = (path: string, contents: string | Buffer) => {
@@ -210,7 +223,23 @@ async function computer() {
       ],
     }),
   );
-  const tracker = new Tracker(join(home, 'tracker.db'));
+  write(
+    `applications/${LUMEN}/job.md`,
+    [
+      '# Lumen Health: Product Manager, Payments',
+      '',
+      '- **Date:** 2026-10-18',
+      '- **Apply:** Ashby https://jobs.ashbyhq.com/lumen/4c1d2e3f',
+      '- **Work arrangement:** Remote, US',
+    ].join('\n'),
+  );
+  write(`applications/${LUMEN}/LumenResume.pdf`, PDF.subarray(0, 4000));
+  const file = join(home, 'tracker.db');
+  const tracker = new Tracker(file);
+  if (older) {
+    trackerAsOf(file, 8, { keepTables: true });
+    vi.spyOn(tracker, 'saveFolders').mockImplementation(() => {});
+  }
   const jobs = new JobsService({ workspace, tracker, onChange: () => {}, now: () => NOW });
   jobs.read();
   const at = { today: '2026-10-12', now: '2026-10-12T15:00:00.000Z' };
@@ -246,14 +275,14 @@ async function computer() {
     drafts: { start: async () => 'started', state: () => ({ drafting: false, waiting: false }) },
     now: () => NOW,
   };
-  return { workspace, tracker, jobs, deps, about };
+  return { workspace, tracker, jobs, deps, about, write };
 }
 
 /** An account, its keys, and a computer that syncs to it. */
-async function account() {
+async function account(app: Parameters<typeof computer>[0] = {}) {
   const sam = await server.signUp();
   const keys = await accountKeys(newAccountKey());
-  const desktop = await computer();
+  const desktop = await computer(app);
   const session = await server.newSession(sam.id);
   const engine = new SyncEngine({
     client: session.client,
@@ -524,7 +553,7 @@ describe('filling a form from your job hunt through sync', () => {
     const synced = await readSynced(client, keys);
     expect(synced.files.get('about-me/answers.json')?.id).not.toBe('A'.repeat(43));
     expect(synced.files.has('about-me/other.json')).toBe(false);
-    expect(synced.rows.jobs.size).toBe(3);
+    expect(synced.rows.jobs.size).toBe(4);
   });
 
   it('reads only what changed since the last fill, and all of it again a few minutes after', async () => {
@@ -690,6 +719,189 @@ describe('filling a form from your job hunt through sync', () => {
     const fill = fillFor(server.clientFor('not-a-session'), keys, { signedOut });
     expect(await fill.ask(FILL)).toMatchObject({ ok: false, reason: 'failed' });
     expect(signedOut).toHaveBeenCalled();
+  });
+});
+
+/** The job folders whose job.md a fill fetched, by their names. */
+async function notesFetched(client: SyncClient, keys: AccountKeys, ids: readonly string[]) {
+  const synced = await readSynced(client, keys);
+  const paths = new Map([...synced.files].map(([path, file]) => [file.id, path]));
+  return ids
+    .flatMap((id) => paths.get(id)?.match(/^applications\/([^/]+)\/job\.md$/)?.[1] ?? [])
+    .sort();
+}
+
+/** Every reply but those that never sync: the street, postal code and equal-opportunity ones. */
+const synced = (replies: Record<string, FieldReply | undefined>) =>
+  Object.fromEntries(
+    Object.entries(replies).filter(
+      ([question]) => !['Street address', 'Postal code', 'Gender'].includes(question),
+    ),
+  );
+
+describe('finding a job’s folder through sync', () => {
+  /** The form, with a question only where the job is answers: its job.md says. */
+  const WHERE = asked('Are you legally authorized to work in the country you applied for?', {
+    control: 'choice',
+    options: ['Yes', 'No'],
+  });
+  const ASK = { ...FILL, fields: [...FIELDS, WHERE] };
+  const replies = (answer: Awaited<ReturnType<typeof answerAsk>>) => {
+    if (!answer.ok || answer.did !== 'fill') throw new Error('No plan.');
+    return Object.fromEntries(ASK.fields.map((field, at) => [field.question, answer.replies[at]]));
+  };
+
+  it('finds it by the job’s row, and reads only the job.md of the job the form’s for', async () => {
+    const { desktop, keys, client } = await account();
+    const rows = (await readSynced(client, keys)).rows.jobs;
+    expect([...rows.values()].map((row) => row.folder).sort()).toEqual([LUMEN, FOLDER, null, null]);
+    const files = vi.spyOn(client, 'getFile');
+    const app = replies(await answerAsk(ASK, desktop.deps));
+    const ours = replies(ok(await fillFor(client, keys).ask(ASK)));
+    expect(synced(ours)).toEqual(synced(app));
+    // Where the job is, as only its job.md says.
+    expect(ours[WHERE.question]).toMatchObject({ pick: ['Yes'], source: 'profile' });
+    expect(
+      await notesFetched(
+        client,
+        keys,
+        files.mock.calls.map(([id]) => id),
+      ),
+    ).toEqual([FOLDER]);
+  });
+
+  it('reads every folder’s job.md from an app before rows named them, and answers alike', async () => {
+    const { desktop, keys, client } = await account({ older: true });
+    const rows = (await readSynced(client, keys)).rows.jobs;
+    expect([...rows.values()].some((row) => 'folder' in row)).toBe(false);
+    const files = vi.spyOn(client, 'getFile');
+    const app = replies(await answerAsk(ASK, desktop.deps));
+    const ours = replies(ok(await fillFor(client, keys).ask(ASK)));
+    expect(synced(ours)).toEqual(synced(app));
+    expect(ours[WHERE.question]).toMatchObject({ pick: ['Yes'], source: 'profile' });
+    expect(
+      await notesFetched(
+        client,
+        keys,
+        files.mock.calls.map(([id]) => id),
+      ),
+    ).toEqual([FOLDER, LUMEN].sort());
+  });
+
+  it('reads a folder no row names, and every folder of the job it joins, as the app makes it', async () => {
+    const { desktop, keys, client, engine } = await account();
+    // Another folder for the job, as an app from before rows named them makes on another
+    // computer, with a draft of its own: the job's row still names the first.
+    const later = '2026-10-22-northwind-labs-senior-product-manager-data';
+    desktop.write(
+      `applications/${later}/job.md`,
+      [
+        '# Northwind Labs: Senior Product Manager, Data',
+        '',
+        '- **Date:** 2026-10-22',
+        `- **Apply:** Lever ${FORM_URL.replace(/\/apply$/, '')}`,
+        '- **Work arrangement:** Hybrid, Boulder, CO',
+      ].join('\n'),
+    );
+    desktop.write(
+      `applications/${later}/answers.md`,
+      '## Why Northwind Labs?\n\nIts data products reach the people I build for.\n',
+    );
+    await engine.syncOnce();
+    expect((await readSynced(client, keys)).rows.jobs.get(JOB)?.folder).toBe(FOLDER);
+    const files = vi.spyOn(client, 'getFile');
+    const ours = replies(ok(await fillFor(client, keys).ask(ASK)));
+    expect(
+      await notesFetched(
+        client,
+        keys,
+        files.mock.calls.map(([id]) => id),
+      ),
+    ).toEqual([FOLDER, later].sort());
+    desktop.jobs.read();
+    const app = replies(await answerAsk(ASK, desktop.deps));
+    expect(synced(ours)).toEqual(synced(app));
+    expect(ours['Why Northwind Labs?']).toMatchObject({ source: 'claude' });
+  });
+});
+
+describe('which job folders a fill reads', () => {
+  const file = (id: string) => ({ id, size: 10, modified: '2026-10-20T10:00:00.000Z' });
+  const row = (id: string, company: string, folder: string | null, more: RowValues = {}) => ({
+    id,
+    company,
+    company_key: company.toLowerCase().replace(/\W+/g, '-'),
+    role: 'Product Manager',
+    links: '[]',
+    folder,
+    ...more,
+  });
+  const notes = (company: string) => `# ${company}: Product Manager\n\n- **Date:** 2026-10-20`;
+  /** What sync holds: a folder for each company, and a row for each job given. */
+  const holding = (rows: RowValues[], folders: Record<string, string>): Synced => ({
+    files: new Map(
+      Object.keys(folders).flatMap((folder) => [
+        [`applications/${folder}/job.md`, file(`${folder}-notes`)],
+        [`applications/${folder}/resume.pdf`, file(`${folder}-pdf`)],
+      ]),
+    ),
+    rows: {
+      jobs: new Map(rows.map((each) => [String(each.id), each])),
+      calls: new Map(),
+      notes: new Map(),
+    },
+    cursor: 1,
+  });
+  const reads = async (held: Synced, folders: Record<string, string>) => {
+    const read: string[] = [];
+    const texts = await readJobNotes(held, async (path) => {
+      read.push(path.split('/')[1] ?? '');
+      return folders[path.split('/')[1] ?? ''] ?? null;
+    });
+    return { read: read.sort(), jobs: syncedJobs(held, texts).listed };
+  };
+
+  it('reads none a job’s row names, and gives each job its folder’s files', async () => {
+    const folders = { 'a-pm': notes('Acme'), 'b-pm': notes('Bolt') };
+    const held = holding(
+      [row('acme--pm', 'Acme', 'a-pm'), row('bolt--pm', 'Bolt', 'b-pm')],
+      folders,
+    );
+    const { read, jobs } = await reads(held, folders);
+    expect(read).toEqual([]);
+    expect(jobs.map((job) => [job.id, job.folder, job.files.map((each) => each.path)])).toEqual([
+      ['acme--pm', 'a-pm', ['applications/a-pm/resume.pdf']],
+      ['bolt--pm', 'b-pm', ['applications/b-pm/resume.pdf']],
+    ]);
+  });
+
+  it('reads a folder two rows name, one sync doesn’t hold, and a merged job’s', async () => {
+    const folders = { 'a-pm': notes('Acme'), 'b-pm': notes('Bolt'), 'c-pm': notes('Cord') };
+    const held = holding(
+      [
+        row('acme--pm', 'Acme', 'a-pm'),
+        row('acme--pm-2', 'Acme', 'a-pm'),
+        row('bolt--pm', 'Bolt', 'gone-pm'),
+        row('cord--pm', 'Cord', 'c-pm', { merged_into: 'acme--pm' }),
+      ],
+      folders,
+    );
+    const { read } = await reads(held, folders);
+    expect(read).toEqual(['a-pm', 'b-pm', 'c-pm']);
+  });
+
+  it('reads the folder a job’s row names too, once a folder no row names joins the job', async () => {
+    const folders = { 'a-pm': notes('Acme'), 'a-pm-later': notes('Acme'), 'b-pm': notes('Bolt') };
+    const held = holding(
+      [row('acme--pm', 'Acme', 'a-pm'), row('bolt--pm', 'Bolt', 'b-pm')],
+      folders,
+    );
+    const { read, jobs } = await reads(held, folders);
+    expect(read).toEqual(['a-pm', 'a-pm-later']);
+    expect(jobs.find((job) => job.id === 'acme--pm')?.files.map((each) => each.path)).toEqual([
+      'applications/a-pm/resume.pdf',
+      'applications/a-pm-later/resume.pdf',
+    ]);
   });
 });
 
