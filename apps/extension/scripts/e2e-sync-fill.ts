@@ -284,7 +284,7 @@ try {
       [...((input as HTMLInputElement).files ?? [])].map((file) => `${file.name} ${file.size}`),
     );
   check(
-    uploaded.length === 1 && uploaded[0] === `Ana María Ruiz - Resume.pdf ${PDF.length}`,
+    uploaded.length === 1 && uploaded[0] === `AnaRuizResume10202026_Northwind.pdf ${PDF.length}`,
     'it uploads the job’s own resume, whole, from what sync holds',
   );
   check(

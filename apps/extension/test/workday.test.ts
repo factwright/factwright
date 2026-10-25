@@ -345,40 +345,40 @@ describe('filling Workday’s application', () => {
     ).toBe('4');
   });
 
-  it('leaves what Workday filled from your resume as it is, and fills what’s empty', async () => {
+  it('replaces what Workday filled from your resume, and once asked, fills only what’s empty', async () => {
     const doc = working('my-experience');
     // Workday filled the job's title from the resume, as Autofill with Resume does.
     (doc.getElementById('workExperience-225--jobTitle') as HTMLInputElement).value = 'Sr. PM';
     const form = await read(doc);
+    const part = 'Work Experience 1';
     const filled = filledOf(
       await run(
         {
           do: 'fill',
           url: HERE,
           answers: [
-            to(form, 'Job Title', { text: 'Senior Product Manager', ifEmpty: true }),
-            to(form, 'Company', { text: 'Tidewater Analytics', ifEmpty: true }),
+            to(form, 'Job Title', { text: 'Senior Product Manager', part }),
+            to(form, 'Company', { text: 'Tidewater Analytics', part, names: true }),
             // Its own name for a bachelor's, without the apostrophe, is the same.
             to(form, 'Degree', {
               pick: ["Bachelor's Degree", "Bachelor's", 'Bachelor', 'BS', 'BA', 'B.S.'],
-              ifEmpty: true,
             }),
             // Past the dozen it shows, found by what's typed, and kept as Workday keeps the one
             // it found.
-            to(form, 'Field of Study', { pick: ['Psychology'], ifEmpty: true }),
+            to(form, 'Field of Study', { pick: ['Psychology'] }),
           ],
         },
         doc,
       ),
     );
     expect(filled.map((each) => [each.ok, each.shown, each.kept ?? false])).toEqual([
-      [true, 'Sr. PM', true],
+      [true, 'Senior Product Manager', false],
       [true, 'Tidewater Analytics', false],
       [true, 'Bachelors', false],
       [true, 'Psychology', false],
     ]);
-    expect(value(doc, 'workExperience-225--jobTitle')).toBe('Sr. PM');
-    // Filled again, what holds an answer now stays.
+    expect(value(doc, 'workExperience-225--jobTitle')).toBe('Senior Product Manager');
+    // Filled only where it's empty, as once parts were added, what holds an answer stays.
     const again = filledOf(
       await run(
         {
@@ -394,18 +394,21 @@ describe('filling Workday’s application', () => {
     ]);
   });
 
-  it('fills nothing in a part Workday filled with another job from your resume', async () => {
+  it('leaves a part Workday filled with another job from your resume as it is', async () => {
     const doc = working('my-experience');
-    // Workday put the resume's jobs in its own order: this part holds another company.
+    // Workday put the resume's jobs in its own order: this part holds another company, and its
+    // dates.
     const company = doc.getElementById('workExperience-225--companyName') as HTMLInputElement;
     company.value = 'Fernway';
+    const where = doc.getElementById('workExperience-225--location') as HTMLInputElement;
+    where.value = 'Boulder, CO';
     const form = await read(doc);
     const answers = (current: string) => {
       const part = 'Work Experience 1';
       return [
-        to(form, 'Job Title', { text: 'Senior Product Manager', ifEmpty: true, part }),
-        to(form, 'Company', { text: current, ifEmpty: true, part, names: true }),
-        to(form, 'Location', { text: 'Denver, CO', ifEmpty: true, part }),
+        to(form, 'Job Title', { text: 'Senior Product Manager', part }),
+        to(form, 'Company', { text: current, part, names: true }),
+        to(form, 'Location', { text: 'Denver, CO', part }),
       ];
     };
     const filled = filledOf(
@@ -414,26 +417,28 @@ describe('filling Workday’s application', () => {
     expect(filled.map((each) => [each.ok, each.why, each.kept ?? false])).toEqual([
       [false, 'other-part', false],
       [true, '', true],
-      [false, 'other-part', false],
+      [true, '', true],
     ]);
     expect(value(doc, 'workExperience-225--jobTitle')).toBe('');
-    // The same company, as Workday names it in full, is the same job: what's empty is filled.
+    expect(value(doc, 'workExperience-225--location')).toBe('Boulder, CO');
+    // The same company, as Workday names it in full, is the same job: its fields take the answers.
     company.value = 'Fernway, Inc.';
     const same = filledOf(await run({ do: 'fill', url: HERE, answers: answers('Fernway') }, doc));
     expect(same.map((each) => [each.ok, each.kept ?? false])).toEqual([
       [true, false],
-      [true, true],
+      [true, false],
       [true, false],
     ]);
     expect(value(doc, 'workExperience-225--jobTitle')).toBe('Senior Product Manager');
+    expect(value(doc, 'workExperience-225--companyName')).toBe('Fernway');
+    expect(value(doc, 'workExperience-225--location')).toBe('Denver, CO');
   });
 
   it('keeps the resume Workday has: the job’s goes in only where it has none', async () => {
     const doc = working('my-experience');
     const resume = (form: PageForm) =>
       to(form, 'Resume/CV', {
-        file: { name: 'Ana Ruiz - Resume.pdf', type: 'application/pdf', base64: 'JVBERi0=' },
-        ifEmpty: true,
+        file: { name: 'AnaRuizResume.pdf', type: 'application/pdf', base64: 'JVBERi0=' },
       });
     // With none, the field holds nothing, so the job's goes in, as the runs in a browser check.
     const empty = await read(doc);

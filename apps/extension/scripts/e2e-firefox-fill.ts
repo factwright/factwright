@@ -33,7 +33,7 @@ import type {
 } from '../src/page/form.ts';
 import { Firefox, waitFor } from './bidi.ts';
 import { icimsCode } from './icims-own-code.ts';
-import { ASHBY_PRESSES, LEVER_LOOKS_UP, withOwnCode, workdayCode } from './sites-own-code.ts';
+import { ashbyCode, LEVER_LOOKS_UP, withOwnCode, workdayCode } from './sites-own-code.ts';
 import { smartRecruitersCode } from './smartrecruiters-own-code.ts';
 import { successFactorsCode } from './successfactors-own-code.ts';
 import { PDF, syncedHunt } from './synced-hunt.ts';
@@ -73,7 +73,7 @@ const UUID = '5f0d3a91-2c4b-4e8a-9b6f-7d1e2c3b4a50';
 const PAGES: Record<string, { file: string; code?: string }> = {
   '/plain/apply': { file: 'plain-application.html' },
   '/lever/apply': { file: 'lever-application.html', code: LEVER_LOOKS_UP },
-  '/ashby/apply': { file: 'ashby-application.html', code: ASHBY_PRESSES },
+  '/ashby/apply': { file: 'ashby-application.html', code: ashbyCode() },
 };
 
 /** A form with fields you can't see, and the questions of the ones you can. */
@@ -758,7 +758,8 @@ try {
     ].map((file) => `${file.name} ${file.size}`),
   );
   check(
-    JSON.stringify(uploaded) === JSON.stringify([`Ana María Ruiz - Resume.pdf ${PDF.length}`]),
+    JSON.stringify(uploaded) ===
+      JSON.stringify([`AnaRuizResume10202026_Northwind.pdf ${PDF.length}`]),
     'and uploads the job’s resume from what sync holds, through Firefox’s content-script sandbox',
   );
 

@@ -52,6 +52,7 @@ import type {
   RecordedAnswers,
   ShotFor,
   ShotResult,
+  UndoneResult,
 } from '../../shared/api.ts';
 import { readShot, saveShot, shotFile } from './shots.ts';
 import type { EditContext, Tracker } from './tracker.ts';
@@ -396,6 +397,15 @@ export class JobsService {
 
   undoStatusChange(changeId: string): EditResult {
     return this.saved(this.deps.tracker.undoChange(changeId, this.context().now));
+  }
+
+  /**
+   * Takes back marking a job Applied, as the browser extension's Undo asks, while that's still
+   * the latest change in its history.
+   */
+  undoApplied(jobId: string): UndoneResult {
+    const result = this.deps.tracker.undoApplied(jobId, this.context().now);
+    return result.ok && !result.undone ? result : this.saved(result);
   }
 
   addNote(jobId: string, note: NewNote): EditResult {

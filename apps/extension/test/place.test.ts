@@ -54,9 +54,22 @@ describe('a menu beside its field', () => {
     expect(box.top + box.height).toBeLessThanOrEqual(WINDOW.height - EDGE);
   });
 
-  it('doesn’t show where every place would cover a control or leave the window', () => {
+  it('goes just under its field, over the page, where every place beside it has a control', () => {
+    // A form of one column, with labels between its fields, as Ashby's, in a narrow window.
     const everywhere: Box = { left: 0, top: 0, width: 1280, height: 800 };
-    expect(placeMenu(MENU, field, [everywhere], WINDOW)).toBeNull();
+    expect(placeMenu(MENU, field, [everywhere], WINDOW)).toEqual({ left: 100, top: 232 + GAP });
+    // At the window's bottom, just over it, and in from its edge as far as it takes.
+    const low: Box = { left: 1100, top: 760, width: 160, height: 32 };
+    const box = at(placeMenu(MENU, low, [everywhere], WINDOW));
+    expect(box).toEqual({
+      ...MENU,
+      left: WINDOW.width - EDGE - MENU.width,
+      top: 760 - GAP - MENU.height,
+    });
+    expect(overlaps(box, low)).toBe(false);
+  });
+
+  it('doesn’t show where it can’t be inside the window', () => {
     const tiny = { width: 300, height: 120 };
     expect(placeMenu(MENU, field, [], tiny)).toBeNull();
   });

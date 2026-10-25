@@ -111,7 +111,10 @@ interface Posting {
   today: string;
 }
 
-/** A change that makes a record the given row, as the version after `base`, 0 for a new record. */
+/**
+ * A change that makes a record the given row, as the version after `base`, 0 for a new record, or
+ * deletes it, for a row of null.
+ */
 export async function rowChange(
   keys: AccountKeys,
   table: string,
@@ -127,7 +130,7 @@ export async function rowChange(
     base,
     data: await sealRecord(keys, record, base + 1, encodeRecord(body)),
     file: null,
-    deleted: false,
+    deleted: row === null,
   };
 }
 

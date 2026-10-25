@@ -885,6 +885,20 @@ describe('history', () => {
     expect(tracker.undoChange('gone', NOW)).toMatchObject({ ok: false });
   });
 
+  it('takes back marking a job Applied, while that’s its latest change', () => {
+    tracker.updateJob('acme--staff', { status: 'review', statusOn: '2026-10-05' }, AT);
+    tracker.updateJob('acme--staff', { status: 'applied' }, AT);
+    expect(tracker.undoApplied('acme--staff', NOW)).toEqual({ ok: true, undone: true });
+    expect(row()).toMatchObject({ status: 'review', statusOn: '2026-10-05', appliedOn: null });
+    // Nothing to take back: it isn't Applied, or it's moved on since.
+    expect(tracker.undoApplied('acme--staff', NOW)).toEqual({ ok: true, undone: false });
+    tracker.updateJob('acme--staff', { status: 'applied' }, AT);
+    tracker.updateJob('acme--staff', { status: 'screen' }, AT);
+    expect(tracker.undoApplied('acme--staff', NOW)).toEqual({ ok: true, undone: false });
+    expect(row()?.status).toBe('screen');
+    expect(tracker.undoApplied('gone', NOW)).toMatchObject({ ok: false });
+  });
+
   it('orders changes on the same day by when they were made', () => {
     tracker.updateJob('acme--staff', { status: 'applied' }, AT);
     tracker.updateJob('acme--staff', { status: 'screen' }, AT);

@@ -466,8 +466,8 @@ try {
       [...((input as HTMLInputElement).files ?? [])].map((file) => `${file.name} ${file.size}`),
     );
   check(
-    uploaded.length === 1 && uploaded[0] === `Ana María Ruiz - Resume.pdf ${pdf.length}`,
-    'it uploads the job’s own resume, whole, under a plain name',
+    uploaded.length === 1 && uploaded[0] === `AnaRuizResume10202026_Northwind.pdf ${pdf.length}`,
+    'it uploads the job’s own resume, whole, under its own name',
   );
   const checked = (label: string) =>
     form

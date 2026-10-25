@@ -45,6 +45,7 @@ import type {
   NewNote,
   NoteChanges,
   RecordedAnswers,
+  UndoneResult,
 } from '../../shared/api.ts';
 import { LIMITS } from '../../shared/limits.ts';
 
@@ -949,6 +950,23 @@ export class Tracker {
       }
     });
     return DONE;
+  }
+
+  /**
+   * Takes back marking a job Applied, as the browser extension's Undo asks once it noticed you
+   * submitted its application: the change goes from the job's history, as undoChange takes it,
+   * which puts the job back where it was, while it's still the latest change and the job is still
+   * Applied. A job that's moved on since stays as it is. Says whether it was taken back.
+   */
+  undoApplied(jobId: string, now: string): UndoneResult {
+    const job = this.row(jobId);
+    if (!job) return NOT_FOUND;
+    const latest = this.latestChange(jobId);
+    if (job.status !== 'applied' || !latest || readStatus(latest.status) !== 'applied') {
+      return { ok: true, undone: false };
+    }
+    const result = this.undoChange(required(latest.id), now);
+    return result.ok ? { ok: true, undone: true } : result;
   }
 
   /**

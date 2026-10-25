@@ -226,6 +226,7 @@ export {
   SAVE_HELPER,
   SAVED_POSTING_LIMIT,
   type SavedJob,
+  type SentUndo,
 } from './inbox.ts';
 export { type Invite, type InviteOptions, MAX_INVITE_LENGTH, readInvite } from './invite.ts';
 export {

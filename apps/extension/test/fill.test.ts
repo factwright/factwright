@@ -133,7 +133,7 @@ describe('what Factwright puts in a form', () => {
     ]);
   });
 
-  it('fills only what’s empty on a page of an application that runs over several, or once asked', () => {
+  it('replaces what’s there, on one page or several, and fills only what’s empty once asked', () => {
     const fields = [field('Email', { ref: 0 }), field('Phone', { ref: 1 })];
     const replies: FieldReply[] = [
       { kind: 'email', text: 'ana@example.com', source: 'profile' },
@@ -141,7 +141,10 @@ describe('what Factwright puts in a form', () => {
     ];
     // Workday's My Information, which Workday may have filled in from your resume.
     const workday = { ...form(fields), step: 'My Information' };
-    expect(fillAnswers(workday, replies, {}).map((answer) => answer.ifEmpty)).toEqual([true, true]);
+    expect(fillAnswers(workday, replies, {}).map((answer) => answer.ifEmpty)).toEqual([
+      undefined,
+      undefined,
+    ]);
     expect(fillAnswers(form(fields), replies, {}).map((answer) => answer.ifEmpty)).toEqual([
       undefined,
       undefined,

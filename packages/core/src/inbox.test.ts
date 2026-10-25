@@ -125,6 +125,18 @@ describe('an ask from the inbox', () => {
     expect(readInboxAsk(message({ ...drafts, answers: [] }))).toBeNull();
   });
 
+  it('reads Undo for marking a job Applied, by the job alone', () => {
+    const unsent = { ask: 'unsent', job: 'harbor-pine--account-executive' };
+    expect(readInboxAsk(message(unsent))).toEqual(unsent);
+    expect(readInboxAsk(message({ ...unsent, job: '../../etc' }))).toBeNull();
+    // What sync needs to put back, which the app keeps in the job's history itself.
+    expect(
+      readInboxAsk(
+        message({ ...unsent, undo: { line: 'a', row: { status: null, status_on: null } } }),
+      ),
+    ).toBeNull();
+  });
+
   it('reads an ask for the job a page is for: its address, company and title, and no more', () => {
     const job = {
       ask: 'job',
