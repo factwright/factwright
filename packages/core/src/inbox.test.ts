@@ -125,6 +125,26 @@ describe('an ask from the inbox', () => {
     expect(readInboxAsk(message({ ...drafts, answers: [] }))).toBeNull();
   });
 
+  it('reads an ask for the job a page is for: its address, company and title, and no more', () => {
+    const job = {
+      ask: 'job',
+      url: 'https://jobs.lever.co/harborpine/4f1c2b7e/apply',
+      company: 'Harbor & Pine',
+      role: 'Senior PM, Data',
+    };
+    expect(readInboxAsk(message(job))).toEqual(job);
+    expect(readInboxAsk(message({ ...job, company: '', role: '' }))).toEqual({
+      ...job,
+      company: '',
+      role: '',
+    });
+    expect(readInboxAsk(message({ ...job, url: 'javascript:alert(1)' }))).toBeNull();
+    expect(readInboxAsk(message({ ...job, company: 'x'.repeat(201) }))).toBeNull();
+    expect(readInboxAsk(message({ ...job, posting: 'About the role' }))).toBeNull();
+    const { role: _, ...untitled } = job;
+    expect(readInboxAsk(message(untitled))).toBeNull();
+  });
+
   it('takes only an ask, as the helper passes it on', () => {
     expect(readInboxAsk('not JSON')).toBeNull();
     expect(

@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import {
   companyMatch,
+  hasOwnPosting,
   jobLikeness,
   otherPostings,
   postingKey,
   readTitle,
+  savedJobFor,
   titleFit,
   titlesFit,
 } from './matching.ts';
@@ -23,6 +25,17 @@ describe('postingKey', () => {
     expect(postingKey('https://jobs.ashbyhq.com/acme/7f3a/application')).toBe('ashby:7f3a');
     expect(postingKey('https://acme.example/careers?ashby_jid=7F3A')).toBe('ashby:7f3a');
     expect(postingKey('https://jobs.gem.com/acme/am9i')).toBe('gem:acme:am9i');
+  });
+
+  it('reads a Workable posting’s shortcode, the same on its application and its short link', () => {
+    expect(
+      [
+        'https://apply.workable.com/seeq/j/1B6E0A1710/',
+        'https://apply.workable.com/seeq/j/1B6E0A1710/apply/',
+        'https://apply.workable.com/j/1B6E0A1710',
+      ].map(postingKey),
+    ).toEqual(Array(3).fill('workable:1b6e0a1710'));
+    expect(postingKey('https://apply.workable.com/seeq')).toBeNull();
   });
 
   it('reads LinkedIn’s and Indeed’s IDs, whatever the link says around them', () => {
@@ -284,5 +297,158 @@ describe('jobLikeness', () => {
       ),
     ).toBe('company');
     expect(jobLikeness(acme, job('Lumen Health', 'lumen-health', 'Staff Engineer'))).toBeNull();
+  });
+});
+
+describe('hasOwnPosting', () => {
+  it('counts a link to one job, and not a board, a Hacker News post or a company’s site', () => {
+    const links = (...urls: string[]) => ({ links: urls.map((url) => ({ url })) });
+    expect(hasOwnPosting(links('https://apply.workable.com/seeq/j/1B6E0A1710/'))).toBe(true);
+    expect(hasOwnPosting(links('https://www.linkedin.com/jobs/view/4012345678/'))).toBe(true);
+    expect(hasOwnPosting(links('https://acme.example/careers/42'))).toBe(true);
+    expect(
+      hasOwnPosting(
+        links(
+          'https://apply.workable.com/seeq',
+          'https://news.ycombinator.com/item?id=45678901',
+          'https://seeq.com',
+        ),
+      ),
+    ).toBe(false);
+    expect(hasOwnPosting(links())).toBe(false);
+  });
+});
+
+describe('savedJobFor', () => {
+  const job = (id: string, company: string, role: string, ...links: string[]) => ({
+    id,
+    company,
+    companyKey: '',
+    role,
+    links: links.map((url) => ({ url, label: 'Posting' })),
+  });
+  const page = (
+    url: string,
+    company = 'Seeq',
+    role = 'AI Software Engineer - Staff/Principal',
+  ) => ({
+    url,
+    company,
+    role,
+  });
+  // Seeq's job as a Hacker News search found it: by its company's whole board, and the post.
+  const found = job(
+    'seeq--ai-software-engineer-staff-principal',
+    'Seeq',
+    'AI Software Engineer, Staff/Principal',
+    'https://apply.workable.com/seeq',
+    'https://news.ycombinator.com/item?id=45678901',
+  );
+
+  it('finds the job with the same posting, however its link is written, at any company', () => {
+    const saved = job('acme--engineer', 'Acme', 'Engineer', 'https://jobs.lever.co/acme/5f2b-77');
+    expect(
+      savedJobFor([saved], page('https://jobs.lever.co/acme/5F2B-77/apply', 'Acme', 'Engineer')),
+    ).toEqual({ job: saved, how: 'same' });
+    expect(
+      savedJobFor([saved], page('https://jobs.lever.co/acme/5f2b-77?lever-source=x', 'Other')),
+    ).toEqual({ job: saved, how: 'same' });
+  });
+
+  it('takes a save from an application as the posting saved from the job’s own page', () => {
+    const ashby = job(
+      'acme--staff-engineer',
+      'Acme',
+      'Staff Engineer',
+      'https://jobs.ashbyhq.com/acme/8d2f4b61-07ae-4f39-b5c2-e94a1c6d3f80',
+    );
+    const lever = job(
+      'globex--designer',
+      'Globex',
+      'Designer',
+      'https://jobs.lever.co/globex/6f0c2e1a-9d4b-4c7e-8a35-2b9e7d10f4c6',
+    );
+    expect(
+      savedJobFor(
+        [ashby, lever],
+        page(
+          'https://jobs.ashbyhq.com/acme/8d2f4b61-07ae-4f39-b5c2-e94a1c6d3f80/application',
+          'Acme',
+          'Staff Engineer',
+        ),
+      ),
+    ).toEqual({ job: ashby, how: 'same' });
+    expect(
+      savedJobFor(
+        [ashby, lever],
+        page(
+          'https://jobs.lever.co/globex/6f0c2e1a-9d4b-4c7e-8a35-2b9e7d10f4c6/apply',
+          'Globex',
+          'Designer',
+        ),
+      ),
+    ).toEqual({ job: lever, how: 'same' });
+  });
+
+  it('joins the same role to a job with no posting of its own, as Seeq’s Hacker News find', () => {
+    expect(savedJobFor([found], page('https://apply.workable.com/seeq/j/1B6E0A1710/'))).toEqual({
+      job: found,
+      how: 'joins',
+    });
+    // A page with no posting of its own joins a job that has one.
+    const posted = job(
+      'seeq--ai-software-engineer-staff-principal',
+      'Seeq',
+      'AI Software Engineer, Staff/Principal',
+      'https://apply.workable.com/seeq/j/1B6E0A1710/',
+    );
+    expect(savedJobFor([posted], page('https://apply.workable.com/seeq'))).toEqual({
+      job: posted,
+      how: 'joins',
+    });
+  });
+
+  it('takes the one job with the same role and another posting as the role, not to join', () => {
+    const linkedIn = job(
+      'acme--staff-engineer',
+      'Acme',
+      'Staff Engineer',
+      'https://www.linkedin.com/jobs/view/4012345678/',
+    );
+    const greenhouse = page(
+      'https://job-boards.greenhouse.io/acme/jobs/4012345',
+      'Acme',
+      'Staff Engineer',
+    );
+    expect(savedJobFor([linkedIn], greenhouse)).toEqual({ job: linkedIn, how: 'role' });
+    // Two of them, it can't tell which.
+    const other = job(
+      'acme--staff-engineer-2',
+      'Acme',
+      'Staff Engineer',
+      'https://acme.example/careers/42',
+    );
+    expect(savedJobFor([linkedIn, other], greenhouse)).toBeNull();
+  });
+
+  it('finds none for another posting on the same site, another role, or another company', () => {
+    const lever = job(
+      'acme--staff-engineer',
+      'Acme',
+      'Staff Engineer',
+      'https://jobs.lever.co/acme/5f2b-77',
+    );
+    expect(
+      savedJobFor([lever], page('https://jobs.lever.co/acme/9d2e', 'Acme', 'Staff Engineer')),
+    ).toBeNull();
+    expect(
+      savedJobFor(
+        [found],
+        page('https://apply.workable.com/seeq/j/0BEAE8BEA3/', 'Seeq', 'Analytics Engineer'),
+      ),
+    ).toBeNull();
+    expect(
+      savedJobFor([found], page('https://apply.workable.com/acme/j/1C2D3E4F50/', 'Acme')),
+    ).toBeNull();
   });
 });

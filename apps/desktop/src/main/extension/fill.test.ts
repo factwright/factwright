@@ -522,3 +522,44 @@ describe('drafts of a form’s own questions', () => {
     expect(deps.drafts.start).not.toHaveBeenCalled();
   });
 });
+
+describe('the job a page is for', () => {
+  const lookUp = (url: string, company = '', role = '') =>
+    answerAsk({ ask: 'job', url, company, role }, deps);
+
+  it('finds the job by its posting, from its application too, with its status', async () => {
+    expect(await lookUp(`${POSTING}?gh_src=linkedin`)).toEqual({
+      ok: true,
+      did: 'job',
+      found: {
+        job: {
+          id: 'harbor-pine--account-executive',
+          company: 'Harbor & Pine',
+          role: 'Account Executive',
+          status: 'new',
+          appliedOn: null,
+        },
+        how: 'same',
+      },
+    });
+    expect(
+      await lookUp('https://www.linkedin.com/jobs/view/product-manager-at-lumen-4012345678/'),
+    ).toMatchObject({
+      found: { job: { status: 'applied', appliedOn: '2026-10-12' }, how: 'same' },
+    });
+  });
+
+  it('finds the job at the company with the page’s title, saying how', async () => {
+    expect(
+      await lookUp('https://jobs.lever.co/lumenhealth/6f0c2e1a', 'Lumen Health', 'Product Manager'),
+    ).toMatchObject({ found: { job: { id: 'lumen--product-manager' }, how: 'role' } });
+  });
+
+  it('finds none for a job that isn’t in the job hunt', async () => {
+    expect(await lookUp('https://jobs.lever.co/fernway/1', 'Fernway', 'Data Analyst')).toEqual({
+      ok: true,
+      did: 'job',
+      found: null,
+    });
+  });
+});

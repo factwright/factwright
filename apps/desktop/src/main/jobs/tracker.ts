@@ -24,13 +24,13 @@ import {
   STATUS_RANK,
   type StatusChange,
   type StoredRow,
+  savedJobFor,
   shortCode,
   type TrackedRow,
   trackedCall,
   trackedChange,
   trackedNote,
   trackedRow,
-  wholeJobId,
   withSentAnswers,
 } from '@factwright/core';
 import type { RowValues } from '@factwright/sync';
@@ -170,10 +170,11 @@ export type MergeResult = { ok: true; asks: [string, string][] } | { ok: false; 
 
 /**
  * What adding a job saved on this computer did: the job's ID, and whether the job hunt had it
- * already, by its link. Or why it couldn't be added.
+ * already, by its posting, or by its role, with its link added to it (`joined`). Or why it couldn't
+ * be added.
  */
 export type SavedJobResult =
-  | { ok: true; id: string; already: boolean }
+  | { ok: true; id: string; already: boolean; joined?: true }
   | { ok: false; message: string };
 
 /** Whether a job has a link to the same address. */
@@ -642,33 +643,37 @@ export class Tracker {
 
   /**
    * Adds a job the extension saved on this computer, as it adds one through sync: the same
-   * rows, as New, with its history's first line, and an ID from its company and role. The same
-   * job, by its link, is added once: when the ID it would take is held by a job with the same
-   * link, that's the job, and nothing is added. When another job holds it, the next ID, "-2" on, is
-   * tried. A job with a long company or title that the app knows by its whole ID, from before IDs
-   * were cut short, counts too, and a job the user merged into another is the one they kept.
+   * rows, as New, with its history's first line, and an ID from its company and role. A job the
+   * job hunt has already, by @factwright/core's savedJobFor, is added to instead: the same
+   * posting, by its link or its ID, is that job, and nothing is added; the same role at the
+   * company, where one of the two has no posting of its own, as a job a Hacker News search found
+   * by its company's board, gets the link. Another posting of the same role is a job of its own,
+   * as is anything else, with the next ID free, "-2" on, when another job holds it. A job the user
+   * merged into another is the one they kept, as what it went by is now that one's.
    */
   addSavedJob(
     job: { company: string; role: string; link: string; pay: string },
     context: EditContext,
   ): SavedJobResult {
+    const all = this.rows();
+    const merged = mergedTargets(all);
+    const kept = all.filter((row) => !merged.get(row.id));
+    const linked = kept.find((row) => job.link && hasLink(row, job.link));
+    if (linked) return { ok: true, id: linked.id, already: true };
+    const found = savedJobFor(kept, { url: job.link, company: job.company, role: job.role });
+    if (found?.how === 'same') return { ok: true, id: found.job.id, already: true };
+    if (found?.how === 'joins') {
+      const links = [...found.job.links, { url: job.link, label: 'Posting' }];
+      this.db
+        .prepare('UPDATE jobs SET links = ?, updated_at = ? WHERE id = ?')
+        .run(JSON.stringify(links), context.now, found.job.id);
+      return { ok: true, id: found.job.id, already: true, joined: true };
+    }
     const code = job.link ? shortCode(normalizeUrl(job.link)) : undefined;
     const base = jobIdFor(job.company, job.role, code);
-    const whole = wholeJobId(job.company, job.role);
-    const known = whole && whole !== base ? this.row(whole) : null;
-    const already = (id: string): SavedJobResult => ({
-      ok: true,
-      id: this.resolve(id) ?? id,
-      already: true,
-    });
-    if (whole && known && hasLink(known, job.link)) return already(whole);
     for (let n = 1; n <= MAX_SAME; n++) {
       const id = n === 1 ? base : `${base}-${n}`;
-      const held = this.row(id);
-      if (held) {
-        if (hasLink(held, job.link)) return already(id);
-        continue;
-      }
+      if (this.row(id)) continue;
       const rows = newJobRows({
         id,
         ...job,

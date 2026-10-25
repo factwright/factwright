@@ -6,6 +6,7 @@ import {
   boardRequest,
   boardSource,
   readBoard,
+  workablePostingId,
 } from './boards.ts';
 
 describe('boardSource', () => {
@@ -59,6 +60,27 @@ describe('boardPostingId', () => {
     'https://acme.example/jobs/1',
   ])('finds no one posting in %s', (link) => {
     expect(boardPostingId(link)).toBeNull();
+  });
+});
+
+describe('workablePostingId', () => {
+  it.each([
+    'https://apply.workable.com/seeq/j/1B6E0A1710/',
+    'https://apply.workable.com/seeq/j/1B6E0A1710/apply/',
+    'https://apply.workable.com/j/1B6E0A1710',
+    'https://seeq.workable.com/j/1B6E0A1710?utm_source=hn',
+  ])('reads the posting in %s', (link) => {
+    expect(workablePostingId(link)).toBe('1B6E0A1710');
+  });
+
+  it.each([
+    'https://apply.workable.com/seeq',
+    'https://apply.workable.com/seeq/',
+    'https://apply.workable.com/seeq/jobs',
+    'https://acme.example/j/1B6E0A1710',
+    'not a link',
+  ])('finds no one posting in %s', (link) => {
+    expect(workablePostingId(link)).toBeNull();
   });
 });
 

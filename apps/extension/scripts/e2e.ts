@@ -34,12 +34,13 @@ import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { INBOX_FOLDER, INBOX_JOB, SAVE_HELPER } from '@factwright/core';
+import { INBOX_FOLDER, INBOX_JOB, newJobRows, SAVE_HELPER } from '@factwright/core';
 import { sessionCookie, startServer, type TestServer } from '@factwright/server/testing';
 import {
   accountKeys,
   checkEmoji,
   decodeRecord,
+  encodeRecord,
   fileName,
   LinkApproval,
   lockForLink,
@@ -50,10 +51,14 @@ import {
   openRecord,
   recordId,
   rowName,
+  type SyncRecord,
+  sealRecord,
 } from '@factwright/sync';
 import { LIGHT } from '@factwright/ui/tokens';
 import { type Browser, type BrowserContext, chromium, type Page } from '@playwright/test';
-// Factwright's own inbox, as the desktop app runs it, standing in for the app on this computer.
+// Factwright's own inbox and answers, as the desktop app runs them, standing in for the app on
+// this computer.
+import { answerAsk, type FillDeps } from '../../desktop/src/main/extension/fill.ts';
 import { JobInbox } from '../../desktop/src/main/extension/inbox.ts';
 import { JobsService } from '../../desktop/src/main/jobs/service.ts';
 import { Tracker } from '../../desktop/src/main/jobs/tracker.ts';
@@ -225,6 +230,74 @@ const SAMPLE_JOB = {
   posting: `About the role\n\n${'Lead the data platform’s roadmap with engineering and analytics. '.repeat(70)}`,
   source: 'structured',
 };
+
+/** An application form, as the page's own function reads it, for the popup to offer to fill. */
+const SAMPLE_FORM = {
+  url: 'https://jobs.lever.co/harborpine/9d2e0b1c/apply',
+  title: 'Harbor & Pine - Data Engineer',
+  fields: ['Full name', 'Email', 'Resume/CV'].map((question, ref) => ({
+    ref,
+    key: `input ${question}`,
+    question,
+    hint: '',
+    section: '',
+    control: ref === 2 ? 'file' : 'text',
+    type: ['text', 'email', 'file'][ref] ?? 'text',
+    autocomplete: ['name', 'email', ''][ref] ?? '',
+    name: question.toLowerCase(),
+    options: [],
+    required: true,
+    limit: null,
+  })),
+  submitted: false,
+  step: '',
+  adders: [],
+};
+
+/**
+ * The popup on a job's page, as clicking the toolbar button opens it: the tab it reads stands in
+ * here, as a test can't click the toolbar, with the job the page's own function reads there, and
+ * the application form it reads, if any. The tab is the popup's own, so the browser has a window
+ * to open the panel in. The saves it makes are real.
+ */
+async function popupOn(
+  context: BrowserContext,
+  setup: Page,
+  page: typeof SAMPLE_JOB,
+  form: typeof SAMPLE_FORM | null = null,
+): Promise<Page> {
+  const popup = await context.newPage();
+  await popup.setViewportSize({ width: 360, height: 480 });
+  await popup.addInitScript(
+    ({ shown, form }) => {
+      type Tabs = { query(asked: unknown): Promise<{ id?: number; windowId?: number }[]> };
+      const api = (
+        globalThis as unknown as { chrome: { tabs: Tabs; scripting: { executeScript: unknown } } }
+      ).chrome;
+      const query = api.tabs.query.bind(api.tabs);
+      api.tabs.query = async () => {
+        const [own] = await query({ active: true, currentWindow: true });
+        return [
+          { id: own?.id ?? 1, windowId: own?.windowId, url: shown.url, title: shown.pageTitle },
+        ];
+      };
+      // Each of the extension's functions, by its name, as it's built unminified.
+      api.scripting.executeScript = async ({ func }: { func?: { name: string } }) => {
+        if (func?.name === 'formPage')
+          return form ? [{ frameId: 0, result: { did: 'read', form } }] : [];
+        if (func?.name === 'frameShows') {
+          return [{ frameId: 0, result: { href: shown.url, selected: 0 } }];
+        }
+        if (func?.name === 'hereIs') return [{ frameId: 0, result: shown.url }];
+        if (func?.name === 'framedAddresses') return [{ frameId: 0, result: [] }];
+        return [{ frameId: 0, result: shown }];
+      };
+    },
+    { shown: page, form },
+  );
+  await popup.goto(setup.url().replace('setup.html', 'popup.html'));
+  return popup;
+}
 
 /** Setup's first page asks where saved jobs go: through sync leads to the choice of sync. */
 async function throughSync(setup: Page): Promise<void> {
@@ -583,37 +656,39 @@ try {
       '4-settings.png',
     );
 
-    // The popup, on a job's page: the tab it reads stands in here, since a test can't click the
-    // toolbar. The save it makes is real.
-    const popup = await context.newPage();
-    await popup.setViewportSize({ width: 360, height: 480 });
-    await popup.addInitScript((page) => {
-      const api = (
-        globalThis as unknown as {
-          chrome: { tabs: { query: unknown }; scripting: { executeScript: unknown } };
-        }
-      ).chrome;
-      api.tabs.query = async () => [{ id: 1, url: page.url, title: page.pageTitle }];
-      api.scripting.executeScript = async () => [{ result: page }];
-    }, SAMPLE_JOB);
-    await popup.goto(setup.url().replace('setup.html', 'popup.html'));
+    // The popup, on a job's page: what it read, to save in one click.
+    const popup = await popupOn(context, setup, SAMPLE_JOB);
     await popup.getByRole('button', { name: 'Save to Factwright' }).waitFor({ timeout: 10_000 });
+    const card = (await popup.locator('.card.job').textContent()) ?? '';
     check(
-      (await popup.locator('#company').inputValue()) === 'Harbor & Pine',
-      'the popup shows the job it read, to check',
+      card.includes('Senior Product Manager, Data') &&
+        card.includes('Harbor & Pine') &&
+        card.includes('USD 165,000–190,000 a year') &&
+        card.includes('Remote (US)') &&
+        card.includes('words, from the job’s own data') &&
+        (await popup.locator('input').count()) === 0,
+      'the popup shows the job it read, to save in one click',
+    );
+    await shoot(popup, 'popup-1-save');
+    await frame(
+      await popup.locator('body').screenshot(),
+      400,
+      'One click saves it',
+      'On a job’s page, click the Factwright button. It reads the job’s title, company, pay, place and posting.',
+      '1-save.png',
+    );
+    await popup.getByRole('button', { name: 'Edit details' }).click();
+    check(
+      (await popup.locator('#company').inputValue()) === 'Harbor & Pine' &&
+        (await popup.locator('#pay').inputValue()) === 'USD 165,000–190,000 a year',
+      'Edit details shows each to check and change',
     );
     check(
       (await popup.locator('#keep').isChecked()) &&
         (await popup.locator('.posting').textContent())?.startsWith('About the role') === true,
       'with the posting it saves, to look over, and a way to leave it out',
     );
-    await frame(
-      await popup.locator('body').screenshot(),
-      400,
-      'Check it, save it',
-      'On a job’s page, click the Factwright button. It reads the job’s title, company, pay and posting.',
-      '1-save.png',
-    );
+    await shoot(popup, 'popup-2-edit-details');
     await popup.getByRole('button', { name: 'Save to Factwright' }).click();
     await popup.getByText('Saved to your job hunt, as New.').waitFor({ timeout: 15_000 });
     check(true, 'the popup saves it');
@@ -625,6 +700,165 @@ try {
       '2-saved.png',
     );
     await popup.close();
+
+    // On the same page again, the popup knows the job's saved, through sync, and offers no save.
+    const known = await popupOn(context, setup, SAMPLE_JOB);
+    await known.getByText('In your job hunt').waitFor({ timeout: 10_000 });
+    check(
+      ((await known.locator('.card.job').textContent()) ?? '').includes('Harbor & Pine · New') &&
+        (await known.getByRole('button').count()) === 0,
+      'the popup knows a job you saved, with its status, and offers no save',
+    );
+    await shoot(known, 'popup-3-saved');
+    await known.close();
+    // On its application, a saved job's page with a form, it offers to fill it.
+    const applying = await popupOn(
+      context,
+      setup,
+      {
+        ...SAMPLE_JOB,
+        url: `${SAMPLE_JOB.url}/apply`,
+        pageUrl: `${SAMPLE_JOB.url}/apply`,
+        posting: 'Submit your application',
+        source: 'main',
+      },
+      { ...SAMPLE_FORM, url: `${SAMPLE_JOB.url}/apply` },
+    );
+    await applying.getByRole('button', { name: 'Fill this application' }).waitFor({
+      timeout: 10_000,
+    });
+    check(
+      (await applying.getByText('In your job hunt').count()) === 1 &&
+        (await applying.getByRole('button', { name: /save/i }).count()) === 0,
+      'and on its application, the same job, with Fill and no save',
+    );
+    await shoot(applying, 'popup-4-saved-with-form');
+    await applying.close();
+
+    // A job that isn't saved, on its application: one button saves it and fills the form.
+    const unsaved = await popupOn(
+      context,
+      setup,
+      {
+        ...SAMPLE_JOB,
+        url: SAMPLE_FORM.url,
+        pageUrl: SAMPLE_FORM.url,
+        pageTitle: SAMPLE_FORM.title,
+        title: 'Data Engineer',
+        location: 'Denver, CO',
+        pay: '',
+        posting: 'Full name Email Resume/CV Submit application',
+        source: 'main',
+      },
+      SAMPLE_FORM,
+    );
+    await unsaved.getByRole('button', { name: 'Save and fill' }).waitFor({ timeout: 10_000 });
+    check(
+      ((await unsaved.locator('.card.job').textContent()) ?? '').includes(
+        'No posting: only its link is saved',
+      ) && (await unsaved.getByRole('button', { name: 'Fill this application' }).count()) === 0,
+      'an unsaved job on its application gets Save and fill, saving the link alone',
+    );
+    await shoot(unsaved, 'popup-5-save-and-fill');
+    const pages = context.pages().length;
+    await unsaved.getByRole('button', { name: 'Save and fill' }).click();
+    // Chrome opens the panel straight after the click that saved it, and the popup closes, or the
+    // popup offers Fill, as where the browser won't.
+    const panelled = await Promise.race([
+      unsaved.waitForEvent('close', { timeout: 15_000 }).then(() => 'panel' as const),
+      unsaved
+        .getByRole('button', { name: 'Fill this application' })
+        .waitFor({ timeout: 15_000 })
+        .then(() => 'button' as const),
+    ]);
+    const engineer = await recordId(keys, rowName('jobs', 'harbor-and-pine--data-engineer'));
+    const postingOf = await recordId(
+      keys,
+      fileName('saved/harbor-and-pine--data-engineer/posting.md'),
+    );
+    const synced = (await sam.client.changes(0)).changes;
+    check(
+      synced.some((each) => each.record === engineer) &&
+        !synced.some((each) => each.record === postingOf),
+      `Save and fill saves the job by its link, then fills (${panelled === 'panel' ? 'the panel opened' : 'Fill to click'})`,
+    );
+    if (panelled === 'button') await shoot(unsaved, 'popup-6-saved-fill');
+    if (!unsaved.isClosed()) await unsaved.close();
+    for (const page of context.pages().slice(pages)) await page.close();
+
+    // A job a Hacker News search found by its company's whole board, as the app syncs it: saving
+    // it from its own posting adds the posting to it, and makes no copy.
+    const found = 'seeq--ai-software-engineer-staff-principal';
+    const board = [
+      { url: 'https://apply.workable.com/seeq', label: 'Board' },
+      { url: 'https://news.ycombinator.com/item?id=45678901', label: 'HN post' },
+    ];
+    const seeqRow = {
+      ...newJobRows({
+        id: found,
+        company: 'Seeq',
+        role: 'AI Software Engineer, Staff/Principal',
+        link: '',
+        pay: '',
+        status: 'new',
+        today: '2026-10-20',
+        now: '2026-10-20T12:00:00.000Z',
+        statusId: 'from-the-app',
+      }).job,
+      links: JSON.stringify(board),
+      manual: 0,
+      status: null,
+      status_on: null,
+    };
+    const seeqRecord = await recordId(keys, rowName('jobs', found));
+    const body = { kind: 'row', table: 'jobs', id: found, row: seeqRow, device: 'Mac', at: '' };
+    await computer.push([
+      {
+        record: seeqRecord,
+        base: 0,
+        data: await sealRecord(keys, seeqRecord, 1, encodeRecord(body as SyncRecord)),
+        file: null,
+        deleted: false,
+      },
+    ]);
+    const workable = 'https://apply.workable.com/seeq/j/1B6E0A1710/';
+    const seeq = await popupOn(context, setup, {
+      ...SAMPLE_JOB,
+      url: workable,
+      pageUrl: workable,
+      site: 'apply.workable.com',
+      pageTitle: 'AI Software Engineer - Staff/Principal - Seeq',
+      title: 'AI Software Engineer - Staff/Principal',
+      company: 'Seeq',
+      location: 'United States',
+      pay: '',
+    });
+    await seeq.getByText('You saved it from another page.').waitFor({ timeout: 10_000 });
+    check(
+      ((await seeq.locator('.card.job').textContent()) ?? '').includes(
+        'AI Software Engineer, Staff/Principal',
+      ),
+      'the popup finds the same role a search found by its company’s board, to add this page to',
+    );
+    await shoot(seeq, 'popup-7-joins');
+    await seeq.getByRole('button', { name: 'Save to Factwright' }).click();
+    await seeq.getByText('Already in your job hunt, from another page.').waitFor({
+      timeout: 15_000,
+    });
+    const joined = (await sam.client.changes(0)).changes.findLast(
+      (each) => each.record === seeqRecord,
+    );
+    const joinedRow = joined && (await openRecord(keys, seeqRecord, joined.version, joined.data));
+    const after = joinedRow ? decodeRecord(joinedRow) : null;
+    const copy = await recordId(keys, rowName('jobs', `${found}-2`));
+    check(
+      after?.kind === 'row' &&
+        String(after.row?.links).includes(workable) &&
+        !(await sam.client.changes(0)).changes.some((each) => each.record === copy),
+      'and saving adds this page’s link and posting to that job, with no copy',
+    );
+    await shoot(seeq, 'popup-8-joined');
+    await seeq.close();
 
     const job = {
       url: 'https://www.linkedin.com/jobs/view/4012345678/',
@@ -686,10 +920,15 @@ try {
     await unknown.goto(setup.url().replace('setup.html', 'popup.html'));
     await unknown.getByRole('button', { name: 'Save to Factwright' }).waitFor({ timeout: 10_000 });
     check(
+      (await unknown.getByText('read the page’s main text').count()) === 1 &&
+        ((await unknown.locator('.card.job').textContent()) ?? '').includes('Lumen'),
+      'says it read a page’s main text, to check it’s the posting',
+    );
+    await unknown.getByRole('button', { name: 'Edit details' }).click();
+    check(
       (await unknown.locator('details.preview').getAttribute('open')) !== null &&
-        (await unknown.getByText('read the page’s main text').count()) === 1 &&
         (await unknown.locator('#company').inputValue()) === 'Lumen',
-      'shows a page’s main text open, to check it’s the posting',
+      'and shows it open in Edit details',
     );
     await unknown.locator('#company').fill('');
     await unknown.getByRole('button', { name: 'Save to Factwright' }).click();
@@ -1147,24 +1386,8 @@ try {
       'the helper drops the job in the inbox, as the extension sent it, and nothing else',
     );
 
-    /** The popup on a job's page, as clicking the toolbar button opens it. */
-    const popupOn = async (page: typeof SAMPLE_JOB) => {
-      const popup = await context.newPage();
-      await popup.setViewportSize({ width: 360, height: 480 });
-      await popup.addInitScript((shown) => {
-        const api = (
-          globalThis as unknown as {
-            chrome: { tabs: { query: unknown }; scripting: { executeScript: unknown } };
-          }
-        ).chrome;
-        api.tabs.query = async () => [{ id: 1, url: shown.url, title: shown.pageTitle }];
-        api.scripting.executeScript = async () => [{ result: shown }];
-      }, page);
-      await popup.goto(setup.url().replace('setup.html', 'popup.html'));
-      return popup;
-    };
     // The popup says so too, for a job saved while Factwright is closed.
-    const closed = await popupOn({
+    const closed = await popupOn(context, setup, {
       ...SAMPLE_JOB,
       url: 'https://jobs.ashbyhq.com/lumen/7d1e',
       pageUrl: 'https://jobs.ashbyhq.com/lumen/7d1e',
@@ -1188,7 +1411,12 @@ try {
       tracker,
       onChange: () => {},
     });
-    const inbox = new JobInbox({ folder: inboxFolder, add: (saved) => jobs.addSaved(saved) });
+    const inbox = new JobInbox({
+      folder: inboxFolder,
+      add: (saved) => jobs.addSaved(saved),
+      // The popup's look-up alone, which needs only the jobs.
+      answer: (ask) => answerAsk(ask, { jobs } as unknown as FillDeps),
+    });
     inbox.start();
     const northwind = tracker.rows().find((row) => row.company === 'Northwind');
     check(
@@ -1202,7 +1430,7 @@ try {
     );
 
     // With Factwright open, the popup's save is added at once, and says so.
-    const popup = await popupOn(SAMPLE_JOB);
+    const popup = await popupOn(context, setup, SAMPLE_JOB);
     await popup.getByRole('button', { name: 'Save to Factwright' }).click();
     await popup.getByText('Saved to your job hunt, as New.').waitFor({ timeout: 15_000 });
     check(
@@ -1212,6 +1440,18 @@ try {
     );
     await shoot(popup, 'computer-5-saved');
     await popup.close();
+    // Factwright on this computer knows it's saved, as the popup asks it, from its application too.
+    const known = await popupOn(context, setup, {
+      ...SAMPLE_JOB,
+      url: `${SAMPLE_JOB.url}/apply`,
+      pageUrl: `${SAMPLE_JOB.url}/apply`,
+    });
+    await known.getByText('In your job hunt').waitFor({ timeout: 15_000 });
+    check(
+      ((await known.locator('.card.job').textContent()) ?? '').includes('Harbor & Pine · New'),
+      'Factwright on this computer says the popup’s job is saved, from its application too',
+    );
+    await known.close();
     const again = (await save(job)) as { ok: boolean; already: boolean; posting: string };
     check(again.ok && again.already && again.posting === 'kept', 'saves the same job only once');
     inbox.stop();

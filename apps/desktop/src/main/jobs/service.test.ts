@@ -347,6 +347,27 @@ describe('a job the extension saved on this computer', () => {
     expect(jobs.addSaved(job)).toEqual({ ok: true, id, already: false, posting: 'failed' });
     expect(tracker.rows().some((each) => each.id === id)).toBe(true);
   });
+
+  it('adds the link and posting to the same role found by its company’s board alone', () => {
+    tracker.addSavedJob(
+      {
+        company: 'Harbor & Pine',
+        role: 'Senior PM, Data',
+        link: 'https://jobs.lever.co/harborpine',
+        pay: '',
+      },
+      { today: '2026-10-09', now: '2026-10-09T18:00:00.000Z' },
+    );
+    expect(jobs.addSaved(job)).toEqual({
+      ok: true,
+      id,
+      already: true,
+      joined: true,
+      posting: 'saved',
+    });
+    expect(readFileSync(posting(), 'utf8')).toContain('Lead the data platform’s roadmap.');
+    expect(tracker.rows().map((each) => each.id)).toEqual([id]);
+  });
 });
 
 describe('a form’s questions, for your Claude to draft', () => {

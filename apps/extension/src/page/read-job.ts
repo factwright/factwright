@@ -57,6 +57,16 @@ export function readJobPage(
   /** Query parameters that only track where a click came from (@factwright/core's links.ts). */
   const TRACKING_PARAM =
     /^(utm_|ref$|src$|source$|from$|tk$|trk|rjptk|xpse|xfps|xkcb|gh_src|lever-)/i;
+  /**
+   * What iCIMS's career sites add to a page's address to show it in their frame, and the address
+   * of the page around it then takes: its size and the visitor's time zone, which name nothing.
+   */
+  const ICIMS_FRAME_PARAM =
+    /^(in_iframe|mobile|width|height|bga|needsRedirect|jan1offset|jun1offset)$/i;
+  const ICIMS = /(^|\.)icims\.com$/i;
+  /** Whether a query's part, by its name, is no part of a page's address on a site. */
+  const dropped = (name: string, host: string) =>
+    TRACKING_PARAM.test(name) || (ICIMS.test(host) && ICIMS_FRAME_PARAM.test(name));
   /** Job boards and applicant systems, which are never the company a job is with. */
   const BOARDS =
     /^(linkedin|indeed|glassdoor|ziprecruiter|monster|wellfound|angellist|dice|simplyhired|careerbuilder|built ?in|hired|otta|welcome to the jungle|greenhouse|lever|workday|ashby|smartrecruiters|jobvite|icims)(\.com)?$/i;
@@ -115,6 +125,8 @@ export function readJobPage(
     host: RegExp;
     posting: string[];
     title: string[];
+    /** Where it shows the pay, for a site whose job data has none, such as Lever's salary range. */
+    pay?: string[];
     /** Words its heading puts around a job's title, which aren't the title's. */
     aroundTitle?: RegExp;
     /** The job's title in the tab's title, for pages that show it nowhere else. */
@@ -193,6 +205,8 @@ export function readJobPage(
       host: /(^|\.)lever\.co$/,
       posting: ['[data-qa="job-description"]', '.posting-page .content', '.section-wrapper'],
       title: ['.posting-headline h2'],
+      // Its job data has no pay: its salary section says it, as "$161,000 - $245,000 a year".
+      pay: ['[data-qa="salary-range"] > div'],
       company: [],
       location: ['.posting-categories .location', '.posting-category.location'],
     },
@@ -240,16 +254,20 @@ export function readJobPage(
       location: ['.job-detail', '[data-test="topbar-location"]'],
     },
     {
-      // iCIMS's career portals, each a company's own at icims.com, as "careers-acme": its
-      // application's pages, in their frame, name the job only in the tab's title, "Candidate
-      // Profile - Robotics Engineer", and the company only in the portal's name.
+      // iCIMS's career portals, each a company's own at icims.com, as "careers-acme". Each shows
+      // its pages in a frame of a page of its own, which is only the company's branding: the
+      // posting's page, in the frame, has the job's title, where it is and the posting, and its
+      // application's pages name the job only in the tab's title, "Candidate Profile - Robotics
+      // Engineer". The company is only in the portal's name.
       host: /(^|\.)icims\.com$/,
-      posting: [],
-      title: [],
+      posting: ['.iCIMS_JobPage .iCIMS_JobContent'],
+      title: ['.iCIMS_JobPage h1.iCIMS_Header'],
       titleInTitle: /^(?:.+ - )?(?:candidate profile|basic information) - (.+)$/i,
       company: [],
       companyInHost: /^(?:[a-z0-9]+-)*([a-z0-9]+)\.icims\.com$/i,
-      location: [],
+      location: [
+        '.iCIMS_JobPage .iCIMS_JobHeaderTag:has(.glyphicons-map-marker) .iCIMS_JobHeaderData',
+      ],
     },
     {
       // Taleo's career sections, each at a company's own name at taleo.net: each step of its
@@ -303,11 +321,11 @@ export function readJobPage(
           : [decoded(pair.slice(0, at)), decoded(pair.slice(at + 1))];
       });
   /** An address's query without its tracking, and the rest of it as it was. */
-  const untracked = (search: string) => {
+  const untracked = (search: string, host: string) => {
     const kept = search
       .replace(/^\?/, '')
       .split('&')
-      .filter((pair) => pair && !TRACKING_PARAM.test(decoded(pair.split('=', 1)[0] ?? '')));
+      .filter((pair) => pair && !dropped(decoded(pair.split('=', 1)[0] ?? ''), host));
     return kept.length > 0 ? `?${kept.join('&')}` : '';
   };
 
@@ -472,6 +490,8 @@ export function readJobPage(
     };
   }
 
+  /** What a site puts in its job data for a part it doesn't know, as iCIMS's "UNAVAILABLE". */
+  const UNKNOWN = /^(unavailable|unknown|n\/a|null|undefined)$/i;
   /** Where a posting's job is, from its job data. */
   function placeOf(posting: Record<string, unknown>): string {
     const places = (
@@ -484,7 +504,7 @@ export function readJobPage(
         const parts = address as Record<string, unknown>;
         return [parts.addressLocality, parts.addressRegion, nameOf(parts.addressCountry)]
           .map(nameOf)
-          .filter(Boolean)
+          .filter((part) => part && !UNKNOWN.test(part))
           .join(', ');
       })
       .filter(Boolean);
@@ -557,7 +577,7 @@ export function readJobPage(
         return `https://${url.hostname}/sfcareer/jobreqcareer?jobId=${job}&company=${company}`;
       }
     }
-    url.search = untracked(url.search);
+    url.search = untracked(url.search, host);
     // A link's "#:~:text=…", which only highlights words on the page, is no part of its address.
     const hash = url.hash.replace(/:~:.*$/s, '');
     url.hash = /^#!?\//.test(hash) ? hash : '';
@@ -590,10 +610,11 @@ export function readJobPage(
       // address.
       const hash = url.hash.replace(/:~:.*$/s, '').replace(/^#$/, '');
       const route = /^#!?\/./.test(hash) ? hash.replace(/\/+$/, '').toLowerCase() : '';
+      const host = url.hostname.replace(/^www\./, '').toLowerCase();
       return {
-        host: url.hostname.replace(/^www\./, '').toLowerCase(),
+        host,
         segments: url.pathname.toLowerCase().split('/').filter(Boolean),
-        query: queryOf(url.search).filter(([key]) => !TRACKING_PARAM.test(key)),
+        query: queryOf(url.search).filter(([key]) => !dropped(key, host)),
         route,
         /** A place on the page, such as "#job-2", which some pages of several jobs use. */
         anchor: route ? '' : hash.toLowerCase(),
@@ -746,8 +767,12 @@ export function readJobPage(
   const shown = postings.filter(showsTitle);
   const data = here.length === 1 ? here[0] : shown.length === 1 ? shown[0] : undefined;
 
-  /** A site's name, unless it's a job board's or an applicant system's, which no job is with. */
-  const notBoard = (name: string) => (BOARDS.test(name.trim()) ? '' : name);
+  /**
+   * A site's name, unless it's a job board's or an applicant system's, which no job is with, or
+   * only says it's a careers site, as iCIMS's "careers".
+   */
+  const notBoard = (name: string) =>
+    BOARDS.test(name.trim()) || /^(careers?|jobs?)$/i.test(name.trim()) ? '' : name;
   // A Hacker News post's text, and the company and title its first line names, which are all a
   // post has: never the tab's title, which is only the post's first words.
   const postText = post ? textOf(post.text) : '';
@@ -803,6 +828,8 @@ export function readJobPage(
     source = posting ? 'main' : 'page';
   }
 
+  /** What the job site shows as the pay, when it's short enough to be only that. */
+  const shownPay = fromSite(known?.pay);
   return {
     url: jobUrl(),
     pageUrl: href,
@@ -811,7 +838,7 @@ export function readJobPage(
     title,
     company,
     location: (data && placeOf(data)) || fromSite(known?.location),
-    pay: data ? payOf(data) : '',
+    pay: (data && payOf(data)) || (shownPay.length <= 200 && /\d/.test(shownPay) ? shownPay : ''),
     employment: data ? employmentOf(data.employmentType) : '',
     posted: oneLine(data?.datePosted).slice(0, 10),
     posting: posting.slice(0, MAX_POSTING),

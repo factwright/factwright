@@ -1,5 +1,6 @@
 import type { FieldReply } from './fill.ts';
 import { FIELD_CONTROLS, type FieldControl, type FieldKind } from './forms.ts';
+import type { SavedHow } from './matching.ts';
 import { JOB_LIMITS } from './new-job.ts';
 
 /**
@@ -93,11 +94,12 @@ export type PostingSaved = 'saved' | 'kept' | 'none' | 'failed';
 
 /**
  * What the app answers for a job from the inbox, which the helper hands back to the extension: the
- * job's ID, whether it was in the job hunt already, and what became of its posting. Or why it
- * couldn't be added.
+ * job's ID, whether it was in the job hunt already, and what became of its posting. `joined` says
+ * the job hunt had the same role at the company by a board's address, a Hacker News post or the
+ * company's site, and the job's link was added to it (savedJobFor). Or why it couldn't be added.
  */
 export type InboxAnswer =
-  | { ok: true; id: string; already: boolean; posting: PostingSaved }
+  | { ok: true; id: string; already: boolean; posting: PostingSaved; joined?: true }
   | { ok: false; reason: 'bad-message' | 'failed'; message: string };
 
 /**
@@ -178,7 +180,12 @@ export type InboxAsk =
    */
   | { ask: 'draft'; job: string; url: string; questions: AskedField[] }
   /** How your Claude's drafts for a job are coming along. */
-  | { ask: 'drafts'; job: string };
+  | { ask: 'drafts'; job: string }
+  /**
+   * Whether the job on a page is in your job hunt, as the popup asks before it offers to save it:
+   * the page's address, and the company and job title the page shows.
+   */
+  | { ask: 'job'; url: string; company: string; role: string };
 
 const isText = (value: unknown, max: number): value is string =>
   typeof value === 'string' && value.length <= max;
@@ -328,6 +335,13 @@ export function readInboxAsk(text: string): InboxAsk | null {
   if (asked.ask === 'drafts' && keys === 'ask job') {
     return isJobId(asked.job) ? { ask: 'drafts', job: asked.job } : null;
   }
+  if (asked.ask === 'job' && keys === 'ask company role url') {
+    const { url, company, role } = asked;
+    if (!isPage(url) || !isText(company, JOB_LIMITS.company) || !isText(role, JOB_LIMITS.role)) {
+      return null;
+    }
+    return { ask: 'job', url, company, role };
+  }
   return null;
 }
 
@@ -400,6 +414,11 @@ export type InboxAskAnswer =
       /** How many of the form's questions have a draft now. */
       drafted: number;
     }
+  /**
+   * The job on file a page is for, with how saving the page goes with it (savedJobFor), or null
+   * when your job hunt doesn't have it.
+   */
+  | { ok: true; did: 'job'; found: { job: AskedJob; how: SavedHow } | null }
   | {
       ok: false;
       /**

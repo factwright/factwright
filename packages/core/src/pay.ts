@@ -11,7 +11,8 @@ interface Amount {
 }
 
 const MONEY = String.raw`(\$)?\s*(\d+(?:\.\d+)?)\s*([kKmM](?![a-z]))?`;
-const RANGES = new RegExp(`${MONEY}\\s*(?:–|—|-|to)\\s*${MONEY}`, 'g');
+// "to" as iCIMS writes it too: "$144000.00 To $237500.00 / year".
+const RANGES = new RegExp(`${MONEY}\\s*(?:–|—|-|[tT][oO])\\s*${MONEY}`, 'g');
 const AMOUNTS = new RegExp(MONEY, 'g');
 const HOURLY = /\b(hour|hourly|hr)\b|\/\s*h(ou)?r\b/i;
 const HOURS_PER_YEAR = 2080;

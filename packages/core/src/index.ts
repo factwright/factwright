@@ -28,6 +28,7 @@ export {
   boardSource,
   boardSystem,
   readBoard,
+  workablePostingId,
 } from './boards.ts';
 export { callInvite, callInviteName, callStart, callTitle, isClockTime } from './calendar.ts';
 export { US_STATES } from './countries.ts';
@@ -290,6 +291,7 @@ export {
 export {
   type CompanyName,
   companyMatch,
+  hasOwnPosting,
   isTitled,
   type JobIdentity,
   type JobMatch,
@@ -300,6 +302,8 @@ export {
   postingKey,
   postingSite,
   readTitle,
+  type SavedHow,
+  savedJobFor,
   type TitleFit,
   type TitleWords,
   titleFit,

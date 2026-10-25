@@ -220,9 +220,10 @@ export class JobsService {
   /**
    * Adds a job the extension saved on this computer, from the inbox, as a save through sync
    * adds it: its row, as New, and its posting as the person saw it, kept with the job's extras in
-   * `saved/<job ID>/posting.md`, where Claude's work later copies it into the job's folder. The
-   * same job, by its link, is added once, and saving it again adds its posting if it has none. The
-   * inbox sends the new list once it has added all it holds (sendList).
+   * `saved/<job ID>/posting.md`, where Claude's work later copies it into the job's folder. A job
+   * the job hunt has already, by its posting or its role (Tracker.addSavedJob), is added to
+   * instead: saving it again adds its posting if it has none. The inbox sends the new list once it
+   * has added all it holds (sendList).
    */
   addSaved(job: SavedJob): InboxAnswer {
     const context = this.context();
@@ -232,7 +233,8 @@ export class JobsService {
     );
     if (!added.ok) return { ok: false, reason: 'failed', message: added.message };
     const posting = this.keepPosting(added.id, job, !added.already, context.today);
-    return { ok: true, id: added.id, already: added.already, posting };
+    const { id, already, joined } = added;
+    return { ok: true, id, already, posting, ...(joined && { joined }) };
   }
 
   /** Sends the list as it is now, as after an edit: once the inbox has added what it holds. */

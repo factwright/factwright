@@ -12,6 +12,8 @@ describe('parsePay', () => {
     ['Base salary 165000 plus equity', { min: 165_000, max: 165_000 }],
     ['$120k base, 401(k) match', { min: 120_000, max: 120_000 }],
     ['2-3 years of experience, $150k-$180k', { min: 150_000, max: 180_000 }],
+    ['$161,000 - $245,000 a year', { min: 161_000, max: 245_000 }],
+    ['$144000.00 To $237500.00 / year', { min: 144_000, max: 237_500 }],
   ])('reads "%s"', (text, range) => {
     expect(parsePay(text)).toEqual(range);
   });

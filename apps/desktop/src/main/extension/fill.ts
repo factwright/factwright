@@ -30,6 +30,7 @@ import {
   type SavedForm,
   SENT_STATUSES,
   SYNCED_ANSWERS,
+  savedJobFor,
   sentAnswersOf,
   sentBefore,
   uploadName,
@@ -347,6 +348,16 @@ function drafts(ask: Extract<InboxAsk, { ask: 'drafts' }>, deps: FillDeps): Inbo
   return { ok: true, did: 'drafts', ...deps.drafts.state(job.id), drafted };
 }
 
+/**
+ * The job on file a page is for, as the extension's popup asks before it offers to save the page:
+ * the same posting, the same role that saving the page would add to, or the one job Fill would
+ * take, by @factwright/core's savedJobFor, with how. None for a job that isn't in the job hunt.
+ */
+function jobFor(ask: Extract<InboxAsk, { ask: 'job' }>, deps: FillDeps): InboxAskAnswer {
+  const found = savedJobFor(deps.jobs.list().jobs, ask);
+  return { ok: true, did: 'job', found: found && { job: askedJob(found.job), how: found.how } };
+}
+
 /** Answers one ask from the extension. Nothing in it can stop the app: a failure says so. */
 export async function answerAsk(ask: InboxAsk, deps: FillDeps): Promise<InboxAskAnswer> {
   try {
@@ -355,6 +366,7 @@ export async function answerAsk(ask: InboxAsk, deps: FillDeps): Promise<InboxAsk
     if (ask.ask === 'sent') return sent(ask, deps);
     if (ask.ask === 'draft') return await draft(ask, deps);
     if (ask.ask === 'drafts') return drafts(ask, deps);
+    if (ask.ask === 'job') return jobFor(ask, deps);
     return remember(ask, deps);
   } catch {
     return failed('Factwright couldn’t do that just now. Try again.');
