@@ -127,6 +127,29 @@ describe('RunSignals', () => {
     });
     expect(signals).toEqual(['needs-answer', 'working']);
   });
+
+  it('says the run has work going until it’s done, or ready with nothing to do', () => {
+    const signals: string[] = [];
+    const tracker = new RunSignals((signal) => signals.push(signal));
+    // Claude Code is starting, maybe on its first screens or asking about trust.
+    expect(tracker.hasWork()).toBe(true);
+    tracker.ready();
+    expect(signals).toEqual(['ready']);
+    expect(tracker.hasWork()).toBe(false);
+    tracker.hear({ hook_event_name: 'UserPromptSubmit', prompt: 'hi' });
+    expect(tracker.hasWork()).toBe(true);
+    tracker.hear({ hook_event_name: 'PermissionRequest', ...read('notes/a.md') });
+    expect(tracker.hasWork()).toBe(true);
+    tracker.hear({ hook_event_name: 'StopFailure', error: 'rate_limit' });
+    expect(tracker.hasWork()).toBe(false);
+    // A task or a reply typed into Claude Code that's done is work, before its hook says so,
+    // and the panel hears of it from the hook.
+    tracker.prompted();
+    expect(tracker.hasWork()).toBe(true);
+    expect(signals).toEqual(['ready', 'working', 'needs-answer', 'done']);
+    tracker.hear({ hook_event_name: 'Stop' });
+    expect(tracker.hasWork()).toBe(false);
+  });
 });
 
 describe('bearerToken', () => {

@@ -164,13 +164,8 @@ export function JobPanel({
     if (!focusNext(top.current))
       panel.current?.querySelector<HTMLElement>('header select')?.focus();
   }, [shownStatus, backOn]);
-  if (!row) {
-    return (
-      <aside className={`${styles.panel} ${styles.empty}`} aria-label="Job details">
-        <p className={styles.placeholder}>Pick a job to see everything on file for it.</p>
-      </aside>
-    );
-  }
+  // Until a job is picked, the list has the room.
+  if (!row) return null;
   const { job, progress } = row;
   const pay = payLabel(job.pay) ?? job.pay?.text;
   // The newest search that found it, and whether the job was on file before it.

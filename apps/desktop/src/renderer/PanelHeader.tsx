@@ -2,6 +2,7 @@ import { Button, type RunState, RunStatus, VisuallyHidden } from '@factwright/ui
 import { ChevronDown, ChevronUp } from 'lucide-react';
 import type { ReactNode } from 'react';
 import styles from './ClaudePanel.module.css';
+import { BUSY } from './jobs/RunActions.tsx';
 import type { RunPhase } from './useClaudeRun.ts';
 
 /** The run's state as the status chip shows it. A run that couldn't start counts as failed. */
@@ -10,7 +11,7 @@ export function chipState(phase: RunPhase, problem: string | undefined): RunStat
   return phase;
 }
 
-/** Whether Claude Code is still open, and so can be stopped. */
+/** Whether Claude Code is still open. */
 export function isRunning(phase: RunPhase): boolean {
   return (
     phase === 'starting' ||
@@ -24,7 +25,9 @@ export function isRunning(phase: RunPhase): boolean {
 /**
  * The bar along the bottom of the window while Claude has a task: where the run stands, what
  * Claude is doing or what it made, how long it's been, whose Claude it is, and what you can do,
- * such as open what it made, or see Claude's work, the terminal under the bar.
+ * such as open what it made, or see Claude's work, the terminal under the bar. Stop is for a run
+ * that's starting, working or waiting on the user. Any other closes: Close quits Claude Code that's
+ * done, or ready with nothing to do, and puts the bar away in one click.
  */
 export function PanelHeader({
   title = 'Claude',
@@ -56,13 +59,14 @@ export function PanelHeader({
   workShown: boolean;
   onShowWork: (shown: boolean) => void;
   onStop: () => void;
+  /** Puts the bar away, quitting Claude Code first while it's open. */
   onClose: () => void;
   /** The task is done, with something to show for it. */
   finished?: boolean;
   /** Claude's turn ended in an error, such as a rate limit, though Claude Code is still open. */
   failed?: boolean;
 }) {
-  const running = isRunning(phase);
+  const stoppable = BUSY.includes(phase);
   const busy = phase === 'starting' || phase === 'working';
   return (
     <div
@@ -99,7 +103,7 @@ export function PanelHeader({
       >
         {workShown ? 'Hide Claude’s work' : 'Show Claude’s work'}
       </Button>
-      {running ? (
+      {stoppable ? (
         <Button variant="quiet" size="sm" onClick={onStop}>
           Stop
         </Button>

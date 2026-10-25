@@ -16,10 +16,11 @@ const MAX_ANSWERED = 50;
 /**
  * Turns one run's hook events from Claude Code into signals for the panel. While Claude waits on
  * the user, for a permission or a question, tools that finish alongside don't make the run read
- * as working again: Claude often reads files while a permission prompt is open.
+ * as working again: Claude often reads files while a permission prompt is open. It keeps where
+ * the run stands too, for what waits while it has work going, such as an update.
  */
 export class RunSignals {
-  private readonly emit: (signal: RunSignal) => void;
+  private readonly tell: (signal: RunSignal) => void;
   /** The tool calls waiting on the user, oldest first. */
   private readonly waiting: string[] = [];
   /**
@@ -27,9 +28,32 @@ export class RunSignals {
    * another wait on the same tool is still waiting.
    */
   private readonly answeredInApp: string[] = [];
+  /** Where the run stands, by the last signal, or null while Claude Code starts. */
+  private last: RunSignal | null = null;
 
   constructor(emit: (signal: RunSignal) => void) {
-    this.emit = emit;
+    this.tell = emit;
+  }
+
+  /**
+   * Whether the run has work going: Claude Code is starting, Claude is working, or it waits on the
+   * user. One that's done, or ready with nothing to do yet, has none, so it can close.
+   */
+  hasWork(): boolean {
+    return this.last !== 'done' && this.last !== 'ready';
+  }
+
+  /** Claude Code is past its first screens, with no prompt, waiting for what the user types. */
+  ready(): void {
+    this.emit('ready');
+  }
+
+  /**
+   * A prompt went in, such as a task or the user's reply, so Claude has work going before its
+   * hook says so. The hook tells the panel.
+   */
+  prompted(): void {
+    this.last = 'working';
   }
 
   hear(event: unknown): void {
@@ -84,6 +108,11 @@ export class RunSignals {
       if (this.answeredInApp.length > MAX_ANSWERED) this.answeredInApp.shift();
     }
     if (this.waiting.length === 0) this.emit('working');
+  }
+
+  private emit(signal: RunSignal): void {
+    this.last = signal;
+    this.tell(signal);
   }
 
   private wait(fields: Record<string, unknown>): void {

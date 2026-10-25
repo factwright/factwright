@@ -48,10 +48,12 @@ const pickView = (name: RegExp) =>
     .filter({ has: opened.window.getByRole('radio', { name }) })
     .click();
 
-/** Closes Claude's panel once its run is done, ready for the next. */
+/**
+ * Closes Claude's panel once its run is done, ready for the next: Close quits Claude Code and puts
+ * the panel away in one click. Stop is only for a run that's still going.
+ */
 async function closeRun() {
   const panel = claudePanel();
-  await panel.getByRole('button', { name: 'Stop' }).click();
   await panel.getByRole('button', { name: 'Close' }).click();
   await expect(panel).toHaveCount(0);
 }

@@ -71,12 +71,16 @@ describe('UpdateCard', () => {
     expect(dialog.textContent).toContain('Faster resumes.');
   });
 
-  it('waits for quitting while Claude is working, which a restart would stop', () => {
-    const { container } = render(
+  it('offers Restart now only once Claude is done, as a restart would stop its work', () => {
+    const { container, rerender } = render(
       <UpdateCard status={READY} busy unsaved={() => false} onRestart={() => {}} />,
     );
     expect(screen.queryByRole('button', { name: 'Restart now' })).toBeNull();
-    expect(container.textContent).toContain('once your Claude is done');
+    expect(container.textContent).toContain(
+      'You can restart into it once Claude is done, or it installs the next time you quit.',
+    );
+    rerender(<UpdateCard status={READY} busy={false} unsaved={() => false} onRestart={() => {}} />);
+    expect(screen.getByRole('button', { name: 'Restart now' })).toBeTruthy();
   });
 
   it('leaves out what’s new when there are no notes', () => {

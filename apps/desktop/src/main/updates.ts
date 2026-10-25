@@ -52,8 +52,13 @@ export interface UpdateWatcherDeps {
    * install. electron-updater says so earlier, once it has the file, before the Mac has checked it.
    */
   macInstaller?: MacInstaller | null;
-  /** Whether Claude is working, which restarting would stop. */
+  /**
+   * Whether Claude has work going, which restarting would stop: Claude is working, or waits on
+   * the user.
+   */
   busy?: () => boolean;
+  /** Quits Claude Code that's done before restarting, and settles once it has closed. */
+  closeClaude?: () => Promise<void>;
   /** Tells the window where an update stands, each time that changes. */
   onStatus: (status: UpdateStatus) => void;
   /** Notes a problem looking for or downloading an update, which the user isn't shown. */
@@ -133,11 +138,13 @@ export class UpdateWatcher {
   }
 
   /**
-   * Restarts into the downloaded update. Answers whether it did: not without an update ready,
-   * nor while Claude is working, which restarting would stop.
+   * Restarts into the downloaded update, once Claude Code that's done has closed. Answers whether
+   * it did: not without an update ready, nor while Claude has work going, which restarting would
+   * stop.
    */
-  install(): boolean {
+  async install(): Promise<boolean> {
     if (this.status.state !== 'ready' || this.deps.busy?.()) return false;
+    await this.deps.closeClaude?.();
     // Quietly on Windows, then the app opens again; the Mac does the same on its own.
     this.deps.updater.quitAndInstall(true, true);
     return true;

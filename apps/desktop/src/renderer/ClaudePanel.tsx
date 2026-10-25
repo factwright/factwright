@@ -9,7 +9,7 @@ import styles from './ClaudePanel.module.css';
 import { PanelHeader } from './PanelHeader.tsx';
 import { isBoolean, usePref } from './prefs.ts';
 import { TerminalView } from './TerminalView.tsx';
-import type { ClaudeRun } from './useClaudeRun.ts';
+import type { ClaudeRun, RunPhase } from './useClaudeRun.ts';
 import type { RunActivity } from './useRunActivity.ts';
 
 const plural = (count: number, one: string, many: string) =>
@@ -102,6 +102,13 @@ export interface RunResult {
 }
 
 /**
+ * Whether a run that's done stopped on a question Claude asked in its own words, with nothing
+ * else to show for it: it waits on the user's reply, like any other question.
+ */
+export const endsAsking = (phase: RunPhase, activity: RunActivity, result: RunResult | null) =>
+  phase === 'done' && !result && !activity.end?.error && (activity.end?.said?.endsWith('?') ?? false);
+
+/**
  * Claude's panel along the bottom of the window: the user's own Claude Code, at work on a task.
  * A bar says what Claude is doing, a step at a time, with how long it's been, and once it's done,
  * what it made, with a way to open it. The terminal Claude Code runs in, Claude's work, stays
@@ -185,8 +192,7 @@ export function ClaudePanel({
   // what Claude said, such as a question it stopped to ask, which the user can answer here.
   const error = shown === 'done' ? activity.end?.error : null;
   const said = shown === 'done' && !result && !error ? (activity.end?.said ?? null) : null;
-  // A question Claude stopped to ask in its own words waits on the user like any other.
-  const asks = said?.endsWith('?') ?? false;
+  const asks = endsAsking(shown, activity, result);
   const send = (event: FormEvent) => {
     event.preventDefault();
     if (!reply.trim()) return;

@@ -58,6 +58,18 @@ describe('QuestionLog', () => {
     expect(log.find('Have you used GraphQL?')).toBeNull();
   });
 
+  it('keeps no answer for a question the user skipped, which backs nothing', () => {
+    const log = new QuestionLog();
+    round(log, [question(GRAPHQL), question(KAFKA)], {
+      answers: { [GRAPHQL]: 'The user skipped this question.', [KAFKA]: 'No' },
+      annotations: { [GRAPHQL]: { notes: 'Ask me after the call' } },
+    });
+    expect(log.find(GRAPHQL)).toBeNull();
+    expect(log.reserve(GRAPHQL, 'fact')).toBeNull();
+    expect(log.find(KAFKA)?.answer).toBe('No');
+    expect(log.questions()).toEqual([KAFKA]);
+  });
+
   it('keeps what the pick said under it, as the user saw it', () => {
     const log = new QuestionLog();
     round(log, [question(GRAPHQL)], { answers: { [GRAPHQL]: 'Some' } });

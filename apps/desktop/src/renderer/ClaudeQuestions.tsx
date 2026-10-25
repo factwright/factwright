@@ -1,8 +1,8 @@
 import { Button, Dialog, DialogActions, Input, MarkdownLine, Pill, TextArea } from '@factwright/ui';
-import { type FormEvent, type KeyboardEvent, useEffect, useId, useRef, useState } from 'react';
+import { type FormEvent, useEffect, useId, useRef, useState } from 'react';
 import type { FactwrightApi } from '../shared/api.ts';
 import {
-  isAnswered,
+  isSettled,
   MAX_ROUND_TEXT,
   type QuestionRound,
   type RoundAnswer,
@@ -19,6 +19,7 @@ const startChoice = (question: RoundQuestion): Choice => ({
   otherOn: question.options.length === 0,
   note: '',
   noting: false,
+  skipped: false,
 });
 
 /** A number question's range, in words, such as "a number from 0 to 40". */
@@ -30,11 +31,12 @@ function rangeWords(question: RoundQuestion): string {
   return 'a number';
 }
 
-/** A choice as the answer Claude gets. */
+/** A choice as the answer Claude gets: nothing picked or typed, for a question skipped. */
 const answerOf = (choice: Choice): RoundAnswer => ({
-  picks: choice.picks,
-  other: choice.otherOn ? choice.other : '',
+  picks: choice.skipped ? [] : choice.picks,
+  other: choice.otherOn && !choice.skipped ? choice.other : '',
   note: choice.note,
+  skipped: choice.skipped,
 });
 
 /** A preview as plain text, without the code fence Claude may wrap it in. */
@@ -46,9 +48,11 @@ const count = (n: number) => (n === 1 ? 'a question' : `${n} questions`);
 /**
  * A round of questions from the user's Claude, in a dialog over the app rather than in the
  * terminal: all of them at once, each with its options and what they mean, the user's own words
- * where none fits, and a note for Claude. The answers go straight to their Claude Code, which
- * notes them in the panel as it would have. Not now puts the round aside, still waiting, with
- * what the user chose so far, and Answer in the terminal has Claude Code ask it there instead.
+ * where none fits, a note for Claude, and Skip. Send waits until each question has an answer or a
+ * skip, and the answers go straight to their Claude Code, which notes them in the panel as it
+ * would have. Claude hears a question skipped as skipped. Not now puts the round aside, still
+ * waiting, with what the user chose so far, and Answer in the terminal has Claude Code ask it
+ * there instead.
  */
 export function ClaudeQuestions({
   api,
@@ -75,8 +79,9 @@ export function ClaudeQuestions({
   const [sending, setSending] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
   const answers = choices.map(answerOf);
-  const answered = answers.filter(isAnswered).length;
-  const unanswered = round.questions.length - answered;
+  const settled = answers.filter(isSettled).length;
+  // The questions with neither an answer nor a skip, which Send waits for.
+  const left = round.questions.length - settled;
   // A number Claude Code wouldn't take, such as one past the question's most, can't be sent.
   const wrongNumber = round.questions.some((question, at) => {
     const other = answers[at]?.other ?? '';
@@ -98,16 +103,11 @@ export function ClaudeQuestions({
     if (result.ok) close();
     else setProblem(result.message);
   };
+  // Send, or Enter in a box or on an option, sends the round only once every question has an
+  // answer or a skip.
   const send = (event: FormEvent, close: () => void) => {
     event.preventDefault();
-    if (answered > 0 && !wrongNumber && !sending) void reply(close, answers);
-  };
-  // Enter in a box or on an option sends the round only once every question has an answer, so it
-  // never sends half of one by accident. Send still sends what's answered.
-  const holdEnter = (event: KeyboardEvent<HTMLFormElement>) => {
-    if (event.key === 'Enter' && event.target instanceof HTMLInputElement && unanswered > 0) {
-      event.preventDefault();
-    }
+    if (left === 0 && !wrongNumber && !sending) void reply(close, answers);
   };
 
   return (
@@ -121,7 +121,7 @@ export function ClaudeQuestions({
     >
       {(close) => (
         // The app checks a number as Claude Code does, so the browser's own checks stay out of it.
-        <form noValidate onSubmit={(event) => send(event, close)} onKeyDown={holdEnter}>
+        <form noValidate onSubmit={(event) => send(event, close)}>
           <div className={styles.questions}>
             {round.questions.map((question, at) => (
               <QuestionField
@@ -134,10 +134,11 @@ export function ClaudeQuestions({
             ))}
           </div>
           <div className={styles.footer}>
-            {answered > 0 && unanswered > 0 && (
+            {settled > 0 && left > 0 && (
               <p className={styles.unanswered}>
-                {unanswered === 1 ? 'One question has' : `${unanswered} questions have`} no answer.
-                Claude carries on without {unanswered === 1 ? 'it' : 'them'}.
+                {left === 1
+                  ? 'One question has no answer yet. Answer it or skip it to send.'
+                  : `${left} questions have no answer yet. Answer or skip each one to send.`}
               </p>
             )}
             {problem && (
@@ -155,11 +156,7 @@ export function ClaudeQuestions({
                 Answer in the terminal
               </Button>
               <Button onClick={close}>Not now</Button>
-              <Button
-                variant="primary"
-                type="submit"
-                disabled={sending || answered === 0 || wrongNumber}
-              >
+              <Button variant="primary" type="submit" disabled={sending || left > 0 || wrongNumber}>
                 {round.questions.length === 1 ? 'Send answer' : 'Send answers'}
               </Button>
             </DialogActions>
@@ -170,7 +167,10 @@ export function ClaudeQuestions({
   );
 }
 
-/** One question: its options to pick from, the user's own answer, and a note for Claude. */
+/**
+ * One question: its options to pick from, the user's own answer, a note for Claude, and Skip. A
+ * question skipped folds to say so, with a way to answer it after all.
+ */
 function QuestionField({
   question,
   choice,
@@ -186,6 +186,21 @@ function QuestionField({
   const { multiSelect, options } = question;
   const kind = multiSelect ? 'checkbox' : 'radio';
   const otherBox = useRef<HTMLInputElement>(null);
+  const answerIt = useRef<HTMLButtonElement>(null);
+  const answering = useRef<HTMLDivElement>(null);
+  // Skip, and Answer it, take away the button clicked, so the focus goes on to what replaces it:
+  // Answer it, or the question's first option or box.
+  const skipping = useRef(false);
+  useEffect(() => {
+    if (!skipping.current) return;
+    skipping.current = false;
+    if (choice.skipped) answerIt.current?.focus();
+    else answering.current?.querySelector<HTMLElement>('input, textarea')?.focus();
+  }, [choice.skipped]);
+  const skip = (skipped: boolean) => {
+    skipping.current = true;
+    onChange({ skipped });
+  };
   // Each option is named by its label alone, and described by what it means.
   const ids = useId();
   const pick = (label: string) => {
@@ -214,100 +229,118 @@ function QuestionField({
           <MarkdownLine text={question.question} />
         </span>
       </legend>
-      {question.description && (
-        <p className={styles.about}>
-          <MarkdownLine text={question.description} />
+      {choice.skipped ? (
+        <p className={styles.skipped}>
+          Skipped. Claude hears you skipped it.{' '}
+          <button ref={answerIt} type="button" className={styles.link} onClick={() => skip(false)}>
+            Answer it
+          </button>
         </p>
-      )}
-      {multiSelect && <p className={styles.hint}>Pick any that apply.</p>}
-      <div className={styles.options}>
-        {options.map((option, index) => {
-          const picked = choice.picks.includes(option.label);
-          return (
-            <label key={option.label} className={`${styles.option} ${picked ? styles.picked : ''}`}>
-              <input
-                type={kind}
-                name={question.question}
-                checked={picked}
-                onChange={() => pick(option.label)}
-                aria-labelledby={`${ids}-label-${index}`}
-                aria-describedby={option.description ? `${ids}-about-${index}` : undefined}
-                {...(first && index === 0 && { 'data-autofocus': true })}
-              />
-              <span className={styles.words}>
-                <span id={`${ids}-label-${index}`} className={styles.label}>
-                  {option.label}
-                </span>
-                {option.description && (
-                  <span id={`${ids}-about-${index}`} className={styles.description}>
-                    <MarkdownLine text={option.description} />
+      ) : (
+        <>
+          {question.description && (
+            <p className={styles.about}>
+              <MarkdownLine text={question.description} />
+            </p>
+          )}
+          {multiSelect && <p className={styles.hint}>Pick any that apply.</p>}
+          <div ref={answering} className={styles.options}>
+            {options.map((option, index) => {
+              const picked = choice.picks.includes(option.label);
+              return (
+                <label
+                  key={option.label}
+                  className={`${styles.option} ${picked ? styles.picked : ''}`}
+                >
+                  <input
+                    type={kind}
+                    name={question.question}
+                    checked={picked}
+                    onChange={() => pick(option.label)}
+                    aria-labelledby={`${ids}-label-${index}`}
+                    aria-describedby={option.description ? `${ids}-about-${index}` : undefined}
+                    {...(first && index === 0 && { 'data-autofocus': true })}
+                  />
+                  <span className={styles.words}>
+                    <span id={`${ids}-label-${index}`} className={styles.label}>
+                      {option.label}
+                    </span>
+                    {option.description && (
+                      <span id={`${ids}-about-${index}`} className={styles.description}>
+                        <MarkdownLine text={option.description} />
+                      </span>
+                    )}
+                    {option.preview && picked && (
+                      <pre className={styles.preview}>{previewText(option.preview)}</pre>
+                    )}
                   </span>
-                )}
-                {option.preview && picked && (
-                  <pre className={styles.preview}>{previewText(option.preview)}</pre>
-                )}
-              </span>
-            </label>
-          );
-        })}
-        {question.kind === 'number' ? (
-          <NumberBox
-            question={question}
-            value={choice.other}
-            first={first}
-            onChange={(other) => onChange({ other })}
-          />
-        ) : options.length === 0 ? (
-          <TextArea
-            className={styles.own}
-            aria-label="Your answer"
-            placeholder={question.placeholder ?? 'Your answer'}
-            rows={3}
-            maxLength={MAX_ROUND_TEXT}
-            value={choice.other}
-            onChange={(event) => onChange({ other: event.target.value })}
-            {...(first && { 'data-autofocus': true })}
-          />
-        ) : (
-          <div
-            className={`${styles.option} ${styles.otherRow} ${choice.otherOn ? styles.picked : ''}`}
-          >
-            <input
-              type={kind}
-              name={question.question}
-              aria-label="Something else"
-              checked={choice.otherOn}
-              onChange={() => chooseOther(!(multiSelect && choice.otherOn))}
-              // Clicking their own answer is for typing it. Arrow keys move on through the
-              // options instead, as they do in any group of them.
-              onClick={(event) => {
-                if (event.detail > 0 && event.currentTarget.checked) otherBox.current?.focus();
-              }}
-            />
-            <Input
-              ref={otherBox}
-              className={styles.otherBox}
-              aria-label="Something else, in your words"
-              placeholder="Something else…"
-              maxLength={MAX_ROUND_TEXT}
-              value={choice.other}
-              onChange={(event) => {
-                const other = event.target.value;
-                onChange(
-                  multiSelect || other.trim() === ''
-                    ? { other, otherOn: other.trim() !== '' || (multiSelect && choice.otherOn) }
-                    : { other, otherOn: true, picks: [] },
-                );
-              }}
-            />
+                </label>
+              );
+            })}
+            {question.kind === 'number' ? (
+              <NumberBox
+                question={question}
+                value={choice.other}
+                first={first}
+                onChange={(other) => onChange({ other })}
+              />
+            ) : options.length === 0 ? (
+              <TextArea
+                className={styles.own}
+                aria-label="Your answer"
+                placeholder={question.placeholder ?? 'Your answer'}
+                rows={3}
+                maxLength={MAX_ROUND_TEXT}
+                value={choice.other}
+                onChange={(event) => onChange({ other: event.target.value })}
+                {...(first && { 'data-autofocus': true })}
+              />
+            ) : (
+              <div
+                className={`${styles.option} ${styles.otherRow} ${choice.otherOn ? styles.picked : ''}`}
+              >
+                <input
+                  type={kind}
+                  name={question.question}
+                  aria-label="Something else"
+                  checked={choice.otherOn}
+                  onChange={() => chooseOther(!(multiSelect && choice.otherOn))}
+                  // Clicking their own answer is for typing it. Arrow keys move on through the
+                  // options instead, as they do in any group of them.
+                  onClick={(event) => {
+                    if (event.detail > 0 && event.currentTarget.checked) otherBox.current?.focus();
+                  }}
+                />
+                <Input
+                  ref={otherBox}
+                  className={styles.otherBox}
+                  aria-label="Something else, in your words"
+                  placeholder="Something else…"
+                  maxLength={MAX_ROUND_TEXT}
+                  value={choice.other}
+                  onChange={(event) => {
+                    const other = event.target.value;
+                    onChange(
+                      multiSelect || other.trim() === ''
+                        ? { other, otherOn: other.trim() !== '' || (multiSelect && choice.otherOn) }
+                        : { other, otherOn: true, picks: [] },
+                    );
+                  }}
+                />
+              </div>
+            )}
           </div>
-        )}
-      </div>
-      {choice.noting ? (
+        </>
+      )}
+      {choice.noting && (
         <TextArea
           className={styles.note}
           aria-label="Note for Claude"
-          placeholder="Anything Claude should know about your answer"
+          placeholder={
+            choice.skipped
+              ? 'Anything Claude should know about skipping it'
+              : 'Anything Claude should know about your answer'
+          }
           rows={2}
           maxLength={MAX_ROUND_TEXT}
           value={choice.note}
@@ -315,10 +348,24 @@ function QuestionField({
           autoFocus
           onChange={(event) => onChange({ note: event.target.value })}
         />
-      ) : (
-        <button type="button" className={styles.addNote} onClick={() => onChange({ noting: true })}>
-          Add a note
-        </button>
+      )}
+      {(!choice.noting || !choice.skipped) && (
+        <div className={styles.links}>
+          {!choice.noting && (
+            <button
+              type="button"
+              className={styles.link}
+              onClick={() => onChange({ noting: true })}
+            >
+              Add a note
+            </button>
+          )}
+          {!choice.skipped && (
+            <button type="button" className={styles.skip} onClick={() => skip(true)}>
+              Skip
+            </button>
+          )}
+        </div>
       )}
     </fieldset>
   );

@@ -64,6 +64,8 @@ export interface RoundAnswer {
   other: string;
   /** Anything they add for Claude about their answer, or "". */
   note: string;
+  /** Whether they skipped the question, with nothing picked or typed. */
+  skipped: boolean;
 }
 
 /** The user's answers to a round, one for each of its questions, in its order. */
@@ -72,9 +74,15 @@ export type RoundReply = RoundAnswer[];
 /** As long as an answer in the user's own words, or a note, can be. */
 export const MAX_ROUND_TEXT = 10_000;
 
+/** What Claude hears for a question the user skipped, in place of an answer. */
+export const SKIPPED_ANSWER = 'The user skipped this question.';
+
 /** Whether the user answered a question: an option picked, or words of their own. */
 export const isAnswered = (answer: RoundAnswer) =>
   answer.picks.length > 0 || answer.other.trim() !== '';
+
+/** Whether the user is done with a question: they answered it, or skipped it. */
+export const isSettled = (answer: RoundAnswer) => answer.skipped || isAnswered(answer);
 
 /**
  * Whether words are an answer a number question takes, as Claude Code checks them: digits, maybe

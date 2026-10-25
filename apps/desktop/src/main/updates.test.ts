@@ -155,11 +155,11 @@ describe('UpdateWatcher', () => {
     expect(updater.checkForUpdates).toHaveBeenCalledTimes(2);
   });
 
-  it('restarts into an update only once one is downloaded', () => {
-    expect(watcher.install()).toBe(false);
+  it('restarts into an update only once one is downloaded', async () => {
+    expect(await watcher.install()).toBe(false);
     expect(updater.quitAndInstall).not.toHaveBeenCalled();
     updater.emit('update-downloaded', { version: '0.2.0' });
-    expect(watcher.install()).toBe(true);
+    expect(await watcher.install()).toBe(true);
     expect(updater.quitAndInstall).toHaveBeenCalledWith(true, true);
   });
 
@@ -176,18 +176,27 @@ describe('UpdateWatcher on a Mac', () => {
   beforeEach(() => {
     watcher.stop();
     statuses = [];
+    busy = false;
+    closed = [];
     updater = new FakeUpdater();
     installer = new EventEmitter();
     watcher = new UpdateWatcher({
       updater: updater as unknown as Updater,
       macInstaller: installer,
       busy: () => busy,
+      closeClaude: async () => {
+        closed.push('asked');
+        await Promise.resolve();
+        closed.push('closed');
+      },
       onStatus: (status) => statuses.push(status),
     });
     watcher.start();
   });
 
   let busy = false;
+  /** What became of Claude Code that's done, as restarting closed it. */
+  let closed: string[] = [];
 
   it('is ready only once the Mac has checked the download and can install it', () => {
     updater.emit('update-available', { version: '0.2.0' });
@@ -207,12 +216,20 @@ describe('UpdateWatcher on a Mac', () => {
     expect(updater.checkForUpdates).toHaveBeenCalled();
   });
 
-  it('doesn’t restart while Claude is working', () => {
+  it('doesn’t restart while Claude has work going', async () => {
     updater.emit('update-downloaded', { version: '0.2.0' });
     installer.emit('update-downloaded');
     busy = true;
-    expect(watcher.install()).toBe(false);
-    busy = false;
-    expect(watcher.install()).toBe(true);
+    expect(await watcher.install()).toBe(false);
+    expect(closed).toEqual([]);
+    expect(updater.quitAndInstall).not.toHaveBeenCalled();
+  });
+
+  it('quits Claude Code that’s done first, then restarts into the update', async () => {
+    updater.emit('update-downloaded', { version: '0.2.0' });
+    installer.emit('update-downloaded');
+    updater.quitAndInstall.mockImplementation(() => closed.push('installed'));
+    expect(await watcher.install()).toBe(true);
+    expect(closed).toEqual(['asked', 'closed', 'installed']);
   });
 });

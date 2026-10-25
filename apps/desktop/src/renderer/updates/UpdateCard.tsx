@@ -6,8 +6,9 @@ import styles from './UpdateCard.module.css';
 
 /**
  * The card at the bottom of the sidebar once an update has downloaded: restart into it now, or
- * it installs the next time the user quits. While Claude is working, restarting would stop the
- * run, so the card waits for quitting instead.
+ * it installs the next time the user quits. While Claude is working, or waits on the user,
+ * restarting would stop the run, so Restart now waits until Claude is done. Claude Code that's
+ * done closes as the app restarts.
  */
 export function UpdateCard({
   status,
@@ -16,7 +17,7 @@ export function UpdateCard({
   onRestart,
 }: {
   status: UpdateStatus;
-  /** Whether Claude is working, which a restart would stop. */
+  /** Whether Claude has work going, which a restart would stop: working, or waiting on the user. */
   busy: boolean;
   /** Whether the user is writing something they haven't saved, which a restart would lose. */
   unsaved: () => boolean;
@@ -53,7 +54,7 @@ export function UpdateCard({
         help={
           <>
             {busy
-              ? 'It installs the next time you quit, once your Claude is done.'
+              ? 'You can restart into it once Claude is done, or it installs the next time you quit.'
               : 'It installs when you restart, or the next time you quit.'}
             {notes && <> {link('What’s new', () => setReading(true))}</>}
           </>

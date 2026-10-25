@@ -1,5 +1,5 @@
 import {
-  isAnswered,
+  isSettled,
   MAX_ROUND_TEXT,
   type NumberAsked,
   type QuestionRound,
@@ -7,6 +7,7 @@ import {
   type RoundOption,
   type RoundQuestion,
   type RoundReply,
+  SKIPPED_ANSWER,
   takesNumber,
 } from '../../shared/rounds.ts';
 import { ANSWER_FIELDS } from './questions.ts';
@@ -156,8 +157,8 @@ export function roundFrom(event: unknown): HeardRound | null {
 /**
  * The user's answers from the window, if they fit the round: one for each question, picking only
  * its own options, at most one of them, or words of their own, where it takes one answer, a number
- * it takes for a number question, and at least one question answered. The picks come back in the
- * question's order.
+ * it takes for a number question, or skipped, with nothing picked or typed. Every question has an
+ * answer or a skip. The picks come back in the question's order.
  */
 export function parseReply(round: QuestionRound, value: unknown): RoundReply | null {
   if (!Array.isArray(value) || value.length !== round.questions.length) return null;
@@ -167,17 +168,19 @@ export function parseReply(round: QuestionRound, value: unknown): RoundReply | n
     if (!isRecord(given) || !Array.isArray(given.picks)) return null;
     const other = textUpTo(given.other, MAX_ROUND_TEXT);
     const note = textUpTo(given.note, MAX_ROUND_TEXT);
-    if (other === null || note === null) return null;
+    const { skipped } = given;
+    if (other === null || note === null || typeof skipped !== 'boolean') return null;
     const picks = given.picks;
     const labels = question.options.map((option) => option.label);
     if (!picks.every((pick) => typeof pick === 'string' && labels.includes(pick))) return null;
     if (new Set(picks).size !== picks.length) return null;
-    const answer = { picks: labels.filter((label) => picks.includes(label)), other, note };
+    const answer = { picks: labels.filter((label) => picks.includes(label)), other, note, skipped };
     if (!question.multiSelect && answer.picks.length + (other.trim() ? 1 : 0) > 1) return null;
     if (question.kind === 'number' && other.trim() && !takesNumber(question, other)) return null;
+    if (skipped && (picks.length > 0 || other.trim() !== '')) return null;
     reply.push(answer);
   }
-  return reply.some(isAnswered) ? reply : null;
+  return reply.every(isSettled) ? reply : null;
 }
 
 /** An answer as Claude Code passes it on: what was picked, then the user's own words, with ", ". */
@@ -189,7 +192,7 @@ const answerText = ({ picks, other }: RoundAnswer) =>
  * Claude Code's documentation says: "allow", with the round as Claude Code gave it and the answers
  * by each question's words, so Claude Code runs AskUserQuestion with them and asks nothing in the
  * terminal. A note goes with its answer, and so does the preview of the one option picked, as
- * Claude Code's own dialog sends them. A question left unanswered has no answer.
+ * Claude Code's own dialog sends them. A question the user skipped says so, in place of an answer.
  */
 export function hookReply(heard: HeardRound, reply: RoundReply) {
   const answers: Record<string, string> = {};
@@ -197,7 +200,7 @@ export function hookReply(heard: HeardRound, reply: RoundReply) {
   for (const [at, { question, options }] of heard.round.questions.entries()) {
     const answer = reply[at];
     if (!answer) continue;
-    const text = answerText(answer);
+    const text = answer.skipped ? SKIPPED_ANSWER : answerText(answer);
     if (text) answers[question] = text;
     const note = answer.note.trim();
     const [picked] = answer.picks;
