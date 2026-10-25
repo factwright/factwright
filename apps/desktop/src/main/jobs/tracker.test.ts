@@ -26,6 +26,7 @@ function collected(id: string, extra: Partial<CollectedJob> = {}): CollectedJob 
     search: null,
     searches: [],
     kindFound: null,
+    suggestedAsk: null,
     folder: null,
     stage: 'review',
     firstSeen: '2026-10-07',
@@ -190,6 +191,15 @@ describe('updateJob', () => {
     expect(row()?.kind).toBe('project-manager');
     tracker.updateJob('acme--staff', { kind: null }, AT);
     expect(row()?.kind).toBeNull();
+    expect(history()).toEqual([]);
+  });
+
+  it('keeps the pay the user asks for at a job, and goes back to none', () => {
+    tracker.updateJob('acme--staff', { payAsk: '$185,000' }, AT);
+    expect(row()?.payAsk).toBe('$185,000');
+    expect(tracker.syncRow('jobs', 'acme--staff')?.pay_ask).toBe('$185,000');
+    tracker.updateJob('acme--staff', { payAsk: null }, AT);
+    expect(row()?.payAsk).toBeNull();
     expect(history()).toEqual([]);
   });
 
@@ -504,6 +514,18 @@ describe('mergeJobs', () => {
     tracker.updateJob('acme--staff', { status: 'applied' }, AT);
     tracker.mergeJobs(other, 'acme--staff', AT);
     expect(row(other)).toMatchObject({ status: 'applied', appliedOn: TODAY });
+  });
+
+  it('keeps the pay to ask for the job kept has, or else the other’s', () => {
+    tracker.updateJob(other, { payAsk: '$180,000' }, AT);
+    tracker.mergeJobs('acme--staff', other, AT);
+    expect(row()?.payAsk).toBe('$180,000');
+    tracker.updateJob('acme--staff', { payAsk: '$190,000' }, AT);
+    const third = 'acme--staff-3';
+    tracker.saveCollected([collected(third)], NOW);
+    tracker.updateJob(third, { payAsk: '$170,000' }, AT);
+    tracker.mergeJobs('acme--staff', third, AT);
+    expect(row()?.payAsk).toBe('$190,000');
   });
 
   it('keeps an archived job archived when its decision stands', () => {
@@ -827,7 +849,10 @@ describe('the database file', () => {
     // change again for a table it made, such as notes.
     expect(second.gainedColumns()).toEqual(
       new Map([
-        ['jobs', ['sent', 'asks', 'back_on', 'pass_reason', 'kind', 'merged_into', 'folder']],
+        [
+          'jobs',
+          ['sent', 'asks', 'back_on', 'pass_reason', 'kind', 'merged_into', 'folder', 'pay_ask'],
+        ],
         ['calls', ['minutes', 'mode', 'place', 'people', 'debrief']],
       ]),
     );
@@ -846,7 +871,7 @@ describe('the database file', () => {
     expect(second.rows()[0]).toMatchObject({ status: 'applied', kind: null });
     expect(second.gainedColumns()).toEqual(
       new Map([
-        ['jobs', ['kind', 'merged_into', 'folder']],
+        ['jobs', ['kind', 'merged_into', 'folder', 'pay_ask']],
         ['calls', ['minutes', 'mode', 'place', 'people', 'debrief']],
       ]),
     );
@@ -874,7 +899,7 @@ describe('the database file', () => {
     ).toEqual(['Screen went well']);
     expect(second.gainedColumns()).toEqual(
       new Map([
-        ['jobs', ['back_on', 'pass_reason', 'kind', 'merged_into', 'folder']],
+        ['jobs', ['back_on', 'pass_reason', 'kind', 'merged_into', 'folder', 'pay_ask']],
         ['calls', ['minutes', 'mode', 'place', 'people', 'debrief']],
       ]),
     );
@@ -904,7 +929,7 @@ describe('the database file', () => {
     expect(second.rows()[0]).toMatchObject({ status: 'passed', passReason: null, backOn: null });
     expect(second.gainedColumns()).toEqual(
       new Map([
-        ['jobs', ['back_on', 'pass_reason', 'kind', 'merged_into', 'folder']],
+        ['jobs', ['back_on', 'pass_reason', 'kind', 'merged_into', 'folder', 'pay_ask']],
         ['calls', ['minutes', 'mode', 'place', 'people', 'debrief']],
       ]),
     );

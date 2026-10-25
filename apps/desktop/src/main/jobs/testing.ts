@@ -17,6 +17,7 @@ const ADDED: readonly (
   { callColumns: ['minutes', 'mode', 'place', 'people', 'debrief'] },
   { jobColumns: ['merged_into'] },
   { jobColumns: ['folder'] },
+  { jobColumns: ['pay_ask'] },
 ];
 
 /**

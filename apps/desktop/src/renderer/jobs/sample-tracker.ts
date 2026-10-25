@@ -271,6 +271,7 @@ export function sampleTracker(
       ...(changes.questions !== undefined && { questions: changes.questions }),
       ...(changes.archived !== undefined && { archived: changes.archived }),
       ...(changes.kind !== undefined && { kind: changes.kind }),
+      ...(changes.payAsk !== undefined && { payAsk: changes.payAsk?.trim() || null }),
     };
     const { status } = changes;
     const moved = status !== undefined && status !== job.status;

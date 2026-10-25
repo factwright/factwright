@@ -155,6 +155,11 @@ export interface JobChanges {
   archived?: boolean;
   /** The kind of job it's under, by its id, or null to go by the job search or fit check. */
   kind?: string | null;
+  /**
+   * The pay to ask for there, in the user's words, such as "$185,000", or null to go by their
+   * Claude's suggestion, or else their target pay.
+   */
+  payAsk?: string | null;
 }
 
 /** A job the user adds by hand. */

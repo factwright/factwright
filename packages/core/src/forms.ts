@@ -107,6 +107,8 @@ export type FieldKind =
   | 'how-heard'
   | 'pay'
   | 'over-18'
+  // Why you're leaving your job, or why you left your last one.
+  | 'leaving'
   // Equal-opportunity questions: only from what you set in Profile, and never shown to Claude.
   | 'gender'
   | 'hispanic'
@@ -211,6 +213,14 @@ const AUTHORIZED =
 /** Words that ask whether you can work without sponsorship, which is asking it the other way round. */
 export const WITHOUT_SPONSORSHIP =
   /\bwithout (the need for |needing |requiring |any )*(visa |employer |company )?sponsor/;
+
+/**
+ * Words that ask why you're leaving your job, or why you left your last one: "Reason for leaving",
+ * "Why are you looking for a new role?", "What prompted you to look?", but never "Why are you
+ * looking at Acme?", which asks why the job.
+ */
+const LEAVING =
+  /\breasons? (for|of) (your |my )?(leaving|departure|wanting to (leave|change|move on)|(job )?change|changing (jobs?|roles?|employers?|companies|positions?)|(looking|seeking|searching) for (a )?(new|another|change)|considering (a )?(new|change))\b|\bleaving reasons?\b|\bwhy (are|did|do|would|have|were) you (want(ed)? to |wish(ed)? to |plan(ning)? to |decide(d)? to |choose to |chose to |thinking (of|about) |considering |interested in |looking to )?(leave|leaving|left)\b|\bwhy (are|do) you (want to |wish to )?(change|changing|move|moving|switch|switching) (jobs?|roles?|employers?|companies|positions?)\b|\bwhy are you (currently |now )?(looking|searching|seeking|job hunting|on the job market)\b(?! (at|into|to join|to work|forward))|\bwhat (prompted|made|led|motivated|is motivating|is prompting) you to (look|leave|start looking|seek|search|consider)/;
 
 /**
  * Rules that say what a field asks, by its question, in order: the first that fits is it. Each
@@ -451,6 +461,7 @@ const NAMES: { kind: FieldKind; name: RegExp }[] = [
   { kind: 'discipline', name: /\b(discipline|major)\b/ },
   { kind: 'full-name', name: /^(name|full ?name|systemfield name)\b/ },
   { kind: 'location', name: /^(location|candidate location)\b/ },
+  { kind: 'leaving', name: /\breasons? ?for ?leaving\b/ },
 ];
 
 /**
@@ -678,6 +689,11 @@ export function fieldKind(field: FieldToTell): FieldKind {
   if (YOUR_NAME.has(kind) && (inSelfIdPart(field) || inSigningPart(field))) return 'consent';
   // Where a job or a school was, in its part, as iCIMS asks a job's country, is never your home.
   if (WHERE_YOU_LIVE.has(kind) && fieldPart(field)) return 'question';
+  // A box for paragraphs never takes a title or a company, as "Tell us about your current role"
+  // asks for more than its name.
+  if (field.control === 'long' && (kind === 'current-title' || kind === 'current-company')) {
+    return 'question';
+  }
   return kind;
 }
 
@@ -726,6 +742,10 @@ function kindAsked(field: FieldToTell): FieldKind {
   ) {
     return 'consent';
   }
+  // Why you're leaving, before where you work now, as "Reason for leaving your current position"
+  // isn't asking your title, in a part for each job too, as iCIMS asks it of each. Agreeing to
+  // anything about it is still yours to do.
+  if (LEAVING.test(question) && !CONSENT.test(question)) return 'leaving';
   // In a part of the form for each job or school, "Start date" and "Location" are its own.
   const inPart = partKind(field);
   if (inPart) return inPart;

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parsePay } from './pay.ts';
+import { parsePay, payBand } from './pay.ts';
 
 describe('parsePay', () => {
   it.each([
@@ -27,6 +27,35 @@ describe('parsePay', () => {
     'returns null for %j',
     (text) => {
       expect(parsePay(text)).toBeNull();
+    },
+  );
+});
+
+describe('payBand', () => {
+  it.each([
+    ['$100,000 - $149,999', { min: 100_000, max: 149_999 }],
+    ['$100k–$150k', { min: 100_000, max: 150_000 }],
+    ['100-150k', { min: 100_000, max: 150_000 }],
+    ['$50,000 to $74,999 per year', { min: 50_000, max: 74_999 }],
+    ['$40,000 up to $60,000', { min: 40_000, max: 60_000 }],
+    ['$0 - $49,999', { min: 0, max: 49_999 }],
+    ['Less than $100,000', { min: 0, max: 100_000 }],
+    ['Under $50k', { min: 0, max: 50_000 }],
+    ['Up to $75,000', { min: 0, max: 75_000 }],
+    ['$200,000 or more', { min: 200_000, max: Number.POSITIVE_INFINITY }],
+    ['$250k+', { min: 250_000, max: Number.POSITIVE_INFINITY }],
+    ['More than $300,000', { min: 300_000, max: Number.POSITIVE_INFINITY }],
+    ['200,000 and above', { min: 200_000, max: Number.POSITIVE_INFINITY }],
+    ['$70 - $85 per hour', { min: 145_600, max: 176_800 }],
+    ['$150,000', { min: 150_000, max: 150_000 }],
+  ])('reads "%s"', (text, band) => {
+    expect(payBand(text)).toEqual(band);
+  });
+
+  it.each(['Prefer not to say', 'Negotiable', 'Other', '0-2 years', ''])(
+    'returns null for %j',
+    (text) => {
+      expect(payBand(text)).toBeNull();
     },
   );
 });

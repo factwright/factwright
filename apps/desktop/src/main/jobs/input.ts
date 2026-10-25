@@ -130,6 +130,7 @@ export function parseJobChanges(value: unknown): JobChanges | null {
     questions: textsUpTo(LIMITS.question, LIMITS.questions),
     archived: flag,
     kind: orNull(kindId),
+    payAsk: textUpTo(LIMITS.pay),
   });
 }
 

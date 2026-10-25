@@ -170,6 +170,13 @@ describe('tracker rows', () => {
     expect(trackedRow({ ...STORED_JOB, kind: '../base' }).kind).toBeNull();
   });
 
+  it('read the pay the user asks for at a job, in their words, leaving out a blank or a flood', () => {
+    expect(trackedRow({ ...STORED_JOB, pay_ask: ' $185,000 ' }).payAsk).toBe('$185,000');
+    for (const not of [undefined, null, 42, '', '  ', 'x'.repeat(201)]) {
+      expect(trackedRow({ ...STORED_JOB, pay_ask: not }).payAsk).toBeNull();
+    }
+  });
+
   it('read a job set aside, and one passed on, with the day it comes back and why', () => {
     expect(
       trackedRow({ ...STORED_JOB, status: 'later', back_on: '2026-11-02', pass_reason: null }),
@@ -316,7 +323,12 @@ describe('jobList', () => {
         notes: new Map([['acme--staff', [NOTE]]]),
       }),
     ).toHaveLength(1);
-    for (const kept of [{ sent: STORED_JOB.sent }, { asks: STORED_JOB.asks }, { kind: 'pm' }]) {
+    for (const kept of [
+      { sent: STORED_JOB.sent },
+      { asks: STORED_JOB.asks },
+      { kind: 'pm' },
+      { pay_ask: '$185,000' },
+    ]) {
       const row = trackedRow({
         ...STORED_JOB,
         status: null,
@@ -334,6 +346,8 @@ describe('jobList', () => {
       id: 'acme--staff',
       folder: null,
       link: 'https://jobs.ashbyhq.com/acme/7f3a',
+      payAsk: null,
+      suggestedAsk: null,
     });
   });
 

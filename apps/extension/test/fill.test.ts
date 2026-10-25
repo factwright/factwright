@@ -1,6 +1,7 @@
 import type { FieldReply, InboxAsk } from '@factwright/core';
 import { describe, expect, it } from 'vitest';
 import {
+  answerSource,
   askedFields,
   draftable,
   fieldsToRead,
@@ -303,6 +304,52 @@ describe('answers to keep', () => {
       ['preferred-name', 'Ana', false],
       ['gender', 'Female', true],
     ]);
+  });
+
+  it('offers why you’re leaving in a few sentences, where the rest take a line', () => {
+    const fields = [
+      field('Why are you leaving?', { ref: 0, control: 'long' }),
+      field('Pronouns', { ref: 1 }),
+    ];
+    const replies: FieldReply[] = [
+      { kind: 'leaving', source: 'you', left: 'unset' },
+      { kind: 'pronouns', source: 'you', left: 'unset' },
+    ];
+    const leaving = `I want a bigger platform. ${'And more. '.repeat(40)}`.trim();
+    const typed = values(fields, [leaving, 'x'.repeat(201)]);
+    expect(newAnswers(form(fields), replies, typed).map(({ kind, text }) => [kind, text])).toEqual([
+      ['leaving', leaving],
+    ]);
+  });
+});
+
+describe('where an answer came from', () => {
+  it('names the pay you ask for at a job, and the job’s other answers as before', () => {
+    expect(
+      answerSource({
+        kind: 'pay',
+        text: '$185,000',
+        source: 'job',
+        from: 'Your ask for this job',
+      }),
+    ).toBe('Your ask for this job');
+    expect(
+      answerSource({
+        kind: 'pay',
+        text: '$180,000',
+        source: 'claude',
+        from: 'Your Claude’s suggestion for this job',
+      }),
+    ).toBe('Your Claude’s suggestion for this job');
+    expect(answerSource({ kind: 'pay', text: '$170,000', source: 'profile' })).toBe('From Profile');
+    expect(
+      answerSource({
+        kind: 'cover-letter-text',
+        text: 'Dear Acme,',
+        source: 'job',
+        from: 'The job’s cover letter',
+      }),
+    ).toBe('From the job');
   });
 });
 

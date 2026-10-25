@@ -19,11 +19,13 @@ import {
   type JobFile,
   jobPdfs,
   type KeptPrivate,
+  keptLength,
   letterPlainText,
   localDate,
   type OfferedFile,
   type OnFile,
   onFileJob,
+  payAskFor,
   readEqualOpportunity,
   readLetterText,
   readSuggestedAnswers,
@@ -37,6 +39,7 @@ import {
 } from '@factwright/core';
 import type { AboutYou, AnswerChanges } from '../../shared/about.ts';
 import type { EditResult, JobChanges, RecordedAnswers } from '../../shared/api.ts';
+import { kindsOf } from '../../shared/kinds.ts';
 import type { RunRequestAnswer } from '../../shared/runs.ts';
 import { resumeOnFile } from '../about/from-resume.ts';
 
@@ -174,7 +177,7 @@ async function fill(
     authorization: about.authorization,
     start: about.start,
     relocate: about.relocate,
-    targetPay: about.targetPay,
+    pay: payAskFor(job, kindsOf(about)),
     resume,
     history: deps.about.history(),
     job: job ? onFileJob(job) : null,
@@ -268,7 +271,7 @@ function remember(ask: Extract<InboxAsk, { ask: 'remember' }>, deps: FillDeps): 
   let saved = 0;
   for (const { kind, text } of ask.answers) {
     const value = text.trim();
-    if (!value || !isRemembered(kind) || value.length > 200) continue;
+    if (!value || !isRemembered(kind) || value.length > keptLength(kind)) continue;
     saved += 1;
     if (isSyncedAnswer(kind)) {
       // In answers.json, where a browser filling through sync keeps them too.

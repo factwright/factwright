@@ -40,6 +40,40 @@ export function parsePay(text: string | null | undefined): PayRange | null {
   return annual.length > 0 ? { min: Math.min(...annual), max: Math.max(...annual) } : null;
 }
 
+/** Words that make an amount the top of a band, as "Under $50,000" or "Up to $50k" do. */
+const UP_TO = /\b(under|below|less than|lower than|up to|no more than|not more than)\b|^\s*</i;
+
+/** Words that make an amount the bottom of a band, as "$200,000 or more" or "Over $200k" do. */
+const AND_UP =
+  /\b(over|above|more than|greater than|at least|or more|or higher|or above|and (above|up|over|higher|more))\b|\d\s*[kKmM]?\s*\+|^\s*>/i;
+
+/**
+ * The pay a choice's option names, as a band of a year's pay: "$100,000 - $149,999", "Under
+ * $50k", "$200,000 or more", "$150k+", or "$50-$60 an hour". An amount alone is a band of its
+ * own. Null for an option that names no pay, as "Prefer not to say".
+ */
+export function payBand(option: string): PayRange | null {
+  const cleaned = option.replace(/,/g, '').replace(/\([^)]*\)/g, ' ');
+  const ranged = findAmounts(cleaned);
+  // Two amounts with other words between them, as "$40,000 up to $60,000", are a band too.
+  const all = [...cleaned.matchAll(AMOUNTS)]
+    .map((match) => toAmount(match[1], match[2], match[3]))
+    .filter(looksLikeMoney);
+  const amounts = ranged.length > 1 || all.length < 2 ? ranged : all;
+  const usesThousands = amounts.some((amount) => amount.unit === 'k');
+  const hourly = HOURLY.test(cleaned);
+  // Unlike a posting's pay, a band can start at nothing, as "$0 - $49,999" does.
+  const values = amounts
+    .map((amount) => toAnnual(amount, usesThousands, hourly))
+    .filter((value) => value <= MAX_ANNUAL);
+  if (values.length === 0) return null;
+  const [low, high] = [Math.min(...values), Math.max(...values)];
+  if (values.length > 1) return { min: low, max: high };
+  if (UP_TO.test(cleaned)) return { min: 0, max: low };
+  if (AND_UP.test(cleaned)) return { min: low, max: Number.POSITIVE_INFINITY };
+  return { min: low, max: low };
+}
+
 /** The first range that looks like money or, failing that, the first single amount that does. */
 function findAmounts(text: string): Amount[] {
   for (const match of text.matchAll(RANGES)) {

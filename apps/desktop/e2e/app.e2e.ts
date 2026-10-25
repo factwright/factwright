@@ -853,6 +853,28 @@ test('saves what the user answers while Claude tailors a resume, unverified, and
   await closeRun();
 });
 
+test('keeps the pay to ask for at a job, in the user’s words, after a restart', async () => {
+  const { window } = opened;
+  await window
+    .getByRole('navigation', { name: 'Main' })
+    .getByRole('button', { name: /^Jobs/ })
+    .click();
+  await pickView(/^All/);
+  await window.getByRole('button', { name: /^Acme Robotics/ }).click();
+  const fit = () => jobPanel().getByRole('region', { name: 'Fit' });
+  // No target in Profile yet, so none until they give the job one.
+  await expect(fit()).toContainText('Pay to ask for: none yet');
+  await fit().getByRole('button', { name: 'Set it: the pay to ask for at Acme Robotics' }).click();
+  await fit().getByRole('textbox', { name: 'Pay to ask for at Acme Robotics' }).fill('$200,000');
+  await fit().getByRole('button', { name: 'Save' }).click();
+  await expect(fit()).toContainText('Pay to ask for: $200,000, your own');
+  await opened.app.close();
+  opened = await openApp(dataDir);
+  await pickView(/^All/);
+  await opened.window.getByRole('button', { name: /^Acme Robotics/ }).click();
+  await expect(fit()).toContainText('Pay to ask for: $200,000, your own');
+});
+
 test('keeps everything tracked after a restart', async () => {
   await opened.app.close();
   opened = await openApp(dataDir);

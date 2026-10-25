@@ -3,6 +3,7 @@ import {
   type ForApplications,
   NO_APPLICATIONS,
   type OnFile,
+  type PayAsk,
   type RememberedKind,
   type ResumeOnFile,
   type SentBefore,
@@ -10,6 +11,7 @@ import {
 import { type FieldKind, fieldKind } from './forms.ts';
 import type { AskedJob } from './inbox.ts';
 import type { Job } from './jobs.ts';
+import { type KindName, kindNamesIn, kindOfJob } from './kinds.ts';
 import { hostOf } from './links.ts';
 import { matchJobs } from './matching.ts';
 import type { JobFile } from './records.ts';
@@ -79,6 +81,53 @@ export const onFileJob = (job: Job): NonNullable<OnFile['job']> => ({
   foundOn: foundOn(job),
   location: job.location ?? '',
 });
+
+/** A kind of job you want, with your target pay for it, as Profile keeps it. */
+export interface KindTarget extends KindName {
+  targetPay: string;
+}
+
+/**
+ * Each kind of job you want, with your target pay for it, as Profile keeps them: the first
+ * kind's in answers.json, and each other kind's in kinds-of-job.json, by its id, as the app reads
+ * them. With one kind, that one alone, with no id or name.
+ */
+export function kindTargetsIn(answers: unknown, kindsFile: unknown): KindTarget[] {
+  const first = profileForForms(answers).targetPay;
+  const named = kindNamesIn(kindsFile);
+  if (named.length === 0) return [{ id: '', name: '', targetPay: first }];
+  const { others } = (typeof kindsFile === 'object' && kindsFile !== null ? kindsFile : {}) as {
+    others?: unknown;
+  };
+  const listed = Array.isArray(others) ? others : [];
+  const targetOf = (id: string) => {
+    const entry = listed.find(
+      (each) => typeof each === 'object' && each !== null && (each as { id?: unknown }).id === id,
+    ) as { targetPay?: unknown } | undefined;
+    return isText(entry?.targetPay, PROFILE_LIMITS.entry) ? entry.targetPay : '';
+  };
+  return named.map((kind, at) => ({ ...kind, targetPay: at === 0 ? first : targetOf(kind.id) }));
+}
+
+/**
+ * The pay to ask for at a job: your own for it, or else your Claude's suggestion for it, or else
+ * your target for the kind of job it's under, or for your first kind, for a form with no job
+ * saved. Null when there's none.
+ */
+export function payAskFor(
+  job: Pick<Job, 'payAsk' | 'suggestedAsk' | 'kind' | 'kindFound'> | null,
+  kinds: readonly KindTarget[],
+): PayAsk | null {
+  const yours = job?.payAsk?.trim();
+  if (yours) return { text: yours, from: 'you', kind: null };
+  const claudes = job?.suggestedAsk?.trim();
+  if (claudes) return { text: claudes, from: 'claude', kind: null };
+  const several = kinds.length > 1;
+  const id = job && several ? kindOfJob(job, kinds) : null;
+  const kind = kinds.find((each) => each.id === id) ?? kinds[0];
+  const target = kind?.targetPay.trim();
+  return kind && target ? { text: target, from: 'target', kind: several ? kind.name : null } : null;
+}
 
 /** A job's PDFs of a kind, its resume or its cover letter, newest first: the first is uploaded. */
 export const jobPdfs = (job: Job, kind: 'resume' | 'cover-letter'): JobFile[] =>
@@ -246,14 +295,24 @@ export function resumeDetails(resume: ResumeShape, from: ResumeOnFile['from']): 
   };
 }
 
-/** The longest line Profile keeps, and the longest entry in one of its lists. */
-const PROFILE_LIMITS = { line: 200, entry: 120, entries: 30 } as const;
+/**
+ * The longest line Profile keeps, the longest entry in one of its lists, and the longest answer
+ * in a few sentences, as why you're leaving.
+ */
+const PROFILE_LIMITS = { line: 200, entry: 120, entries: 30, sentences: 1000 } as const;
 
 const isText = (value: unknown, max: number): value is string =>
   typeof value === 'string' && value.length <= max;
 
 const line = (value: unknown): string | undefined =>
   isText(value, PROFILE_LIMITS.line) ? value : undefined;
+
+const sentences = (value: unknown): string | undefined =>
+  isText(value, PROFILE_LIMITS.sentences) ? value : undefined;
+
+/** The longest answer to a kind of field that Profile keeps: a line, or a few sentences. */
+export const keptLength = (kind: FieldKind): number =>
+  kind === 'leaving' ? PROFILE_LIMITS.sentences : PROFILE_LIMITS.line;
 
 /** A list of short entries, trimmed, without blanks or repeats. */
 function entries(value: unknown): string[] | undefined {
@@ -317,17 +376,21 @@ export function readForApplications(value: unknown): ForApplications | undefined
     sponsorship: oneOf(fields.sponsorship ?? '', ['', 'no', 'later', 'now'] as const),
     over18: oneOf(fields.over18 ?? '', ['', 'yes', 'no'] as const),
     howHeard: text('howHeard'),
+    leaving: sentences(fields.leaving ?? ''),
   };
   return Object.values(read).every((each) => each !== undefined)
     ? (read as ForApplications)
     : undefined;
 }
 
-/** What Profile's answers say that forms ask: the part of OnFile that's from Profile. */
+/**
+ * What Profile's answers say that forms ask: the part of OnFile that's from Profile, and your
+ * first kind of job's target pay, which answers.json keeps.
+ */
 export type ProfileForForms = Pick<
   OnFile,
-  'you' | 'applications' | 'authorization' | 'start' | 'relocate' | 'targetPay'
->;
+  'you' | 'applications' | 'authorization' | 'start' | 'relocate'
+> & { targetPay: string };
 
 /**
  * What forms ask, from Profile's about-me/answers.json, as the app reads it: each answer that
@@ -380,6 +443,7 @@ export const SYNCED_ANSWERS = {
   country: { part: 'applications', key: 'country' },
   github: { part: 'applications', key: 'github' },
   'how-heard': { part: 'applications', key: 'howHeard' },
+  leaving: { part: 'applications', key: 'leaving' },
   'start-date': { part: 'start' },
 } as const satisfies Partial<Record<RememberedKind, ProfilePlace>>;
 

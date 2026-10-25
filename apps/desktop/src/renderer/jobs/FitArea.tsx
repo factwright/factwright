@@ -1,11 +1,13 @@
-import { type Job, type JobProgress, payLabel } from '@factwright/core';
+import { type Job, type JobProgress, type KindTarget, payLabel } from '@factwright/core';
 import { FIT_TIER_DISPLAY } from '@factwright/ui';
 import { Gauge } from 'lucide-react';
+import type { FactwrightApi } from '../../shared/api.ts';
 import type { RunTask } from '../../shared/runs.ts';
 import { ClaudeButton } from './ClaudeButton.tsx';
 import styles from './FitArea.module.css';
 import { isScored, ScoreSection, SearchSection, SentimentSection } from './JobScore.tsx';
 import { PanelSection, Placeholder } from './PanelSection.tsx';
+import { PayAskLine } from './PayAsk.tsx';
 import type { RunControls } from './RunActions.tsx';
 
 /**
@@ -42,19 +44,25 @@ function Pay({ job, run }: { job: Job; run: RunControls | undefined }) {
 
 /**
  * How well the job fits, across the top of its panel: its score part by part, what people say
- * about the company, what the job search noted, and its pay. Before a fit check, what one does
- * and the button that runs it.
+ * about the company, what the job search noted, its pay, and the pay to ask for there. Before a
+ * fit check, what one does and the button that runs it.
  */
 export function FitArea({
   job,
   progress,
   run,
   today,
+  api,
+  targets = [],
 }: {
   job: Job;
   progress: JobProgress;
   run: RunControls | undefined;
   today: string;
+  /** For changing the pay to ask for. */
+  api: Pick<FactwrightApi, 'updateJob'>;
+  /** Each kind of job the user wants, with their target pay for it. */
+  targets?: readonly KindTarget[] | undefined;
 }) {
   const task: RunTask = { skill: 'fit-check', jobId: job.id };
   const scored = isScored(job);
@@ -80,6 +88,7 @@ export function FitArea({
         </Placeholder>
       )}
       <Pay job={job} run={run} />
+      <PayAskLine key={job.id} job={job} targets={targets} api={api} />
       {scored && (
         <div className={styles.grid}>
           <div>

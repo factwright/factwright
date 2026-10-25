@@ -8,6 +8,7 @@ import {
   isEqualOpportunity,
   isRemembered,
   JOB_LIMITS,
+  keptLength,
   type OfferedFile,
   type RememberedKind,
   US_STATES,
@@ -388,6 +389,8 @@ export function answerSource(reply: FieldReply): string {
   }
   if (reply.file) return reply.file === 'resume' ? 'The job’s resume' : 'The job’s cover letter';
   if (reply.source === 'resume') return 'From the job’s resume';
+  // The pay you ask for at this job, as you set it in Factwright.
+  if (reply.source === 'job' && reply.kind === 'pay' && reply.from) return reply.from;
   if (reply.source === 'job')
     return reply.kind === 'how-heard' ? 'Where you found the job' : 'From the job';
   return 'From Profile';
@@ -589,7 +592,7 @@ export function newAnswers(
     const reply = replies[at];
     if (!reply || !isRemembered(reply.kind) || field.control === 'file') return [];
     const text = fieldValue(field, values).trim();
-    if (!text || text.length > 200) return [];
+    if (!text || text.length > keptLength(reply.kind)) return [];
     const had = replyText(reply).trim();
     if (had && plainly(had) === plainly(text)) return [];
     const kept = filled.get(field.key);

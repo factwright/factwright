@@ -281,6 +281,7 @@ function namedJob(row: TrackedRow, folder: string, workspace: WorkspaceReader): 
     search: null,
     searches: [],
     kindFound: null,
+    suggestedAsk: null,
     folder,
     // Claude's work made the folder, which takes a job out of New.
     stage: 'review',
@@ -298,13 +299,20 @@ function namedJob(row: TrackedRow, folder: string, workspace: WorkspaceReader): 
 }
 
 /**
- * Where a job is, as its folder's job.md says, for a job whose row named the folder, so it wasn't
- * read for the list: null when it doesn't say.
+ * What a job's folder's job.md says, for a job whose row named the folder, so it wasn't read for
+ * the list: where the job is, the kind of job its fit check judged it as, and the pay to ask for
+ * there, as your Claude suggested it. Each is null when it doesn't say.
  */
-export function notesLocation(synced: Synced, folder: string, text: string): string | null {
+export function notesDetails(
+  synced: Synced,
+  folder: string,
+  text: string,
+): Pick<Job, 'location' | 'kindFound' | 'suggestedAsk'> {
   const workspace = syncedWorkspace(synced.files, new Map([[notesPath(folder), text]]));
   const record = readRecords(workspace).find((each) => each.tool === 'folder');
-  return record?.tool === 'folder' ? record.location : null;
+  return record?.tool === 'folder'
+    ? { location: record.location, kindFound: record.kind, suggestedAsk: record.ask }
+    : { location: null, kindFound: null, suggestedAsk: null };
 }
 
 /**

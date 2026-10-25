@@ -4,6 +4,7 @@ import type { CallDoc } from './extras.ts';
 import { type CollectedJob, type Job, type JobPay, type KnownJob, mergedTargets } from './jobs.ts';
 import { KIND_ID } from './kinds.ts';
 import type { Link } from './links.ts';
+import { JOB_LIMITS } from './new-job.ts';
 import { parsePay } from './pay.ts';
 import type { JobDocKind } from './records.ts';
 import {
@@ -157,6 +158,10 @@ export function trackedRow(row: StoredRow): TrackedRow {
     earlierNotes: text(row.notes),
     archived: row.archived === 1,
     kind: typeof row.kind === 'string' && KIND_ID.test(row.kind) ? row.kind : null,
+    payAsk:
+      typeof row.pay_ask === 'string' && row.pay_ask.length <= JOB_LIMITS.pay
+        ? row.pay_ask.trim() || null
+        : null,
   };
 }
 
@@ -255,13 +260,14 @@ const ADDED_BY_HAND = 'Added by hand';
 
 /** Whether the user has tracked anything about a job, so it stays listed after its files go. */
 function isTracked(row: TrackedRow, kept: number): boolean {
-  const { manual, archived, status, appliedOn, nextAction, nextOn, earlierNotes, kind } = row;
+  const { manual, archived, status, appliedOn, nextAction, nextOn, earlierNotes, kind, payAsk } =
+    row;
   return (
     manual ||
     archived ||
     kept > 0 ||
     [row.questions, row.sent, row.asks].some((list) => list.length > 0) ||
-    [status, appliedOn, nextAction, nextOn, earlierNotes, kind].some(Boolean)
+    [status, appliedOn, nextAction, nextOn, earlierNotes, kind, payAsk].some(Boolean)
   );
 }
 
@@ -293,6 +299,7 @@ function assemble(row: TrackedRow, found: CollectedJob | undefined, kept: Kept):
     earlierNotes: row.earlierNotes,
     archived: row.archived,
     kind: row.kind,
+    payAsk: row.payAsk,
     manual: row.manual,
     ...kept,
   };
@@ -331,6 +338,7 @@ function assemble(row: TrackedRow, found: CollectedJob | undefined, kept: Kept):
     search: null,
     searches: [],
     kindFound: null,
+    suggestedAsk: null,
     folder: null,
     stage: asked ? 'review' : 'new',
     firstSeen: row.firstSeen,
