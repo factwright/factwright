@@ -817,6 +817,10 @@ test('makes a quick resume, typing only the job and the app’s own word, and as
     /\/factwright:focused-resume job tidewater-analytics--\S+ quick/,
   );
   expect(await terminalLines(window)).toContain('from verified facts only: no questions.');
+  // Its question anyway, as when the skill's words slip, is turned away, saying why.
+  expect(await terminalLines(window)).toContain(
+    'Not asked: A quick resume asks the user nothing, so this wasn’t asked.',
+  );
   await closeRun();
 });
 

@@ -356,3 +356,33 @@ export function runPrompt(task: RunTask): string {
   const mode = 'mode' in task ? task.mode : undefined;
   return mode ? `/factwright:${task.skill} ${MODE_WORDS[mode]}` : `/factwright:${task.skill}`;
 }
+
+/**
+ * A quick resume's prompt: the tailored resume's command, ending with "quick", as runPrompt types
+ * it or as the user types it themselves.
+ */
+const QUICK_RESUME = /^\/(?:factwright:)?focused-resume(?:\s[\s\S]*)?\squick$/;
+
+/** What Claude reads in place of an answer when it asks the user something in a quick resume. */
+export const QUICK_ASKS_NOTHING =
+  'A quick resume asks the user nothing, so this wasn’t asked. Go on with the defaults and what’s on file, as the skill’s Quick resume section says, and put what you wanted to ask under What could make it stronger.';
+
+/**
+ * Why a task asks the user nothing, by its prompt, for Claude to read when it asks anyway: a
+ * quick resume's. Null for any other task, which may ask.
+ */
+export function asksNothing(prompt: unknown): string | null {
+  if (typeof prompt !== 'string') return null;
+  return QUICK_RESUME.test(prompt.trim()) ? QUICK_ASKS_NOTHING : null;
+}
+
+/**
+ * Why the task at hand asks the user nothing, once another hook comes from its run: a prompt
+ * sent, the app's or one the user typed, starts another task, which asks nothing only if it's a
+ * quick resume's. Any other hook leaves it as it was.
+ */
+export function asksNothingAfter(reason: string | null, event: unknown): string | null {
+  if (typeof event !== 'object' || event === null) return reason;
+  const fields = event as Record<string, unknown>;
+  return fields.hook_event_name === 'UserPromptSubmit' ? asksNothing(fields.prompt) : reason;
+}

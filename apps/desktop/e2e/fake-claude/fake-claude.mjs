@@ -191,6 +191,34 @@ async function askUser(answers) {
 }
 
 /**
+ * Asks a question anyway, as Claude would if a skill's words slipped: PreToolUse with the round,
+ * as Claude Code sends it, for the app to hold for its dialog or turn away. Gives back what
+ * Claude reads when the hook turns it away.
+ */
+async function askAnyway(question) {
+  const asked = await post(hookUrl, {
+    hook_event_name: 'PreToolUse',
+    session_id: 'fake',
+    tool_name: 'AskUserQuestion',
+    tool_use_id: `toolu_${Date.now()}`,
+    tool_input: {
+      questions: [
+        {
+          question,
+          header: 'Experience',
+          options: CHOICES.map((label) => ({ label, description: '' })),
+          multiSelect: false,
+        },
+      ],
+    },
+  });
+  const decision = asked.status === 200 ? (await asked.json()).hookSpecificOutput : undefined;
+  return decision?.permissionDecision === 'deny'
+    ? `Not asked: ${decision.permissionDecisionReason}`
+    : 'Claude Code asked anyway.';
+}
+
+/**
  * As Claude Code does for a call that needs the user's OK: PreToolUse, then a PermissionRequest
  * hook, which the app holds while the user answers in its dialog. Gives back the hook's decision,
  * or nothing when the hook left it to the terminal.
@@ -325,9 +353,13 @@ async function work(text) {
       show('\n');
     }
   }
-  // As Claude would for a quick resume: ask nothing, and use verified facts only.
+  // As Claude would for a quick resume: ask nothing, and use verified facts only. Then a
+  // question anyway, as if the skill's words slipped, which the app turns away.
   const quickly = /^\/factwright:focused-resume job \S+(?: new version)? quick$/.test(text);
-  if (quickly) show('A quick resume, from verified facts only: no questions.\n');
+  if (quickly) {
+    show('A quick resume, from verified facts only: no questions.\n');
+    show(`${await askAnyway(GRAPHQL)}\n`);
+  }
   // As Claude would while tailoring a resume: ask about what the posting wants that the facts
   // don't show, then save the user's answers to the fact bank.
   const tailoring = !quickly && text.match(/^\/factwright:focused-resume job (\S+)/);

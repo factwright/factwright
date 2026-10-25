@@ -2,12 +2,15 @@ import { join, resolve, sep } from 'node:path';
 import { CALL_KINDS, callInviteName } from '@factwright/core';
 import { describe, expect, it } from 'vitest';
 import {
+  asksNothing,
+  asksNothingAfter,
   contentSecurityPolicy,
   isSafeExternalUrl,
   openableFile,
   parseRunTask,
   parseTerminalSize,
   previewablePdf,
+  QUICK_ASKS_NOTHING,
   readableWord,
   resolveInside,
   runPrompt,
@@ -585,5 +588,65 @@ describe('runPrompt', () => {
     expect(runPrompt({ skill: 'add-facts', mode: 'new' })).toBe(
       '/factwright:add-facts read the new files, notes and projects',
     );
+  });
+});
+
+describe('asksNothing', () => {
+  const jobId = 'acme--staff-engineer';
+
+  it('knows a quick resume by its prompt, as the app types it or the user does', () => {
+    expect(asksNothing(runPrompt({ skill: 'focused-resume', jobId, quick: true }))).toBe(
+      QUICK_ASKS_NOTHING,
+    );
+    expect(
+      asksNothing(runPrompt({ skill: 'focused-resume', jobId, again: true, quick: true })),
+    ).toBe(QUICK_ASKS_NOTHING);
+    for (const typed of [
+      '/factwright:focused-resume https://jobs.example.com/staff pdf startup quick',
+      '/focused-resume job acme--staff-engineer quick',
+      `  /factwright:focused-resume job ${jobId} quick\n`,
+    ]) {
+      expect(asksNothing(typed)).toBe(QUICK_ASKS_NOTHING);
+    }
+    expect(QUICK_ASKS_NOTHING).toMatch(/^A quick resume asks the user nothing/);
+    expect(QUICK_ASKS_NOTHING).toContain('What could make it stronger');
+  });
+
+  it('lets every other task ask', () => {
+    for (const prompt of [
+      runPrompt({ skill: 'focused-resume', jobId }),
+      runPrompt({ skill: 'focused-resume', jobId, again: true }),
+      '/factwright:cover-letter job acme--staff-engineer quick',
+      '/factwright:focused-resume job acme--staff-engineer quick, then ask me about the gaps',
+      'Ask me about what the quick resume left out',
+      'quick',
+      '',
+      undefined,
+      42,
+    ]) {
+      expect(asksNothing(prompt)).toBeNull();
+    }
+  });
+
+  it('holds from a quick resume’s prompt until the next prompt, whoever sends it', () => {
+    const sent = (prompt: unknown) => ({ hook_event_name: 'UserPromptSubmit', prompt });
+    const quick = `/factwright:focused-resume job ${jobId} quick`;
+    let reason = asksNothingAfter(null, sent(quick));
+    expect(reason).toBe(QUICK_ASKS_NOTHING);
+    // Its run's other hooks leave it as it is.
+    for (const event of [
+      { hook_event_name: 'PreToolUse', tool_name: 'Read', tool_input: {} },
+      { hook_event_name: 'Stop' },
+      null,
+      'UserPromptSubmit',
+    ]) {
+      reason = asksNothingAfter(reason, event);
+    }
+    expect(reason).toBe(QUICK_ASKS_NOTHING);
+    // The user's own words next start a task that may ask, and so does a prompt without any.
+    expect(asksNothingAfter(reason, sent('Now ask me about the gaps'))).toBeNull();
+    expect(asksNothingAfter(reason, sent(undefined))).toBeNull();
+    expect(asksNothingAfter(reason, { hook_event_name: 'UserPromptSubmit' })).toBeNull();
+    expect(asksNothingAfter(null, sent(`/factwright:focused-resume job ${jobId}`))).toBeNull();
   });
 });

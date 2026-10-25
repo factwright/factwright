@@ -13,6 +13,7 @@ import type { RunScope } from '../../shared/runs.ts';
 import type { BoundRevision } from '../jobs/revisions.ts';
 import type { BoundChanges } from '../jobs/versions.ts';
 import { workspaceDir } from '../jobs/workspace.ts';
+import { asksNothing, asksNothingAfter } from '../policy.ts';
 import { RunActivity, turnEnd } from './activity.ts';
 import { claudeCommand } from './command.ts';
 import { findClaude, nodeFindDeps } from './find.ts';
@@ -184,6 +185,11 @@ interface Run {
   effort: Effort | undefined;
   levels: PlanLevels;
   scope: RunScope;
+  /**
+   * Why the task at hand asks the user nothing, by its prompt, such as a quick resume's, until
+   * another prompt comes, or null when it may ask.
+   */
+  quiet: { reason: string | null };
   /** Watches for Claude Code's first-run screens, which the user answers one after another. */
   firstRun: ScreenWatch;
   /** Settles once it has exited. */
@@ -274,6 +280,9 @@ export class ClaudeSession {
     const trust = new ScreenWatch(TRUST_QUESTION);
     const firstRun = new ScreenWatch(FIRST_RUN_SCREENS);
     let heard = false;
+    // A quick resume asks the user nothing, so from its prompt, the app's or one the user typed,
+    // until the next prompt, Claude's questions are turned away.
+    const quiet = { reason: asksNothing(prompt) };
     const pastScreens = () => {
       heard = true;
       trust.pastIt();
@@ -284,6 +293,7 @@ export class ClaudeSession {
       launch.token,
       (event) => {
         pastScreens();
+        quiet.reason = asksNothingAfter(quiet.reason, event);
         signals.hear(event);
         activity?.hear(event);
         const end = turnEnd(event);
@@ -314,6 +324,7 @@ export class ClaudeSession {
         scope,
         onFiled: this.deps.onFiled,
         ask: this.deps.ask,
+        noQuestions: () => quiet.reason,
         permit: this.deps.permit,
         // A call the user answered in the app is one the run no longer waits on them for.
         onAnswered: (call) => signals.answered(call),
@@ -345,6 +356,7 @@ export class ClaudeSession {
       effort: launch.effort,
       levels: launch.levels,
       scope,
+      quiet,
       firstRun,
       exited: new Promise((resolve) => {
         exited = resolve;
@@ -381,6 +393,7 @@ export class ClaudeSession {
   task(prompt: string): StartResult {
     if (!this.run) return { ok: false, reason: 'not-running' };
     this.beginChanges();
+    this.run.quiet.reason = asksNothing(prompt);
     return this.send(prompt);
   }
 

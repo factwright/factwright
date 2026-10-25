@@ -81,6 +81,8 @@ interface RunListeners {
   before: ((event: unknown) => unknown) | undefined;
   tools: ToolsListener | undefined;
   ask: QuestionAsker | undefined;
+  /** Why the task at hand asks the user nothing, or null when it may ask. */
+  noQuestions: (() => string | null) | undefined;
   permit: PermissionAsker | undefined;
   onAnswered: AnsweredListener | undefined;
   /** What the words of its permission prompts come from, such as its workspace. */
@@ -129,12 +131,34 @@ export interface ListenOptions {
   changes?: BoundChanges;
   /** Asks the user Claude's questions in the app's dialog. Without it, the terminal asks them. */
   ask?: QuestionAsker;
+  /**
+   * Why the task at hand asks the user nothing, such as a quick resume, or null when it may ask.
+   * Claude's questions are then turned away with it, before the dialog or anything else hears
+   * them, so Claude reads why and goes on.
+   */
+  noQuestions?: () => string | null;
   /** Asks the user for Claude Code's permission prompts in the app. Without it, the terminal does. */
   permit?: PermissionAsker;
   /** Hears each call the user answered in the app, which Claude Code no longer waits on them for. */
   onAnswered?: AnsweredListener;
   /** What the words of its permission prompts come from, such as its workspace. */
   context?: AskContext;
+}
+
+/** Whether a hook is Claude about to ask the user a round of questions, from any agent. */
+const isQuestion = (event: unknown) =>
+  typeof event === 'object' &&
+  event !== null &&
+  (event as Record<string, unknown>).hook_event_name === 'PreToolUse' &&
+  (event as Record<string, unknown>).tool_name === 'AskUserQuestion';
+
+/** Why the run's task asks nothing, if it doesn't. One the app can't tell lets the question be. */
+function noQuestionsFor(listener: RunListeners): string | null {
+  try {
+    return listener.noQuestions?.() ?? null;
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -192,6 +216,7 @@ export class RunServer {
       revision,
       changes,
       ask,
+      noQuestions,
       permit,
       onAnswered,
     } = options;
@@ -203,6 +228,7 @@ export class RunServer {
       before,
       tools,
       ask,
+      noQuestions,
       permit,
       onAnswered,
       context,
@@ -260,6 +286,21 @@ export class RunServer {
       }
       if (request.url === '/hook') {
         const event = parseJson(body);
+        // A task that asks the user nothing turns its questions away first, with why, which
+        // Claude reads: no dialog opens, the run never reads as waiting, and nothing is on record.
+        const refusal = isQuestion(event) ? noQuestionsFor(listener) : null;
+        if (refusal) {
+          response.writeHead(200, { 'Content-Type': 'application/json' }).end(
+            JSON.stringify({
+              hookSpecificOutput: {
+                hookEventName: 'PreToolUse',
+                permissionDecision: 'deny',
+                permissionDecisionReason: refusal,
+              },
+            }),
+          );
+          return;
+        }
         // Heard before Claude Code carries on, so an answer is on record before Claude reads it.
         // A hook the record can't take is one it doesn't keep, and Claude Code still hears back.
         try {
