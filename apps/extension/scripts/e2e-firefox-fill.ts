@@ -576,11 +576,9 @@ try {
   // The frame takes a click only once it's shown for half a second, as a person sees it first.
   await new Promise((resolve) => setTimeout(resolve, 600));
   await click(fillButton, 'Fill');
-  await says(fillButton, 'couldn’t find Factwright');
-  check(
-    true,
-    'its Fill button asks for the form’s answers itself, as Firefox opens its sidebar only from its own click, and says why it can’t fill it',
-  );
+  const problem = await frameOn(tab, 'note');
+  await says(problem, 'couldn’t find Factwright');
+  check(true, 'its Fill button fills the form in its page, and its note says why it can’t fill it');
   // A company's careers page on another site, which shows the form in a frame from a job site:
   // the Fill button is in the frame, and the extension reads the form there, by the frame's
   // number, while the page around it is one it may not read.
@@ -737,7 +735,16 @@ try {
   const syncButton = await frameOn(tab, 'button');
   await new Promise((resolve) => setTimeout(resolve, 600));
   await click(syncButton, 'Fill');
-  await says(syncButton, 'Filled ');
+  const filledNote = await frameOn(tab, 'note');
+  await says(filledNote, 'Factwright filled');
+  // A click in a page's frame can't open Firefox's sidebar: Details says where to find it.
+  await new Promise((resolve) => setTimeout(resolve, 600));
+  await click(filledNote, 'Details');
+  await says(filledNote, 'click Factwright’s button');
+  check(
+    true,
+    'its note’s Details says to click Factwright’s button, as Firefox opens its sidebar only from its own click',
+  );
   const inForm = (name: string) =>
     running.run(
       tab,

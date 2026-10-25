@@ -793,12 +793,7 @@ function render(state: Filling): void {
       // Not once the application went on to another page: that one has its own offer to fill it.
       !state.copyOnly &&
         !state.next &&
-        button(
-          'Fill again',
-          () => void begin({ earlier: state.earlier }),
-          !state.moved,
-          state.busy,
-        ),
+        button('Fill again', () => void begin({ earlier: state.earlier }), false, state.busy),
       button('Mark as applied', () => void markApplied(state), state.moved, state.busy),
     ),
     h(

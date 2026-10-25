@@ -341,10 +341,12 @@ ext.runtime.onMessage.addListener((message, sender, sendResponse) => {
     lookUp(message.page).then(sendResponse, () => sendResponse(null));
     return true;
   }
-  // The popup's Fill, which closes as the form fills in its page.
+  // The popup's Fill: heard at once, as the popup closes once it knows, and the form fills in its
+  // page from here.
   if (ours && isFill(message)) {
-    fillAndNote(message.tab).then(sendResponse, () => sendResponse(null));
-    return true;
+    void fillAndNote(message.tab).catch(() => {});
+    sendResponse({ filling: true });
+    return undefined;
   }
   if (ours && isApplied(message)) {
     markFromPopup(message.tabId, message.job, message.via, message.url).then(sendResponse, () =>

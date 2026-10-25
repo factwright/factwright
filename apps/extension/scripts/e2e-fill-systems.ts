@@ -180,6 +180,18 @@ export interface SystemsRun {
   shoot: (page: Page, name: string) => Promise<void>;
 }
 
+/**
+ * Whether the panel shows the job at its top as this one: its title, and its company with its
+ * status. 1 when it does, as a count of it.
+ */
+export async function jobAtTop(panel: Page, role: string, company: string): Promise<number> {
+  const card = panel.locator('.card.job').first();
+  if ((await card.count()) === 0) return 0;
+  const title = (await card.locator('.job-title').textContent())?.trim() ?? '';
+  const words = (await card.textContent()) ?? '';
+  return title === role && words.includes(company) ? 1 : 0;
+}
+
 /** Waits until the panel says the page it filled is filled. */
 const filledIn = (panel: Page) =>
   panel.getByText(/^Filled \d+ of \d+ fields/).waitFor({ timeout: 40_000 });
@@ -220,7 +232,7 @@ export async function fillSystems(run: SystemsRun): Promise<void> {
   sees(
     'SmartRecruiters: it fills the boxes inside its components, and picks the place its list offers',
     {
-      job: await srPanel.getByText('Robotics Software Intern at Saltmarsh Robotics').count(),
+      job: await jobAtTop(srPanel, 'Robotics Software Intern', 'Saltmarsh Robotics'),
       first: first.firstName,
       last: first.lastName,
       email: first.email,
@@ -268,16 +280,16 @@ export async function fillSystems(run: SystemsRun): Promise<void> {
       .locator(`[id="${group}"] [role="radio"][aria-checked="true"]`)
       .evaluateAll((radios) => radios[0]?.parentElement?.textContent?.trim() ?? '');
   sees(
-    'SuccessFactors: it keeps what your profile filled in, and fills the rest, picking from its lists',
+    'SuccessFactors: it puts its answers in place of what your profile filled in, and fills the rest, picking from its lists',
     {
-      job: await sfPanel.getByText('Field Data Analyst at Copperline Utilities').count(),
+      job: await jobAtTop(sfPanel, 'Field Data Analyst', 'Copperline Utilities'),
       first: await boxed('60:_txtFld'),
       phone: await boxed('76:_txtFld'),
       state: await boxed('95:_input'),
       heard: await boxed('188:_input'),
     },
     // Found on the company's own site, as the job was saved from there.
-    { job: 1, first: 'Ana', phone: run.phone(), state: 'Colorado', heard: 'Company Website' },
+    { job: 1, first: 'Ana María', phone: run.phone(), state: 'Colorado', heard: 'Company Website' },
   );
   sees(
     'its own radio buttons, the job its profile listed, and never the signature, which is yours',
@@ -327,9 +339,7 @@ export async function fillSystems(run: SystemsRun): Promise<void> {
   sees(
     'iCIMS: it fills the form in its frame, its own dropdowns searched past their first page',
     {
-      job: await icimsPanel
-        .getByText('Robotics Software Engineer at Bramblecrest Robotics')
-        .count(),
+      job: await jobAtTop(icimsPanel, 'Robotics Software Engineer', 'Bramblecrest Robotics'),
       first: await inFrame('PersonProfileFields.FirstName'),
       street: await inFrame('-1_PersonProfileFields.AddressStreet1'),
       country: await shows('-1_PersonProfileFields.AddressCountry'),
@@ -399,7 +409,7 @@ export async function fillSystems(run: SystemsRun): Promise<void> {
   sees(
     'Taleo: it fills a step, and a place a level at a time, as each list fills from its server',
     {
-      job: await taleoPanel.getByText('Fleet Data Analyst at Bramblecote Logistics').count(),
+      job: await jobAtTop(taleoPanel, 'Fleet Data Analyst', 'Bramblecote Logistics'),
       first: await taleoField('FirstName'),
       country: await taleoShows('ResidenceLocation-0'),
       state: await taleoShows('ResidenceLocation-1'),

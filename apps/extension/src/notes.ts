@@ -155,13 +155,13 @@ export function removeNote(): void {
 /**
  * Shows a note on a page: through the script there, on a job site you allowed, or else put there
  * by the background, which the browser lets it do on a page you clicked its button on. Says its
- * token, or null where it couldn't.
+ * token, which names it, as the popup's Undo does, though the page didn't take it.
  */
 export async function showNote(
   place: FormPlace,
   says: NoteSays,
   applied?: Note['applied'],
-): Promise<string | null> {
+): Promise<string> {
   const token = crypto.randomUUID();
   await change((all) => {
     all[token] = {
@@ -180,17 +180,16 @@ export async function showNote(
       .catch(() => null);
     if (said) return token;
   }
-  try {
-    await ext.scripting.executeScript({
+  await ext.scripting
+    .executeScript({
       target: { tabId: place.tabId, frameIds: [place.frameId] },
       func: putNote,
       args: [token, NOTE.width, NOTE.height, PUT_FOR_MS],
+    })
+    .catch(() => {
+      // A page the browser keeps the extension out of now: the popup says it.
     });
-    return token;
-  } catch {
-    // A page the browser keeps the extension out of now.
-    return null;
-  }
+  return token;
 }
 
 /** Takes a note off its page, as you close it. */

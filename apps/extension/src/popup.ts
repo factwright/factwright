@@ -53,6 +53,12 @@ let fillable: Tab | null = null;
 let copyOnly = false;
 
 /**
+ * Whether the form is in a frame from a job application site you haven't turned on, which only
+ * the panel can reach, once you turn them on there.
+ */
+let framedOnly = false;
+
+/**
  * Whether the extension's script notices you submit the form, as on a job site you allowed, so
  * Mark as applied isn't needed here.
  */
@@ -96,7 +102,7 @@ function details(tab: Tab): void {
  * Factwright on this computer, or the sync server it fills from, it asks first.
  */
 function fillIn(tab: Tab): void {
-  if (copyOnly) {
+  if (copyOnly || framedOnly) {
     details(tab);
     return;
   }
@@ -106,8 +112,10 @@ function fillIn(tab: Tab): void {
     allowFirst(noWay, target);
     return;
   }
-  void ext.runtime.sendMessage({ type: 'fill', tab: target } satisfies Message);
-  window.close();
+  // Closed once the background has it, which fills the form from there.
+  void ext.runtime
+    .sendMessage({ type: 'fill', tab: target } satisfies Message)
+    .finally(() => window.close());
 }
 
 /**
@@ -530,13 +538,13 @@ async function markApplied(to: Exclude<Destination, null>, job: AskedJob, page: 
   const via = fillsOnComputer || to.to === 'computer' ? 'computer' : 'sync';
   const said = (await ext.runtime
     .sendMessage({ type: 'applied', tabId: tab.id, job, via, url: page.url } satisfies Message)
-    .catch(() => null)) as { token: string | null; says: NoteSays } | null;
+    .catch(() => null)) as { token: string; says: NoteSays } | null;
   if (!said) {
     message('The extension didn’t answer. Try again.');
     return;
   }
   appliedNote = {
-    token: said.token ?? '',
+    token: said.token,
     tabId: tab.id,
     frameId: 0,
     says: said.says,
@@ -799,12 +807,16 @@ async function start(): Promise<void> {
     const form = found && looksLikeApplication(found.form) ? found.form : null;
     const framed = form ? null : await framedSystem(tab.id);
     fillable = form || framed ? tab : null;
-    copyOnly = isCopyOnly(form?.url ?? tab.url ?? '') || Boolean(framed);
+    copyOnly = isCopyOnly(form?.url ?? tab.url ?? '');
+    framedOnly = !form && Boolean(framed);
     // The script on a job site you allowed notices you submit its form.
     watched = form !== null && (await isAllowedPage(form.url));
     const ways = fillable ? await fillWays() : [];
     noWay = Array.isArray(ways) ? null : ways;
-    filledHere = await keptFill(tab.id);
+    // What Fill filled on this page, as it is now.
+    const kept = await keptFill(tab.id);
+    const pageOf = (url: string) => url.split('#')[0];
+    filledHere = kept && form && pageOf(kept.form.url) === pageOf(form.url) ? kept : null;
     // A job marked applied on this page a moment ago, whose note offers Undo.
     appliedNote ??=
       (await notesOn(tab.id)).find(

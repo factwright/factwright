@@ -6,7 +6,7 @@ import {
 } from '@factwright/core';
 import { isCopyOnlySite } from './applicant-systems.ts';
 import { forgetFrame, isAllowedPage, keepFrame, keptFrame } from './application-sites.ts';
-import { forgetApplying, left, outcome, submitted, undoApplied, waitingAt } from './applied.ts';
+import { forgetApplying, left, outcome, undoApplied, waitingAt, whenSubmitted } from './applied.ts';
 import { ext, type Sender, type Tab } from './ext.ts';
 import {
   answerSource,
@@ -417,6 +417,26 @@ export async function answerScript(
     await left(place, message.doc);
     return {};
   }
+  if (message.do === 'submitting') {
+    // In its turn, started before anything's waited on, as the page after it may say hello at once.
+    await whenSubmitted(place, async () => {
+      if (!(await isAllowedPage(url)) || inCopyOnly(from.top, [])) return null;
+      // Only the form on the page the script is on, with Factwright's answers for it.
+      if (pageOf(message.form.url) !== pageOf(url)) return null;
+      const page = await answer(place, message.form, message.job);
+      if (typeof page === 'string') return null;
+      return {
+        place,
+        doc: message.doc,
+        form: message.form,
+        plan: page.plan,
+        way: page.way,
+        values: message.values,
+        final: message.final,
+      };
+    });
+    return {};
+  }
   const around = message.do === 'hello' ? message.around : [];
   if (!(await isAllowedPage(url)) || inCopyOnly(from.top, around)) {
     forgetPage(place);
@@ -427,22 +447,6 @@ export async function answerScript(
     await keepFrame(place.tabId, { frameId: place.frameId, url, doc: message.doc });
     // The page after one you submitted, in the same frame, says how it went.
     return { allowed: true, ...((await waitingAt(place)) && { watch: true }) };
-  }
-  if (message.do === 'submitting') {
-    // Only the form on the page the script is on, with Factwright's answers for it.
-    if (pageOf(message.form.url) !== pageOf(url)) return {};
-    const page = await answer(place, message.form, message.job);
-    if (typeof page === 'string') return {};
-    await submitted({
-      place,
-      doc: message.doc,
-      form: message.form,
-      plan: page.plan,
-      way: page.way,
-      values: message.values,
-      final: message.final,
-    });
-    return {};
   }
   if (message.do === 'outcome') {
     await outcome({ place, ...message });

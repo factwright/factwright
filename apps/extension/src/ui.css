@@ -459,6 +459,10 @@ body.panel .actions.bottom {
   padding-top: var(--fw-space-3);
 }
 
+body.panel .actions.bottom + p {
+  margin-top: var(--fw-space-2);
+}
+
 button.small-button {
   padding: 2px var(--fw-space-2);
   font-size: var(--fw-text-sm);

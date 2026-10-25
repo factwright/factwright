@@ -6,9 +6,29 @@
 /**
  * Lever's own code for its location box, as it works: as you type, it looks the city up, saying
  * it's loading, then lists the places it found, or says it found none, and a click on one keeps
- * it, in the box and in a hidden field, which is what Lever takes.
+ * it, in the box and in a hidden field, which is what Lever takes. And for its resume: its lines
+ * that say how reading one went show only as they say it, as Lever's styles have them, and a
+ * resume put in the field is read for a moment, "Analyzing resume...", then fills in your current
+ * company from it, as Lever's does, in place of what's there.
  */
 export const LEVER_LOOKS_UP = `<script>
+(() => {
+  const upload = document.getElementById('resume-upload-input');
+  const [failed, working, read, big] = ['failure', 'working', 'success', 'oversize'].map((each) =>
+    document.querySelector('.resume-upload-' + each),
+  );
+  for (const line of [failed, working, read, big]) line.style.display = 'none';
+  upload.addEventListener('change', () => {
+    document.querySelector('.filename').textContent = upload.files[0] ? upload.files[0].name : '';
+    read.style.display = 'none';
+    working.style.display = '';
+    setTimeout(() => {
+      working.style.display = 'none';
+      read.style.display = '';
+      document.querySelector('input[name="org"]').value = 'Read From The Resume Inc.';
+    }, 800);
+  });
+})();
 (() => {
   const PLACES = ['Denver City, Texas, United States', 'Denver, Colorado, United States', 'Boulder, Colorado, United States'];
   const box = document.getElementById('location-input');

@@ -98,8 +98,35 @@ export async function forgetApplying(tabId: number): Promise<void> {
   }
 }
 
+/**
+ * What's being kept of a submit, by its frame: what the page after it says, and the page going
+ * away, wait for it, as the page after may say hello before it's kept.
+ */
+const keeping = new Map<string, Promise<void>>();
+
+/** What's being kept of a submit in a frame, once it's kept. */
+const kept = (place: FormPlace) => keeping.get(keyOf(place)) ?? Promise.resolve();
+
+/**
+ * Keeps what you submitted on a form, in its turn, as the background works out Factwright's
+ * answers for it (`work`), which it starts at once, before anything else is waited on, so how the
+ * submit went is heard only after.
+ */
+export function whenSubmitted(
+  place: FormPlace,
+  work: () => Promise<Submitted | null>,
+): Promise<void> {
+  const next = kept(place)
+    .then(work)
+    .then((each) => (each ? submitted(each) : undefined))
+    .catch(() => {});
+  keeping.set(keyOf(place), next);
+  return next;
+}
+
 /** Whether a frame of a tab is waiting to hear how a submit went, which its next page then says. */
 export async function waitingAt(place: FormPlace): Promise<boolean> {
+  await kept(place);
   await queue;
   const pending = (await allApplying())[keyOf(place)]?.pending;
   return Boolean(pending && Date.now() - pending.at < OUTCOME_MS);
@@ -164,6 +191,7 @@ export interface Outcome {
  * form, moved on, with no form and no errors showing. Then the job is marked Applied, once.
  */
 export async function outcome(said: Outcome): Promise<void> {
+  await kept(said.place);
   const all = await allApplying();
   const applying = all[keyOf(said.place)];
   const pending = applying?.pending;
@@ -186,6 +214,7 @@ export async function outcome(said: Outcome): Promise<void> {
  * extension doesn't run on, which counts as applying for a form on one page that you sent.
  */
 export async function left(place: FormPlace, doc: string): Promise<void> {
+  await kept(place);
   const pending = (await allApplying())[keyOf(place)]?.pending;
   if (!pending || pending.doc !== doc || !pending.final || !pending.onePage) return;
   setTimeout(() => {
@@ -240,7 +269,7 @@ export async function markApplied(
   via: FillWay['via'],
   url: string,
   sent: SentAnswer[],
-): Promise<{ token: string | null; says: NoteSays }> {
+): Promise<{ token: string; says: NoteSays }> {
   const way = await wayOf(via);
   const answer = way
     ? await way.ask({ ask: 'sent', job: job.id, url, answers: sent.slice(0, ASK_FIELDS) })
@@ -322,7 +351,7 @@ export async function markFromPopup(
   job: AskedJob,
   via: FillWay['via'],
   url: string,
-): Promise<{ token: string | null; says: NoteSays }> {
+): Promise<{ token: string; says: NoteSays }> {
   const kept = await keptFill(tabId);
   let sent: SentAnswer[] = [];
   let place: FormPlace = { tabId, frameId: 0 };
