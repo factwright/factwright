@@ -196,18 +196,21 @@ export function ClaudePanel({
     view !== null && (screens !== null || (view.phase === 'needs-answer' && !current?.asking));
   const { show, open } = claude;
   const runId = view?.id;
-  // Claude's work opens for what only the terminal takes, once the app's own dialog would have.
+  // Claude's work opens for what only the terminal takes: at once for Claude Code's own screens,
+  // and for anything else once the app's own dialog would have shown.
   useEffect(() => {
     if (!inTerminal || open || !runId) return;
-    const timer = setTimeout(() => show(runId), TERMINAL_AFTER_MS);
+    const timer = setTimeout(() => show(runId), screens ? 0 : TERMINAL_AFTER_MS);
     return () => clearTimeout(timer);
-  }, [inTerminal, open, show, runId]);
+  }, [inTerminal, open, show, runId, screens]);
   if (!current || !view) return null;
 
   const tabs =
     runs.length > 1
       ? runs.map(({ view: each, title, state }) => ({ id: each.id, title, state }))
       : null;
+  // A task in line has no work to show yet.
+  const workShown = open && hasTerminal(view);
   return (
     <section className={styles.panel} aria-label="Claude">
       {tabs && (
@@ -219,6 +222,8 @@ export function ClaudePanel({
         {...(tabs && { role: 'tabpanel', 'aria-labelledby': `${panelId}-${view.id}` })}
       >
         <RunBar
+          // Each run's reply is its own, so another tab starts with none.
+          key={view.id}
           api={api}
           run={current}
           claude={claude}
@@ -228,7 +233,7 @@ export function ClaudePanel({
         />
       </div>
       {/* Folded, every run's terminal keeps its size, so Claude Code starts and runs as it would in view. */}
-      <div className={`${styles.work} ${open ? '' : styles.folded}`} inert={!open}>
+      <div className={`${styles.work} ${workShown ? '' : styles.folded}`} inert={!workShown}>
         {screens === 'first-run' && (
           <div className={styles.note}>
             <Notice title="Claude Code shows a few screens the first time it opens">
@@ -263,7 +268,7 @@ export function ClaudePanel({
                 api={api}
                 run={each}
                 attention={shown && inTerminal}
-                shown={shown && open}
+                shown={shown && workShown}
               />
             </div>
           );

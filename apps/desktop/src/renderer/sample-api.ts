@@ -774,13 +774,19 @@ export function sampleApi(): FactwrightApi {
   const scene = query.get('runs');
   const sideBySide = (tasks: RunTask[], start: (sample: Sample, at: number) => void) => {
     const now = Date.now();
-    tasks.forEach((task, at) => {
+    const started = tasks.map((task, at) => {
       const sample = add(task);
       set(sample.id, { phase: 'working', waits: null, startedAt: now - (4 - at) * 61_000 });
-      sample.record = changes.begin(sample.id);
-      print(sample, sample.lines.task(task));
-      start(sample, at);
+      return sample;
     });
+    // What each run says comes once the window listens.
+    setTimeout(() => {
+      started.forEach((sample, at) => {
+        sample.record = changes.begin(sample.id);
+        if (sample.task) print(sample, sample.lines.task(sample.task));
+        start(sample, at);
+      });
+    }, 500);
   };
   if (scene === 'side') {
     const at = (tool: string, detail: string | null) => ({ tool, detail, id: `${tool}-${detail}` });

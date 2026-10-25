@@ -72,6 +72,8 @@ interface Entry {
   problem: StartProblem | null;
   /** Its Claude Code, once it's open. */
   run: OpenRun | null;
+  /** What the user typed in its terminal while it was starting, for Claude Code once it's open. */
+  typed: string;
   /** Set when the user stops it, or closes its tab, while it's starting. */
   stopped: boolean;
   /** Set once its tab is closed, when it's no longer the app's. */
@@ -86,6 +88,9 @@ const CLOSE_WAIT_MS = 5000;
 
 /** How long the first run waits for its terminal's size. */
 const SIZE_WAIT_MS = 3000;
+
+/** As much as the user can type in a run's terminal before its Claude Code opens. */
+const MAX_TYPED = 10_000;
 
 /** The size a run starts at when no terminal has said its size. */
 const FALLBACK_SIZE: TerminalSize = { cols: 120, rows: 20 };
@@ -138,6 +143,7 @@ export class ClaudeRuns {
       startedAt: null,
       problem: null,
       run: null,
+      typed: '',
       stopped: false,
       closed: false,
     });
@@ -196,9 +202,14 @@ export class ClaudeRuns {
     for (const entry of [...this.entries]) this.close(entry.id);
   }
 
-  /** Sends what the user types in a run's terminal. */
+  /**
+   * Sends what the user types in a run's terminal. While it's starting, what they type waits for
+   * its Claude Code to open.
+   */
   write(id: string, data: string): void {
-    this.entry(id)?.run?.write(data);
+    const entry = this.entry(id);
+    if (entry?.run) entry.run.write(data);
+    else if (entry?.phase === 'starting') entry.typed = (entry.typed + data).slice(-MAX_TYPED);
   }
 
   /** Types a reply into a run and sends it, as the user would. */
@@ -304,7 +315,12 @@ export class ClaudeRuns {
     await prepared.started(true).catch(() => {});
     entry.run = opened;
     // Closed or stopped while it started: it goes now.
-    if (entry.stopped) opened.stop();
+    if (entry.stopped) {
+      opened.stop();
+      return;
+    }
+    if (entry.typed) opened.write(entry.typed);
+    entry.typed = '';
   }
 
   /** The size the last terminal said, or, before any has, whatever comes first. */
@@ -331,11 +347,13 @@ export class ClaudeRuns {
       },
       signal: (signal) => {
         if (!live()) return;
+        const changed = entry.phase !== signal || entry.screen !== null;
         entry.phase = signal;
         // Any signal means Claude Code is past its first-run screens and the question about trust.
         entry.screen = null;
         this.deps.onSignal?.(heard(), signal);
-        this.pump();
+        // As each tool call finishes, the run says it's working again, which changes nothing.
+        if (changed) this.pump();
       },
       screen: (screen) => {
         if (!live() || entry.screen === screen) return;

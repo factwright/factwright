@@ -567,6 +567,13 @@ export function App({ api }: { api: FactwrightApi }) {
     }
   });
 
+  // The run Claude's panel would show for Claude Code's first screens: one showing them, or else
+  // one that's open, the one shown first.
+  const openRun =
+    claude.runs.find((run) => run.screen !== null) ??
+    (claude.selected && isOpen(claude.selected.phase) ? claude.selected : null) ??
+    claude.runs.find((run) => isOpen(run.phase)) ??
+    null;
   // What the run asking the user is for, in the dialog's words, or null for Claude with no task.
   const aboutRun = (runId: string) => {
     const view = claude.runs.find((run) => run.id === runId);
@@ -637,12 +644,13 @@ export function App({ api }: { api: FactwrightApi }) {
           linkRequests={approvals.requests}
           linkAsking={approvals.asking}
           onOpenSync={() => setDialog('sync')}
-          // Claude's panel, for Claude Code's first-run screens: a run that's open, or a new one.
+          // Claude's panel, for Claude Code's first-run screens: the run showing them, or another
+          // that's open, or a new one.
           onOpenClaude={
-            claude.selected && isOpen(claude.selected.phase)
-              ? claude.open
+            openRun
+              ? claude.open && claude.selected?.id === openRun.id
                 ? undefined
-                : () => claude.show()
+                : () => claude.show(openRun.id)
               : () => startRun()
           }
           onOpenClaudeSettings={() => setDialog('claude-settings')}

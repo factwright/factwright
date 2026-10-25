@@ -328,6 +328,24 @@ describe('runs side by side', () => {
     expect(claude.list()).toEqual([]);
   });
 
+  it('keeps what the user types while a run starts, for its Claude Code once it’s open', async () => {
+    let release: () => void = () => {};
+    const claude = runs({
+      prepare: (task) =>
+        new Promise((resolve) => {
+          release = () => resolve(prepared(task));
+        }),
+    });
+    claude.start(resume('acme'));
+    claude.write('run-1', 'save my');
+    claude.write('run-1', ' notice\r');
+    release();
+    await settle();
+    expect(run('run-1').run.written).toEqual(['save my notice\r']);
+    claude.write('run-1', 'y');
+    expect(run('run-1').run.written).toEqual(['save my notice\r', 'y']);
+  });
+
   it('sends what the user types and replies to the run they’re for', async () => {
     const claude = runs();
     claude.start(resume('acme'));

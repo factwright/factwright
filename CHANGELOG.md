@@ -4,6 +4,17 @@ Notable changes to Factwright, newest first. The format follows [Keep a Changelo
 
 ## Unreleased
 
+### Added
+- Your Claude works on several tasks at once, each in a run of its own, in a tab of Claude's panel, such as "Talkiatry · Tailored resume". Each tab has a dot that says where it stands, working, waiting on you, done or didn't finish, and its own bar, terminal and list of what it changed, with Undo. The bar sums them up beside the tabs, "3 running · 1 waiting on you · 1 in line", even with the panel folded. One task alone looks as before.
+- Up to three tasks run at once, and the rest wait in line and start by themselves, in the order you asked. Your Claude → Settings → Tasks at once picks from one to five. Two tasks on the same job never run together, so a cover letter waits for that job's resume, and neither do two on your facts and Profile, or two job searches. A task's button says In line, the jobs list marks each job Claude is on or has in line, and Close on a task in line takes it out.
+- Claude's questions and permission prompts name the run asking at the top, and with several waiting on you, the dialog says "1 of 3", goes through them in the order they came, and has Previous and Next to switch between them.
+
+### Changed
+- Each task starts a run of its own, rather than going into the Claude Code that's open. You can still type a follow-up into a finished run's terminal until you close it. Another job's task no longer greys out the buttons: it waits in line, or starts beside it. Updates and switching profiles wait while any run has work going or a task waits in line.
+- Claude Code's first-run screens and its question about trust come once: until one run is past them, only one starts at a time, and the rest start without them.
+- Fit checks, salary checks and unmasked listings add their row to the job hunt's logs through Factwright's own tool, which writes one row at a time, so two runs never write a log at once. Your Claude can't edit those logs itself.
+- A run's name leads with the job's company, such as "Acme Robotics · Fit check", in its tab, its bar and the dialogs it asks in.
+
 ## 0.17.0 - 2026-10-25
 
 ### Added

@@ -102,7 +102,7 @@ test('sends what the X-ray found for revision, typing only the findings’ IDs',
   await expect(dialog).toHaveCount(0);
 
   const panel = claudePanel();
-  await expect(panel.getByText('Resume revision · Acme Robotics')).toBeVisible();
+  await expect(panel.getByText('Acme Robotics · Resume revision')).toBeVisible();
   // Its question about GraphQL opens in the app's dialog. Answered in the terminal instead, Claude
   // Code asks it there, as it did before the dialog.
   const asks = window.getByRole('dialog', { name: 'Claude has a question' });

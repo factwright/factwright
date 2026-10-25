@@ -158,6 +158,13 @@ describe('ClaudePanel', () => {
     expect(bar().textContent).not.toContain('This is your own Claude Code.');
   });
 
+  it('opens Claude’s work at once for Claude Code’s own screens', () => {
+    vi.useFakeTimers();
+    const { claude } = panel([run('starting', {}, { screen: 'trust' })]);
+    act(() => vi.advanceTimersByTime(0));
+    expect(claude.show).toHaveBeenCalledWith('run-1');
+  });
+
   it('explains Claude Code’s first-run screens and its question about trust', () => {
     panel([run('starting', {}, { screen: 'first-run' })], { open: true });
     expect(screen.getByRole('note').textContent).toContain(
