@@ -312,6 +312,20 @@ describe('runs side by side', () => {
     expect(claude.busy()).toBe(false);
   });
 
+  it('closes every run as the window closes, starting nothing in line as they go', async () => {
+    const claude = runs({ atOnce: 1 });
+    claude.start(resume('acme'));
+    claude.start(resume('globex'));
+    await settle();
+    run('run-1').events.past();
+    claude.closeAll();
+    await settle();
+    expect(stops).toEqual(['run-1']);
+    expect(opened.map((each) => each.id)).toEqual(['run-1']);
+    expect(lastView()).toEqual([]);
+    expect(claude.busy()).toBe(false);
+  });
+
   it('tells the app what each run says, by the run’s ID, until its tab closes', async () => {
     const output = vi.fn();
     const signal = vi.fn();

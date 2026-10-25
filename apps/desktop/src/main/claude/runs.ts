@@ -197,9 +197,17 @@ export class ClaudeRuns {
     clearTimeout(timer);
   }
 
-  /** Stops every run and empties the line, as when the window closes, which they belong to. */
+  /**
+   * Stops every run and empties the line, as when the window closes, which they belong to. The
+   * line goes first, so nothing in it starts as the runs ahead of it stop.
+   */
   closeAll(): void {
-    for (const entry of [...this.entries]) this.close(entry.id);
+    for (const entry of this.entries.splice(0)) {
+      entry.closed = true;
+      entry.stopped = true;
+      entry.run?.stop();
+    }
+    this.deps.onView(this.view());
   }
 
   /**

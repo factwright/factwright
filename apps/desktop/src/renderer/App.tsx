@@ -525,8 +525,12 @@ export function App({ api }: { api: FactwrightApi }) {
     ({ view, state }) =>
       view.phase === 'in-line' || BUSY.includes(view.phase) || state === 'waiting',
   );
-  // Opens what the task made from the notification that says so, too: the last one told of.
+  // Opens what the task made from the notification that says so, too: the last one told of, as
+  // it stands now.
+  const toldLast = useRef<string | null>(null);
   const openResult = useRef<(() => void) | null>(null);
+  openResult.current =
+    panelRuns.find(({ view }) => view.id === toldLast.current)?.result?.open?.go ?? null;
   useEffect(() => api.onOpenRunResult(() => openResult.current?.()), [api]);
   // A run the app asks for, as when the browser extension asks for drafts of a form's questions,
   // starts as a Run button's does, if it can start now, without waiting in line, and once Claude
@@ -563,6 +567,7 @@ export function App({ api }: { api: FactwrightApi }) {
               : null;
       if (!note) continue;
       told.current.add(view.id);
+      toldLast.current = view.id;
       openResult.current = result?.open?.go ?? null;
       api.tellRunDone(note);
     }
