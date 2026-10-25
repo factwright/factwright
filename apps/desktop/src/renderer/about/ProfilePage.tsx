@@ -94,7 +94,10 @@ function historyLines(history: WorkHistory): string[] {
   return more > 0 ? [...shown, `And ${more} more ${more === 1 ? 'company' : 'companies'}.`] : shown;
 }
 
-/** What Profile keeps for applications, in a line: where you can work, and sponsorship. */
+/**
+ * What Profile keeps for applications, in a line: where you can work, and sponsorship. Why
+ * you're leaving has a line of its own.
+ */
 function applicationsSummary(applications: ForApplications): string {
   const where =
     applications.countries.length > 0 ? `Works in ${applications.countries.join(', ')}` : '';
@@ -104,7 +107,8 @@ function applicationsSummary(applications: ForApplications): string {
   const adult = applications.over18
     ? `18 or older: ${labelOf(OVER_18, applications.over18).toLowerCase()}`
     : '';
-  return [where, sponsorship, adult].filter(Boolean).join(' · ') || 'Nothing yet.';
+  const said = [where, sponsorship, adult].filter(Boolean).join(' · ');
+  return said || (applications.leaving.trim() ? '' : 'Nothing yet.');
 }
 
 const plural = (count: number, word: string) =>
@@ -624,7 +628,14 @@ export function ProfilePage({
             </Button>
           }
         >
-          <p>{applicationsSummary(answers.applications)}</p>
+          {applicationsSummary(answers.applications) && (
+            <p>{applicationsSummary(answers.applications)}</p>
+          )}
+          {answers.applications.leaving.trim() && (
+            <p className={styles.leaving}>
+              Why you’re leaving: {answers.applications.leaving.trim()}
+            </p>
+          )}
           <p className={styles.quiet}>
             The browser extension fills forms with these. Equal-opportunity answers stay on this
             computer.

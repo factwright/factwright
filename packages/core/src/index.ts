@@ -103,6 +103,7 @@ export {
   NO_PRIVATE,
   type OnFile,
   type OtherAnswer,
+  type PayAsk,
   REMEMBERED_KINDS,
   type RememberedKind,
   type ResumeOnFile,
@@ -321,12 +322,16 @@ export {
   foundOn,
   isSyncedAnswer,
   jobPdfs,
+  type KindTarget,
+  keptLength,
+  kindTargetsIn,
   MOST_QUESTIONS,
   NO_CONTACT,
   onFileJob,
   PROFILE_FILES,
   type ProfileContact,
   type ProfileForForms,
+  payAskFor,
   profileAnswer,
   profileForForms,
   type ResumeShape,
@@ -342,7 +347,7 @@ export {
   withProfileAnswers,
   withSentAnswers,
 } from './on-file.ts';
-export { type PayRange, parsePay } from './pay.ts';
+export { type PayRange, parsePay, payBand } from './pay.ts';
 export {
   decodeEntities,
   htmlToText,

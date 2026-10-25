@@ -163,6 +163,7 @@ export function aboutYouText(answers: AboutYou): string {
     'Visa sponsorship',
     applications.sponsorship && labelOf(SPONSORSHIP, applications.sponsorship),
   );
+  item('Why they’re leaving their job, or left their last one', applications.leaving);
   item('Must-haves', answers.mustHaves);
   item('Deal-breakers', answers.dealBreakers);
   if (answers.quiet) {

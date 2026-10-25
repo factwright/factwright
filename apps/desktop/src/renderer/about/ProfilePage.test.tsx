@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { NO_HISTORY, type WorkHistory } from '@factwright/core';
+import { NO_HISTORY, NO_PRIVATE, type WorkHistory } from '@factwright/core';
 import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import axe from 'axe-core';
@@ -449,6 +449,35 @@ describe('ProfilePage', () => {
         expect.objectContaining({ levels: ['senior', 'director'] }),
       ),
     );
+  });
+
+  it('keeps why you’re leaving for applications, and shows it on their card', async () => {
+    const api = {
+      ...profileApi(),
+      privateAnswers: vi.fn(async () => NO_PRIVATE),
+      savePrivateAnswers: vi.fn(async () => NO_PRIVATE),
+    };
+    render(<Harness api={api} />);
+    const card = await screen.findByRole('region', { name: 'For applications' });
+    expect(within(card).getByText('Nothing yet.')).toBeTruthy();
+    await userEvent.click(within(card).getByRole('button', { name: 'Change' }));
+    const dialog = await screen.findByRole('dialog', { name: 'For applications' });
+    await userEvent.type(
+      within(dialog).getByRole('textbox', { name: 'Why you’re leaving' }),
+      'I want to work at a bigger scale.',
+    );
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Done' }));
+    await waitFor(
+      () =>
+        expect(api.saveAnswers).toHaveBeenCalledWith({
+          applications: expect.objectContaining({ leaving: 'I want to work at a bigger scale.' }),
+        }),
+      SAVED,
+    );
+    expect(
+      within(card).getByText('Why you’re leaving: I want to work at a bigger scale.'),
+    ).toBeTruthy();
+    expect(within(card).queryByText('Nothing yet.')).toBeNull();
   });
 
   it('adds another kind of job, with its own titles and pay, and names the first', async () => {

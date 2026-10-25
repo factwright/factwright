@@ -2,6 +2,7 @@ import {
   JOB_VIEWS,
   type JobView,
   type KindName,
+  type KindTarget,
   LIVE_STATUSES,
   sameCompany,
   viewOf,
@@ -140,6 +141,13 @@ export function App({ api }: { api: FactwrightApi }) {
       : [],
   );
   const kinds = useMemo<KindName[]>(() => JSON.parse(kindKey), [kindKey]);
+  // Each kind's target pay, for the pay to ask for at a job, which changes as a target does.
+  const targetKey = JSON.stringify(
+    profile
+      ? kindsOf(profile.answers).map(({ id, name, targetPay }) => ({ id, name, targetPay }))
+      : [],
+  );
+  const targets = useMemo<KindTarget[]>(() => JSON.parse(targetKey), [targetKey]);
   const rows = useMemo(
     () => (jobs.state === 'ready' ? jobRows(jobs.list.jobs, today, kinds, clock) : []),
     [jobs, today, kinds, clock],
@@ -653,6 +661,7 @@ export function App({ api }: { api: FactwrightApi }) {
                 row={selected}
                 api={api}
                 kinds={kinds}
+                targets={targets}
                 today={today}
                 onClose={() => setSelectedId(null)}
                 expanded={alone}

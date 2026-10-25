@@ -467,6 +467,21 @@ describe('job_details', () => {
     expect(answer).toContain('    2026-10-14 10:30  Recruiter screen: scheduled · call ');
     expect(answer).toContain('    2026-10-11  The user marked it Screen');
     expect(answer).not.toContain('### Other jobs at');
+    expect(answer).not.toContain('Pay to ask for');
+  });
+
+  it('gives the pay to ask for: the user’s own, which wins over a suggestion in job.md', async () => {
+    const id = 'acme-robotics--staff-engineer';
+    const notes = join(root, 'applications', FOLDER, 'job.md');
+    writeFileSync(notes, `${readFileSync(notes, 'utf8')}\n- **Pay to ask for:** $185,000\n`);
+    jobs.read();
+    expect(await tool('job_details').run({ job: id })).toContain(
+      '- Pay to ask for: $185,000, as job.md suggests',
+    );
+    jobs.updateJob(id, { payAsk: '$195,000' });
+    expect(await tool('job_details').run({ job: id })).toContain(
+      '- Pay to ask for: $195,000, the user’s own, which wins over any in job.md',
+    );
   });
 
   it('names the user’s other jobs at the company, for their calls and notes', async () => {
@@ -792,6 +807,7 @@ describe('about_you', () => {
         pronouns: 'she/her',
         countries: ['United States', 'Canada'],
         sponsorship: 'later',
+        leaving: 'I want a bigger platform.\nAnd a shorter commute.',
       },
     };
     const answer = await tool('about_you').run({});
@@ -799,6 +815,7 @@ describe('about_you', () => {
       '- Pronouns: she/her',
       '- Countries they can work in without a visa: United States; Canada',
       '- Visa sponsorship: Not now, but later',
+      '- Why they’re leaving their job, or left their last one: I want a bigger platform.\n    And a shorter commute.',
     ]) {
       expect(answer).toContain(line);
     }

@@ -45,6 +45,14 @@ describe('parseJobChanges', () => {
     expect(parseJobChanges({ kind: null })).toEqual({ kind: null });
   });
 
+  it('takes the pay to ask for in the user’s words, trimmed, or null to go back to none', () => {
+    expect(parseJobChanges({ payAsk: '  $185,000 ' })).toEqual({ payAsk: '$185,000' });
+    expect(parseJobChanges({ payAsk: '  ' })).toEqual({ payAsk: null });
+    expect(parseJobChanges({ payAsk: null })).toEqual({ payAsk: null });
+    expect(parseJobChanges({ payAsk: 185000 })).toBeNull();
+    expect(parseJobChanges({ payAsk: 'x'.repeat(201) })).toBeNull();
+  });
+
   it('takes the day a job set aside comes back, and why the user passed', () => {
     expect(parseJobChanges({ status: 'later', backOn: '2026-11-02' })).toEqual({
       status: 'later',

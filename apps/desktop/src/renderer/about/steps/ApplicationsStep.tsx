@@ -1,5 +1,5 @@
-import type { ForApplications, KeptPrivate } from '@factwright/core';
-import { Field, Input, Select, TagInput } from '@factwright/ui';
+import { type ForApplications, type KeptPrivate, keptLength } from '@factwright/core';
+import { Field, Input, Select, TagInput, TextArea } from '@factwright/ui';
 import { useEffect, useId, useRef, useState } from 'react';
 import { ANSWER_LIMITS, type AnswerChanges, OVER_18, SPONSORSHIP } from '../../../shared/about.ts';
 import type { FactwrightApi } from '../../../shared/api.ts';
@@ -11,7 +11,7 @@ const SAVE_AFTER_MS = 500;
 
 /** The lines Profile keeps for applications, with the rest of its answers. */
 const LINES: readonly {
-  key: Exclude<keyof ForApplications, 'countries' | 'sponsorship' | 'over18'>;
+  key: Exclude<keyof ForApplications, 'countries' | 'sponsorship' | 'over18' | 'leaving'>;
   label: string;
   hint?: string;
   autoComplete: string;
@@ -42,9 +42,9 @@ const LINES: readonly {
 
 /**
  * What application forms ask that a resume doesn't say, for the extension to fill them with:
- * names, where you live, links, and the questions forms ask about working there. Your street,
- * postal code and equal-opportunity answers are kept on this computer alone, and each
- * equal-opportunity question is left for you unless you choose an answer.
+ * names, where you live, links, why you're leaving, and the questions forms ask about working
+ * there. Your street, postal code and equal-opportunity answers are kept on this computer alone,
+ * and each equal-opportunity question is left for you unless you choose an answer.
  */
 export function ApplicationsStep({
   applications,
@@ -121,6 +121,22 @@ export function ApplicationsStep({
             )}
           </Field>
         ))}
+        <Field
+          label="Why you’re leaving"
+          hint="Your current job, or your last one. Forms that ask why get this as it is, and your Claude can fit it to a job when it drafts answers."
+          className={styles.wide}
+        >
+          {(control) => (
+            <TextArea
+              {...control}
+              rows={3}
+              maxLength={keptLength('leaving')}
+              value={applications.leaving}
+              placeholder="Such as: I’ve grown all I can on a small team, and want to work at a bigger scale."
+              onChange={(event) => change({ leaving: event.target.value })}
+            />
+          )}
+        </Field>
       </div>
 
       <div className={styles.section}>

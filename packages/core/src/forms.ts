@@ -107,6 +107,8 @@ export type FieldKind =
   | 'how-heard'
   | 'pay'
   | 'over-18'
+  // Why you're leaving your job, or why you left your last one.
+  | 'leaving'
   // Equal-opportunity questions: only from what you set in Profile, and never shown to Claude.
   | 'gender'
   | 'hispanic'
@@ -213,6 +215,41 @@ export const WITHOUT_SPONSORSHIP =
   /\bwithout (the need for |needing |requiring |any )*(visa |employer |company )?sponsor/;
 
 /**
+ * What comes after "leave" or "leaving" in a question about your job: nothing more, another
+ * question, or the job itself, "your current position", never "the military" or "gaps".
+ */
+const JOB_AFTER = String.raw`(?=$| or\b| and\b| (your|the|this|my|that) ((current|last|previous|prior|most recent|present|former) )?(job|role|position|employer|company|organi[sz]ation|team|work)\b)`;
+
+/** A new job of no one company's, as "Why are you looking for a new role?" asks it. */
+const NEW_ROLE = String.raw`(for )?(a |an )?(new|another|different) (role|job|position|opportunity|opportunities|challenge|employer|company)\b(?! (at|with|like|in)\b)`;
+
+/**
+ * Words that ask why you're leaving your job, or why you left your last one: "Reason for leaving",
+ * "Why are you looking for a new role?", "Please explain why you are leaving your current
+ * employer", but never "Why are you looking for a position at Acme?" or "What led you to consider
+ * a role here?", which ask why the job.
+ */
+const LEAVING = new RegExp(
+  [
+    String.raw`\breason( s|s)? (for|of) (your |my )?(leaving|departure|wanting to (leave|change|move on)|(job )?change|changing (jobs?|roles?|employers?|companies|positions?)|(looking|seeking|searching) for (a )?(new|another|change)|considering (a )?(new|change))\b`,
+    String.raw`\bleaving reasons?\b`,
+    String.raw`\bwhy (are|did|do|would|have|were) you (want(ed)? to |wish(ed)? to |plan(ning)? to |decide(d)? to |choose to |chose to |thinking (of|about) |considering |interested in |looking to )?(leave|leaving|left)${JOB_AFTER}`,
+    String.raw`\bwhy (you are|youre|you re|you were|you have|youve|you)( (looking|planning|wanting|hoping|deciding|want|wish|decided|chose|plan) to)? (leave|leaving|left)${JOB_AFTER}`,
+    String.raw`\bwhy (are|do) you (want to |wish to )?(change|changing|move|moving|switch|switching) (jobs?|roles?|employers?|companies|positions?)\b`,
+    String.raw`\bwhy are you (currently |now )?(looking|searching|seeking|job hunting|on the job market)(?=$| ${NEW_ROLE}| to (leave|change|move on|switch|make a (change|move))\b| elsewhere\b| for a change\b)`,
+    String.raw`\bwhat (prompted|made|led|motivated|caused|is motivating|is prompting) you( to)? (leave|start looking|look for (a |an )?(new|another|different) (role|job|position|opportunity|opportunities))\b`,
+  ].join('|'),
+);
+
+/**
+ * Words that ask why, and words about leaving: together, a question about leaving your job, never
+ * where you work now, as "Describe your departure from your current employer". Leaving alone
+ * isn't, as "Current company (leave blank if none)".
+ */
+const ASKS_WHY = /\b(why|reasons?|explain|describe)\b/;
+const ABOUT_LEAVING = /\b(leave|leaving|left|departure|departing)\b/;
+
+/**
  * Rules that say what a field asks, by its question, in order: the first that fits is it. Each
  * has the words it looks for, any others it needs as well, and words that make it something
  * else, as "company name" isn't yours.
@@ -289,7 +326,8 @@ const RULES: { kind: FieldKind; words: RegExp; also?: RegExp; not?: RegExp }[] =
     kind: 'pay',
     words:
       /\b(salary|compensation|pay|wage|rate) (expectations?|requirements?|range|desired|requested)\b|\b(desired|expected|target|minimum|requested) (base )?(salary|compensation|pay|wage|rate)\b|\bsalary\b|\bcompensation\b/,
-    not: /\b(history|current salary|prior|previous)\b/,
+    // What you're paid now, or were, isn't what you'd ask for.
+    not: /\b(history|prior|previous|past)\b|\bcurrent (base |annual |total |yearly )?(salary|compensation|pay|wage|rate|package)\b|\b(currently|presently) (earn|make|paid)\b/,
   },
   // Cover letters, to type or upload.
   { kind: 'cover-letter', words: /\b(cover|motivation(al)?) letter\b/ },
@@ -451,6 +489,7 @@ const NAMES: { kind: FieldKind; name: RegExp }[] = [
   { kind: 'discipline', name: /\b(discipline|major)\b/ },
   { kind: 'full-name', name: /^(name|full ?name|systemfield name)\b/ },
   { kind: 'location', name: /^(location|candidate location)\b/ },
+  { kind: 'leaving', name: /\breasons? ?for ?leaving\b/ },
 ];
 
 /**
@@ -678,6 +717,11 @@ export function fieldKind(field: FieldToTell): FieldKind {
   if (YOUR_NAME.has(kind) && (inSelfIdPart(field) || inSigningPart(field))) return 'consent';
   // Where a job or a school was, in its part, as iCIMS asks a job's country, is never your home.
   if (WHERE_YOU_LIVE.has(kind) && fieldPart(field)) return 'question';
+  // A box for paragraphs never takes a title or a company, as "Tell us about your current role"
+  // asks for more than its name.
+  if (field.control === 'long' && (kind === 'current-title' || kind === 'current-company')) {
+    return 'question';
+  }
   return kind;
 }
 
@@ -726,6 +770,10 @@ function kindAsked(field: FieldToTell): FieldKind {
   ) {
     return 'consent';
   }
+  // Why you're leaving, before where you work now, as "Reason for leaving your current position"
+  // isn't asking your title, in a part for each job too, as iCIMS asks it of each. Agreeing to
+  // anything about it is still yours to do.
+  if (LEAVING.test(question) && !CONSENT.test(question)) return 'leaving';
   // In a part of the form for each job or school, "Start date" and "Location" are its own.
   const inPart = partKind(field);
   if (inPart) return inPart;
@@ -737,7 +785,10 @@ function kindAsked(field: FieldToTell): FieldKind {
   if (type === 'email') return 'email';
   if (type === 'tel') return 'phone';
   if (CONSENT.test(question)) return 'consent';
+  // A question about why you're leaving never asks where you work now, however it's worded.
+  const whyLeaving = ASKS_WHY.test(question) && ABOUT_LEAVING.test(question);
   for (const rule of RULES) {
+    if (whyLeaving && (rule.kind === 'current-company' || rule.kind === 'current-title')) continue;
     if (
       rule.words.test(question) &&
       rule.also?.test(question) !== false &&

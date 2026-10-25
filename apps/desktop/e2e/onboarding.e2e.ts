@@ -140,6 +140,21 @@ test('hands it all to their Claude, with the workspace ready for it', async () =
   expect(JSON.parse(read('guide/lint.json')).maxPages).toBe(2);
 });
 
+test('keeps why they’re leaving for applications, for the extension and their Claude', async () => {
+  const { window } = opened;
+  const leaving = 'I want to build developer tools at a bigger scale.';
+  const card = window.getByRole('region', { name: 'For applications' });
+  await card.getByRole('button', { name: 'Change' }).click();
+  const dialog = window.getByRole('dialog', { name: 'For applications' });
+  await dialog.getByRole('textbox', { name: 'Why you’re leaving' }).fill(leaving);
+  await dialog.getByRole('button', { name: 'Done' }).click();
+  await expect(card).toContainText(`Why you’re leaving: ${leaving}`);
+  // With Profile's other answers for forms, which sync.
+  await expect
+    .poll(() => JSON.parse(read('about-me/answers.json')).applications?.leaving)
+    .toBe(leaving);
+});
+
 test('has their Claude make a template of their own from a resume they like', async () => {
   const { window } = opened;
   const card = window.getByRole('region', { name: 'Resume templates' });
