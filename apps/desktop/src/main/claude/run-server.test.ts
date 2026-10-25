@@ -200,7 +200,9 @@ describe('RunServer', () => {
       tool_use_id: 'toolu_q',
       tool_input: { questions },
     };
-    const yes: RoundReply = [{ picks: ['Yes, in production'], other: '', note: '' }];
+    const yes: RoundReply = [
+      { picks: ['Yes, in production'], other: '', note: '', skipped: false },
+    ];
 
     /** A dialog the test answers, by hand, once the hook reaches it. */
     function dialog() {

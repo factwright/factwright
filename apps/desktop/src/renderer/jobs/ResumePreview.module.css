@@ -32,3 +32,10 @@
 .problem {
   color: var(--fw-bad);
 }
+
+/* Why a copy didn't save, or the file didn't show, over the buttons. */
+.saving {
+  margin: var(--fw-space-3) 0 0;
+  color: var(--fw-bad);
+  font-size: var(--fw-text-sm);
+}

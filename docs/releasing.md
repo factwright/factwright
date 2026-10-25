@@ -92,8 +92,9 @@ repository's Releases page.
   - The sidebar then shows **Update ready**, with the version's notes under What's new. On a
     Mac, that's once the system has checked the update and can install it.
   - Restart now installs it. Otherwise it installs the next time the user quits. While Claude is
-    working, the card leaves out Restart now, as restarting would stop the run, and it asks first
-    if the user is writing a fact or a note they haven't saved.
+    working, or waits on the user, the card leaves out Restart now, as restarting would stop the
+    run, and it asks first if the user is writing a fact or a note they haven't saved. A Claude
+    Code that's done quits first, and the card says Restarting… meanwhile.
   - A problem is noted in `updates.log` in the app's data folder, and the next look tries again.
   - Only Factwright's own builds look for updates, as above. Each look sends the same ID for
     everyone, rather than one for each install.

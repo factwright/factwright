@@ -111,7 +111,12 @@ export function Sidebar({
   /** How many of them wait for the user to verify them, which shows in place of the count. */
   factsToVerify?: number | undefined;
   /** An update to Factwright that's ready to install, and restarting into it. */
-  update: { status: UpdateStatus; busy: boolean; unsaved: () => boolean; onRestart: () => void };
+  update: {
+    status: UpdateStatus;
+    busy: boolean;
+    unsaved: () => boolean;
+    onRestart: () => Promise<boolean>;
+  };
   /** Factwright's version, such as "0.1.1". */
   version: string;
 }) {

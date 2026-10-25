@@ -38,18 +38,34 @@ describe('PanelHeader', () => {
   });
 
   it.each([
-    ['ready', 'Ready'],
+    ['starting', 'Starting'],
     ['working', 'Working'],
     ['needs-answer', 'Needs your answer'],
-    ['done', 'Done'],
   ] as const)('while %s, shows the state and offers Stop and Claude’s work', (phase, chip) => {
-    const { onStop, onShowWork } = renderHeader(phase);
+    const { onStop, onShowWork, onClose } = renderHeader(phase);
     expect(screen.getByRole('status').textContent).toBe(chip);
+    expect(screen.queryByRole('button', { name: 'Close' })).toBeNull();
     screen.getByRole('button', { name: 'Stop' }).click();
     screen.getByRole('button', { name: 'Show Claude’s work' }).click();
     expect(onStop).toHaveBeenCalledOnce();
     expect(onShowWork).toHaveBeenCalledWith(true);
+    expect(onClose).not.toHaveBeenCalled();
   });
+
+  it.each([
+    ['done', 'Done'],
+    ['ready', 'Ready'],
+  ] as const)(
+    'while %s, offers Close in place of Stop, though Claude Code is still open',
+    (phase, chip) => {
+      const { onStop, onClose } = renderHeader(phase);
+      expect(screen.getByRole('status').textContent).toBe(chip);
+      expect(screen.queryByRole('button', { name: 'Stop' })).toBeNull();
+      screen.getByRole('button', { name: 'Close' }).click();
+      expect(onClose).toHaveBeenCalledOnce();
+      expect(onStop).not.toHaveBeenCalled();
+    },
+  );
 
   it('folds Claude’s work away again', () => {
     const { onShowWork } = renderHeader('working', { workShown: true });
@@ -59,10 +75,10 @@ describe('PanelHeader', () => {
     expect(onShowWork).toHaveBeenCalledWith(false);
   });
 
-  it('says a turn that ended in an error didn’t finish, though Claude Code is still open', () => {
+  it('says a turn that ended in an error didn’t finish, and offers Close', () => {
     renderHeader('done', { failed: true });
     expect(screen.getByRole('status').textContent).toBe('Didn’t finish');
-    expect(screen.getByRole('button', { name: 'Stop' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Close' })).toBeTruthy();
   });
 
   it('once Claude Code has closed, offers Close in place of Stop', () => {
