@@ -205,6 +205,25 @@ button:disabled {
   cursor: default;
 }
 
+/* A button that reads as a link, beside the main one, as the popup's Edit details. */
+button.link {
+  border-color: transparent;
+  background: none;
+  color: var(--fw-accent-text);
+  padding-left: var(--fw-space-2);
+  padding-right: var(--fw-space-2);
+}
+
+button.link:hover {
+  background: none;
+  text-decoration: underline;
+}
+
+/* Alone on its line, in line with the words above it. */
+button.link:first-child {
+  padding-left: 0;
+}
+
 a {
   color: var(--fw-accent-text);
 }
@@ -215,6 +234,25 @@ a {
   border-radius: var(--fw-radius-lg);
   padding: var(--fw-space-3) var(--fw-space-4);
   margin: var(--fw-space-3) 0;
+}
+
+/* The popup's link to setup, below whatever it shows. */
+.settings {
+  margin-top: var(--fw-space-4);
+}
+
+/* The job the popup read, or the one on file: its title, then what else it says, one to a line. */
+.card.job p {
+  margin: 0 0 var(--fw-space-1);
+  overflow-wrap: anywhere;
+}
+
+.card.job p:last-child {
+  margin-bottom: 0;
+}
+
+.card.job .job-title {
+  font-weight: 600;
 }
 
 .facts {

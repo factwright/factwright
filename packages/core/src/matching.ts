@@ -1,4 +1,4 @@
-import { boardPostingId, boardSource } from './boards.ts';
+import { boardPostingId, boardSource, workablePostingId } from './boards.ts';
 import { companyKey, slug } from './keys.ts';
 import { isJobLink, normalizeUrl } from './links.ts';
 
@@ -14,9 +14,10 @@ const OPAQUE_ID = /^[\w-]{1,100}$/;
 /**
  * A key for the one posting a link is to, the same however the link is written: the applicant
  * system's own ID for it, such as "greenhouse:4567890" for boards.greenhouse.io and
- * job-boards.greenhouse.io alike, or for a company's site with ?gh_jid=4567890. LinkedIn's is the
- * number in jobs/view/<id>, whatever it says around it, and Indeed's is its jk. Null for a link to
- * a whole board, or to a site this doesn't know.
+ * job-boards.greenhouse.io alike, or for a company's site with ?gh_jid=4567890, and Workable's
+ * shortcode, as "workable:1b6e0a1710". LinkedIn's is the number in jobs/view/<id>, whatever it says
+ * around it, and Indeed's is its jk. Null for a link to a whole board, or to a site this doesn't
+ * know.
  */
 export function postingKey(address: string): string | null {
   let url: URL;
@@ -40,6 +41,9 @@ export function postingKey(address: string): string | null {
     if (board.kind === 'gem') return `gem:${board.board.toLowerCase()}:${id}`;
     return `${board.kind}:${id.toLowerCase()}`;
   }
+  // Workable's IDs are its own across every company, as its short links name no company.
+  const workable = workablePostingId(address);
+  if (workable) return `workable:${workable.toLowerCase()}`;
   const workday = workdayPosting(host, url.pathname);
   if (workday) return workday;
   const icims = icimsPosting(host, url.pathname);
@@ -585,4 +589,53 @@ export function matchJobs<T extends JobIdentity>(
       return match ? [{ job, match }] : [];
     })
     .sort((a, b) => MATCH_ORDER[a.match] - MATCH_ORDER[b.match]);
+}
+
+/**
+ * Whether a job has a posting of its own: a link to one job, by its address or its ID, and not
+ * only a board's address, a Hacker News post or the company's site.
+ */
+export const hasOwnPosting = (job: { links: readonly { url: string }[] }) =>
+  job.links.some((link) => isJobLink(link.url) || postingKey(link.url) !== null);
+
+/**
+ * How a job on a page goes with the jobs on file, as the browser extension tells when it saves the
+ * page, and when its popup says whether the job is saved:
+ * - **same:** a job with the same posting, by its address or its ID, which saving finds there;
+ * - **joins:** the one job with the same role at the same company, its title the same however
+ *   it's written, where one of the two has no posting of its own, only a board's address, a Hacker
+ *   News post or the company's site, so saving adds the page's link and posting to it;
+ * - **role:** the one job with the same role at the company, as matching reads it otherwise, as
+ *   one with another posting of its own, or a title saying more, which filling a form takes as the
+ *   form's job, and saving makes a new job beside.
+ */
+export type SavedHow = 'same' | 'joins' | 'role';
+
+/** The job on file a page is for, with how, or null for none. */
+export function savedJobFor<T extends JobIdentity>(
+  jobs: readonly T[],
+  page: { url: string; company: string; role: string },
+): { job: T; how: SavedHow } | null {
+  const matches = matchJobs(jobs, { company: page.company, role: page.role, link: page.url });
+  const same = matches.find(({ match }) => match === 'posting');
+  if (same) return { job: same.job, how: 'same' };
+  const roles = matches.filter(({ match }) => match === 'role');
+  // Joining changes the job on file, so only one job it can't be mistaken for: the same company
+  // and the same title, never one whose name only holds the page's, or whose title says more.
+  const pagePosting = hasOwnPosting({ links: [{ url: page.url }] });
+  const name = { company: page.company, companyKey: companyKey(page.company) };
+  const title = readTitle(page.role);
+  const joins = roles.filter(
+    ({ job }) =>
+      (!pagePosting || !hasOwnPosting(job)) &&
+      companyMatch(
+        { company: job.company, companyKey: job.companyKey || companyKey(job.company) },
+        name,
+      ) === 'same' &&
+      titleFit(readTitle(job.role), title) === 'same',
+  );
+  const [joined, ...others] = joins;
+  if (joined && others.length === 0) return { job: joined.job, how: 'joins' };
+  const [only, ...more] = roles;
+  return only && more.length === 0 ? { job: only.job, how: 'role' } : null;
 }

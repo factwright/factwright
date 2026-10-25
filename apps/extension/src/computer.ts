@@ -174,7 +174,10 @@ export function readAnswer(answer: unknown): SaveResult {
     typeof said.already === 'boolean' &&
     POSTINGS.includes(said.posting as PostingSaved)
   ) {
-    return { ok: true, id: said.id, already: said.already, posting: said.posting as PostingSaved };
+    const { id, already } = said;
+    // An app from before it joined a job by its role says nothing of it.
+    const joined = said.joined === true ? ({ joined: true } as const) : {};
+    return { ok: true, id, already, posting: said.posting as PostingSaved, ...joined };
   }
   if (said.ok === false && typeof said.message === 'string' && said.message) {
     return { ok: false, reason: 'failed', message: said.message.slice(0, 300) };

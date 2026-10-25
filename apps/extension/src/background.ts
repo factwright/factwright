@@ -3,20 +3,22 @@ import { browserName, canReachSync, clientFor, forgetAccount } from './account.t
 import { registerScripts } from './application-sites.ts';
 import { canReachComputer, canSendNow, destination, saveOnComputer } from './computer.ts';
 import { ext, type Tab } from './ext.ts';
-import { isSave } from './messages.ts';
+import { isLookUp, isSave } from './messages.ts';
 import { forgetTab, onJobSiteMessage, stopWhereNotAllowed } from './on-job-sites.ts';
 import { openPanel } from './panel-open.ts';
 import { isWebPage, readTab } from './read-tab.ts';
-import { type JobToSave, type SaveResult, saveJob } from './save.ts';
+import { type JobToSave, type SaveResult, savedThroughSync, saveJob } from './save.ts';
+import type { PageAsked, SavedFor } from './saved.ts';
 import { serverName } from './server.ts';
 import { needsChecking, toSave } from './tab-job.ts';
 
 /**
  * The extension's background: it saves jobs, for the popup, the page's right-click menu and the
- * keyboard shortcut, and opens the setup page on install. It saves through sync, or straight to
- * Factwright on this computer, as setup set it up. It holds nothing between saves: the sign-in,
- * the keys and the settings stay in the extension's own storage. On the job sites you allowed, it
- * registers the extension's script, and answers it and the extension's frame there
+ * keyboard shortcut, looks up for the popup whether a page's job is saved through sync, and opens
+ * the setup page on install. It saves through sync, or straight to Factwright on this computer, as
+ * setup set it up. The sign-in, the keys and the settings stay in the extension's own storage, and
+ * what it reads of sync's jobs stays in memory only, for a few minutes. On the job sites you
+ * allowed, it registers the extension's script, and answers it and the extension's frame there
  * (src/on-job-sites.ts).
  */
 
@@ -162,6 +164,20 @@ async function save(job: JobToSave): Promise<SaveResult> {
   return result;
 }
 
+/**
+ * The job on file a page is for, as sync holds your job hunt, for the popup of a browser set up
+ * through sync: null for none, or when it can't tell, as when sync can't be reached. The popup asks
+ * Factwright on this computer itself.
+ */
+async function lookUp(page: PageAsked): Promise<SavedFor | null> {
+  const to = await destination();
+  if (to?.to !== 'sync' || !(await canReachSync(to.account.server))) return null;
+  const { account } = to;
+  return savedThroughSync(clientFor(account.server, account.token), account.keys, page).catch(
+    () => null,
+  );
+}
+
 /** Marks the toolbar button on a tab for a few seconds: ✓ when it saved, ! when it didn't. */
 async function mark(tab: Tab, ok: boolean, says: string): Promise<void> {
   const tabId = tab.id;
@@ -302,6 +318,10 @@ ext.runtime.onMessage.addListener((message, sender, sendResponse) => {
     (sender.frameId ?? 0) === 0 &&
     !/^https?:/i.test(sender.tab?.url ?? '') &&
     (sender.url ?? '').startsWith(ext.runtime.getURL(''));
+  if (ours && isLookUp(message)) {
+    lookUp(message.page).then(sendResponse, () => sendResponse(null));
+    return true;
+  }
   if (!ours || !isSave(message)) return undefined;
   save(message.job).then(sendResponse, (error: unknown) =>
     sendResponse({ ok: false, reason: 'failed', message: String(error) } satisfies SaveResult),

@@ -1,24 +1,35 @@
 import 'virtual:theme.css';
 import './ui.css';
-import { JOB_LIMITS } from '@factwright/core';
+import { type AskedJob, JOB_LIMITS, JOB_STATUS_LABELS, readStatus } from '@factwright/core';
 import { canReachSync } from './account.ts';
 import { framedSystem } from './application-sites.ts';
-import { canReachComputer, type Destination, destination, saveOnComputer } from './computer.ts';
+import {
+  canReachComputer,
+  canSendNow,
+  type Destination,
+  destination,
+  saveOnComputer,
+} from './computer.ts';
 import { type Child, h, heading, show } from './dom.ts';
 import { ext, type Tab } from './ext.ts';
 import { findForm, looksLikeApplication } from './fill.ts';
-import { askToSave } from './messages.ts';
+import { askForJob, askToSave } from './messages.ts';
 import type { PageJob } from './page/read-job.ts';
 import { openPanel } from './panel-open.ts';
 import { isWebPage, readTab, type Unread } from './read-tab.ts';
 import type { JobToSave, SaveResult } from './save.ts';
+import { type PageAsked, type SavedFor, savedOnComputer } from './saved.ts';
 import { serverName } from './server.ts';
 import { isJobAddress, looksLikeJob, toSave } from './tab-job.ts';
 
 /**
- * The popup under the toolbar button: it reads the job on the page you're on, lets you check its
- * title, company, pay and posting, and saves it to your job hunt, through sync or straight to
- * Factwright on this computer. Nothing is sent until you save.
+ * The popup under the toolbar button: it reads the job on the page you're on and looks it up in
+ * your job hunt. A job you saved shows as it's on file, with Fill for the page's application form.
+ * Any other shows what was read, its title, company, pay, place and posting, to save in one click,
+ * or to check and change first, in Edit details. On an application form's page, that click saves
+ * the job and fills the form. It saves through sync, or straight to Factwright on this computer.
+ * Nothing is saved until you click, and the look-up tells Factwright on this computer only the
+ * page's address, the company and the job's title.
  */
 
 const app = document.getElementById('app') as HTMLElement;
@@ -28,6 +39,13 @@ let savingTo: Destination = null;
 
 /** The tab's application form, to fill, when the page has one. */
 let fillable: Tab | null = null;
+
+/**
+ * Whether Factwright on this computer answered the look-up, which the form's fill then asks too,
+ * as it does wherever the browser lets the extension reach it: Save and fill saves the job there
+ * then, as the panel saves one, so the fill finds it at once, before sync brings it.
+ */
+let fillsOnComputer = false;
 
 /**
  * Whether the page doesn't look like a job's, so the popup fills in no title or company and saves
@@ -72,7 +90,7 @@ const openSetup = () => {
 const settingsLink = () =>
   h(
     'p',
-    { class: 'small muted' },
+    { class: 'small muted settings' },
     h(
       'a',
       { href: 'setup.html', target: '_blank', rel: 'noopener' },
@@ -82,6 +100,10 @@ const settingsLink = () =>
 
 const button = (text: string, click: () => void, primary = false) =>
   h('button', { type: 'button', class: primary ? 'primary' : '', on: { click } }, text);
+
+/** A button that reads as a link, for what's beside the main one. */
+const linkButton = (text: string, click: () => void) =>
+  h('button', { type: 'button', class: 'link', on: { click } }, text);
 
 function notSetUp(): void {
   show(
@@ -149,7 +171,10 @@ function field(id: string, label: string, value: string, max: number, placeholde
 const inputValue = (id: string) =>
   (document.getElementById(id) as HTMLInputElement | null)?.value.trim() ?? '';
 
-/** The notes the popup shows about what it read: anything to check before saving. */
+/**
+ * The notes the popup shows about what it read: anything to check before saving. An application
+ * form's page with no posting saves its link alone, as the posting's line says.
+ */
 function notes(page: PageJob, unread: Unread): Child[] {
   const hasPosting = Boolean(page.posting.trim());
   return [
@@ -162,6 +187,7 @@ function notes(page: PageJob, unread: Unread): Child[] {
     unread && h('p', { class: 'note' }, UNREAD[unread]),
     !unread &&
       !hasPosting &&
+      !fillable &&
       h(
         'p',
         { class: 'note' },
@@ -186,6 +212,186 @@ function saveTo(to: Exclude<Destination, null>, job: JobToSave): Promise<SaveRes
   return askToSave((sent) => ext.runtime.sendMessage(sent), job);
 }
 
+/**
+ * The job as the popup saves it: what it read, with the company from its address where the page
+ * names none, and the pay from the posting's words where it says none, but not from a page that
+ * doesn't look like a job's. An application form's page that shows no posting of its own, whose
+ * main text is the form's, saves the job's link alone.
+ */
+function readJob(page: PageJob): JobToSave {
+  const job = toSave(page);
+  return {
+    ...job,
+    pay: notAJob ? page.pay : job.pay,
+    posting: fillable && page.source === 'main' ? '' : job.posting,
+  };
+}
+
+/** The words on the button that saves: it fills the form too, on an application form's page. */
+const saveWords = () =>
+  fillable ? 'Save and fill' : notAJob ? 'Save it anyway' : 'Save to Factwright';
+
+/**
+ * Saves a job where it goes: where the extension saves, or for an application form's page, where
+ * the form's fill looks for it first (fillsOnComputer).
+ */
+const saveHere = (to: Exclude<Destination, null>, job: JobToSave) =>
+  fillable && fillsOnComputer ? saveOnComputer(job) : saveTo(to, job);
+
+/**
+ * Saves a job, then, on an application form's page, fills the form: the panel opens beside the
+ * page, as Chrome lets it straight after the click that saved the job, and fills the form with the
+ * job on file. Firefox opens its sidebar only straight from a click, so there, as once the click is
+ * a while ago, the popup says the job's saved, with Fill to click. Saving only a posting for a job
+ * on file, `fill` is false, and the popup says how it went, with Fill to click.
+ */
+async function saveIt(
+  to: Exclude<Destination, null>,
+  page: PageJob,
+  unread: Unread,
+  job: JobToSave,
+  keepPosting: boolean,
+  fill = true,
+): Promise<void> {
+  const filling = fill ? fillable : null;
+  saving();
+  const result = await saveHere(to, job);
+  if (result.ok && filling) {
+    try {
+      await openPanel(filling);
+      window.close();
+      return;
+    } catch {
+      // The browser opens it only from a click of its own.
+    }
+  }
+  done(to, page, job, unread, result, keepPosting);
+}
+
+/**
+ * What the popup read, to save in one click: the job's title, company, pay, place and posting,
+ * with anything to check, and Edit details, which shows each to change. A job with no title or
+ * company, as a page that doesn't look like a job's, shows them at once, to fill in.
+ */
+function summary(
+  to: Exclude<Destination, null>,
+  page: PageJob,
+  unread: Unread,
+  problem?: string,
+): void {
+  const job = readJob(page);
+  if (notAJob || !job.company || !job.role) {
+    form(to, page, unread, problem);
+    return;
+  }
+  const keep = Boolean(job.posting.trim());
+  // What it saves, as the boxes show it once you've tried to.
+  const shown = { ...page, title: job.role, company: job.company, pay: job.pay };
+  const save = button(saveWords(), () => void saveIt(to, shown, unread, job, keep), true);
+  show(
+    app,
+    heading(),
+    h(
+      'div',
+      { class: 'card job' },
+      h('p', { class: 'job-title' }, job.role),
+      h('p', {}, job.company),
+      job.pay && h('p', { class: 'small' }, job.pay),
+      page.location && h('p', { class: 'small' }, page.location),
+      h(
+        'p',
+        { class: 'small muted' },
+        keep
+          ? `Posting: ${postingLine({ ...page, posting: job.posting })}`
+          : 'No posting: only its link is saved',
+      ),
+    ),
+    ...notes({ ...page, posting: job.posting }, unread),
+    problem && h('p', { class: 'bad', role: 'alert' }, problem),
+    h(
+      'div',
+      { class: 'actions' },
+      save,
+      linkButton('Edit details', () => form(to, page, unread, undefined, keep)),
+    ),
+    settingsLink(),
+  );
+  save.focus();
+}
+
+/** A day, as "Oct 20". */
+const day = (on: string) =>
+  new Date(`${on}T12:00:00Z`).toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    timeZone: 'UTC',
+  });
+
+/** A job's status, in the jobs page's words, with the day you applied. */
+function statusWords(job: AskedJob): string {
+  const status = readStatus(job.status) ?? 'new';
+  const words = JOB_STATUS_LABELS[status];
+  return status === 'applied' && job.appliedOn ? `${words} ${day(job.appliedOn)}` : words;
+}
+
+/**
+ * A job you saved, as it's on file: its title, company and status, with Fill for the page's
+ * application form, and no save, but for this page's posting, which a job saved without one, as by
+ * its link alone, takes. One found by its role, at the company, says so: the one you saved by its
+ * company's board, a Hacker News post or its site gets this page's link and posting when you save
+ * this one, and any other, as one with another posting of its own, can be saved as a job of its own.
+ */
+function saved(
+  to: Exclude<Destination, null>,
+  page: PageJob,
+  unread: Unread,
+  found: SavedFor,
+): void {
+  const { job, how } = found;
+  const filling = fillable;
+  const read = readJob(page);
+  const shown = { ...page, title: read.role, company: read.company, pay: read.pay };
+  const main =
+    how === 'joins'
+      ? button(saveWords(), () => void saveIt(to, shown, unread, read, true), true)
+      : filling && button('Fill this application', () => fillIn(filling), true);
+  const another =
+    how === 'role' && linkButton('It’s another job: save it', () => summary(to, page, unread));
+  // Saving it again adds a posting it doesn't have yet, and keeps one it has.
+  const posting =
+    how === 'same' &&
+    Boolean(read.posting.trim()) &&
+    linkButton('Save this page’s posting with it', () => {
+      void saveIt(to, shown, unread, read, true, false);
+    });
+  show(
+    app,
+    heading(),
+    h('p', { class: 'small muted' }, 'In your job hunt'),
+    h(
+      'div',
+      { class: 'card job' },
+      h('p', { class: 'job-title' }, job.role || page.title),
+      h('p', {}, [job.company, statusWords(job)].filter(Boolean).join(' · ')),
+    ),
+    how === 'joins' &&
+      h(
+        'p',
+        { class: 'note' },
+        'You saved it from another page. Save this one to add its link and posting to it.',
+      ),
+    how === 'role' &&
+      h(
+        'p',
+        { class: 'small muted' },
+        'You saved a job at this company with a title like this one.',
+      ),
+    (main || another || posting) && h('div', { class: 'actions' }, main, another, posting),
+    settingsLink(),
+  );
+  if (main) main.focus();
+}
+
 function form(
   to: Exclude<Destination, null>,
   page: PageJob,
@@ -193,10 +399,12 @@ function form(
   problem?: string,
   keepPosting = true,
 ): void {
-  const read = toSave(page);
-  // The company its address names is only a first guess: never on a page that doesn't look like a
-  // job's, nor once you've tried to save, when the form shows what you typed.
-  const start = notAJob || problem ? { ...read, company: page.company.trim() } : read;
+  const read = readJob(page);
+  // The company its address names, and the pay the posting's words say, are only a first guess:
+  // never on a page that doesn't look like a job's, nor once you've tried to save, when the form
+  // shows what you typed.
+  const start =
+    notAJob || problem ? { ...read, company: page.company.trim(), pay: page.pay } : read;
   const hasPosting = Boolean(start.posting.trim());
   const keep = h('input', { id: 'keep', type: 'checkbox', checked: hasPosting && keepPosting });
   const save = async (event: Event) => {
@@ -213,8 +421,7 @@ function form(
       form(to, edited, unread, 'Add the company’s name.', keep.checked);
       return;
     }
-    saving();
-    done(to, edited, job, unread, await saveTo(to, job), keep.checked);
+    await saveIt(to, edited, unread, job, keep.checked);
   };
   const facts = h(
     'dl',
@@ -224,8 +431,9 @@ function form(
     page.location && h('dt', {}, 'Where'),
     page.location && h('dd', {}, page.location),
     h('dt', {}, 'Posting'),
-    h('dd', {}, postingLine(page)),
+    h('dd', {}, postingLine({ ...page, posting: start.posting })),
   );
+  const filling = fillable;
   const preview =
     hasPosting &&
     h(
@@ -238,7 +446,6 @@ function form(
         start.posting.length > PREVIEW ? `${start.posting.slice(0, PREVIEW)}…` : start.posting,
       ),
     );
-  const filling = fillable;
   show(
     app,
     heading(),
@@ -248,18 +455,6 @@ function form(
         { class: 'note' },
         'This doesn’t look like a job posting, so it didn’t fill in a title or company. If it is one, add them, then save it anyway.',
       ),
-    filling &&
-      h(
-        'div',
-        { class: 'card' },
-        h('p', { class: 'small' }, 'This page has an application form.'),
-        h(
-          'div',
-          { class: 'actions' },
-          button('Fill this application', () => fillIn(filling), true),
-        ),
-      ),
-    filling && h('h2', {}, 'Or save this job'),
     h(
       'form',
       { on: { submit: (event) => void save(event) } },
@@ -274,20 +469,17 @@ function form(
       h(
         'div',
         { class: 'actions' },
-        h(
-          'button',
-          { class: filling || notAJob ? '' : 'primary', type: 'submit', id: 'save' },
-          notAJob ? 'Save it anyway' : 'Save to Factwright',
-        ),
+        h('button', { class: notAJob ? '' : 'primary', type: 'submit', id: 'save' }, saveWords()),
+        // Where saving didn't work, the form can still be filled.
+        Boolean(problem) && filling && linkButton('Fill without saving', () => fillIn(filling)),
       ),
     ),
     settingsLink(),
   );
-  if (!filling) {
-    // On a page that doesn't look like a job's, the title comes first, as you fill both in.
-    const first = notAJob && !start.role ? 'role' : start.company ? 'save' : 'company';
-    (document.getElementById(first) as HTMLElement | null)?.focus();
-  }
+  // On a page that doesn't look like a job's, the title comes first, as you fill both in.
+  const first =
+    notAJob && !start.role ? 'role' : !start.company ? 'company' : !start.role ? 'role' : 'save';
+  (document.getElementById(first) as HTMLElement | null)?.focus();
 }
 
 function saving(): void {
@@ -324,6 +516,15 @@ function savedWords(
       retry: true,
     };
   }
+  if (result.joined) {
+    return {
+      title: 'Already in your job hunt, from another page.',
+      more:
+        result.posting === 'saved'
+          ? 'This page’s link and posting were added to it.'
+          : 'This page’s link was added to it.',
+    };
+  }
   if (result.already) {
     if (result.posting === 'saved') {
       return { title: 'Already in your job hunt.', more: 'Its posting was added, as you saw it.' };
@@ -357,17 +558,19 @@ function done(
     const says = savedWords(result, to);
     const again = async () => {
       saving();
-      done(to, page, job, unread, await saveTo(to, job), keepPosting);
+      done(to, page, job, unread, await saveHere(to, job), keepPosting);
     };
+    const filling = fillable;
     message(
       says.title,
       h('p', { class: 'small' }, [job.role, job.company].filter(Boolean).join(' at ')),
       says.more && h('p', { class: 'small muted' }, says.more),
-      says.retry &&
+      (says.retry || filling) &&
         h(
           'div',
           { class: 'actions' },
-          button('Save its posting', () => void again(), true),
+          filling && button('Fill this application', () => fillIn(filling), true),
+          says.retry && button('Save its posting', () => void again(), !filling),
         ),
     );
     return;
@@ -384,6 +587,29 @@ function done(
     return;
   }
   form(to, page, unread, result.message, keepPosting);
+}
+
+/** How long the popup waits to hear whether the job's saved, before it offers to save it. */
+const LOOK_FOR_MS = 4000;
+
+/**
+ * Looks the page's job up in your job hunt: in Factwright on this computer, where the extension
+ * saves, or where the browser lets the extension reach it and it answers, as a form's fill asks it
+ * first, or else through sync. None for a job not on file, or one it can't tell in time.
+ */
+async function lookUp(to: Exclude<Destination, null>, page: PageJob): Promise<SavedFor | null> {
+  const job = readJob(page);
+  const asked: PageAsked = { url: job.url, company: job.company, role: job.role };
+  const looking = (async () => {
+    if (to.to === 'computer' || (canSendNow() && (await canReachComputer()))) {
+      const answered = await savedOnComputer(asked);
+      fillsOnComputer = answered !== null;
+      if (answered || to.to === 'computer') return answered?.found ?? null;
+    }
+    return askForJob((message) => ext.runtime.sendMessage(message), asked);
+  })().catch(() => null);
+  const waited = new Promise<null>((done) => setTimeout(() => done(null), LOOK_FOR_MS));
+  return Promise.race([looking, waited]);
 }
 
 async function start(): Promise<void> {
@@ -415,7 +641,10 @@ async function start(): Promise<void> {
   }
   // A page with an application form is a job's, whatever else it shows.
   notAJob = !fillable && !looksLikeJob(page, unread);
-  form(to, notAJob ? { ...page, title: '', company: '' } : page, unread);
+  const read = notAJob ? { ...page, title: '', company: '', pay: '' } : page;
+  const found = notAJob ? null : await lookUp(to, read);
+  if (found) saved(to, read, unread, found);
+  else summary(to, read, unread);
 }
 
 void start();

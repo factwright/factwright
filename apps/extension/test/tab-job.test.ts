@@ -8,6 +8,7 @@ import {
   jobFromTab,
   looksLikeJob,
   needsChecking,
+  payInPosting,
   toSave,
 } from '../src/tab-job.ts';
 
@@ -25,6 +26,9 @@ const ADDRESSES = [
   'https://careers.example.com/#!/job/7',
   'https://careers.example.com/#/jobs/42:~:text=Data',
   'https://jobs.example.com/jobs/42#:~:text=Senior',
+  'https://careers-acme.icims.com/jobs/1234/engineer/job?mobile=false&width=1140&height=500&bga=true&needsRedirect=false&jan1offset=-300&jun1offset=-240',
+  'https://careers-acme.icims.com/jobs/1234/engineer/job?in_iframe=1&utm_source=x',
+  'https://acme.example/jobs/1234?width=wide',
   'not a link',
 ];
 
@@ -34,6 +38,17 @@ describe('a job’s own address', () => {
       const page = new DOMParser().parseFromString('<title>x</title>', 'text/html');
       expect(jobAddress(href), href).toBe(readJobPage(page, href, '').url);
     }
+  });
+
+  it('leaves out what iCIMS adds to show a page in its frame, as the page around it takes it', () => {
+    expect(jobAddress(ADDRESSES[13] ?? '')).toBe(
+      'https://careers-acme.icims.com/jobs/1234/engineer/job',
+    );
+    expect(jobAddress(ADDRESSES[14] ?? '')).toBe(
+      'https://careers-acme.icims.com/jobs/1234/engineer/job',
+    );
+    // Anywhere else, it's the page's own.
+    expect(jobAddress(ADDRESSES[15] ?? '')).toBe('https://acme.example/jobs/1234?width=wide');
   });
 
   it('is the job’s own page on LinkedIn and Indeed, and the page without tracking elsewhere', () => {
@@ -145,6 +160,76 @@ describe('the job to save', () => {
       pay: '',
       posting: '',
     });
+  });
+
+  it('takes the pay from the posting’s own words when the page’s job data says none', () => {
+    const job = jobFromTab('https://careers.lumen.example/jobs/7', 'Clinical Data Lead');
+    const posting = 'Lead our data.\n\nSalary Range\n$144000.00 To $237500.00 / year\n\nBenefits';
+    expect(toSave({ ...job, posting }).pay).toBe('$144,000–$237,500 a year');
+    // What the job data, or the job site, says comes first.
+    expect(toSave({ ...job, posting, pay: 'USD 150,000–180,000 a year' }).pay).toBe(
+      'USD 150,000–180,000 a year',
+    );
+  });
+});
+
+describe('the pay a posting says', () => {
+  it('reads a clear range: a currency at each end, and the year or the hour it’s for', () => {
+    expect(payInPosting('$161,000 - $245,000 a year')).toBe('$161,000–$245,000 a year');
+    expect(payInPosting('Salary Range\n$144000.00 To $237500.00 / year')).toBe(
+      '$144,000–$237,500 a year',
+    );
+    expect(payInPosting('Base pay: $150-200k per year, plus equity')).toBe(
+      '$150,000–$200,000 a year',
+    );
+    expect(payInPosting('$161K - $245K/yr')).toBe('$161,000–$245,000 a year');
+    expect(payInPosting('$161,000 - $245,000 USD per year')).toBe('$161,000–$245,000 a year');
+    expect(payInPosting('$120,000 to $150,000 annually')).toBe('$120,000–$150,000 a year');
+    expect(payInPosting('£60,000 - £75,000 per annum')).toBe('£60,000–£75,000 a year');
+    expect(payInPosting('$45.50–$55 an hour')).toBe('$45.50–$55 an hour');
+    // The first range a posting gives.
+    expect(
+      payInPosting('Colorado: $150,000 - $180,000 a year. New York: $160,000 - $190,000 a year.'),
+    ).toBe('$150,000–$180,000 a year');
+  });
+
+  it('reads text a page made to be slow as fast as any', () => {
+    for (const text of [
+      `$${'1'.repeat(100_000)}x`,
+      `$1${' '.repeat(100_000)}x`,
+      `$1 -${' '.repeat(100_000)}x`,
+      `$1 - $2${' '.repeat(100_000)}x`,
+      `$1 - $2 a${' '.repeat(100_000)}x`,
+      `$1 to${' '.repeat(100_000)}$`,
+      `$1${',111'.repeat(25_000)}x`,
+      `$1${'k'.repeat(100_000)}`,
+      '$'.repeat(100_000),
+      '$1'.repeat(50_000),
+      '$1-$2 '.repeat(16_000),
+      '$1,111 '.repeat(14_000),
+    ]) {
+      const start = Date.now();
+      payInPosting(text);
+      expect(Date.now() - start, text.slice(0, 12)).toBeLessThan(1000);
+    }
+  });
+
+  it('reads nothing that isn’t clear: no year or hour, another period, or no believable pay', () => {
+    for (const text of [
+      '$190,000 — $250,000 USD',
+      '$8,000 - $10,000 a month',
+      '$1,000 - $2,000 a year',
+      '$245,000 - $161,000 a year',
+      '$100,000 - €120,000 a year',
+      'We raised $5M - $10M a year ago',
+      'We grew from $20,000 - $50,000 a year ago',
+      'Revenue went from $200,000 to $900,000 a year earlier',
+      '401(k) match, 20-25 days off a year',
+      'Competitive pay',
+      '',
+    ]) {
+      expect(payInPosting(text), text).toBe('');
+    }
   });
 });
 

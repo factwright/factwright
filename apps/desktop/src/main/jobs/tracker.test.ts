@@ -454,6 +454,104 @@ describe('addSavedJob', () => {
       already: false,
     });
   });
+
+  it('finds the posting saved from its own page in a save from its application', () => {
+    saved();
+    expect(saved({ link: `${lever}/apply`, role: 'Senior Product Manager, Data' })).toEqual({
+      ok: true,
+      id: 'harbor-and-pine--senior-pm-data',
+      already: true,
+    });
+    const ashby = 'https://jobs.ashbyhq.com/harborpine/8d2f4b61-07ae-4f39-b5c2-e94a1c6d3f80';
+    saved({ role: 'Data Engineer', link: ashby });
+    expect(saved({ role: 'Data Engineer', link: `${ashby}/application` })).toMatchObject({
+      id: 'harbor-and-pine--data-engineer',
+      already: true,
+    });
+    const workable = 'https://apply.workable.com/j/1B6E0A1710';
+    saved({ role: 'Analytics Engineer', link: workable });
+    expect(
+      saved({
+        role: 'Analytics Engineer',
+        link: 'https://apply.workable.com/harborpine/j/1B6E0A1710/apply/',
+      }),
+    ).toMatchObject({ id: 'harbor-and-pine--analytics-engineer', already: true });
+    expect(tracker.rows()).toHaveLength(4);
+  });
+
+  it('adds the link to the same role found with no posting of its own, as Seeq’s was', () => {
+    // A Hacker News search found it, with its company's whole board and the post.
+    const found = 'seeq--ai-software-engineer-staff-principal';
+    const board = [
+      { url: 'https://apply.workable.com/seeq', label: 'Board' },
+      { url: 'https://news.ycombinator.com/item?id=45678901', label: 'HN post' },
+    ];
+    tracker.saveCollected(
+      [
+        collected(found, {
+          company: 'Seeq',
+          companyKey: 'seeq',
+          role: 'AI Software Engineer, Staff/Principal',
+          links: board,
+        }),
+      ],
+      NOW,
+    );
+    const posting = 'https://apply.workable.com/seeq/j/1B6E0A1710/';
+    expect(
+      saved({ company: 'Seeq', role: 'AI Software Engineer - Staff/Principal', link: posting }),
+    ).toEqual({ ok: true, id: found, already: true, joined: true });
+    expect(row(found)?.links).toEqual([...board, { url: posting, label: 'Posting' }]);
+    expect(tracker.syncRow('jobs', found)?.updated_at).toBe(NOW);
+    expect(row(`${found}-2`)).toBeUndefined();
+    // Its application is that posting now.
+    expect(
+      saved({ company: 'Seeq', role: 'AI Software Engineer', link: `${posting}apply/` }),
+    ).toEqual({ ok: true, id: found, already: true });
+  });
+
+  it('tells two roles saved from one careers page apart, and finds each again', () => {
+    const careers = 'https://harborpine.example/careers';
+    expect(saved({ role: 'Data Analyst', link: careers })).toEqual({
+      ok: true,
+      id: 'harbor-and-pine--data-analyst',
+      already: false,
+    });
+    expect(saved({ role: 'Product Designer', link: `${careers}#designer` })).toEqual({
+      ok: true,
+      id: 'harbor-and-pine--product-designer',
+      already: false,
+    });
+    expect(saved({ role: 'Data Analyst', link: careers })).toEqual({
+      ok: true,
+      id: 'harbor-and-pine--data-analyst',
+      already: true,
+    });
+    expect(row('harbor-and-pine--data-analyst')?.links).toEqual([
+      { url: careers, label: 'Posting' },
+    ]);
+  });
+
+  it('makes another posting of the same role a job of its own', () => {
+    tracker.saveCollected(
+      [
+        collected('fernway--data-analyst', {
+          company: 'Fernway',
+          companyKey: 'fernway',
+          role: 'Data Analyst',
+          links: [{ url: 'https://www.linkedin.com/jobs/view/4012345678/', label: 'Posting' }],
+        }),
+      ],
+      NOW,
+    );
+    expect(
+      saved({
+        company: 'Fernway',
+        role: 'Data Analyst',
+        link: 'https://job-boards.greenhouse.io/fernway/jobs/4012345',
+      }),
+    ).toEqual({ ok: true, id: 'fernway--data-analyst-2', already: false });
+  });
 });
 
 describe('mergeJobs', () => {

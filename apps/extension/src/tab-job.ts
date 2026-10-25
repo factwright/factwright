@@ -1,4 +1,4 @@
-import { hostOf } from '@factwright/core';
+import { hostOf, parsePay } from '@factwright/core';
 import { isCopyOnlySite, jobSites, onAnySite } from './applicant-systems.ts';
 import type { PageJob } from './page/read-job.ts';
 import type { Unread } from './read-tab.ts';
@@ -7,6 +7,9 @@ import type { JobToSave } from './save.ts';
 /** Query parameters that only track where a click came from (@factwright/core's links.ts). */
 const TRACKING_PARAM =
   /^(utm_|ref$|src$|source$|from$|tk$|trk|rjptk|xpse|xfps|xkcb|gh_src|lever-)/i;
+/** What iCIMS's career sites add to a page's address to show it in their frame, as readJobPage. */
+const ICIMS_FRAME_PARAM =
+  /^(in_iframe|mobile|width|height|bga|needsRedirect|jan1offset|jun1offset)$/i;
 
 /** Text from an address, decoded, or as it is when it can't be. */
 const decoded = (text: string) => {
@@ -62,10 +65,14 @@ export function jobAddress(href: string): string {
     if (key && /^[\w-]+$/.test(key)) return `https://${url.hostname}/viewjob?jk=${key}`;
   }
   // As readJobPage does, so the two agree to the character: the query's other parts as they were.
+  const icims = /(^|\.)icims\.com$/i.test(host);
   const kept = url.search
     .replace(/^\?/, '')
     .split('&')
-    .filter((pair) => pair && !TRACKING_PARAM.test(decoded(pair.split('=', 1)[0] ?? '')));
+    .filter((pair) => {
+      const name = decoded(pair.split('=', 1)[0] ?? '');
+      return pair && !TRACKING_PARAM.test(name) && !(icims && ICIMS_FRAME_PARAM.test(name));
+    });
   url.search = kept.length > 0 ? `?${kept.join('&')}` : '';
   // A link's "#:~:text=…", which only highlights words on the page, is no part of its address.
   const hash = url.hash.replace(/:~:.*$/s, '');
@@ -310,6 +317,61 @@ export function needsChecking(page: PageJob, job: JobToSave, unread: Unread): st
   return null;
 }
 
+/** An amount of money as a posting writes it, "$161,000", "$144000.00" or "$150k", read apart. */
+const AMOUNT = String.raw`(\d{1,3}(?:,\d{3})+|\d+)(?:\.(\d{2}))?\s?([kK](?![a-z]))?`;
+
+/**
+ * A clear pay range in a posting's words: an amount, with its currency, at each end, then the
+ * year or the hour it's for, as "$161,000 - $245,000 a year", iCIMS's "$144000.00 To $237500.00 /
+ * year", "$150-200k per year" or "$45–$55 an hour". A range with no year or hour, as "$190,000 —
+ * $250,000 USD", isn't.
+ */
+const CLEAR_RANGE = new RegExp(
+  [
+    String.raw`([$£€])\s?${AMOUNT}\s*(?:-|–|—|to)\s*([$£€])?\s?${AMOUNT}`,
+    String.raw`(?:\s*(?:USD|CAD|AUD|GBP|EUR))?,?\s*`,
+    String.raw`(?:(?:(?:a|an|per)\s+|\/\s?)(year|yr|annum|hour|hr)\b|(annually|yearly|hourly)\b)`,
+    // Not a time, as "a year ago" or "a year earlier" is.
+    String.raw`(?!\s+(?:ago|earlier|before|later|prior)\b)`,
+  ].join(''),
+  'i',
+);
+
+/** An amount, from its digits, its cents and its "k", in dollars. */
+const amountOf = (digits: string, cents: string | undefined, thousands: boolean) =>
+  (Number(digits.replace(/,/g, '')) + Number(cents ?? 0) / 100) * (thousands ? 1000 : 1);
+
+/** An amount as the app shows pay: "$161,000", or with its cents, "$45.50". */
+const money = (currency: string, amount: number) =>
+  `${currency}${amount.toLocaleString('en-US', {
+    minimumFractionDigits: Number.isInteger(amount) ? 0 : 2,
+    maximumFractionDigits: 2,
+  })}`;
+
+/**
+ * The pay a posting's own text says, for a page whose job data says none: its first clear range
+ * (CLEAR_RANGE), the low end first, as "$161,000–$245,000 a year", when @factwright/core's
+ * parsePay, which the app reads pay with, reads it as the same range. Empty for none.
+ */
+export function payInPosting(posting: string): string {
+  const found = CLEAR_RANGE.exec(posting);
+  if (!found) return '';
+  const [, currency = '', lowDigits = '', lowCents, lowK, highCurrency, highDigits = ''] = found;
+  const [highCents, highK, per = '', perWord = ''] = found.slice(7);
+  // "$150-200k": the "k" goes with both ends.
+  const low = amountOf(lowDigits, lowCents, Boolean(lowK || highK));
+  const high = amountOf(highDigits, highCents, Boolean(highK));
+  if ((highCurrency && highCurrency !== currency) || !(low > 0 && low < high)) return '';
+  const hourly = /^h/i.test(per || perWord);
+  const pay = `${money(currency, low)}–${money(currency, high)} ${hourly ? 'an hour' : 'a year'}`;
+  // As the app reads it, which knows dollars alone, and the same range of figures.
+  const read = parsePay(pay.replaceAll(currency, '$'));
+  const year = hourly ? 2080 : 1;
+  return read && read.min === Math.round(low * year) && read.max === Math.round(high * year)
+    ? pay
+    : '';
+}
+
 /** The job to save from what was read, with the company from its address when the page names none. */
 export function toSave(page: PageJob): JobToSave {
   return {
@@ -317,7 +379,8 @@ export function toSave(page: PageJob): JobToSave {
     site: page.site,
     company: page.company.trim() || companyFromAddress(page.url),
     role: page.title.trim(),
-    pay: page.pay,
+    // The posting's own words, where the page's job data, or its job site, says no pay.
+    pay: page.pay || payInPosting(page.posting),
     posting: page.posting,
   };
 }

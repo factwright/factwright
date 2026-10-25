@@ -15,6 +15,8 @@ describe('parsePay', () => {
     // A number right after a sentence's full stop is still read.
     ['The pay range is below.150,000 - 200,000', { min: 150_000, max: 200_000 }],
     ['Pay..95,000-110,000', { min: 95_000, max: 110_000 }],
+    ['$161,000 - $245,000 a year', { min: 161_000, max: 245_000 }],
+    ['$144000.00 To $237500.00 / year', { min: 144_000, max: 237_500 }],
   ])('reads "%s"', (text, range) => {
     expect(parsePay(text)).toEqual(range);
   });

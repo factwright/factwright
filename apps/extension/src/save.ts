@@ -1,13 +1,19 @@
 import {
+  type AskedJob,
+  hasOwnPosting,
   JOB_LIMITS,
   jobIdFor,
   localDate,
+  mergedTargets,
   newJobRows,
   normalizeUrl,
+  type StoredRow,
+  savedJobFor,
   savedPostingFile,
   savedPostingMarkdown,
   shortCode,
-  wholeJobId,
+  type TrackedRow,
+  trackedRow,
 } from '@factwright/core';
 import {
   type AccountKeys,
@@ -27,6 +33,8 @@ import {
   sealRecord,
   utf8,
 } from '@factwright/sync';
+import type { PageAsked, SavedFor } from './saved.ts';
+import { nothingSynced, pullSynced, type Synced } from './synced.ts';
 
 /** A job to add to the job hunt, as the person checked it in the extension. */
 export interface JobToSave {
@@ -50,13 +58,14 @@ export type PostingSaved = 'saved' | 'kept' | 'none' | 'failed';
 
 /**
  * How a save went: the job's ID, whether the job hunt had it already and what became of its
- * posting. Saved for Factwright on this computer before it could answer, `later` says it adds the
- * job: in a moment, when it's `open` but busy, as while it starts, or else the next time it opens.
- * Or why it didn't save: "no-app" when Factwright on this computer can't be reached, and
- * "no-access" when the browser won't let the extension reach where it saves.
+ * posting, and `joined` for a job it had by its role alone, which the job's link was added to.
+ * Saved for Factwright on this computer before it could answer, `later` says it adds the job: in a
+ * moment, when it's `open` but busy, as while it starts, or else the next time it opens. Or why it
+ * didn't save: "no-app" when Factwright on this computer can't be reached, and "no-access" when the
+ * browser won't let the extension reach where it saves.
  */
 export type SaveResult =
-  | { ok: true; id: string; already: boolean; posting: PostingSaved }
+  | { ok: true; id: string; already: boolean; posting: PostingSaved; joined?: true }
   | { ok: true; later: true; open?: true }
   | {
       ok: false;
@@ -72,6 +81,10 @@ export type SyncSaveResult = Exclude<SaveResult, { later: true }>;
 const MAX_SAME = 50;
 /** How many times it tries the job's history and posting, with the connection lost. */
 const TRIES = 3;
+/** How many times a job's link is added again, on another device's newer version of the job. */
+const CHANGES = 5;
+/** How long what was read of sync's jobs stays in memory after it's last used. */
+const KEEP_FOR_MS = 5 * 60 * 1000;
 
 export interface SaveDeps {
   /** What the job's records say made them, such as "Factwright in Chrome". */
@@ -125,18 +138,101 @@ async function openJob(keys: AccountKeys, current: Change): Promise<RowRecord | 
   return record?.kind === 'row' && record.table === 'jobs' ? record : null;
 }
 
-/** The jobs row at an ID, as it is now, or null when there's none. */
+/** The jobs row at an ID, as it is now, with its version, or null when there's none. */
 async function currentJob(
   client: SyncClient,
   keys: AccountKeys,
   id: string,
-): Promise<RowRecord | null> {
+): Promise<{ row: RowRecord; version: number } | null> {
   const record = await recordId(keys, rowName('jobs', id));
   const [latest] = await client.versions(record);
   if (!latest || latest.deleted) return null;
   const change = await client.version(record, latest.version);
-  return change ? openJob(keys, change) : null;
+  const row = change && (await openJob(keys, change));
+  return row ? { row, version: latest.version } : null;
 }
+
+/** The jobs sync holds, as saves and the popup last read them, for the account they're of. */
+let read: { account: string; synced: Synced; pulled: Promise<void>; timer?: number } | null = null;
+
+/**
+ * Every job sync holds now, but one merged into another, whose name and links are the other's: read
+ * once, then only what changed since, until a few minutes after it's last used, in memory only.
+ */
+export async function syncedJobs(client: SyncClient, keys: AccountKeys): Promise<TrackedRow[]> {
+  if (read?.account !== keys.id) {
+    read = { account: keys.id, synced: nothingSynced(), pulled: Promise.resolve() };
+  }
+  const now = read;
+  clearTimeout(now.timer);
+  now.timer = setTimeout(() => {
+    if (read === now) read = null;
+  }, KEEP_FOR_MS) as unknown as number;
+  // One read after another, so two never read into it at once.
+  now.pulled = now.pulled.catch(() => {}).then(() => pullSynced(client, keys, now.synced));
+  await now.pulled;
+  const rows = [...now.synced.rows.jobs.values()].map((row) => trackedRow(row as StoredRow));
+  const merged = mergedTargets(rows);
+  return rows.filter((row) => !merged.get(row.id));
+}
+
+/** A job's row, as the popup tells of it. */
+const askedRow = (row: TrackedRow): AskedJob => ({
+  id: row.id,
+  company: row.company,
+  role: row.role,
+  status: row.status ?? 'new',
+  appliedOn: row.appliedOn,
+});
+
+/** The job on file a page is for, as sync holds your job hunt, for the popup (src/saved.ts). */
+export async function savedThroughSync(
+  client: SyncClient,
+  keys: AccountKeys,
+  page: PageAsked,
+): Promise<SavedFor | null> {
+  const found = savedJobFor(await syncedJobs(client, keys), page);
+  return found && { job: askedRow(found.job), how: found.how };
+}
+
+/**
+ * Adds a link to a job's row, as one change from its latest version, so whatever another device
+ * changed stays: on another device's newer version, it's added again to that, unless that one has
+ * a posting of its own by then, where the link is to one too, as another save may have added
+ * meanwhile. The job's ID, or null once it's gone, or has another posting.
+ */
+async function joinJob(
+  client: SyncClient,
+  keys: AccountKeys,
+  id: string,
+  link: string,
+  made: Made,
+): Promise<string | null> {
+  const posted = hasOwnPosting({ links: [{ url: link }] });
+  let current = await currentJob(client, keys, id);
+  for (let attempt = 0; attempt < CHANGES && current; attempt++) {
+    const { row, version } = current;
+    if (!row.row) return null;
+    if (hasLink(row.row, link)) return id;
+    const job = trackedRow(row.row as StoredRow);
+    if (posted && hasOwnPosting(job)) return null;
+    const links = [...job.links, { url: link, label: 'Posting' }];
+    const joined = { ...row.row, links: JSON.stringify(links), updated_at: made.at };
+    const [result] = (await client.push([await rowChange(keys, 'jobs', id, joined, made, version)]))
+      .results;
+    if (result?.ok) return id;
+    if (result?.reason === 'full') throw new SyncError('full', 'full');
+    if (result?.reason !== 'conflict' || !result.current || result.current.deleted) return null;
+    const newer = await openJob(keys, result.current);
+    current = newer ? { row: newer, version: result.current.version } : null;
+  }
+  if (current) throw new Error('The job kept changing in sync. Try again.');
+  return null;
+}
+
+/** Whether a job has a link to the same address. */
+const sameLink = (job: TrackedRow, url: string) =>
+  job.links.some((link) => normalizeUrl(link.url) === normalizeUrl(url));
 
 /** Whether a jobs row has a link to the same address. */
 function hasLink(row: RowRecord['row'], url: string): boolean {
@@ -190,9 +286,14 @@ function failed(error: unknown, server = 'Factwright’s sync'): SyncSaveResult 
  * where Claude's work later copies it into the job's folder. Everything is locked with the
  * account's keys before it leaves the browser.
  *
- * The job's ID comes from its company and role, as the app makes it. A deleted job's ID is free
- * again. When the ID is taken, it's the same job if it has the same link: nothing more is saved
- * but its posting, if it has none yet. Otherwise the next ID, "-2" on, is tried.
+ * A job the job hunt has already, as sync holds it, is added to instead, as the app does
+ * (@factwright/core's savedJobFor): the same posting, by its link or its ID, is that job, and
+ * only its posting is saved, if it has none yet; the same role at the company, where one of the
+ * two has no posting of its own, as a job a Hacker News search found by its company's board, gets
+ * the link and the posting. Another posting of the same role is a job of its own, as is anything
+ * else. Its ID comes from its company and role, as the app makes it, and a deleted job's ID is free
+ * again. When the ID is taken, it's the same job if it has the same link, as one another device
+ * saved just now. Otherwise the next ID, "-2" on, is tried.
  */
 export async function saveJob(
   client: SyncClient,
@@ -219,12 +320,22 @@ export async function saveJob(
   );
   const pause = deps.pause ?? ((ms: number) => new Promise((resolve) => setTimeout(resolve, ms)));
   try {
-    // A job with a long company or title, which the app knows by its whole ID from before.
-    const whole = wholeJobId(fields.company, fields.role);
-    const known = whole && whole !== base ? await currentJob(client, keys, whole) : null;
-    if (whole && known && hasLink(known.row, fields.link)) {
-      const kept = await addPosting(client, keys, whole, posting, made, pause);
-      return { ok: true, id: whole, already: true, posting: kept };
+    const jobs = await syncedJobs(client, keys);
+    const found = savedJobFor(jobs, {
+      url: fields.link,
+      company: fields.company,
+      role: fields.role,
+    });
+    // The same posting, or the same role with this link already, as from a careers page.
+    if (found?.how === 'same' || (found?.how === 'joins' && sameLink(found.job, fields.link))) {
+      const kept = await addPosting(client, keys, found.job.id, posting, made, pause);
+      return { ok: true, id: found.job.id, already: true, posting: kept };
+    }
+    const joined =
+      found?.how === 'joins' && (await joinJob(client, keys, found.job.id, fields.link, made));
+    if (joined) {
+      const kept = await addPosting(client, keys, joined, posting, made, pause);
+      return { ok: true, id: joined, already: true, joined: true, posting: kept };
     }
     for (let n = 1; n <= MAX_SAME; n++) {
       const id = n === 1 ? base : `${base}-${n}`;
