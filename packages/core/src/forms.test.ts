@@ -261,6 +261,18 @@ describe('what a field asks for', () => {
     ]);
   });
 
+  it('tells why you’re leaving as fast in a question a page made to be slow', () => {
+    for (const question of [
+      'why are you '.repeat(20_000),
+      'reason for '.repeat(20_000),
+      'what prompted you to '.repeat(10_000),
+    ]) {
+      const start = performance.now();
+      fieldKind(field(question, { control: 'long' }));
+      expect(performance.now() - start).toBeLessThan(1000);
+    }
+  });
+
   it('never takes a box for paragraphs as asking your title or company', () => {
     expect(
       kinds([

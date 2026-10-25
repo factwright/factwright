@@ -10,13 +10,36 @@ interface Amount {
   unit: '' | 'k' | 'm';
 }
 
-const MONEY = String.raw`(\$)?\s*(\d+(?:\.\d+)?)\s*([kKmM](?![a-z]))?`;
+/**
+ * An amount: a dollar sign, the number, and k or m. Each space is taken only where what follows it
+ * fits, and a number is read from its first digit, so text from a page, such as a long run of
+ * spaces or digits, takes as long as it is long, never longer.
+ */
+const MONEY = String.raw`(?:(\$)\s*)?(?<![\d.])(\d+(?:\.\d+)?)(?:\s*([kKmM])(?![a-z]))?`;
 const RANGES = new RegExp(`${MONEY}\\s*(?:–|—|-|to)\\s*${MONEY}`, 'g');
 const AMOUNTS = new RegExp(MONEY, 'g');
 const HOURLY = /\b(hour|hourly|hr)\b|\/\s*h(ou)?r\b/i;
 const HOURS_PER_YEAR = 2080;
 const MIN_ANNUAL = 15_000;
 const MAX_ANNUAL = 5_000_000;
+/** The longest option a choice's pay band is read from: one that runs longer names no band. */
+const MAX_BAND = 300;
+
+/**
+ * Text with each part in parentheses taken out, from a "(" to the next ")", in one pass: a page's
+ * long run of "(" with no ")" takes as long as it is long. A "(" with no ")" after it stays.
+ */
+function withoutParentheses(text: string): string {
+  let kept = '';
+  let at = 0;
+  for (;;) {
+    const open = text.indexOf('(', at);
+    const close = open < 0 ? -1 : text.indexOf(')', open);
+    if (close < 0) return kept + text.slice(at);
+    kept += `${text.slice(at, open)} `;
+    at = close + 1;
+  }
+}
 
 /**
  * Reads an annual pay range from posting text such as "$190,000 - $250,000", "$150-200k" or
@@ -25,10 +48,7 @@ const MAX_ANNUAL = 5_000_000;
  */
 export function parsePay(text: string | null | undefined): PayRange | null {
   if (!text) return null;
-  const cleaned = text
-    .replace(/401\s*\(?k\)?/gi, '')
-    .replace(/,/g, '')
-    .replace(/\([^)]*\)/g, ' ');
+  const cleaned = withoutParentheses(text.replace(/401\s*\(?k\)?/gi, '').replace(/,/g, ''));
 
   const amounts = findAmounts(cleaned);
   const usesThousands = amounts.some((amount) => amount.unit === 'k');
@@ -45,7 +65,7 @@ const UP_TO = /\b(under|below|less than|lower than|up to|no more than|not more t
 
 /** Words that make an amount the bottom of a band, as "$200,000 or more" or "Over $200k" do. */
 const AND_UP =
-  /\b(over|above|more than|greater than|at least|or more|or higher|or above|and (above|up|over|higher|more))\b|\d\s*[kKmM]?\s*\+|^\s*>/i;
+  /\b(over|above|more than|greater than|at least|or more|or higher|or above|and (above|up|over|higher|more))\b|\d(?:\s*[kKmM])?\s*\+|^\s*>/i;
 
 /**
  * The pay a choice's option names, as a band of a year's pay: "$100,000 - $149,999", "Under
@@ -53,7 +73,8 @@ const AND_UP =
  * own. Null for an option that names no pay, as "Prefer not to say".
  */
 export function payBand(option: string): PayRange | null {
-  const cleaned = option.replace(/,/g, '').replace(/\([^)]*\)/g, ' ');
+  if (option.length > MAX_BAND) return null;
+  const cleaned = withoutParentheses(option.replace(/,/g, ''));
   const ranged = findAmounts(cleaned);
   // Two amounts with other words between them, as "$40,000 up to $60,000", are a band too.
   const all = [...cleaned.matchAll(AMOUNTS)]

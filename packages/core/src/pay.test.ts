@@ -21,6 +21,27 @@ describe('parsePay', () => {
       min: 142_000,
       max: 172_000,
     });
+    // From a "(" to the next ")", as it always was, nested or not, and a "(" never closed stays.
+    expect(parsePay('Senior: $142k-$172k (Staff: $180k-$220k (remote) or more)')).toEqual({
+      min: 142_000,
+      max: 172_000,
+    });
+    expect(parsePay('$150k-$170k (and equity')).toEqual({ min: 150_000, max: 170_000 });
+  });
+
+  it('reads text a page made to be slow as fast as any', () => {
+    for (const text of [
+      '('.repeat(100_000),
+      `1${' '.repeat(100_000)}x`,
+      `${'1'.repeat(100_000)}x`,
+      `$${' '.repeat(100_000)}`,
+      `401${' '.repeat(100_000)}`,
+      `${'1.'.repeat(50_000)}x`,
+    ]) {
+      const start = performance.now();
+      parsePay(text);
+      expect(performance.now() - start).toBeLessThan(1000);
+    }
   });
 
   it.each([null, undefined, '', 'Competitive', 'DOE', '2-3 years of experience', '$5 bonus'])(
@@ -58,4 +79,18 @@ describe('payBand', () => {
       expect(payBand(text)).toBeNull();
     },
   );
+
+  it('reads no band from an option longer than a band takes, or one a page made to be slow', () => {
+    expect(payBand(`$100,000 - $149,999 ${'x'.repeat(300)}`)).toBeNull();
+    for (const text of [
+      '('.repeat(300),
+      `1${' '.repeat(298)}x`,
+      `${'1'.repeat(299)}x`,
+      `1${' '.repeat(298)}+`.slice(0, 300),
+    ]) {
+      const start = performance.now();
+      payBand(text);
+      expect(performance.now() - start).toBeLessThan(100);
+    }
+  });
 });
