@@ -231,8 +231,14 @@ function QuestionField({
       </legend>
       {choice.skipped ? (
         <p className={styles.skipped}>
-          Skipped. Claude hears you skipped it.{' '}
-          <button ref={answerIt} type="button" className={styles.link} onClick={() => skip(false)}>
+          <span id={`${ids}-skipped`}>Skipped. Claude hears you skipped it.</span>{' '}
+          <button
+            ref={answerIt}
+            type="button"
+            className={styles.link}
+            aria-describedby={`${ids}-skipped`}
+            onClick={() => skip(false)}
+          >
             Answer it
           </button>
         </p>
@@ -361,7 +367,13 @@ function QuestionField({
             </button>
           )}
           {!choice.skipped && (
-            <button type="button" className={styles.skip} onClick={() => skip(true)}>
+            <button
+              type="button"
+              className={styles.skip}
+              // Named by the question's label too, as every question has one.
+              aria-label={`Skip ${question.header ?? 'this question'}`}
+              onClick={() => skip(true)}
+            >
               Skip
             </button>
           )}

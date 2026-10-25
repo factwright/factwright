@@ -106,6 +106,19 @@ export function listedFile(workspace: string, job: Job | null, path: unknown): s
   return files.some((file) => file.path === path) ? openableFile(workspace, path) : null;
 }
 
+/**
+ * Why a copy of one of a job's files didn't save where the user picked, by the error's code, in
+ * words to act on: a file of that name there is open, as Windows locks it, there's no room, or the
+ * folder can't be written to.
+ */
+export function copyProblem(code: string | undefined): string {
+  if (code === 'EBUSY') {
+    return 'A file of that name is open there in another app. Close it, or pick another name.';
+  }
+  if (code === 'ENOSPC') return 'There isn’t room for it there. Pick another place.';
+  return 'That folder can’t be written to. Pick another one.';
+}
+
 /** The most a PDF may weigh for the window to preview it. Resumes are far smaller. */
 export const MAX_PREVIEW_BYTES = 20_000_000;
 

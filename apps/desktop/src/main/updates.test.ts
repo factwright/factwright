@@ -225,6 +225,21 @@ describe('UpdateWatcher on a Mac', () => {
     expect(updater.quitAndInstall).not.toHaveBeenCalled();
   });
 
+  it('tries again after an install that fails, and answers no once the update is gone', async () => {
+    updater.emit('update-downloaded', { version: '0.2.0' });
+    installer.emit('update-downloaded');
+    expect(await watcher.install()).toBe(true);
+    // The installer couldn't run, so the app never quit.
+    updater.emit('error', new Error('install failed'));
+    expect(watcher.current()).toEqual({ state: 'none' });
+    // With no update, Restart now and switching profiles restart as usual.
+    expect(await watcher.install()).toBe(false);
+    updater.emit('update-downloaded', { version: '0.2.0' });
+    installer.emit('update-downloaded');
+    expect(await watcher.install()).toBe(true);
+    expect(updater.quitAndInstall).toHaveBeenCalledTimes(2);
+  });
+
   it('quits Claude Code that’s done first, then restarts into the update, once', async () => {
     updater.emit('update-downloaded', { version: '0.2.0' });
     installer.emit('update-downloaded');

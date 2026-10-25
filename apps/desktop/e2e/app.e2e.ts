@@ -164,19 +164,35 @@ test('keeps every column’s heading, scrolling the list sideways beside a job w
   for (const heading of headings) {
     await expect(window.getByRole('button', { name: `Sort by ${heading}` })).toBeAttached();
   }
-  /** Where the list stands, as it scrolls: the job column's edge, and the last heading's. */
+  /**
+   * Where the list stands, as it scrolls: the job column's heading and a job's name in it, the
+   * next heading, and the last heading's right edge.
+   */
   const where = () =>
-    window.evaluate<{ scrolls: boolean; more: boolean; job: number; added: number; right: number }>(
+    window.evaluate<{
+      scrolls: boolean;
+      more: boolean;
+      job: number;
+      name: number;
+      status: number;
+      added: number;
+      right: number;
+    }>(
       `(() => {
         const { job, box } = ${LIST};
+        const left = (element) => Math.round(element.getBoundingClientRect().left);
         const added = document.querySelector('[aria-label^="Sort by added"], [aria-label^="Added,"]');
-        const edge = box.getBoundingClientRect();
+        const row = [...document.querySelectorAll('ul[aria-label="Jobs"] button')].find((each) =>
+          each.textContent.startsWith('Acme Robotics'),
+        );
         return {
           scrolls: box.scrollWidth > box.clientWidth,
           more: box.parentElement.hasAttribute('data-more'),
-          job: Math.round(job.getBoundingClientRect().left),
+          job: left(job),
+          name: left(row.firstElementChild),
+          status: left(document.querySelector('button[aria-label="Sort by status"]')),
           added: Math.round(added.getBoundingClientRect().right),
-          right: Math.round(edge.right),
+          right: Math.round(box.getBoundingClientRect().right),
         };
       })()`,
     );
@@ -190,18 +206,30 @@ test('keeps every column’s heading, scrolling the list sideways beside a job w
   // Scrolled to the end, the jobs' names stay where they were, and the last column is in view.
   await expect.poll(async () => (await where()).more).toBe(false);
   const after = await where();
+  expect(after.status).toBeLessThan(before.status);
   expect(after.job).toBe(before.job);
+  expect(after.name).toBe(before.name);
   expect(after.added).toBeLessThanOrEqual(after.right);
   // Added sorts the list by the day each job was found or saved, newest first. In a narrow
   // window the job's panel is over the list, so it closes first.
   await jobPanel().getByRole('button', { name: 'Close details' }).click();
+  /** The day each job in the list was added, in the list's order, as times. */
+  const days = async () =>
+    (await window.getByRole('list', { name: 'Jobs' }).getByRole('button').allTextContents()).map(
+      (text) => {
+        const [, month, day, year] = /Added (\w{3}) (\d{1,2})(?:, (\d{4}))?$/.exec(text) ?? [];
+        return Date.parse(`${month} ${day}, ${year ?? new Date().getFullYear()}`);
+      },
+    );
   await window.getByRole('button', { name: 'Sort by added' }).click();
   await expect(window.getByRole('button', { name: 'Added, sorted newest first' })).toBeVisible();
-  await expect(
-    window.getByRole('button', { name: /^Acme Robotics.*Added \w{3} \d{1,2}/ }),
-  ).toBeVisible();
-  // Back to the newest activity first, as the other tests expect.
+  const newest = await days();
+  expect(new Set(newest).size).toBeGreaterThan(1);
+  expect(newest).toEqual([...newest].sort((a, b) => b - a));
   await window.getByRole('button', { name: 'Added, sorted newest first' }).click();
+  await expect(window.getByRole('button', { name: 'Added, sorted oldest first' })).toBeVisible();
+  expect(await days()).toEqual([...newest].sort((a, b) => a - b));
+  // Back to the newest activity first, as the other tests expect.
   await window.getByRole('button', { name: 'Added, sorted oldest first' }).click();
   await expect(window.getByRole('button', { name: 'Sort by added' })).toBeVisible();
   await pickView(/^To review/);
@@ -258,9 +286,14 @@ test('saves a copy of a resume where the user picks, and shows it where it’s k
   const copy = join(dataDir, 'saved', ACME_RESUME);
   mkdirSync(join(dataDir, 'saved'), { recursive: true });
   await app.evaluate(({ dialog, shell }, to) => {
-    const noted = globalThis as unknown as { suggested: string[]; shown: string[] };
+    const noted = globalThis as unknown as {
+      suggested: string[];
+      shown: string[];
+      real: { save: typeof dialog.showSaveDialog; show: typeof shell.showItemInFolder };
+    };
     noted.suggested = [];
     noted.shown = [];
+    noted.real = { save: dialog.showSaveDialog, show: shell.showItemInFolder };
     dialog.showSaveDialog = (async (...args: unknown[]) => {
       noted.suggested.push((args.at(-1) as { defaultPath?: string }).defaultPath ?? '');
       return { canceled: false, filePath: to };
@@ -305,6 +338,13 @@ test('saves a copy of a resume where the user picks, and shows it where it’s k
     expect(refused).toEqual({ ok: false, message: 'That file isn’t in your workspace anymore.' });
   }
   expect((await noted()).suggested).toHaveLength(1);
+  await app.evaluate(({ dialog, shell }) => {
+    const { real } = globalThis as unknown as {
+      real: { save: typeof dialog.showSaveDialog; show: typeof shell.showItemInFolder };
+    };
+    dialog.showSaveDialog = real.save;
+    shell.showItemInFolder = real.show;
+  });
 });
 
 test('X-rays a resume as applicant systems read it, its PDF and its Word file', async () => {

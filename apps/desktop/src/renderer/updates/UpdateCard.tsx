@@ -8,7 +8,7 @@ import styles from './UpdateCard.module.css';
  * The card at the bottom of the sidebar once an update has downloaded: restart into it now, or
  * it installs the next time the user quits. While Claude is working, or waits on the user,
  * restarting would stop the run, so Restart now waits until Claude is done. Claude Code that's
- * done closes as the app restarts.
+ * done closes first, which can take a few seconds, so the card says it's restarting meanwhile.
  */
 export function UpdateCard({
   status,
@@ -21,11 +21,24 @@ export function UpdateCard({
   busy: boolean;
   /** Whether the user is writing something they haven't saved, which a restart would lose. */
   unsaved: () => boolean;
-  onRestart: () => void;
+  /** Restarts into the update. Answers whether it is, as it isn't while Claude has work going. */
+  onRestart: () => Promise<boolean>;
 }) {
   const [reading, setReading] = useState(false);
   const [asking, setAsking] = useState(false);
+  // Restarting, and whether the last try didn't, as when Claude started working meanwhile.
+  const [restarting, setRestarting] = useState(false);
+  const [refused, setRefused] = useState(false);
   if (status.state !== 'ready') return null;
+  const restart = async () => {
+    setAsking(false);
+    setRefused(false);
+    setRestarting(true);
+    const restarted = await onRestart().catch(() => false);
+    if (restarted) return;
+    setRestarting(false);
+    setRefused(true);
+  };
   const { version, notes } = status;
   const link = (label: string, onClick: () => void) => (
     <button type="button" className={styles.link} onClick={onClick}>
@@ -41,7 +54,7 @@ export function UpdateCard({
         help={
           <>Save it first, or restart now and lose it. {link('Not now', () => setAsking(false))}</>
         }
-        action={{ label: 'Restart anyway', onClick: onRestart }}
+        action={{ label: 'Restart anyway', onClick: () => void restart() }}
       />
     );
   }
@@ -55,17 +68,21 @@ export function UpdateCard({
           <>
             {busy
               ? 'You can restart into it once Claude is done, or it installs the next time you quit.'
-              : 'It installs when you restart, or the next time you quit.'}
+              : refused
+                ? 'Factwright didn’t restart. Try again once Claude is done.'
+                : 'It installs when you restart, or the next time you quit.'}
             {notes && <> {link('What’s new', () => setReading(true))}</>}
           </>
         }
         action={
           busy
             ? null
-            : {
-                label: 'Restart now',
-                onClick: () => (unsaved() ? setAsking(true) : onRestart()),
-              }
+            : restarting
+              ? { label: 'Restarting…', onClick: () => {}, disabled: true }
+              : {
+                  label: 'Restart now',
+                  onClick: () => (unsaved() ? setAsking(true) : void restart()),
+                }
         }
       />
       {reading && notes && (

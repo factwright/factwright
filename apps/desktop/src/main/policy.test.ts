@@ -3,6 +3,7 @@ import { CALL_KINDS, callInviteName, type Job, type JobFile } from '@factwright/
 import { describe, expect, it } from 'vitest';
 import {
   contentSecurityPolicy,
+  copyProblem,
   isSafeExternalUrl,
   listedFile,
   openableFile,
@@ -134,6 +135,18 @@ describe('listedFile', () => {
       files: [{ ...file('x.pdf'), path: '../elsewhere/secret.pdf' }],
     } as Job;
     expect(listedFile(workspace, outside, '../elsewhere/secret.pdf')).toBeNull();
+  });
+});
+
+describe('copyProblem', () => {
+  it('says why a copy didn’t save, in words to act on', () => {
+    expect(copyProblem('EBUSY')).toBe(
+      'A file of that name is open there in another app. Close it, or pick another name.',
+    );
+    expect(copyProblem('ENOSPC')).toBe('There isn’t room for it there. Pick another place.');
+    for (const code of ['EACCES', 'EPERM', 'EROFS', undefined]) {
+      expect(copyProblem(code)).toBe('That folder can’t be written to. Pick another one.');
+    }
   });
 });
 

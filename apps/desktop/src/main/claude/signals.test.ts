@@ -128,6 +128,25 @@ describe('RunSignals', () => {
     expect(signals).toEqual(['needs-answer', 'working']);
   });
 
+  it('reads a run interrupted with no Stop hook as done once Claude Code says it’s idle', () => {
+    const signals: string[] = [];
+    const tracker = new RunSignals((signal) => signals.push(signal));
+    const idle = { hook_event_name: 'Notification', notification_type: 'idle_prompt' };
+    tracker.hear({ hook_event_name: 'UserPromptSubmit', prompt: 'hi' });
+    tracker.hear(idle);
+    expect(signals).toEqual(['working', 'done']);
+    expect(tracker.hasWork()).toBe(false);
+    // Once done, it says nothing more.
+    tracker.hear(idle);
+    expect(signals).toEqual(['working', 'done']);
+    // Never while the run waits on the user.
+    tracker.hear({ hook_event_name: 'UserPromptSubmit', prompt: 'and?' });
+    tracker.hear({ hook_event_name: 'PermissionRequest', ...read('notes/a.md') });
+    tracker.hear(idle);
+    expect(signals.at(-1)).toBe('needs-answer');
+    expect(tracker.hasWork()).toBe(true);
+  });
+
   it('says the run has work going until it’s done, or ready with nothing to do', () => {
     const signals: string[] = [];
     const tracker = new RunSignals((signal) => signals.push(signal));

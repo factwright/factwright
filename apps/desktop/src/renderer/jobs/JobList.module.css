@@ -93,35 +93,40 @@
 
 /*
  * The jobs' names, and the boxes that select them, stay in view as the list scrolls sideways,
- * with the row's tint behind them, and the columns pass under them. Each covers the row's
- * padding to its left too.
+ * with the row's tint behind them, and the columns pass under them. Each stops a pixel short of
+ * the lines between rows, which it would cover where they fall between pixels. Only background
+ * colors cover, which high contrast keeps, where it drops shadows and gradients.
  */
 .pick,
 .head .job,
 .row .job {
   position: sticky;
   z-index: 1;
-  background: var(--row-tint);
+  background-color: var(--row-tint);
 }
 
-/* Its tint stops a pixel short of the lines between rows, which it would cover where they fall
-   between pixels. */
 .pick {
   left: 0;
-  background:
-    linear-gradient(var(--row-tint), var(--row-tint)) 0 1px / 100% calc(100% - 2px) no-repeat;
+  margin-block: 1px;
 }
 
-/* They reach to a pixel short of the lines between rows, through the row's padding. */
 .head .job,
 .row .job {
   left: var(--job-left);
   align-self: stretch;
   margin-block: -9px;
   padding-block: 9px;
-  box-shadow:
-    calc(-1 * var(--job-pad)) 0 0 var(--row-tint),
-    1px 0 0 var(--job-edge);
+  box-shadow: 1px 0 0 var(--job-edge);
+}
+
+/* The row's padding to the names' left, which they cover too. */
+.head .job::before,
+.row .job::before {
+  position: absolute;
+  inset: 0 100% 0 auto;
+  width: var(--job-pad);
+  background-color: var(--row-tint);
+  content: "";
 }
 
 .headRow {
@@ -247,7 +252,8 @@
   position: absolute;
   inset: 0;
   z-index: 2;
-  box-shadow: inset 0 0 0 2px var(--fw-accent);
+  outline: 2px solid var(--fw-accent);
+  outline-offset: -2px;
   content: "";
   pointer-events: none;
 }

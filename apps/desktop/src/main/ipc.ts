@@ -67,6 +67,7 @@ import type { JobsService } from './jobs/service.ts';
 import type { Versions } from './jobs/versions.ts';
 import type { JobOpener } from './open-job.ts';
 import {
+  copyProblem,
   JOB_ID,
   listedFile,
   MAX_PREVIEW_BYTES,
@@ -646,8 +647,10 @@ export function registerIpc({
       try {
         await copyFile(file, choice.filePath);
         return { ok: true, saved: true };
-      } catch {
-        return { ok: false, message: 'That folder can’t be written to. Pick another one.' };
+      } catch (error) {
+        // A new version may have replaced it while the dialog was open.
+        if (!isFile(file)) return GONE;
+        return { ok: false, message: copyProblem((error as NodeJS.ErrnoException).code) };
       }
     },
   );

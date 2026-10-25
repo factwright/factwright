@@ -539,11 +539,13 @@ export function App({ api }: { api: FactwrightApi }) {
             status: update,
             busy: workGoing,
             unsaved: hasUnsaved,
-            onRestart: () => {
-              // The profile saves as the user types, so what's waiting to save goes first. Facts and
-              // notes have Save buttons: the card asks before restarting over them.
-              void about.flush().finally(() => api.installUpdate());
-            },
+            // The profile saves as the user types, so what's waiting to save goes first. Facts and
+            // notes have Save buttons: the card asks before restarting over them.
+            onRestart: () =>
+              about.flush().then(
+                () => api.installUpdate(),
+                () => api.installUpdate(),
+              ),
           }}
           version={api.version}
         />

@@ -82,6 +82,16 @@ export class RunSignals {
         ) {
           this.emit('needs-answer');
         }
+        // Claude Code runs no Stop hook when the user interrupts a turn, as with Esc in the
+        // terminal. It says the prompt is idle about a minute after Claude stops responding, and
+        // never while a background agent works, so a run still read as working is done.
+        if (
+          fields.notification_type === 'idle_prompt' &&
+          this.last === 'working' &&
+          this.waiting.length === 0
+        ) {
+          this.emit('done');
+        }
         return;
       // A turn that ends in an error, such as a rate limit, is over too, and Claude Code waits
       // for the user's next message: the window says what the error was.

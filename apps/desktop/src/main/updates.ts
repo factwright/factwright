@@ -110,8 +110,10 @@ export class UpdateWatcher {
     });
     updater.on('error', (error) => {
       this.deps.log?.(`Update: ${error.message}`);
-      // Whatever failed, from the download to the Mac's check of it, the next look tries again.
+      // Whatever failed, from the download to the Mac's check of it, or installing it, the next
+      // look tries again.
       this.downloaded = null;
+      this.installing = false;
       if (this.status.state !== 'none') this.set({ state: 'none' });
     });
     this.running = true;
@@ -145,8 +147,8 @@ export class UpdateWatcher {
    * stop.
    */
   async install(): Promise<boolean> {
-    if (this.installing) return true;
     if (this.status.state !== 'ready' || this.deps.busy?.()) return false;
+    if (this.installing) return true;
     this.installing = true;
     await this.deps.closeClaude?.();
     // Quietly on Windows, then the app opens again; the Mac does the same on its own.

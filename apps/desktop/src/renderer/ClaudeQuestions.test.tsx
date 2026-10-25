@@ -124,8 +124,8 @@ describe('ClaudeQuestions', () => {
       within(graphql).getByRole('radio', { name: 'Yes, in production' }),
     );
     // Each question can be skipped.
-    expect(within(graphql).getByRole('button', { name: 'Skip' })).toBeTruthy();
-    expect(within(tools).getByRole('button', { name: 'Skip' })).toBeTruthy();
+    expect(within(graphql).getByRole('button', { name: 'Skip Experience' })).toBeTruthy();
+    expect(within(tools).getByRole('button', { name: 'Skip Tools' })).toBeTruthy();
     expect(send().disabled).toBe(true);
     expect((await axe.run(container)).violations).toEqual([]);
   });
@@ -179,7 +179,7 @@ describe('ClaudeQuestions', () => {
     expect(document.activeElement).toBe(
       within(graphql).getByRole('textbox', { name: 'Something else, in your words' }),
     );
-    await userEvent.click(within(question(TOOLS)).getByRole('button', { name: 'Skip' }));
+    await userEvent.click(within(question(TOOLS)).getByRole('button', { name: /^Skip/ }));
     await userEvent.click(send());
     expect(api.answerClaude).toHaveBeenLastCalledWith('toolu_1', [
       answer([], 'Only reading it'),
@@ -225,11 +225,16 @@ describe('ClaudeQuestions', () => {
     await userEvent.click(send());
     expect(api.answerClaude).not.toHaveBeenCalled();
     const graphql = question('Have you used it');
-    await userEvent.click(within(graphql).getByRole('button', { name: 'Skip' }));
+    await userEvent.click(within(graphql).getByRole('button', { name: /^Skip/ }));
     // The question folds to say it's skipped, and the focus goes to the way back.
     expect(graphql.textContent).toContain('Skipped. Claude hears you skipped it.');
     expect(within(graphql).queryByRole('radio')).toBeNull();
-    expect(document.activeElement).toBe(within(graphql).getByRole('button', { name: 'Answer it' }));
+    expect(document.activeElement).toBe(
+      within(graphql).getByRole('button', {
+        name: 'Answer it',
+        description: 'Skipped. Claude hears you skipped it.',
+      }),
+    );
     expect(screen.queryByText(/no answer yet/)).toBeNull();
     expect((await axe.run(container)).violations).toEqual([]);
     expect(send().disabled).toBe(false);
@@ -248,7 +253,7 @@ describe('ClaudeQuestions', () => {
         ],
       },
     );
-    await userEvent.click(within(question(TOOLS)).getByRole('button', { name: 'Skip' }));
+    await userEvent.click(within(question(TOOLS)).getByRole('button', { name: /^Skip/ }));
     expect(
       screen.getByText('2 questions have no answer yet. Answer or skip each one to send.'),
     ).toBeTruthy();
@@ -258,7 +263,7 @@ describe('ClaudeQuestions', () => {
     const { api } = open();
     const graphql = question('Have you used it');
     await userEvent.click(within(graphql).getByRole('radio', { name: 'Some' }));
-    await userEvent.click(within(graphql).getByRole('button', { name: 'Skip' }));
+    await userEvent.click(within(graphql).getByRole('button', { name: /^Skip/ }));
     await userEvent.click(within(question(TOOLS)).getByRole('checkbox', { name: 'Kafka' }));
     await userEvent.click(within(graphql).getByRole('button', { name: 'Answer it' }));
     expect(within(graphql).getByRole('radio', { name: 'Some' })).toHaveProperty('checked', true);
@@ -273,12 +278,12 @@ describe('ClaudeQuestions', () => {
   it('sends a note with a question skipped, to say why', async () => {
     const { api } = open();
     const graphql = question('Have you used it');
-    await userEvent.click(within(graphql).getByRole('button', { name: 'Skip' }));
+    await userEvent.click(within(graphql).getByRole('button', { name: /^Skip/ }));
     await userEvent.click(within(graphql).getByRole('button', { name: 'Add a note' }));
     const note = within(graphql).getByRole('textbox', { name: 'Note for Claude' });
     expect(note.getAttribute('placeholder')).toBe('Anything Claude should know about skipping it');
     await userEvent.type(note, 'Ask me after the call');
-    await userEvent.click(within(question(TOOLS)).getByRole('button', { name: 'Skip' }));
+    await userEvent.click(within(question(TOOLS)).getByRole('button', { name: /^Skip/ }));
     await userEvent.click(send());
     expect(api.answerClaude).toHaveBeenCalledWith('toolu_1', [
       skipped('Ask me after the call'),
@@ -343,7 +348,7 @@ describe('ClaudeQuestions', () => {
         skipped: false,
       },
     ]);
-    await userEvent.click(within(question(TOOLS)).getByRole('button', { name: 'Skip' }));
+    await userEvent.click(within(question(TOOLS)).getByRole('button', { name: /^Skip/ }));
     expect(onDraft).toHaveBeenLastCalledWith([
       draft[0],
       {
@@ -365,7 +370,7 @@ describe('ClaudeQuestions', () => {
     await userEvent.click(
       within(question('Have you used it')).getByRole('radio', { name: 'Some' }),
     );
-    await userEvent.click(within(question(TOOLS)).getByRole('button', { name: 'Skip' }));
+    await userEvent.click(within(question(TOOLS)).getByRole('button', { name: /^Skip/ }));
     await userEvent.click(send());
     expect(screen.getByRole('alert').textContent).toBe(
       'Claude isn’t waiting for these answers anymore.',
@@ -458,7 +463,7 @@ describe('ClaudeQuestions', () => {
       },
     );
     const anything = question('Anything else?');
-    await userEvent.click(within(anything).getByRole('button', { name: 'Skip' }));
+    await userEvent.click(within(anything).getByRole('button', { name: 'Skip this question' }));
     expect(within(anything).queryByRole('textbox')).toBeNull();
     await userEvent.click(within(anything).getByRole('button', { name: 'Answer it' }));
     expect(document.activeElement).toBe(
