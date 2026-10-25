@@ -3,7 +3,13 @@ import './frame.css';
 import { h, show } from './dom.ts';
 import { ext } from './ext.ts';
 import { BUTTON_CARD, MENU_ROWS } from './frame-size.ts';
-import type { FilledHere, FromFrame, MenuAnswer, SaveOffer } from './job-site-messages.ts';
+import type {
+  DraftShows,
+  FilledHere,
+  FromFrame,
+  MenuAnswer,
+  SaveOffer,
+} from './job-site-messages.ts';
 
 /**
  * The extension's own frame on the job sites you allowed, which its script there puts on the page
@@ -115,14 +121,129 @@ interface Shows {
   question: string;
   answers: MenuAnswer[];
   save: SaveOffer | null;
+  /** For one of the form's own questions with no answer, your Claude's drafts. */
+  draft?: DraftShows | null;
 }
 
-/** A field's menu: Factwright's answers to pick from, and the offer to keep a new one you gave. */
+/** How often a menu asks how your Claude's drafts are coming along, while it drafts them. */
+const DRAFTS_EVERY_MS = 3000;
+
+const questions = (count: number) => `${count} open ${count === 1 ? 'question' : 'questions'}`;
+
+/**
+ * A menu's offer to have your Claude draft the form's own questions nothing on file answers, all
+ * of them at once, or how it's coming along: drafting, waiting on you in Factwright, left with the
+ * job through sync, or why it couldn't, with Try again.
+ */
+function draftRows(draft: DraftShows, start: (event: Event) => void): HTMLElement {
+  const status = (title: string, line: string, bad = false) =>
+    h(
+      'div',
+      { class: `status${bad ? ' bad' : ''}`, role: 'status' },
+      h('span', { class: 'text' }, title),
+      h('span', { class: 'line' }, line),
+    );
+  if (draft.is === 'offer') {
+    return h(
+      'div',
+      { class: 'draft' },
+      h(
+        'button',
+        { type: 'button', class: 'answer', on: { click: start } },
+        h('span', { class: 'text' }, 'Draft with Claude'),
+        h(
+          'span',
+          { class: 'from' },
+          draft.through === 'sync'
+            ? `Leaves this form’s ${questions(draft.questions)} with the job`
+            : `Drafts this form’s ${questions(draft.questions)} in Factwright`,
+        ),
+      ),
+      h('p', { class: 'hint' }, 'Nothing goes in a field until you pick its draft.'),
+    );
+  }
+  if (draft.is === 'drafting') {
+    return status(
+      'Drafting…',
+      `Your Claude is drafting this form’s ${questions(draft.questions)} in Factwright. Each one’s menu shows its draft once it’s done.`,
+    );
+  }
+  if (draft.is === 'waiting') {
+    return status(
+      'Waiting on you',
+      'Your Claude is waiting for you in Factwright. Answer it there, and it carries on.',
+    );
+  }
+  if (draft.is === 'left') {
+    return status(
+      'Kept with the job',
+      'In Factwright on your computer, the job’s Application questions has Draft them with your Claude. Once its drafts sync, they show here.',
+    );
+  }
+  return h(
+    'div',
+    { class: 'draft' },
+    status('Your Claude didn’t start', draft.says ?? 'Try again.', true),
+    h('button', { type: 'button', class: 'again', on: { click: start } }, 'Try again'),
+  );
+}
+
+/**
+ * A field's menu: Factwright's answers to pick from, or for one of the form's own questions with
+ * none, the offer to have your Claude draft them, and the offer to keep a new answer you gave.
+ */
 async function menu(): Promise<void> {
-  const shows = (await ask({ type: 'job-site', do: 'shows', token })) as Shows | null;
-  if (!shows) return;
-  const dismiss = (refocus: boolean) =>
-    void ask({ type: 'job-site', do: 'dismiss', token, refocus });
+  const first = (await ask({ type: 'job-site', do: 'shows', token })) as Shows | null;
+  if (!first) return;
+  let following: ReturnType<typeof setTimeout> | null = null;
+  /** Asks again how your Claude's drafts are coming along, in a few seconds, while it drafts them. */
+  const follow = (shows: Shows) => {
+    if (following) clearTimeout(following);
+    following = null;
+    if (shows.draft?.is !== 'drafting' && shows.draft?.is !== 'waiting') return;
+    following = setTimeout(() => {
+      void ask({ type: 'job-site', do: 'shows', token }).then((now) => {
+        if (now) render(now as Shows);
+      });
+    }, DRAFTS_EVERY_MS);
+  };
+  const start = (event: Event) => {
+    if (!takes(event)) return;
+    void ask({ type: 'job-site', do: 'draft', token }).then((now) => {
+      if (now) render(now as Shows);
+    });
+  };
+  const render = (shows: Shows) => {
+    show(app, menuOf(shows, start));
+    follow(shows);
+  };
+  render(first);
+  const buttons = () => [...app.querySelectorAll('button')];
+  // Up and down go from one answer to the next, and Escape back to the field, as a list does.
+  addEventListener('keydown', (event) => {
+    if (!event.isTrusted) return;
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      dismiss(true);
+      return;
+    }
+    if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return;
+    event.preventDefault();
+    const all = buttons();
+    const at = all.indexOf(document.activeElement as HTMLButtonElement);
+    const next = event.key === 'ArrowDown' ? at + 1 : at - 1;
+    all[Math.max(0, Math.min(all.length - 1, next))]?.focus();
+  });
+  // The script puts the cursor here from the field with the down arrow.
+  addEventListener('focus', () => {
+    if (!app.contains(document.activeElement)) buttons()[0]?.focus();
+  });
+}
+
+const dismiss = (refocus: boolean) => void ask({ type: 'job-site', do: 'dismiss', token, refocus });
+
+/** What a menu shows: its answers or your Claude's drafts, and the offer to save, in its frame. */
+function menuOf(shows: Shows, start: (event: Event) => void): HTMLElement {
   const rows = shows.answers.slice(0, MENU_ROWS).map((answer, at) =>
     h(
       'li',
@@ -201,49 +322,28 @@ async function menu(): Promise<void> {
       ),
     );
   const count = shows.answers.length;
-  show(
-    app,
+  const draft = count === 0 && shows.draft ? shows.draft : null;
+  return h(
+    'div',
+    { class: 'menu' },
     h(
       'div',
-      { class: 'menu' },
+      { class: 'head' },
+      logo(),
+      'Factwright',
+      count > 1 && h('span', { class: 'count' }, `${count} answers`),
+    ),
+    count > 0 &&
       h(
         'div',
-        { class: 'head' },
-        logo(),
-        'Factwright',
-        count > 1 && h('span', { class: 'count' }, `${count} answers`),
+        { class: 'rows' },
+        h('ul', { 'aria-label': `Answers for ${shows.question || 'this field'}` }, ...rows),
+        // One answer leaves room under it, which says how picking works.
+        count === 1 && h('p', { class: 'hint' }, 'Nothing goes in the field until you pick it.'),
       ),
-      count > 0 &&
-        h(
-          'div',
-          { class: 'rows' },
-          h('ul', { 'aria-label': `Answers for ${shows.question || 'this field'}` }, ...rows),
-          // One answer leaves room under it, which says how picking works.
-          count === 1 && h('p', { class: 'hint' }, 'Nothing goes in the field until you pick it.'),
-        ),
-      saving,
-    ),
+    draft && h('div', { class: 'rows' }, draftRows(draft, start)),
+    saving,
   );
-  const buttons = () => [...app.querySelectorAll('button')];
-  // Up and down go from one answer to the next, and Escape back to the field, as a list does.
-  addEventListener('keydown', (event) => {
-    if (!event.isTrusted) return;
-    if (event.key === 'Escape') {
-      event.preventDefault();
-      dismiss(true);
-      return;
-    }
-    if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return;
-    event.preventDefault();
-    const all = buttons();
-    const at = all.indexOf(document.activeElement as HTMLButtonElement);
-    const next = event.key === 'ArrowDown' ? at + 1 : at - 1;
-    all[Math.max(0, Math.min(all.length - 1, next))]?.focus();
-  });
-  // The script puts the cursor here from the field with the down arrow.
-  addEventListener('focus', () => {
-    if (!app.contains(document.activeElement)) buttons()[0]?.focus();
-  });
 }
 
 if (mode === 'button') fillButton();

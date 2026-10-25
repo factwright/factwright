@@ -17,11 +17,13 @@ import { type Area, type Box, EDGE, overlaps, placeButton, placeMenu, type Size 
  * The extension's script on the job sites you allowed (src/application-sites.ts), and only there.
  * On a page with an application form, it puts a small Fill button in a corner of the window, which
  * fills the form as clicking Fill does. In a field you click or tab into where Factwright has an
- * answer, it shows a menu beside the field with the answers, and when you leave a field with a new
- * answer Profile can keep, it offers to save it. The menu and the button are the extension's own
- * frame, which the page can't read: the script never has an answer but the one you pick, which it
- * puts in the field only then, as typing would. Neither ever covers the page's own controls: where
- * there's no room, the menu doesn't show, and the panel has the same answers.
+ * answer, it shows a menu beside the field with the answers, or for one of the form's own
+ * questions with none, the offer to have your Claude draft them, and when you leave a field with a
+ * new answer Profile can keep, it offers to save it. The menu and the button are the extension's
+ * own frame, which the page can't read: the script never has an answer but the one you pick, which
+ * it puts in the field only then, as typing would. The menu covers none of the page's own controls
+ * where there's room beside its field, and goes just under the field, over the page, where there
+ * isn't.
  * It reads the form as the panel does (page/form.ts), without what's in its fields, and what's in
  * a field only once you've typed in it and left it, for one whose answer Profile keeps, to offer
  * to save it. It never fills a password, never submits, and never clicks a button that would.
@@ -522,13 +524,14 @@ export function startScript(
     // After what you gave the field you left is heard, which may offer to keep it.
     await inTurn(() => Promise.resolve());
     if (stopped || !ready) return;
-    const answers = at !== null ? (menus?.[at]?.answers ?? 0) : 0;
+    // Its answers, or for a question with none, the offer to have your Claude draft them.
+    const info = at !== null ? menus?.[at] : undefined;
+    const answers = (info?.answers ?? 0) > 0 || info?.draft === true;
     const saveAt = pendingSave;
     const tries: Shown[] = [];
-    if (at !== null && answers > 0 && saveAt !== null)
-      tries.push({ at, answers: true, save: true });
+    if (at !== null && answers && saveAt !== null) tries.push({ at, answers: true, save: true });
     if (saveAt !== null) tries.push({ at: saveAt, answers: false, save: true });
-    if (at !== null && answers > 0) tries.push({ at, answers: true, save: false });
+    if (at !== null && answers) tries.push({ at, answers: true, save: false });
     const fits = tries.find((each) => placeFor(each.at, sizeFor(each.answers, each.save)) !== null);
     const field = fits ? form?.fields[fits.at] : null;
     if (!fits || !field) {
@@ -536,7 +539,13 @@ export function startScript(
       return;
     }
     const token = crypto.randomUUID();
-    const said = await ask<{ answers: number; save: boolean; again?: boolean; stop?: boolean }>({
+    const said = await ask<{
+      answers: number;
+      save: boolean;
+      draft?: boolean;
+      again?: boolean;
+      stop?: boolean;
+    }>({
       type: 'job-site',
       do: 'menu',
       ref: field.ref,
@@ -552,14 +561,14 @@ export function startScript(
       if (await plan(true)) await showMenu(at, true);
       return;
     }
-    if (!said || (said.answers === 0 && !said.save)) {
+    if (!said || (said.answers === 0 && !said.save && !said.draft)) {
       closeMenu();
       return;
     }
     if (said.save) pendingSave = null;
     closeMenu();
     // What the background has to show, which is what it was asked for, unless that's changed.
-    const size = sizeFor(said.answers > 0, said.save);
+    const size = sizeFor(said.answers > 0 || said.draft === true, said.save);
     const place = placeFor(fits.at, size);
     if (!place) {
       void ask({ type: 'job-site', do: 'closed', token });
@@ -747,7 +756,10 @@ export function startScript(
     return label instanceof HTMLLabelElement && label.control === element;
   };
 
-  /** You're in a field: its menu, if Factwright has answers, or the offer to keep a new one. */
+  /**
+   * You're in a field: its menu, if Factwright has answers, or can have your Claude draft them, or
+   * the offer to keep a new one.
+   */
   async function arrived(element: Element): Promise<void> {
     let at = fieldOf(element);
     if (at < 0) {
@@ -863,7 +875,14 @@ export function startScript(
 
   const onPointer = (event: Event) => {
     if (!yourOwn(event)) return;
-    lastPointer = { at: Date.now(), target: targetOf(event) };
+    const target = targetOf(event);
+    lastPointer = { at: Date.now(), target };
+    // A click in the field the cursor's in already opens its menu, as no focus comes with it: as
+    // once you've closed its menu, or it had none in the room there was.
+    const now = focused();
+    const at = now ? fieldOf(now) : -1;
+    if (!now || at < 0 || menu?.at === at || !(target instanceof Node)) return;
+    if (now === target || now.contains(target)) void arrived(now);
   };
   const onFocusIn = (event: FocusEvent) => {
     const target = targetOf(event);

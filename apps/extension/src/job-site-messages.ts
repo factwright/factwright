@@ -33,6 +33,24 @@ export interface FieldMenu {
   answers: number;
   /** Whether what you give it is one Profile can keep, so leaving it may offer to save it. */
   keeps: boolean;
+  /**
+   * Whether it's one of the form's own questions nothing on file answers, whose menu offers to
+   * have your Claude draft them, for a job you saved.
+   */
+  draft: boolean;
+}
+
+/**
+ * Your Claude drafting a form's own questions, as a field's menu says it: the offer to, drafting,
+ * waiting on you in Factwright, left with the job through sync, or why it couldn't, with how many
+ * questions it's for.
+ */
+export interface DraftShows {
+  is: 'offer' | 'drafting' | 'waiting' | 'left' | 'failed';
+  questions: number;
+  through: 'computer' | 'sync';
+  /** What went wrong, as Factwright said it. */
+  says?: string;
 }
 
 /** What the script asks the background. */
@@ -80,6 +98,8 @@ export type FromFrame =
   | { type: 'job-site'; do: 'save'; token: string }
   /** You closed it, with Not now, or with Escape, which puts the cursor back in its field. */
   | { type: 'job-site'; do: 'dismiss'; token: string; refocus: boolean }
+  /** You chose to have your Claude draft the form's own questions nothing on file answers. */
+  | { type: 'job-site'; do: 'draft'; token: string }
   /** You clicked the Fill button, which the script names by its own name for its page. */
   | { type: 'job-site'; do: 'fill'; token: string }
   /** You hid the Fill button on this page. */
@@ -249,6 +269,7 @@ export function isFromFrame(message: unknown): message is FromFrame {
   switch (message.do) {
     case 'shows':
     case 'save':
+    case 'draft':
       return isToken(message.token);
     case 'dismiss':
       return isToken(message.token) && typeof message.refocus === 'boolean';

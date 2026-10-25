@@ -247,3 +247,42 @@ body.frame main {
 .menu .done {
   color: var(--fw-ok);
 }
+
+/*
+ * Your Claude's drafts, in a question's menu that has no answer: the offer to draft the form's
+ * open questions, then how it's coming along, in the same room as two answers.
+ */
+.menu .status {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  box-sizing: border-box;
+  padding: 8px 10px;
+}
+
+.menu .status .text {
+  font-weight: 600;
+  line-height: 17px;
+}
+
+.menu .status .line {
+  font-size: 11px;
+  line-height: 15px;
+  color: var(--fw-muted);
+  display: -webkit-box;
+  -webkit-line-clamp: 4;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.menu .status.bad .text {
+  color: var(--fw-bad);
+}
+
+.menu .draft .again {
+  margin: 0 10px;
+  border-radius: var(--fw-radius-md);
+  padding: 2px 10px;
+  border: 1px solid var(--fw-control-border);
+  background: var(--fw-surface);
+}

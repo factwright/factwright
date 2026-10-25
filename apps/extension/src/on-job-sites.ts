@@ -9,6 +9,9 @@ import { forgetFrame, isAllowedPage, keepFrame, keptFrame } from './application-
 import { ext, type Sender, type Tab } from './ext.ts';
 import {
   answerSource,
+  askForDrafts,
+  draftable,
+  draftsSoFar,
   type FillPlan,
   type FormPlace,
   filledSummary,
@@ -23,6 +26,7 @@ import {
 import { type FillWay, fillWays, firstAnswer, type NoWay } from './fill-way.ts';
 import { MENU_ROWS } from './frame-size.ts';
 import {
+  type DraftShows,
   type FieldMenu,
   type FilledHere,
   type FromFrame,
@@ -205,7 +209,29 @@ interface Menu {
   at: number;
   answers: Offered[];
   save: Saving | null;
+  /** Whether it offers to have your Claude draft the form's own questions, as it has no answer. */
+  draft: boolean;
 }
+
+/** Your Claude drafting a form's own questions, from a field's menu, as the background follows it. */
+interface Drafting {
+  /** The fields it's drafting, by their keys. */
+  keys: Set<string>;
+  is: Exclude<DraftShows['is'], 'offer'>;
+  /** What went wrong, as Factwright said it. */
+  says?: string;
+  since: number;
+  /** When it last asked how they're coming, so menus that ask at once ask Factwright once. */
+  askedAt: number;
+  /** Asking now, which a menu that asks meanwhile waits for. */
+  asking: Promise<void> | null;
+}
+
+/** How often a menu asks how your Claude's drafts are coming along, while it drafts them. */
+const DRAFTS_EVERY_MS = 2500;
+
+/** How long it follows your Claude's drafts: a long application's take a few minutes. */
+const DRAFTS_FOR_MS = 20 * 60 * 1000;
 
 /** Where a script runs: a tab, a frame in it, its top frame being 0, and the page it's on. */
 interface ScriptAt extends FormPlace {
@@ -223,11 +249,15 @@ interface OnPage {
   way: FillWay;
   form: PageForm;
   plan: FillPlan;
+  /** The company and job title the page shows, which the job the form is for is found by. */
+  shows: { company: string; role: string };
   menu: Menu | null;
   /** The new answer you last gave, to offer in the next menu. */
   saving: Saving | null;
   /** The fields whose new answers it's offered to keep, so it offers each once. */
   offered: Set<string>;
+  /** Your Claude drafting the form's own questions, once you chose to in a menu. */
+  drafting: Drafting | null;
 }
 
 /** A frame of a tab, as the background keeps what it knows of each. */
@@ -247,15 +277,29 @@ function fieldAt(form: PageForm, ref: number, key: string): number {
   return same.length === 1 ? (same[0] ?? -1) : -1;
 }
 
+/**
+ * The form's own questions nothing on file answers, by their keys, which your Claude can draft,
+ * for a job you saved: none for a form whose job isn't one.
+ */
+const openQuestions = (page: OnPage): Set<string> =>
+  new Set(
+    page.plan.job
+      ? draftable(page.form, page.plan.replies, new Map()).map((field) => field.key)
+      : [],
+  );
+
 /** The menu for each field, as the script asks before it shows one. */
-const menusOf = (page: OnPage): FieldMenu[] =>
-  page.form.fields.map((field, at) => ({
+function menusOf(page: OnPage): FieldMenu[] {
+  const open = openQuestions(page);
+  return page.form.fields.map((field, at) => ({
     ref: field.ref,
     key: field.key,
     answers: menuAnswers(field, page.plan.replies[at]).length,
     // Profile keeps new answers through Factwright on this computer alone.
     keeps: page.way.via === 'computer' && keepsAnswer(field, page.plan.replies[at]),
+    draft: open.has(field.key) || page.drafting?.keys.has(field.key) === true,
   }));
+}
 
 /** Has the panel filling a tab's form look at it now, if it's open. */
 const tellPanelLook = (tabId: number) =>
@@ -318,7 +362,7 @@ async function answer(
         ...before.plan,
         replies: form.fields.map((field) => replies.get(field.key) as FieldReply),
       };
-      const page = { ...before, form, plan, menu: null };
+      const page = { ...before, form, plan, shows: job, menu: null };
       pages.set(key, page);
       return page;
     }
@@ -335,9 +379,11 @@ async function answer(
     way,
     form,
     plan: planned,
+    shows: job,
     menu: null,
     saving: null,
     offered: before?.url === url ? before.offered : new Set(),
+    drafting: before?.url === url ? before.drafting : null,
   };
   pages.set(key, page);
   return page;
@@ -411,17 +457,120 @@ export async function answerScript(
     if (saving) page.saving = saving;
     return { offer: Boolean(saving) };
   }
-  // A menu beside the field: its answers, the new answer you last gave, to keep, or both. The new
+  // A menu beside the field: its answers, or for one of the form's own questions with none, the
+  // offer to have your Claude draft them, the new answer you last gave, to keep, or both. The new
   // answer waits for a menu with room for it.
   const answers = message.answers ? menuAnswers(field, reply) : [];
+  const draft =
+    message.answers &&
+    answers.length === 0 &&
+    (openQuestions(page).has(field.key) || page.drafting?.keys.has(field.key) === true);
   const save = message.save ? page.saving : null;
   if (save) page.saving = null;
-  if (answers.length === 0 && !save) {
+  if (answers.length === 0 && !save && !draft) {
     page.menu = null;
     return { answers: 0, save: false };
   }
-  page.menu = { token: message.token, at, answers, save };
-  return { answers: answers.length, save: Boolean(save) };
+  page.menu = { token: message.token, at, answers, save, draft };
+  return { answers: answers.length, save: Boolean(save), draft };
+}
+
+/**
+ * Has your Claude draft the form's own questions nothing on file answers, all of them at once, as
+ * a menu's Draft with Claude asks: Factwright on this computer starts it in its window, and
+ * through sync, they're left with the job, for your Claude in Factwright on your computer.
+ */
+async function startDrafts(page: OnPage): Promise<void> {
+  const { job } = page.plan;
+  const fields = job ? draftable(page.form, page.plan.replies, new Map()) : [];
+  const going = page.drafting?.is === 'drafting' || page.drafting?.is === 'waiting';
+  if (!job || fields.length === 0 || going) return;
+  const now = Date.now();
+  const drafting: Drafting = {
+    keys: new Set(fields.map((field) => field.key)),
+    is: 'drafting',
+    since: now,
+    askedAt: now,
+    asking: null,
+  };
+  page.drafting = drafting;
+  const asked = await askForDrafts(page.form, job.id, fields, page.way);
+  if (page.drafting !== drafting) return;
+  if (!asked.ok || asked.did !== 'draft') {
+    drafting.is = 'failed';
+    drafting.says = asked.ok
+      ? 'Factwright didn’t answer. Try again.'
+      : asked.reason === 'bad-message'
+        ? 'Update Factwright on this computer to have your Claude draft these.'
+        : (asked.message ?? 'Factwright couldn’t start your Claude. Try again.');
+    return;
+  }
+  if (page.way.via === 'sync') drafting.is = 'left';
+}
+
+/**
+ * Asks how your Claude's drafts are coming along, at most every few seconds, as a menu asks what it
+ * shows. Once they're done, or it's taken too long, the drafted questions' answers are asked for
+ * again: each menu offers its draft, to pick.
+ */
+async function followDrafts(page: OnPage): Promise<void> {
+  const drafting = page.drafting;
+  const { job } = page.plan;
+  if (!drafting || !job || (drafting.is !== 'drafting' && drafting.is !== 'waiting')) return;
+  if (drafting.asking) return drafting.asking;
+  if (Date.now() - drafting.askedAt < DRAFTS_EVERY_MS) return;
+  drafting.askedAt = Date.now();
+  drafting.asking = (async () => {
+    const now = await draftsSoFar(job.id, page.way);
+    if (page.drafting !== drafting) return;
+    if (!now.ok || now.did !== 'drafts') {
+      // Factwright was busy a moment: it's asked again next time.
+      if (!now.ok && now.reason === 'busy') return;
+      drafting.is = 'failed';
+      drafting.says = now.ok ? 'Factwright didn’t answer. Try again.' : now.message;
+      return;
+    }
+    if (now.drafting && Date.now() - drafting.since < DRAFTS_FOR_MS) {
+      drafting.is = now.waiting ? 'waiting' : 'drafting';
+      return;
+    }
+    const places = page.form.fields.flatMap((field, at) =>
+      drafting.keys.has(field.key) ? [at] : [],
+    );
+    const fields = places.flatMap((at) => page.form.fields[at] ?? []);
+    const planned = await planFill({ ...page.form, fields }, page.shows, page.way);
+    if (page.drafting !== drafting) return;
+    if (!planned.ok || planned.did !== 'fill') {
+      drafting.is = 'failed';
+      drafting.says = planned.ok ? 'Factwright didn’t answer. Try again.' : planned.message;
+      return;
+    }
+    places.forEach((at, i) => {
+      const reply = planned.replies[i];
+      if (reply) page.plan.replies[at] = reply;
+    });
+    page.drafting = null;
+  })().finally(() => {
+    drafting.asking = null;
+  });
+  return drafting.asking;
+}
+
+/** What a menu with no answer of its own says of your Claude's drafts, or null for nothing. */
+function draftShows(page: OnPage, menu: Menu): DraftShows | null {
+  if (!menu.draft || menu.answers.length > 0) return null;
+  const through = page.way.via;
+  const { drafting } = page;
+  if (drafting) {
+    return {
+      is: drafting.is,
+      questions: drafting.keys.size,
+      through,
+      ...(drafting.says && { says: drafting.says }),
+    };
+  }
+  const open = openQuestions(page);
+  return open.size > 0 ? { is: 'offer', questions: open.size, through } : null;
 }
 
 /** The page whose menu a frame names by its token, in one of the frame's own tab's frames. */
@@ -532,13 +681,23 @@ export async function answerFrame(
   if (!found || !(await isAllowedPage(found.page.url))) return null;
   const { page, menu } = found;
   const field = page.form.fields[menu.at] as PageField;
-  if (message.do === 'shows') {
+  if (message.do === 'draft') {
+    if (!menu.draft) return null;
+    await startDrafts(page);
+  }
+  if (message.do === 'shows' || message.do === 'draft') {
+    // Your Claude's drafts, once they're done, are this menu's answers.
+    await followDrafts(page);
+    if (menu.draft && menu.answers.length === 0) {
+      menu.answers = menuAnswers(field, page.plan.replies[menu.at]);
+    }
     return {
       question: field.question,
       answers: menu.answers.map((each) => each.shown),
       save: menu.save
         ? { question: menu.save.question, text: menu.save.text, private: menu.save.private }
         : null,
+      draft: draftShows(page, menu),
     };
   }
   if (message.do === 'pick') {

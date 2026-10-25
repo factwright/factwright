@@ -18,28 +18,40 @@ const extension = vi.hoisted(() => {
       sender: { id?: string },
       reply: (answer: unknown) => void,
     ) => unknown)[],
-    /** Each field's menu, by its question: how many answers, and whether Profile keeps it. */
-    menus: {} as Record<string, { answers: number; keeps: boolean }>,
+    /**
+     * Each field's menu, by its question: how many answers, whether Profile keeps it, and whether
+     * it offers your Claude's drafts.
+     */
+    menus: {} as Record<string, { answers: number; keeps: boolean; draft?: boolean }>,
     /** How many answers a menu the script opens has. */
     shown: 1,
+    /** The form the script asked about last. */
+    form: null as PageForm | null,
   };
   const answer = (message: Record<string, unknown>): unknown => {
     switch (message.do) {
       case 'hello':
         return { allowed: state.allowed };
       case 'form':
+        state.form = message.form as PageForm;
         return {
-          menus: (message.form as PageForm).fields.map(
+          menus: state.form.fields.map(
             (field): FieldMenu => ({
               ref: field.ref,
               key: field.key,
               answers: state.menus[field.question]?.answers ?? 0,
               keeps: state.menus[field.question]?.keeps ?? false,
+              draft: state.menus[field.question]?.draft ?? false,
             }),
           ),
         };
-      case 'menu':
+      case 'menu': {
+        const asked = state.form?.fields[message.ref as number]?.question ?? '';
+        if (message.answers && state.menus[asked]?.draft) {
+          return { answers: 0, save: message.save, draft: true };
+        }
         return { answers: message.answers ? state.shown : 0, save: message.save };
+      }
       case 'left':
         return { offer: false };
       default:
@@ -237,6 +249,49 @@ describe('the script on a job site you allowed', () => {
     expect(input('name').value).toBe('');
     // Nothing the script sends has an answer: the frame gets them from the background.
     expect(JSON.stringify(extension.sent)).not.toContain('Ana');
+  });
+
+  it('opens the menu again on a click in the field the cursor’s in', async () => {
+    script = startScript(() => true, 0);
+    await vi.waitFor(() => expect(frames()).toHaveLength(1));
+    clickIn('name');
+    await vi.waitFor(() => expect(frames()).toHaveLength(2));
+    // Escape closes it, and the cursor stays in the field.
+    input('name').dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    await vi.waitFor(() => expect(frames()).toHaveLength(1));
+    expect(document.activeElement).toBe(input('name'));
+    // A click in it, with no focus to come, opens it again; one more, with it open, does nothing.
+    input('name').dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
+    await vi.waitFor(() => expect(frames()).toHaveLength(2));
+    input('name').dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(sentOf('menu')).toHaveLength(2);
+  });
+
+  it('goes just under its field, over the page, where there’s no room beside it', async () => {
+    // A control of the page's everywhere beside the field, as in a narrow window.
+    document.body.insertAdjacentHTML('beforeend', '<button id="everywhere">Chat</button>');
+    boxes.set('everywhere', new DOMRect(0, 0, innerWidth, innerHeight));
+    script = startScript(() => true, 0);
+    await vi.waitFor(() => expect(sentOf('hello')).toHaveLength(1));
+    clickIn('name');
+    await vi.waitFor(() =>
+      expect(frames().some(({ frame }) => frame.src.includes('#menu:'))).toBe(true),
+    );
+    const menu = frames().find(({ frame }) => frame.src.includes('#menu:'));
+    expect(menu?.host.style.getPropertyValue('left')).toBe('40px');
+    expect(menu?.host.style.getPropertyValue('top')).toBe(`${100 + 24 + 6}px`);
+  });
+
+  it('offers your Claude’s drafts in one of the form’s own questions with no answer', async () => {
+    extension.menus['Cover note'] = { answers: 0, keeps: false, draft: true };
+    script = startScript(() => true, 0);
+    await vi.waitFor(() => expect(frames()).toHaveLength(1));
+    clickIn('note');
+    await vi.waitFor(() => expect(frames()).toHaveLength(2));
+    expect(sentOf('menu')[0]).toMatchObject({ ref: 3, answers: true, save: false });
+    // As big as a menu of answers, so the page can't tell them apart.
+    expect(frames()[1]?.host.style.getPropertyValue('height')).toBe(`${menuHeight(true, false)}px`);
   });
 
   it('is the same size however many answers it has, so the page can’t count them', async () => {
