@@ -204,18 +204,22 @@ export const atOnceFrom = (value: unknown): number | null =>
     : null;
 
 /**
- * What a task works on, which two tasks never share at once: its job, by the job's ID; the user's
- * facts and Profile, which getting started, adding facts and filling in their work history all
- * change; the job searches; or the templates. Null for Claude with no task, waiting for what the
- * user types.
+ * What a task works on, which no two tasks going at once share: its job, by the job's ID; the
+ * user's facts and Profile, which getting started, adding facts and filling in their work history
+ * all change; the job searches; or the templates. A task on several jobs at once would work on
+ * each of them. Nothing for Claude with no task, waiting for what the user types.
  */
-export function laneOf(task: RunTask | null): string | null {
-  if (!task) return null;
+export function lanesOf(task: RunTask | null): string[] {
+  if (!task) return [];
   const job = taskJob(task);
-  if (job) return `job:${job}`;
-  if (task.skill === GET_STARTED_SKILL || task.skill === FACTS_SKILL) return 'profile';
-  return task.skill === HISTORY_SKILL ? 'profile' : task.skill;
+  if (job) return [`job:${job}`];
+  const profile = [GET_STARTED_SKILL, FACTS_SKILL, HISTORY_SKILL] as string[];
+  return [profile.includes(task.skill) ? 'profile' : task.skill];
 }
+
+/** Whether two tasks work on anything the same, so one waits for the other. */
+export const sharesLane = (a: RunTask | null, b: RunTask | null) =>
+  lanesOf(a).some((lane) => lanesOf(b).includes(lane));
 
 /** The call a task works on, such as prep for it, or null for one on no call in particular. */
 export const taskCall = (task: RunTask | null): string | null =>

@@ -10,7 +10,7 @@ import type {
 } from '../../shared/api.ts';
 import type { FiledFacts } from '../../shared/facts.ts';
 import type { RunChanges as RunChangesView } from '../../shared/run-changes.ts';
-import { AT_ONCE, laneOf, type RunTask } from '../../shared/runs.ts';
+import { AT_ONCE, lanesOf, type RunTask } from '../../shared/runs.ts';
 import type { OpenRun, RunEvents, RunOptions, RunScreen } from './session.ts';
 
 /**
@@ -63,8 +63,8 @@ export interface ClaudeRunsDeps {
 interface Entry {
   id: string;
   task: RunTask | null;
-  /** What it works on, which no two runs share at once. */
-  lane: string | null;
+  /** What it works on, which no two runs going at once share. */
+  lanes: string[];
   phase: RunPhase;
   waits: LineWait | null;
   screen: RunScreen | null;
@@ -136,7 +136,7 @@ export class ClaudeRuns {
     this.entries.push({
       id: `run-${this.count}`,
       task,
-      lane: laneOf(task),
+      lanes: lanesOf(task),
       phase: 'in-line',
       waits: 'turn',
       screen: null,
@@ -259,20 +259,19 @@ export class ClaudeRuns {
    */
   private pump(): void {
     let going = this.entries.filter(hasWork).length;
-    const lanes = new Set(this.entries.filter(hasWork).flatMap((entry) => entry.lane ?? []));
+    const lanes = new Set(this.entries.filter(hasWork).flatMap((entry) => entry.lanes));
     let settingUp = !this.pastScreens && this.entries.some(isSettingUp);
     for (const entry of this.entries) {
       if (entry.phase !== 'in-line') continue;
-      const waits: LineWait | null =
-        entry.lane && lanes.has(entry.lane)
-          ? 'job'
-          : entry.task && going >= this.atOnce
-            ? 'turn'
-            : settingUp
-              ? 'setup'
-              : null;
+      const waits: LineWait | null = entry.lanes.some((lane) => lanes.has(lane))
+        ? 'job'
+        : entry.task && going >= this.atOnce
+          ? 'turn'
+          : settingUp
+            ? 'setup'
+            : null;
       // A task in line keeps its job for itself, ahead of the ones after it.
-      if (entry.lane) lanes.add(entry.lane);
+      for (const lane of entry.lanes) lanes.add(lane);
       entry.waits = waits;
       if (waits) continue;
       if (entry.task) going += 1;

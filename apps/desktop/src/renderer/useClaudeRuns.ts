@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { FactwrightApi, RunPhase, RunsView, RunView, StartProblem } from '../shared/api.ts';
-import { AT_ONCE, laneOf, type RunTask } from '../shared/runs.ts';
+import { AT_ONCE, type RunTask, sharesLane } from '../shared/runs.ts';
 import { BUSY } from './jobs/RunActions.tsx';
 import { isBoolean, readPref, writePref } from './prefs.ts';
 
@@ -59,10 +59,9 @@ export const isOpen = (phase: RunPhase) =>
  * other task on its job, or the same part of the job hunt, is going or waiting.
  */
 export function startsNow(view: Pick<ClaudeRuns, 'runs' | 'atOnce'>, task: RunTask): boolean {
-  const lane = laneOf(task);
   const going = view.runs.filter((run) => BUSY.includes(run.phase)).length;
   const taken = view.runs.some(
-    (run) => (run.phase === 'in-line' || BUSY.includes(run.phase)) && laneOf(run.task) === lane,
+    (run) => (run.phase === 'in-line' || BUSY.includes(run.phase)) && sharesLane(run.task, task),
   );
   return going < view.atOnce && !taken;
 }

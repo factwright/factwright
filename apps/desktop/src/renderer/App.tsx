@@ -16,7 +16,7 @@ import { hasKinds, kindsOf } from '../shared/kinds.ts';
 import type { ProfileEntry } from '../shared/profiles.ts';
 import {
   GET_STARTED_SKILL,
-  laneOf,
+  lanesOf,
   type RunRequest,
   type RunTask,
   SEARCH_SKILL,
@@ -369,7 +369,8 @@ export function App({ api }: { api: FactwrightApi }) {
   // Whether a task waits in line, or has a run going, on a job or a part of the job hunt.
   const taken = (lane: string) =>
     claude.runs.some(
-      (run) => (run.phase === 'in-line' || BUSY.includes(run.phase)) && laneOf(run.task) === lane,
+      (run) =>
+        (run.phase === 'in-line' || BUSY.includes(run.phase)) && lanesOf(run.task).includes(lane),
     );
   const runControls = useMemo(
     () => runControlsFor(claude.runs, startRun, showRun),

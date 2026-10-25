@@ -24,7 +24,7 @@ import {
 } from '../shared/rounds.ts';
 import {
   AT_ONCE,
-  laneOf,
+  lanesOf,
   type RunTask,
   TEMPLATE_SKILL,
   THANKS_SKILL,
@@ -713,12 +713,16 @@ export function sampleApi(): FactwrightApi {
   const pump = () => {
     const busy = (tab: RunView) => ['starting', 'working', 'needs-answer'].includes(tab.phase);
     let going = tabs.filter(busy).length;
-    const lanes = new Set(tabs.filter(busy).flatMap((tab) => laneOf(tab.task) ?? []));
+    const lanes = new Set(tabs.filter(busy).flatMap((tab) => lanesOf(tab.task)));
     for (const tab of tabs) {
       if (tab.phase !== 'in-line') continue;
-      const lane = laneOf(tab.task);
-      const waits = lane && lanes.has(lane) ? 'job' : tab.task && going >= atOnce ? 'turn' : null;
-      if (lane) lanes.add(lane);
+      const mine = lanesOf(tab.task);
+      const waits = mine.some((lane) => lanes.has(lane))
+        ? 'job'
+        : tab.task && going >= atOnce
+          ? 'turn'
+          : null;
+      for (const lane of mine) lanes.add(lane);
       if (waits) {
         if (tab.waits !== waits) set(tab.id, { waits });
         continue;
