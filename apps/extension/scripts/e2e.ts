@@ -893,10 +893,14 @@ try {
     );
     const joinedRow = joined && (await openRecord(keys, seeqRecord, joined.version, joined.data));
     const after = joinedRow ? decodeRecord(joinedRow) : null;
+    const links =
+      after?.kind === 'row'
+        ? (JSON.parse(String(after.row?.links ?? '[]')) as { url: string }[])
+        : [];
     const copy = await recordId(keys, rowName('jobs', `${found}-2`));
     check(
-      after?.kind === 'row' &&
-        String(after.row?.links).includes(workable) &&
+      JSON.stringify(links.map((link) => link.url)) ===
+        JSON.stringify([...board.map((link) => link.url), workable]) &&
         !(await sam.client.changes(0)).changes.some((each) => each.record === copy),
       'and saving adds this page’s link and posting to that job, with no copy',
     );

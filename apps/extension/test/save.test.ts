@@ -525,8 +525,13 @@ describe('saving a job through sync', () => {
       already: false,
     });
     expect(raced).toBe(true);
+    // The job keeps the other device's links, and gets none from this save.
     const job = await readRecord(client, keys, rowName('jobs', found));
-    expect(job?.kind === 'row' && String(job.row?.links)).not.toContain('1B6E0A1710');
+    const links = job?.kind === 'row' ? JSON.parse(String(job.row?.links ?? '[]')) : [];
+    expect(links.map((link: { url: string }) => link.url)).toEqual([
+      board.url,
+      'https://apply.workable.com/seeq/j/0BEAE8BEA3/',
+    ]);
   });
 
   it('finds the job kept for one the user merged into another', async () => {
