@@ -691,6 +691,13 @@ try {
         (await unknown.locator('#company').inputValue()) === 'Lumen',
       'shows a page’s main text open, to check it’s the posting',
     );
+    await unknown.locator('#company').fill('');
+    await unknown.getByRole('button', { name: 'Save to Factwright' }).click();
+    await unknown.getByText('Add the company’s name.').waitFor({ timeout: 10_000 });
+    check(
+      (await unknown.locator('#company').inputValue()) === '',
+      'and once you’ve cleared the company, never puts the site’s name back',
+    );
     await unknown.close();
 
     // A page that doesn't look like a job's: its title and company left blank, to save anyway.

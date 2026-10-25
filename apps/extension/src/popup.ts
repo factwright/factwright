@@ -194,8 +194,9 @@ function form(
   keepPosting = true,
 ): void {
   const read = toSave(page);
-  // A page that doesn't look like a job's names no company by its address either.
-  const start = notAJob ? { ...read, company: page.company.trim() } : read;
+  // The company its address names is only a first guess: never on a page that doesn't look like a
+  // job's, nor once you've tried to save, when the form shows what you typed.
+  const start = notAJob || problem ? { ...read, company: page.company.trim() } : read;
   const hasPosting = Boolean(start.posting.trim());
   const keep = h('input', { id: 'keep', type: 'checkbox', checked: hasPosting && keepPosting });
   const save = async (event: Event) => {
