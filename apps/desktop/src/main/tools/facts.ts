@@ -1,9 +1,11 @@
 import {
   answeredClaimText,
   claimParts,
+  correctedClaimText,
   FACT_TAGS,
   type FactBlock,
   findSection,
+  GAPS_FILE,
   type Job,
   oneLine,
   sectionTitle,
@@ -22,7 +24,7 @@ import type { ToolCall } from './mcp.ts';
 
 /** What the fact tools need: the bank's files, the jobs on file, and today. */
 export interface FactToolDeps {
-  facts: Pick<FactBankFiles, 'read' | 'fileClaim' | 'addGap' | 'confirm'>;
+  facts: Pick<FactBankFiles, 'read' | 'fileClaim' | 'addGap' | 'confirm' | 'correct'>;
   jobs: () => readonly Job[];
   today: () => string;
   /** How long to wait for a hook that's on its way. Tests wait less. */
@@ -611,7 +613,7 @@ export async function saveFact(
       if (!old) throw new Error(`Not saved: ${path} has no fact titled “${replaces}”.`);
       if (!old.tags?.includes(UNCONFIRMED)) {
         throw new Error(
-          `Not saved: “${old.title}” is verified, and only the user changes a verified fact. Edit it as any file, which they OK, or file this as a fact of its own.`,
+          `Not saved: “${old.title}” is verified. Correct it from the user’s answer with correct_fact, or file this as a fact of its own.`,
         );
       }
       const filedHere = call.filed.facts.some(
@@ -653,6 +655,7 @@ export async function saveFact(
       context: contextOf(task, company),
       asked: answers.map((each) => ({ question: each.question, answer: answerText(each) })),
     });
+    call.keep?.(path);
     const result = deps.facts.fileClaim(path, text, replacing, under?.heading ?? null);
     if (!result.ok) throw refused(result);
     // A fact this run filed, then replaced, counts once.
@@ -667,6 +670,116 @@ export async function saveFact(
       `${replacing ? 'Replaced' : 'Saved'} “${title}” in ${path}${where}, unverified, from the user’s answer: “${answers.map(answerText).join('”, then “')}”.`,
       'Use it in this run’s work: the user just said it. Say which lines rest on it when you report.',
       'Later runs offer it to the user before using it, until they verify it.',
+    ].join(' ');
+  } catch (error) {
+    giveBack();
+    throw error;
+  }
+}
+
+/** An answer that's no more than a no, such as "No" or "Nope.", which says nothing to correct with. */
+const onlyNo = ({ answer }: Answered) => {
+  const said = questionKey(answer);
+  const lead = said.match(SAYS_NO)?.[0];
+  return lead !== undefined && !/[\p{L}\p{N}]/u.test(said.slice(lead.length));
+};
+
+/**
+ * Corrects a verified fact, in its place, from the user's answers in this run: a new number, or
+ * a correction they gave, to a question that names the fact by its title in quotes. Every number
+ * it gains must be one the user saw or gave, and so must every keyword. It stays verified, with
+ * its Source the user and today, as when they verify a fact in the app, and the questions and
+ * answers it rests on. A fact that waits to be verified is corrected with save_fact and replaces.
+ */
+export async function correctFact(
+  input: Record<string, unknown>,
+  deps: FactToolDeps,
+  call: ToolCall,
+): Promise<string> {
+  await fromRunsClaude('correct_fact', input, call, deps.answerWaitMs);
+  const path = line(input, 'file', 300, true);
+  if (!isFactPath(path) || factFileKind(path) !== 'claims') {
+    throw new Error('Give the fact’s file, such as facts/acme-health.md.');
+  }
+  const title = line(input, 'title', MAX_TITLE, true);
+  const tags = {
+    status: oneOf(input, 'status', FACT_TAGS.status, false),
+    ownership: oneOf(input, 'ownership', FACT_TAGS.ownership, false),
+    confidence: oneOf(input, 'confidence', FACT_TAGS.confidence, false),
+  };
+  const wording = line(input, 'wording', MAX_TEXT, true);
+  const details = {
+    short: line(input, 'short', MAX_TEXT, false),
+    numbers: line(input, 'numbers', MAX_TEXT, false),
+    say: line(input, 'say', MAX_TEXT, false),
+    keywords: line(input, 'keywords', MAX_TEXT, false),
+  };
+  const questions = questionsOf(input);
+  const { answers, giveBack } = await answersTo(questions, call, 'fact', deps.answerWaitMs);
+  try {
+    const bank = deps.facts.read();
+    const claims = claimsIn(bank, path);
+    const named = claims.filter((block) => sameTitle(block.title, title));
+    const [claim] = named;
+    if (!claim) throw new Error(`Not saved: ${path} has no fact titled “${title}”.`);
+    if (named.length > 1)
+      throw new Error(`Not saved: ${path} has more than one fact titled “${title}”.`);
+    if (claim.tags?.includes(UNCONFIRMED)) {
+      throw new Error(
+        `Not saved: “${claim.title}” waits to be verified. Correct it with save_fact, giving its title as replaces, and the user verifies it in the Fact bank.`,
+      );
+    }
+    const [first] = answers;
+    if (!first || !namesFact(first.question, claim.title)) {
+      throw new Error(
+        `Not saved: the question doesn’t name “${claim.title}”. Ask the user about the fact first, naming it by its title in quotes, then correct it from their answer.`,
+      );
+    }
+    checkBacking(answers, (each) => namesFact(each.question, claim.title));
+    if (answers.every(onlyNo)) {
+      throw new Error(
+        `Not saved: “${first.answer}” says what’s wrong, not what’s right. Ask what it should say, in a follow-up, and correct it from that.`,
+      );
+    }
+    if (answers.every((each) => saysUnsure(each) && guessedNumbers(each).size === 0)) {
+      throw new Error(
+        `Not saved: the user wasn’t sure (“${first.answer}”). Leave the fact as it is, and leave out a number they didn’t give.`,
+      );
+    }
+    const asked = askedText(answers);
+    // What the fact said already is the user's, verified. What it gains must come from them now.
+    const known = new Set([...numbersIn(asked), ...numbersIn(claim.text)]);
+    const stated = [wording, details.short, details.numbers, details.say, details.keywords]
+      .flatMap((each) => [...numbersIn(each ?? '')])
+      .find((number) => !known.has(number));
+    if (stated) {
+      throw new Error(
+        `Not saved: ${stated} isn’t in the user’s answer, your question or the fact. Leave out a number they didn’t give, or ask them for it.`,
+      );
+    }
+    const unasked = (details.keywords ?? '')
+      .split(/[,;]/)
+      .map((term) => term.trim())
+      .filter(Boolean)
+      .find((term) => !hasTerm(claim.text, term) && !hasTerm(asked, term));
+    if (unasked) {
+      throw new Error(
+        `Not saved: “${unasked}” isn’t in the fact, the question or the user’s answer. A correction adds only the terms the user talked about.`,
+      );
+    }
+    const text = correctedClaimText(claim, {
+      ...tags,
+      wording,
+      ...details,
+      source: `${bank.firstName ?? 'confirmed'} ${deps.today()}`,
+      asked: answers.map((each) => ({ question: each.question, answer: answerText(each) })),
+    });
+    call.keep?.(path);
+    const result = deps.facts.correct(targetOf(path, claim, claims), text);
+    if (!result.ok) throw refused(result);
+    return [
+      `Corrected “${claim.title}” in ${path}, from the user’s answer: “${answers.map(answerText).join('”, then “')}”.`,
+      'It stays verified, with their name and today as its Source. Use it as it reads now, and say which lines rest on it when you report.',
     ].join(' ');
   } catch (error) {
     giveBack();
@@ -710,6 +823,7 @@ export async function saveGap(
       );
     }
     const context = contextOf(task, company);
+    call.keep?.(GAPS_FILE);
     const result = deps.facts.addGap({
       topic,
       answer: `${answerText(answer)} (asked “${answer.question}”${context ? ` while ${context}` : ''})`,
@@ -818,6 +932,7 @@ export async function verifyFact(
         `Not verified: the question doesn’t say the fact is ${unsaid.replaceAll('-', ' ')}. Ask again, giving its tags in words, such as “(shipped, solo, medium confidence)”.`,
       );
     }
+    call.keep?.(path);
     const result = deps.facts.confirm(targetOf(path, claim, claims));
     if (!result.ok) throw new Error(`Not verified: ${result.message}`);
     return `Verified “${claim.title}”, on the user’s pick. Use it as any verified fact.`;

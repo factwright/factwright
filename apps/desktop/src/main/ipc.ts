@@ -28,9 +28,9 @@ import { effortFor, needsMore, parseEffort } from '../shared/effort.ts';
 import { LIMITS } from '../shared/limits.ts';
 import { modelFor, parseModels } from '../shared/models.ts';
 import type { PermissionAnswer, PermissionAsk } from '../shared/permission-asks.ts';
-import { parsePermissions } from '../shared/permissions.ts';
 import { parseRevisionRequest, REVISE_SKILL } from '../shared/revision.ts';
 import type { QuestionRound, RoundReply } from '../shared/rounds.ts';
+import { isWorkspacePath, RUN_CHANGES_ID } from '../shared/run-changes.ts';
 import { scopeOf } from '../shared/runs.ts';
 import type { UpdateStatus } from '../shared/updates.ts';
 import { DOC_KINDS, type DocKind, parseChangesRequest } from '../shared/versions.ts';
@@ -43,8 +43,8 @@ import { loadEffort, saveEffort } from './claude/effort.ts';
 import { claudeConfigFolder } from './claude/launch.ts';
 import { loadModels, saveModels } from './claude/models.ts';
 import { parsePermissionAnswer } from './claude/permission-asks.ts';
-import { loadPermissions, savePermissions } from './claude/permissions.ts';
 import { parseReply } from './claude/rounds.ts';
+import type { RunChanges } from './claude/run-changes.ts';
 import type { RunRequests } from './claude/run-requests.ts';
 import type { SetupChecker } from './claude/self-test.ts';
 import type { ClaudeSession } from './claude/session.ts';
@@ -160,8 +160,10 @@ export interface IpcDeps {
   versions: Versions;
   workspace: string;
   sync: SyncAccount;
-  /** The app's own data folder, which holds what Claude may do without asking. */
+  /** The app's own data folder, which holds Claude's settings. */
   dataDir: string;
+  /** What each of Claude's tasks changed, with a copy of each file from before, for Undo. */
+  runChanges: RunChanges;
   /** Keeps an installed copy up to date, or null for one that doesn't update itself. */
   updates: UpdateWatcher | null;
   /** The profiles on this computer: each person's own job hunt, one open at a time. */
@@ -215,6 +217,7 @@ export function registerIpc({
   workspace,
   sync,
   dataDir,
+  runChanges,
   updates,
   profiles,
   reminders,
@@ -277,15 +280,6 @@ export function registerIpc({
     if (!effort) throw new Error('Refused effort levels Claude Code doesn’t know.');
     await saveEffort(dataDir, effort);
     return effort;
-  });
-
-  // What Claude may do without asking. A change applies from Claude's next start.
-  answer('claude:permissions', () => loadPermissions(dataDir));
-  answer('claude:set-permissions', async (value) => {
-    const permissions = parsePermissions(value);
-    if (!permissions) throw new Error('Refused permissions that aren’t two yes-or-no answers.');
-    await savePermissions(dataDir, permissions);
-    return permissions;
   });
 
   answer('setup:check', async () => {
@@ -413,7 +407,23 @@ export function registerIpc({
     ) {
       return { ok: false, reason: 'new-run' };
     }
-    return session.send(runPrompt(run));
+    return session.task(runPrompt(run));
+  });
+
+  // What a task of Claude's changed, each file before and after it, and putting one back as it
+  // was. Only a file in that task's own record, which the app keeps outside the workspace.
+  const isRun = (value: unknown): value is string =>
+    typeof value === 'string' && RUN_CHANGES_ID.test(value);
+  answer('claude:change', (id, path) => {
+    if (!isRun(id) || !isWorkspacePath(path))
+      throw new Error('Refused a change Claude didn’t make.');
+    return runChanges.see(id, path);
+  });
+  answer('claude:undo', (id, path, anyway) => {
+    if (!isRun(id) || !isWorkspacePath(path) || typeof anyway !== 'boolean') {
+      throw new Error('Refused a change Claude didn’t make.');
+    }
+    return runChanges.undo(id, path, anyway);
   });
 
   // A reply from Claude's panel, on one line, as a message of the user's own: nothing in it can

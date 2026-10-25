@@ -1,4 +1,4 @@
-import { Button, Checkbox, Dialog, DialogActions, Select } from '@factwright/ui';
+import { Button, Dialog, DialogActions, Select } from '@factwright/ui';
 import { Fragment, useEffect, useId, useState } from 'react';
 import type { FactwrightApi } from '../shared/api.ts';
 import {
@@ -17,7 +17,6 @@ import {
   type ModelTask,
   modelWithout,
 } from '../shared/models.ts';
-import type { ClaudePermissions } from '../shared/permissions.ts';
 import styles from './ClaudeSettingsDialog.module.css';
 import { RUN_ACTIONS } from './jobs/RunActions.tsx';
 
@@ -34,12 +33,7 @@ const TASKS: readonly { task: ModelTask; label: string }[] = [
 
 type SettingsApi = Pick<
   FactwrightApi,
-  | 'claudeModels'
-  | 'setClaudeModels'
-  | 'claudeEffort'
-  | 'setClaudeEffort'
-  | 'claudePermissions'
-  | 'setClaudePermissions'
+  'claudeModels' | 'setClaudeModels' | 'claudeEffort' | 'setClaudeEffort'
 >;
 
 /** A task's own choice, or none to go back to what everything uses. */
@@ -54,8 +48,7 @@ function choose<T extends string>(
 
 /**
  * How Claude works on the job hunt: which model it runs on and how hard it thinks, for
- * everything and for each task, and what it may do without asking. Each choice saves as it's
- * made.
+ * everything and for each task, and what it does without asking. Each choice saves as it's made.
  */
 export function ClaudeSettingsDialog({
   api,
@@ -76,23 +69,17 @@ export function ClaudeSettingsDialog({
   const suggested = planLevels(plan, method);
   const [models, setModels] = useState<ModelChoices | null>(null);
   const [effort, setEffort] = useState<EffortChoices | null>(null);
-  const [permissions, setPermissions] = useState<ClaudePermissions | null>(null);
   const [byTask, setByTask] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
   const modelsHeading = useId();
   const askingHeading = useId();
-  const filesHint = useId();
-  const sitesHint = useId();
 
   useEffect(() => {
-    void Promise.all([api.claudeModels(), api.claudeEffort(), api.claudePermissions()]).then(
-      ([chosen, levels, allowed]) => {
-        setModels(chosen);
-        setEffort(levels);
-        setPermissions(allowed);
-        setByTask(Object.keys({ ...chosen.tasks, ...levels.tasks }).length > 0);
-      },
-    );
+    void Promise.all([api.claudeModels(), api.claudeEffort()]).then(([chosen, levels]) => {
+      setModels(chosen);
+      setEffort(levels);
+      setByTask(Object.keys({ ...chosen.tasks, ...levels.tasks }).length > 0);
+    });
   }, [api]);
 
   const failed = () => setProblem('That didn’t save. Try again.');
@@ -124,17 +111,6 @@ export function ClaudeSettingsDialog({
       const kept = await api.claudeEffort();
       setEffort(kept);
       onSaved?.({ effort: kept });
-    }
-  };
-
-  const changePermissions = async (next: ClaudePermissions) => {
-    setPermissions(next);
-    try {
-      setPermissions(await api.setClaudePermissions(next));
-      setProblem(null);
-    } catch {
-      failed();
-      setPermissions(await api.claudePermissions());
     }
   };
 
@@ -249,49 +225,18 @@ export function ClaudeSettingsDialog({
           </details>
         </section>
       )}
-      {permissions && (
-        <section aria-labelledby={askingHeading} className={styles.section}>
-          <h3 id={askingHeading} className={styles.heading}>
-            Without asking
-          </h3>
-          <p className={styles.lead}>
-            Claude works only in your job hunt, and can’t run programs on your computer. It always
-            searches the web, reads postings on Greenhouse, Lever, Ashby and Gem, and saves its work
-            in your jobs’ folders, job searches and outreach drafts without asking.
-          </p>
-          <div className={styles.options}>
-            <div>
-              <Checkbox
-                label="Change any file in your job hunt"
-                checked={permissions.anyFile}
-                aria-describedby={filesHint}
-                onChange={(event) =>
-                  void changePermissions({ ...permissions, anyFile: event.target.checked })
-                }
-              />
-              <p id={filesHint} className={styles.hint}>
-                Including your facts, guide and base resumes, which every resume and answer is built
-                from. When this is off, Claude asks before changing them.
-              </p>
-            </div>
-            <div>
-              <Checkbox
-                label="Read any website"
-                checked={permissions.anySite}
-                aria-describedby={sitesHint}
-                onChange={(event) =>
-                  void changePermissions({ ...permissions, anySite: event.target.checked })
-                }
-              />
-              <p id={sitesHint} className={styles.hint}>
-                When this is off, Claude asks before reading other sites, such as a company’s
-                careers page. A job post could try to trick Claude into sending your details to a
-                site, and asking lets you catch it.
-              </p>
-            </div>
-          </div>
-        </section>
-      )}
+      <section aria-labelledby={askingHeading} className={styles.section}>
+        <h3 id={askingHeading} className={styles.heading}>
+          Without asking
+        </h3>
+        <p className={styles.lead}>
+          Claude works only in your job hunt, and can’t run programs on your computer. It searches
+          the web, reads web pages and changes your job hunt’s files without asking. It never reads
+          LinkedIn. Your facts change only through Factwright’s fact tools, which take only what you
+          answered Claude. Once a task is done, Claude’s panel lists each file it changed, with
+          Undo, and the pages it read.
+        </p>
+      </section>
       {problem && (
         <p className={styles.problem} role="alert">
           {problem}

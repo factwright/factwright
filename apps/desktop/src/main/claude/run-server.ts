@@ -69,6 +69,8 @@ interface RunListeners {
   hooks: HookListener;
   /** Hears each tool call as it starts. */
   activity: HookListener | undefined;
+  /** Hears each tool call before Claude Code may run it, and holds it until it's heard. */
+  before: HookListener | undefined;
   tools: ToolsListener | undefined;
   ask: QuestionAsker | undefined;
   permit: PermissionAsker | undefined;
@@ -93,6 +95,18 @@ interface RunListeners {
 export interface ListenOptions {
   /** Hears each tool call as it starts, from the hook every call has, to follow what Claude does. */
   activity?: HookListener;
+  /**
+   * Hears each tool call from the same hook, before Claude Code may run it: Claude Code waits for
+   * it, so a file can be kept as it was before Claude changes it.
+   */
+  before?: HookListener;
+  /**
+   * Hears a file's path just before one of Factwright's tools changes or makes it, so it can be
+   * kept as it was.
+   */
+  keep?: (path: string) => void;
+  /** Hears each page one of Factwright's tools read, by its address. */
+  read?: (url: string) => void;
   /** Hears which MCP methods the run calls. */
   tools?: ToolsListener;
   /** What the run may change without asking. Every run but getting started is "hunt". */
@@ -159,6 +173,9 @@ export class RunServer {
   listen(token: string, hooks: HookListener, options: ListenOptions = {}): () => void {
     const {
       activity,
+      before,
+      keep,
+      read,
       tools,
       scope = 'hunt',
       onFiled,
@@ -173,6 +190,7 @@ export class RunServer {
     this.listeners.set(token, {
       hooks,
       activity,
+      before,
       tools,
       ask,
       permit,
@@ -180,7 +198,7 @@ export class RunServer {
       context,
       held,
       allowed: [],
-      call: newCall(scope, onFiled, revision, changes),
+      call: { ...newCall(scope, onFiled, revision, changes), keep, read },
     });
     return () => {
       this.listeners.delete(token);
@@ -210,10 +228,16 @@ export class RunServer {
       if (body.length > MAX_BODY_BYTES) request.destroy();
     });
     request.on('end', () => {
-      // Only heard: a call starting waits on nothing here.
+      // A call starting waits only for what's kept before it runs, such as a file it changes.
       if (request.url === '/activity') {
+        const event = parseJson(body);
+        try {
+          listener.before?.(event);
+        } catch {
+          // Nothing kept: the call runs as it would have.
+        }
         response.writeHead(204).end();
-        listener.activity?.(parseJson(body));
+        listener.activity?.(event);
         return;
       }
       if (request.url === '/hook') {

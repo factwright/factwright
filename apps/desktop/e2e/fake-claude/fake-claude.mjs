@@ -6,7 +6,7 @@
 // signs it in with a key instead, and FAKE_CLAUDE_FIRST_RUN=show has it show Claude Code's
 // first-run screens until someone presses Enter through them once, as Claude Code does.
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 
 const args = process.argv.slice(2);
 
@@ -107,6 +107,41 @@ async function call(name, args) {
   const text = result?.content?.[0]?.text ?? '';
   await hook('PostToolUse', { ...step, tool_response: text });
   return text;
+}
+
+/**
+ * Writes a file as Claude Code's Write tool does: its start to the hook every call has, which the
+ * app holds while it keeps the file as it was, then the file, then PostToolUse.
+ */
+async function writeAsClaude(path, text) {
+  const step = {
+    tool_name: 'Write',
+    tool_use_id: `toolu_write_${Date.now()}`,
+    tool_input: { file_path: path, content: text },
+  };
+  if (activityUrl) {
+    await post(activityUrl, { hook_event_name: 'PreToolUse', session_id: 'fake', ...step }).catch(
+      () => {},
+    );
+  }
+  mkdirSync(dirname(path), { recursive: true });
+  writeFileSync(path, text);
+  await hook('PostToolUse', { ...step, tool_response: { type: 'create', filePath: path } });
+}
+
+/**
+ * Calls one of Factwright's tools as Claude Code does with the run's settings: without asking
+ * when they allow it, and otherwise after the user's OK. Gives back its text, or what came of
+ * asking.
+ */
+async function callAllowed(name, args) {
+  const tool = `mcp__factwright__${name}`;
+  if (settings.permissions.allow.includes(tool)) return call(name, args);
+  const decision = await permission(tool, args);
+  if (decision?.behavior === 'allow') return call(name, args);
+  return decision?.behavior === 'deny'
+    ? `Not saved: ${decision.message}`
+    : 'Claude Code asked in the terminal.';
 }
 
 /** The answer it gives to every question about a job. */
@@ -230,7 +265,7 @@ async function work(text) {
     const details = await call('job_details', { job: lettered[1] });
     const folder = details.match(/^- Folder: applications\/([^/\s]+)\/$/m)?.[1];
     if (folder) {
-      writeFileSync(
+      await writeAsClaude(
         join(process.cwd(), 'applications', folder, 'cover-letter.json'),
         JSON.stringify({
           format: 'both',
@@ -259,7 +294,7 @@ async function work(text) {
     const details = await call('job_details', { job: paged[1] });
     const folder = details.match(/^- Folder: applications\/([^/\s]+)\/$/m)?.[1];
     if (folder) {
-      writeFileSync(
+      await writeAsClaude(
         join(process.cwd(), 'applications', folder, 'projects-page.json'),
         JSON.stringify({
           format: 'both',
@@ -354,7 +389,7 @@ async function work(text) {
       const after = letter
         ? { ...before, paragraphs: [`Changed as you asked (${words}), by the stand-in Claude.`] }
         : { ...before, summary: `Changed as you asked (${words}), by the stand-in Claude.` };
-      writeFileSync(data, JSON.stringify(after));
+      await writeAsClaude(data, JSON.stringify(after));
       const built = await call(letter ? 'build_cover_letter' : 'build_resume', {
         folder,
         ...(!letter && { format: 'both' }),
@@ -378,7 +413,7 @@ async function work(text) {
       await file('save_gap', { topic: 'GraphQL', question: GRAPHQL, job, task: 'resume' });
     }
     if (folder && findings.includes('“Terraform”')) {
-      writeFileSync(
+      await writeAsClaude(
         join(process.cwd(), 'applications', folder, 'resume.json'),
         JSON.stringify({
           layout: 'classic',
@@ -426,8 +461,7 @@ async function work(text) {
     const focus = await call('search_focus', { focus: id });
     show(`${focus.split('\n')[0]}\n`);
     const folder = join(process.cwd(), 'searches', `2026-10-12-linkedin-focus-${id.slice(11)}`);
-    mkdirSync(folder, { recursive: true });
-    writeFileSync(
+    await writeAsClaude(
       join(folder, 'jobs.json'),
       JSON.stringify({
         meta: { source: 'LinkedIn Oct 12', checked: '2026-10-12', focus: id },
@@ -468,7 +502,7 @@ async function work(text) {
           .map((part) => String(part).padStart(2, '0'))
           .join('-')
       : '2026-10-12';
-    writeFileSync(
+    await writeAsClaude(
       join(folder, again ? 'jobs-2.json' : 'jobs.json'),
       JSON.stringify({
         meta: { source: 'LinkedIn Oct 12', checked },
@@ -500,8 +534,7 @@ async function work(text) {
   const forKind = text.match(/^\/factwright:job-search for ([a-z0-9-]+): /);
   if (forKind) {
     const folder = join(process.cwd(), 'searches', `2026-10-12-hn-${forKind[1]}`);
-    mkdirSync(folder, { recursive: true });
-    writeFileSync(
+    await writeAsClaude(
       join(folder, 'jobs.json'),
       JSON.stringify({
         meta: { source: 'HN October 2026', checked: '2026-10-12', kind: forKind[1] },
@@ -518,21 +551,13 @@ async function work(text) {
       }),
     );
   }
-  // As Claude would, asked to save what the user said to their profile, which Claude Code asks
-  // their OK for first: saved on a yes, and not on a no, which says what they added.
-  if (text === 'save my notice period') {
-    const tool = 'mcp__factwright__save_about_you';
-    const input = { start: 'Two weeks’ notice' };
-    const decision = await permission(tool, input);
-    if (decision?.behavior === 'allow') {
-      show(`${await call('save_about_you', input)}\n`);
-      await hook('PostToolUse', { tool_name: tool, tool_input: input, tool_response: {} });
-    } else if (decision?.behavior === 'deny') {
-      show(`Not saved: ${decision.message}\n`);
-    } else {
-      show('Claude Code asked in the terminal.\n');
-    }
-  }
+  // As Claude would, asked to save what the user said to their profile: without asking, when the
+  // run's settings allow it, as they do for a run on the job hunt.
+  const notice = {
+    'save my notice period': 'Two weeks’ notice',
+    'save a month of notice': 'One month’s notice',
+  }[text];
+  if (notice) show(`${await callAllowed('save_about_you', { start: notice })}\n`);
   // As Claude would for a template: start from one of the app's, and save one of the user's own.
   if (/^\/factwright:make-template from templates\/sources\/\S+$/.test(text)) {
     const classic = await call('read_template', { id: 'classic' });

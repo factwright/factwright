@@ -122,6 +122,7 @@ export async function buildCoverLetter(
   const html = renderLetterHtml(letter, template, RESUME_FONTS);
   if (files.some((file) => file.endsWith('.pdf'))) {
     const printed = await deps.printer.print(html);
+    deps.keep?.(join(dir, `${name}.pdf`));
     await writeFile(join(dir, `${name}.pdf`), printed.pdf);
     const fill = printed.lastFill === null ? '' : `, ${printed.lastFill}% full`;
     const pages = printed.pages === 1 ? '1 page' : `${printed.pages} pages`;
@@ -130,7 +131,9 @@ export async function buildCoverLetter(
       problems.push(`The letter runs to ${pages}; a cover letter fits on one.`);
   }
   if (files.some((file) => file.endsWith('.docx'))) {
-    await writeFile(join(dir, `${name}.docx`), Buffer.from(await letterDocxFile(letter, template)));
+    const docx = Buffer.from(await letterDocxFile(letter, template));
+    deps.keep?.(join(dir, `${name}.docx`));
+    await writeFile(join(dir, `${name}.docx`), docx);
     report.push(
       `Built ${where}/${name}.docx. Word lays it out itself, so check it fits one page there too.`,
     );

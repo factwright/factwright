@@ -166,23 +166,20 @@ export const HUNT_SKILLS = [
 ] as const;
 
 /**
- * What a run may change without asking. A run started to get to know the user, or to add facts,
- * may save their facts, starting resumes and guide. A run started to make a template may read
- * and save templates, and nothing else, and may replace only the ones it saved: the resume it
- * copies came from anywhere. A revision may do what a run on the job hunt does, but reads what
- * the X-ray found in a posting, and needs nothing from the web, so it can't reach it. Every
- * other run asks first. None of the last three reads the web.
+ * What a run may change without asking. A run on the job hunt changes any file in the workspace,
+ * and reads the web, but changes the facts only through Factwright's fact tools. So does every
+ * other run, apart from what it may never do: a run started to get to know the user, or to add
+ * facts, changes the facts themselves, as the user confirms them, and one that fills in their
+ * work history works from their facts and resumes. A revision reads what the X-ray found in a
+ * posting, and asks before saving a template. A run started to make a template may read and
+ * save templates, and nothing else, and may replace only the ones it saved: the resume it copies
+ * came from anywhere. None of the last four reads the web.
  */
-export type RunScope = 'hunt' | 'profile' | 'template' | 'revise';
+export type RunScope = 'hunt' | 'profile' | 'history' | 'template' | 'revise';
 
 export function scopeOf(task: RunTask | null | undefined): RunScope {
-  if (
-    task?.skill === GET_STARTED_SKILL ||
-    task?.skill === FACTS_SKILL ||
-    task?.skill === HISTORY_SKILL
-  ) {
-    return 'profile';
-  }
+  if (task?.skill === GET_STARTED_SKILL || task?.skill === FACTS_SKILL) return 'profile';
+  if (task?.skill === HISTORY_SKILL) return 'history';
   if (task?.skill === REVISE_SKILL) return 'revise';
   return task?.skill === TEMPLATE_SKILL ? 'template' : 'hunt';
 }

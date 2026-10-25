@@ -87,6 +87,7 @@ import { useClaudeRun } from './useClaudeRun.ts';
 import { typedClaude, useClaudeStatus } from './useClaudeStatus.ts';
 import { useLevelChoices } from './useLevelChoices.ts';
 import { useRunActivity } from './useRunActivity.ts';
+import { useRunChanges } from './useRunChanges.ts';
 import { useSetupCheck } from './useSetupCheck.ts';
 
 const isView = (value: unknown): value is JobView =>
@@ -114,6 +115,7 @@ export function App({ api }: { api: FactwrightApi }) {
   const approvals = useApprovals(api);
   const run = useClaudeRun(api);
   const activity = useRunActivity(api, run.taskId);
+  const changes = useRunChanges(api, run.taskId);
   const questions = useClaudeQuestions(api);
   const permission = useClaudePermission(api);
   const { jobs, reload } = useJobs(api);
@@ -677,6 +679,7 @@ export function App({ api }: { api: FactwrightApi }) {
               setFactsShown((was) => ({ part, at: (was?.at ?? 0) + 1 }));
             }}
             onDismissFiled={seeFiled}
+            changes={changes}
             asking={
               questions.round
                 ? {

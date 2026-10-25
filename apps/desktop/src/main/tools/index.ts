@@ -9,12 +9,19 @@ import { aboutYouChanges, aboutYouText, SAVABLE_ANSWERS } from './about.ts';
 import { MAX_ANSWER, pastAnswers, saveAnswer } from './answers.ts';
 import { saveCallDoc } from './calls.ts';
 import { requestedChanges } from './changes.ts';
-import { FACT_TASKS, saveFact, saveGap, UNVERIFIED_CHOICES, verifyFact } from './facts.ts';
+import {
+  correctFact,
+  FACT_TASKS,
+  saveFact,
+  saveGap,
+  UNVERIFIED_CHOICES,
+  verifyFact,
+} from './facts.ts';
 import { searchFocusText } from './focus.ts';
 import { historyText, saveHistory } from './history.ts';
 import { buildCoverLetter } from './letter.ts';
 import { findJob, findJobs, type JobQuery, jobDetails } from './lookup.ts';
-import { huntCall, type McpTool } from './mcp.ts';
+import { huntCall, type McpTool, type ToolCall } from './mcp.ts';
 import { type FetchDeps, ReadCache, readLink, savePosting } from './posting.ts';
 import { buildProjectsPage } from './projects.ts';
 import { buildResume } from './resume.ts';
@@ -30,7 +37,7 @@ export interface ToolDeps {
    */
   about: Pick<AboutStore, 'answers' | 'saveAnswers' | 'history' | 'saveHistory'>;
   /** The fact bank's files, which the user's answers in a run add to. */
-  facts: Pick<FactBankFiles, 'read' | 'fileClaim' | 'addGap' | 'confirm'>;
+  facts: Pick<FactBankFiles, 'read' | 'fileClaim' | 'addGap' | 'confirm' | 'correct'>;
   workspace: string;
   printer: ResumePrinter;
   /** The resume templates, built in and the user's own. */
@@ -73,23 +80,22 @@ export const LOCAL_TOOLS = [
 
 /**
  * The tools that file what the user answers Claude in a run: a new fact, unverified until they
- * verify it, something they don't have, or a fact verified on their own pick. Each files only
- * what the user answered in that run, as Claude Code's hooks reported it, and never changes a
- * verified fact, so Claude may call them without asking. They stay on this computer.
+ * verify it, something they don't have, a fact verified on their own pick, or a verified fact
+ * corrected with what they said. Each files only what the user answered in that run, as Claude
+ * Code's hooks reported it, so Claude may call them without asking. They stay on this computer.
+ * Outside getting started and adding facts, they're the only way a run changes the fact bank.
  */
-export const FACT_TOOLS = ['save_fact', 'save_gap', 'verify_fact'];
+export const FACT_TOOLS = ['save_fact', 'save_gap', 'verify_fact', 'correct_fact'];
 
 /**
  * The tools that change what the user told Factwright about themselves. They stay on this
- * computer, but like the user's facts, Claude asks before using them unless the user chose
- * otherwise, or started a run to get to know them.
+ * computer, and the task's card lists what they changed, with Undo.
  */
 export const PROFILE_TOOLS = ['save_about_you', 'save_work_history'];
 
 /**
- * The tool that adds to the user's templates. It stays on this computer, but a template is
- * something the user picks, so Claude asks before saving one, unless the user chose otherwise or
- * started a run to make one.
+ * The tool that adds to the user's templates. It stays on this computer. A revision reads what an
+ * X-ray found in a posting, so it asks before saving one.
  */
 export const TEMPLATE_TOOLS = ['save_template'];
 
@@ -105,8 +111,8 @@ export const TEMPLATE_READS = ['list_templates', 'read_template'];
 export const PUBLIC_API_TOOLS = ['read_posting', 'save_posting', 'job_board', 'hn_jobs'];
 
 /**
- * The tool that reads any public page. The user OKs each page unless they've chosen otherwise,
- * since a job post could steer Claude to send the user's details to a site in a link.
+ * The tool that reads any public page: never LinkedIn's, nor anything on this computer or the
+ * user's network. The task's card lists each page it read.
  */
 export const WEB_TOOLS = ['read_page'];
 
@@ -169,13 +175,25 @@ export function factwrightTools(deps: ToolDeps): McpTool[] {
     ...(deps.now && { now: deps.now }),
   };
   // Saves a prep sheet or thank-you notes for one of a job's calls, given as Markdown in `field`.
-  const saveForCall = (input: Record<string, unknown>, kind: CallDocKind, field: string) => {
+  const saveForCall = (
+    input: Record<string, unknown>,
+    kind: CallDocKind,
+    field: string,
+    call: ToolCall | undefined,
+  ) => {
     const id = textInput(input, 'job', true) ?? '';
     const job = deps.jobs.job(id);
     if (!job) throw new Error(`Nothing on file for ${id}.`);
     const markdown = input[field];
     if (typeof markdown !== 'string') throw new Error(`Give the ${field} as Markdown text.`);
-    return saveCallDoc(job, textInput(input, 'call', true) ?? '', kind, markdown, deps.workspace);
+    return saveCallDoc(
+      job,
+      textInput(input, 'call', true) ?? '',
+      kind,
+      markdown,
+      deps.workspace,
+      call?.keep,
+    );
   };
   const CALL_PROPERTIES = {
     job: {
@@ -282,13 +300,17 @@ export function factwrightTools(deps: ToolDeps): McpTool[] {
         additionalProperties: false,
       },
       annotations: { readOnlyHint: true, openWorldHint: true },
-      run: async (input) =>
-        readLink(textInput(input, 'url', true) ?? '', { ...reading, feedsOnly: true }),
+      run: async (input, call) =>
+        readLink(textInput(input, 'url', true) ?? '', {
+          ...reading,
+          feedsOnly: true,
+          ...(call?.read && { onRead: call.read }),
+        }),
     },
     {
       name: 'read_page',
       description:
-        'Reads any public web page as plain text: a posting on another site, a careers page, a company’s about or team page. The user may have to OK each page, so read only what the task needs, and use read_posting for postings on Greenhouse, Lever, Ashby or Gem. A posting read this way can then be saved with save_posting, without asking again.',
+        'Reads any public web page as plain text: a posting on another site, a careers page, a company’s about or team page. Never LinkedIn’s. Read only what the task needs: the user sees each page you read. Use read_posting for postings on Greenhouse, Lever, Ashby or Gem. A posting read this way can then be saved with save_posting.',
       inputSchema: {
         type: 'object',
         properties: { url: { type: 'string', description: 'The page’s https link.' } },
@@ -296,8 +318,12 @@ export function factwrightTools(deps: ToolDeps): McpTool[] {
         additionalProperties: false,
       },
       annotations: { readOnlyHint: true, openWorldHint: true },
-      run: async (input) =>
-        readLink(textInput(input, 'url', true) ?? '', { ...reading, feedsOnly: false }),
+      run: async (input, call) =>
+        readLink(textInput(input, 'url', true) ?? '', {
+          ...reading,
+          feedsOnly: false,
+          ...(call?.read && { onRead: call.read }),
+        }),
     },
     {
       name: 'build_resume',
@@ -322,13 +348,14 @@ export function factwrightTools(deps: ToolDeps): McpTool[] {
       },
       // It writes only resume files, beside their data, from what's on this computer.
       annotations: { readOnlyHint: false, idempotentHint: true, openWorldHint: false },
-      run: async (input) =>
+      run: async (input, call) =>
         buildResume(textInput(input, 'folder', true) ?? '', textInput(input, 'format', false), {
           workspace: deps.workspace,
           printer: deps.printer,
           templates: deps.templates,
           jobs: () => deps.jobs.list().jobs,
           ...(deps.now && { now: deps.now }),
+          ...(call?.keep && { keep: call.keep }),
         }),
     },
     {
@@ -354,7 +381,7 @@ export function factwrightTools(deps: ToolDeps): McpTool[] {
       },
       // It writes only cover letter files, beside their data, from what's on this computer.
       annotations: { readOnlyHint: false, idempotentHint: true, openWorldHint: false },
-      run: async (input) =>
+      run: async (input, call) =>
         buildCoverLetter(
           textInput(input, 'folder', true) ?? '',
           textInput(input, 'format', false),
@@ -364,6 +391,7 @@ export function factwrightTools(deps: ToolDeps): McpTool[] {
             templates: deps.templates,
             jobs: () => deps.jobs.list().jobs,
             ...(deps.now && { now: deps.now }),
+            ...(call?.keep && { keep: call.keep }),
           },
         ),
     },
@@ -390,7 +418,7 @@ export function factwrightTools(deps: ToolDeps): McpTool[] {
       },
       // It writes only Projects page files, beside their data, from what's on this computer.
       annotations: { readOnlyHint: false, idempotentHint: true, openWorldHint: false },
-      run: async (input) =>
+      run: async (input, call) =>
         buildProjectsPage(
           textInput(input, 'folder', true) ?? '',
           textInput(input, 'format', false),
@@ -400,6 +428,7 @@ export function factwrightTools(deps: ToolDeps): McpTool[] {
             templates: deps.templates,
             jobs: () => deps.jobs.list().jobs,
             ...(deps.now && { now: deps.now }),
+            ...(call?.keep && { keep: call.keep }),
           },
         ),
     },
@@ -418,7 +447,7 @@ export function factwrightTools(deps: ToolDeps): McpTool[] {
       },
       // It writes only the call's own file, from what's on this computer.
       annotations: { readOnlyHint: false, idempotentHint: true, openWorldHint: false },
-      run: async (input) => saveForCall(input, 'prep', 'prep'),
+      run: async (input, call) => saveForCall(input, 'prep', 'prep', call),
     },
     {
       name: 'save_thank_you',
@@ -437,7 +466,7 @@ export function factwrightTools(deps: ToolDeps): McpTool[] {
         additionalProperties: false,
       },
       annotations: { readOnlyHint: false, idempotentHint: true, openWorldHint: false },
-      run: async (input) => saveForCall(input, 'thanks', 'notes'),
+      run: async (input, call) => saveForCall(input, 'thanks', 'notes', call),
     },
     {
       name: 'list_templates',
@@ -500,7 +529,12 @@ export function factwrightTools(deps: ToolDeps): McpTool[] {
             replace: input.replace === true,
             resume: textInput(input, 'resume', false),
           },
-          { workspace: deps.workspace, printer: deps.printer, templates: deps.templates },
+          {
+            workspace: deps.workspace,
+            printer: deps.printer,
+            templates: deps.templates,
+            ...(call?.keep && { keep: call.keep }),
+          },
           call,
         ),
     },
@@ -528,11 +562,11 @@ export function factwrightTools(deps: ToolDeps): McpTool[] {
       },
       // It writes what was read, or reads a public feed, and saving twice keeps the first.
       annotations: { readOnlyHint: false, idempotentHint: true, openWorldHint: true },
-      run: async (input) =>
+      run: async (input, call) =>
         savePosting(
           textInput(input, 'url', true) ?? '',
           textInput(input, 'folder', true) ?? '',
-          { ...reading, workspace: deps.workspace },
+          { ...reading, workspace: deps.workspace, ...(call?.keep && { keep: call.keep }) },
           textInput(input, 'job', false) ?? undefined,
         ),
     },
@@ -555,11 +589,12 @@ export function factwrightTools(deps: ToolDeps): McpTool[] {
       },
       // It reads a public API and saves what it read, replacing the last copy.
       annotations: { readOnlyHint: false, idempotentHint: true, openWorldHint: true },
-      run: async (input) =>
+      run: async (input, call) =>
         jobBoard(textInput(input, 'url', true) ?? '', textInput(input, 'folder', true) ?? '', {
           workspace: deps.workspace,
           ...(deps.fetch && { fetch: deps.fetch }),
           ...(deps.now && { now: deps.now }),
+          ...(call?.keep && { keep: call.keep }),
         }),
     },
     {
@@ -579,11 +614,12 @@ export function factwrightTools(deps: ToolDeps): McpTool[] {
         additionalProperties: false,
       },
       annotations: { readOnlyHint: false, idempotentHint: true, openWorldHint: true },
-      run: async (input) =>
+      run: async (input, call) =>
         hnJobs(textInput(input, 'month', false), textInput(input, 'folder', true) ?? '', {
           workspace: deps.workspace,
           ...(deps.fetch && { fetch: deps.fetch }),
           ...(deps.now && { now: deps.now }),
+          ...(call?.keep && { keep: call.keep }),
         }),
     },
     {
@@ -637,7 +673,7 @@ export function factwrightTools(deps: ToolDeps): McpTool[] {
       },
       // It writes only the answer's own file, from what's on this computer.
       annotations: { readOnlyHint: false, idempotentHint: true, openWorldHint: false },
-      run: async (input) => {
+      run: async (input, call) => {
         const id = textInput(input, 'job', true) ?? '';
         const job = deps.jobs.job(id);
         if (!job) throw new Error(`Nothing on file for ${id}.`);
@@ -651,6 +687,7 @@ export function factwrightTools(deps: ToolDeps): McpTool[] {
           answer,
           deps.workspace,
           today(),
+          call?.keep,
         );
       },
     },
@@ -779,6 +816,55 @@ export function factwrightTools(deps: ToolDeps): McpTool[] {
       run: async (input, call) => verifyFact(input, factDeps, call ?? huntCall()),
     },
     {
+      name: 'correct_fact',
+      description:
+        'Corrects a verified fact in its place, from what the user answered in this run: a new number, or a correction they gave, to a question you asked with AskUserQuestion that names the fact by its title in quotes. Give the fact’s file and title, its new wording, any details or tags that change, and the question word for word as you asked it, with its follow-up if you asked one. Every number it gains, in digits or words, and every keyword, is one the user gave or saw in your question. It stays verified: Factwright sets its Source to the user’s first name and today, and adds the questions with the user’s answers. A fact that waits to be verified is corrected with save_fact and replaces instead. Nothing else changes a verified fact in a run.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          file: { type: 'string', description: 'The fact’s file, such as facts/acme-health.md.' },
+          title: { type: 'string', description: 'The fact’s title, as its heading gives it.' },
+          wording: {
+            type: 'string',
+            description:
+              'What resumes say now, about 190 characters at most, never more than the fact and the user’s answer say.',
+          },
+          status: {
+            type: 'string',
+            enum: [...FACT_TAGS.status],
+            description: 'Its status, when the correction changes it.',
+          },
+          ownership: {
+            type: 'string',
+            enum: [...FACT_TAGS.ownership],
+            description: 'Its ownership, when the correction changes it.',
+          },
+          confidence: {
+            type: 'string',
+            enum: [...FACT_TAGS.confidence],
+            description: 'Its confidence, when the correction changes it.',
+          },
+          short: { type: 'string', description: 'A new version of about 110 characters or less.' },
+          numbers: { type: 'string', description: 'Its numbers now, such as “40 clinics”.' },
+          say: { type: 'string', description: 'What to say and never say, when that changes.' },
+          keywords: { type: 'string', description: 'Its keywords now, when they change.' },
+          questions: {
+            type: 'array',
+            items: { type: 'string' },
+            minItems: 1,
+            maxItems: 2,
+            description:
+              'The question the user answered, word for word as you asked it, naming the fact by its title in quotes, and its follow-up if you asked one.',
+          },
+        },
+        required: ['file', 'title', 'wording', 'questions'],
+        additionalProperties: false,
+      },
+      // It changes one verified fact on this computer, only from what the user answered.
+      annotations: { readOnlyHint: false, openWorldHint: false },
+      run: async (input, call) => correctFact(input, factDeps, call ?? huntCall()),
+    },
+    {
       name: 'save_about_you',
       description:
         'Saves something the user told you that applications and recruiters ask for, so nobody asks again: their work authorization, when they can start (with any notice period), whether they’d relocate, their target or lowest base pay, a contact detail, or who they are outside work: interests and hobbies, what they’re learning, communities they’re part of, and what they care about. Save only what they said, in their words, and only what holds for every job, never one job’s pay. When they want more than one kind of job, pay is each kind’s own: name the kind it’s for.',
@@ -839,9 +925,9 @@ export function factwrightTools(deps: ToolDeps): McpTool[] {
         },
         additionalProperties: false,
       },
-      // It changes the user's profile on this computer, which they OK unless they chose otherwise.
+      // It changes the user's profile on this computer, which the task's card lists, with Undo.
       annotations: { readOnlyHint: false, idempotentHint: true, openWorldHint: false },
-      run: async (input) => {
+      run: async (input, call) => {
         const current = deps.about.answers();
         const read = aboutYouChanges(input, current);
         if (!read) {
@@ -857,7 +943,7 @@ export function factwrightTools(deps: ToolDeps): McpTool[] {
               .join(' '),
           );
         }
-        deps.about.saveAnswers(read.changes);
+        deps.about.saveAnswers(read.changes, call?.keep);
         return `Saved to the user’s profile: ${read.saved.join('; ')}.`;
       },
     },
@@ -920,9 +1006,9 @@ export function factwrightTools(deps: ToolDeps): McpTool[] {
         required: ['jobs', 'schools'],
         additionalProperties: false,
       },
-      // It changes the user's profile on this computer, which they OK unless they chose otherwise.
+      // It changes the user's profile on this computer, which the task's card lists, with Undo.
       annotations: { readOnlyHint: false, idempotentHint: true, openWorldHint: false },
-      run: async (input) => saveHistory(input, deps.about),
+      run: async (input, call) => saveHistory(input, deps.about, call?.keep),
     },
   ];
 }

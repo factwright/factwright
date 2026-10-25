@@ -31,8 +31,20 @@ const picked: McpTool = {
     call?.revision?.findings.map((finding) => finding.id).join(' ') ?? 'No revision',
 };
 
+/** Writes a file, as Factwright's tools do: saying so first, and saying what it read. */
+const save: McpTool = {
+  name: 'save',
+  description: 'Saves a file.',
+  inputSchema: { type: 'object', properties: {} },
+  run: async (_input, call) => {
+    call?.read?.('https://acme.com/careers');
+    call?.keep?.('applications/acme/job.md');
+    return 'Saved';
+  },
+};
+
 describe('RunServer', () => {
-  const server = new RunServer({ tools: [greet, recall, picked], version: '1.2.3' });
+  const server = new RunServer({ tools: [greet, recall, picked, save], version: '1.2.3' });
   afterEach(() => server.stop());
 
   const post = (url: string, body: unknown, headers: Record<string, string> = {}) =>
@@ -72,6 +84,46 @@ describe('RunServer', () => {
     stopOther();
     expect(other.status).toBe(204);
     expect(activity).toHaveBeenCalledOnce();
+  });
+
+  it('keeps what it needs before a call runs, answering only once it has', async () => {
+    await server.start();
+    const kept: string[] = [];
+    const before = vi.fn((event: unknown) => {
+      kept.push((event as { tool_input: { file_path: string } }).tool_input.file_path);
+    });
+    server.listen(TOKEN, () => {}, { before });
+    const edit = {
+      hook_event_name: 'PreToolUse',
+      tool_name: 'Edit',
+      tool_input: { file_path: '/workspace/job.md' },
+    };
+    const response = await post(server.activityUrl, edit);
+    // Heard before the answer: Claude Code waits for the hook, so the file is kept first.
+    expect(kept).toEqual(['/workspace/job.md']);
+    expect(response.status).toBe(204);
+    // A listener that fails lets the call run as it would have.
+    before.mockImplementationOnce(() => {
+      throw new Error('disk full');
+    });
+    expect((await post(server.activityUrl, edit)).status).toBe(204);
+  });
+
+  it('tells the run what Factwright’s tools are about to write, and what they read', async () => {
+    await server.start();
+    const keep = vi.fn();
+    const read = vi.fn();
+    server.listen(TOKEN, () => {}, { keep, read });
+    const response = await post(server.toolsUrl, {
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'tools/call',
+      params: { name: 'save', arguments: {} },
+    });
+    const answer = (await response.json()) as { result: { content: { text: string }[] } };
+    expect(answer.result.content[0]?.text).toBe('Saved');
+    expect(keep).toHaveBeenCalledWith('applications/acme/job.md');
+    expect(read).toHaveBeenCalledWith('https://acme.com/careers');
   });
 
   it("tells a run's tools listener which methods it calls, one at a time or in a batch", async () => {

@@ -20,11 +20,16 @@ beforeAll(() => {
 
 afterEach(cleanup);
 
-const PAGE: PermissionAsk = {
+/** A revision's fix to a template, the one save that still asks first in a run on a job. */
+const TEMPLATE: PermissionAsk = {
   id: 'perm_1',
-  kind: 'page',
-  url: 'https://jobs.example.com/careers/42',
-  host: 'jobs.example.com',
+  kind: 'template',
+  template: 'executive',
+  name: 'Navy (clean)',
+  look: 'Navy headings.',
+  replace: true,
+  replacing: 'Executive',
+  code: '{\n  "name": "Navy (clean)"\n}',
 };
 
 /** Waits out the moment the answers wait after a prompt shows: half a second, or more when busy. */
@@ -34,26 +39,31 @@ const answerable = () =>
     { timeout: 2000 },
   );
 
-function open(ask: PermissionAsk = PAGE, result: EditResult = { ok: true }) {
+function open(ask: PermissionAsk = TEMPLATE, result: EditResult = { ok: true }) {
   const api = {
     answerPermission: vi.fn(async (_id: string, _answer: PermissionAnswer | 'terminal') => result),
   };
   const onClose = vi.fn();
   const view = render(
-    <ClaudePermission api={api} ask={ask} about="Fit check · Acme Robotics" onClose={onClose} />,
+    <ClaudePermission
+      api={api}
+      ask={ask}
+      about="Revised resume · Acme Robotics"
+      onClose={onClose}
+    />,
   );
   return { api, onClose, ...view };
 }
 
 describe('ClaudePermission', () => {
-  it('shows the whole address of a page, and the site it goes to, for the user to OK', async () => {
+  it('asks the user’s OK for what Claude would do, saying what the run is for', async () => {
     const { container, api, onClose } = open();
-    const dialog = screen.getByRole('dialog', { name: 'Let Claude read a web page?' });
+    const dialog = screen.getByRole('dialog', {
+      name: 'Let Claude replace your template “Executive”?',
+    });
     expect(dialog.textContent).toContain(
-      'Claude Code asks, as your Claude works on Fit check · Acme Robotics.',
+      'Claude Code asks, as your Claude works on Revised resume · Acme Robotics.',
     );
-    expect(screen.getByText('https://jobs.example.com/careers/42')).toBeTruthy();
-    expect(screen.getByText('jobs.example.com').tagName).toBe('STRONG');
     expect((await axe.run(container)).violations).toEqual([]);
     // A click the moment it shows, such as a double-click's second, answers nothing.
     expect(screen.getByRole('button', { name: 'Allow' })).toHaveProperty('disabled', true);
@@ -162,7 +172,7 @@ describe('ClaudePermission', () => {
   });
 
   it('stays open, saying why, when the answer doesn’t reach Claude Code', async () => {
-    const { onClose } = open(PAGE, {
+    const { onClose } = open(TEMPLATE, {
       ok: false,
       message: 'Claude Code isn’t waiting for this anymore.',
     });

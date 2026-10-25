@@ -1093,7 +1093,7 @@ describe('read_posting', () => {
 
   it('sends any other link to read_page, without fetching it', async () => {
     expect(await tool('read_posting').run({ url: 'https://acme.example/jobs/staff' })).toBe(
-      'https://acme.example/jobs/staff isn’t a posting on Greenhouse, Lever, Ashby or Gem. Read it with read_page, which asks the user first, or use job_board for a company’s whole board.',
+      'https://acme.example/jobs/staff isn’t a posting on Greenhouse, Lever, Ashby or Gem. Read it with read_page, or use job_board for a company’s whole board.',
     );
     expect(fetch).not.toHaveBeenCalled();
   });
@@ -1193,7 +1193,7 @@ describe('save_posting', () => {
     expect(
       await tool('save_posting').run({ url: 'https://acme.example/jobs/staff', folder: FOLDER }),
     ).toBe(
-      'Nothing read from https://acme.example/jobs/staff yet. Read it with read_page first, which asks the user, then save it.',
+      'Nothing read from https://acme.example/jobs/staff yet. Read it with read_page first, then save it.',
     );
     fetch.mockResolvedValue({ jobs: [] });
     expect(await tool('save_posting').run({ url: ASHBY, folder: FOLDER })).toMatch(
@@ -1323,6 +1323,20 @@ describe('build_resume', () => {
     expect(printed).toContain('@font-face{font-family:"Selawik";font-weight:400;');
     expect(printed).not.toContain('"Caladea"');
     expect(printer.measure.mock.calls[0]?.[0]).toBe(printed);
+  });
+
+  it('tells the task each file it’s about to write, so the app can keep it as it was', async () => {
+    writeResume(resume);
+    const keep = vi.fn();
+    const read = vi.fn();
+    const call = { ...newCall('hunt'), keep, read };
+    await tool('build_resume').run({ folder: FOLDER, format: 'both' }, call);
+    expect(keep.mock.calls.map(([path]) => path)).toEqual([
+      folder('AlexRiveraResume10112026_Acme.pdf'),
+      folder('AlexRiveraResume10112026_Acme.docx'),
+    ]);
+    // Without a task, as in a test of its own, it builds all the same.
+    expect(await tool('build_resume').run({ folder: FOLDER })).toContain('Checks: clean.');
   });
 
   it('turns away a project the user keeps private, by its name, but not one they show', async () => {
@@ -2058,7 +2072,7 @@ describe('the template tools', () => {
     // One of the user's, from before this run.
     await tool('save_template').run({ id: 'theirs', template: file() });
     expect(await save('theirs', { name: 'Mine now' }, true)).toBe(
-      'Not saved: templates/theirs.json is one of the user’s templates from before this run, which this run can’t replace. Save yours under an ID of its own. The user can change theirs in a run that asks first.',
+      'Not saved: templates/theirs.json is one of the user’s templates from before this run, which this run can’t replace. Save yours under an ID of its own: another run can change theirs.',
     );
     expect(await save('mine')).toContain('Saved templates/mine.json');
     expect(await save('mine', { name: 'Mine, wider' }, true)).toContain(

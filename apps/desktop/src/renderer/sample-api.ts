@@ -5,7 +5,6 @@ import { DEFAULT_EFFORT, type EffortChoices } from '../shared/effort.ts';
 import type { FiledFacts } from '../shared/facts.ts';
 import { DEFAULT_MODELS, type ModelChoices } from '../shared/models.ts';
 import type { PermissionAsk } from '../shared/permission-asks.ts';
-import { ASK_FIRST, type ClaudePermissions } from '../shared/permissions.ts';
 import {
   isAnswered,
   type QuestionRound,
@@ -18,6 +17,7 @@ import { sampleSaveHelper } from './extension/sample-helper.ts';
 import { sampleFacts } from './facts/sample-facts.ts';
 import { sampleTracker } from './jobs/sample-tracker.ts';
 import { sampleProfiles } from './profiles/sample-profiles.ts';
+import { sampleChanges } from './sample-changes.ts';
 import { sampleSync } from './sync/sample-sync.ts';
 
 const READY: ClaudeStatus = {
@@ -171,8 +171,6 @@ function permissionCall(ask: PermissionAsk): string {
       return `Write(${ask.file})`;
     case 'read':
       return `Read(${ask.file})`;
-    case 'page':
-      return `factwright - read_page (MCP)(url: "${ask.url}")`;
     case 'profile':
       return 'factwright - save_about_you (MCP)';
     case 'template':
@@ -182,12 +180,6 @@ function permissionCall(ask: PermissionAsk): string {
 
 /** A permission prompt for the made-up run, with ?permit= and its kind, in place of its question. */
 const SAMPLE_PERMITS: Readonly<Record<string, PermissionAsk>> = {
-  page: {
-    id: 'perm_sample',
-    kind: 'page',
-    url: 'https://northwindlabs.com/careers/senior-software-engineer-platform',
-    host: 'northwindlabs.com',
-  },
   edit: {
     id: 'perm_sample',
     kind: 'edit',
@@ -393,7 +385,7 @@ const noted = (round: QuestionRound, reply: RoundReply): [string, string][] =>
  * questions open in their dialog. With ?run=asks, interview prep stops to ask a question, as the
  * README's screenshots show it, and ?ask=more makes the first run's round three questions, or
  * ?ask=kinds a number and a line of words.
- * ?permit=edit, write, read, page, profile or template has the first run ask Claude Code's OK
+ * ?permit=edit, write, read, profile or template has the first run ask Claude Code's OK
  * for that instead, in its dialog. ?helper picks where the browsers stand in the Browser
  * extension window (see extension/sample-helper.ts).
  */
@@ -519,7 +511,8 @@ export function sampleApi(): FactwrightApi {
     const filed = facts.fileAnswers();
     for (const listener of filedListeners) listener(filed);
   };
-  let permissions: ClaudePermissions = ASK_FIRST;
+  // What each made-up task changed, for its card once it's done. ?changes picks none, or since.
+  const changes = sampleChanges(query.get('changes'));
   let reminding = query.get('reminders') !== 'off';
   let models: ModelChoices = DEFAULT_MODELS;
   let effort: EffortChoices = DEFAULT_EFFORT;
@@ -530,10 +523,12 @@ export function sampleApi(): FactwrightApi {
   const finish = (task: RunTask | null) => {
     if (task) tracker.madeBy(task);
     ended({ said: 'Done. The job’s panel shows what changed.', error: null });
+    changes.done(task);
     done();
   };
   const playTask = (task: RunTask) => {
     current = task;
+    changes.begin();
     signal('working');
     print(run.task(task));
     if (asks && task.skill === 'interview-prep') {
@@ -826,11 +821,6 @@ export function sampleApi(): FactwrightApi {
       const timer = jobId ? setTimeout(() => listener(jobId), 500) : undefined;
       return () => clearTimeout(timer);
     },
-    // What Claude may do without asking, kept until the page reloads.
-    claudePermissions: async () => permissions,
-    setClaudePermissions: async (chosen) => {
-      permissions = chosen;
-      return chosen;
-    },
+    ...changes.api,
   };
 }

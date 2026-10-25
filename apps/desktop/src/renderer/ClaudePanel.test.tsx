@@ -218,6 +218,45 @@ describe('ClaudePanel', () => {
     expect(go).toHaveBeenCalled();
   });
 
+  it('lists what a finished task changed, with Undo, but not while Claude works', () => {
+    const changes = {
+      changes: {
+        id: '20261025-140311-123-a1b2c3',
+        files: [
+          {
+            path: 'applications/acme/job.md',
+            change: 'changed' as const,
+            lines: { added: 3, removed: 1 },
+            canUndo: true,
+            undone: false,
+          },
+        ],
+        pages: ['https://acme.com/careers'],
+      },
+      undo: vi.fn(),
+    };
+    const { rerender } = render(
+      <ClaudePanel
+        api={api()}
+        run={run(false, false, false, 'working')}
+        plan="Max"
+        changes={changes}
+      />,
+    );
+    expect(screen.queryByRole('region', { name: 'What Claude changed' })).toBeNull();
+    rerender(
+      <ClaudePanel
+        api={api()}
+        run={run(false, false, false, 'done')}
+        plan="Max"
+        changes={changes}
+      />,
+    );
+    const list = screen.getByRole('region', { name: 'What Claude changed' });
+    expect(list.textContent).toContain('Claude changed 1 file and read 1 page.');
+    expect(screen.getByRole('button', { name: 'Undo applications/acme/job.md' })).toBeTruthy();
+  });
+
   it('shows what Claude said when it stopped to ask, and sends the user’s reply', async () => {
     const replying = api();
     const activity: RunActivity = {
