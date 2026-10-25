@@ -4,6 +4,9 @@ Notable changes to Factwright, newest first. The format follows [Keep a Changelo
 
 ## Unreleased
 
+### Changed
+- The browser extension's popup says when a page doesn't look like a job posting, such as a search engine's results, a weather page or a news article, and fills in no job title or company from it, so it's not saved as a job by mistake. It goes by a job's signs: the job data job sites publish, a job site or applicant system it knows, an application form, words about jobs in the page's address or title, and what postings say, such as their duties, the qualifications they ask for, their pay and their equal-opportunity line. A page with fewer than two of these, or a search engine's results, whatever they say, gets the note, and Save it anyway saves it with the title and company you type. The right-click menu and the shortcut leave such a page for the popup, as before, and in Firefox the button's "!" says why. This reaches the stores with the extension's next version.
+
 ## 0.16.0 - 2026-10-24
 
 ### Added

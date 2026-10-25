@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { type PageJob, readJobPage } from '../src/page/read-job.ts';
-import { companyFromAddress, needsChecking, toSave } from '../src/tab-job.ts';
+import { companyFromAddress, looksLikeJob, needsChecking, toSave } from '../src/tab-job.ts';
 
 // The fixtures are job sites' pages as Chromium and Firefox showed them on 2026-10-16, when the
 // built extension read real ones: the same elements, classes and attributes, with the words made
@@ -251,5 +251,35 @@ describe('SmartRecruiters', () => {
     expect(job.posting).toBe(
       'Company Description\n\nFernway Group builds tools for engineers in 40 countries.\n\nJob Description\n\n- Build the models behind our search.\n\nQualifications\n\nThree years of Python.',
     );
+  });
+});
+
+describe('every job site’s page here', () => {
+  it('looks like a job’s, so the popup fills in what it read', () => {
+    for (const [name, href] of [
+      ['indeed-viewjob.html', 'https://www.indeed.com/viewjob?jk=a1b2c3d4e5&from=serp'],
+      ['indeed-search.html', 'https://www.indeed.com/jobs?q=data+analyst&vjk=a1b2c3d4e5'],
+      [
+        'linkedin-public-search.html',
+        'https://www.linkedin.com/jobs/search?keywords=Software%20Engineer&currentJobId=4012345678',
+      ],
+      ['hacker-news-post.html', 'https://news.ycombinator.com/item?id=41000002'],
+      // A whole thread, read as a page, which the popup leaves for you to pick a post from.
+      ['hacker-news-thread.html', 'https://news.ycombinator.com/item?id=41000001'],
+      [
+        'greenhouse-job.html',
+        'https://job-boards.greenhouse.io/harborpineoutfitters/jobs/4461450008',
+      ],
+      [
+        'workday-job.html',
+        'https://northwind.wd5.myworkdayjobs.com/en-US/NorthwindCareers/job/US-TX-Austin/Senior-Systems-Engineer----Platform_JR2025315',
+      ],
+      [
+        'smartrecruiters-job.html',
+        'https://jobs.smartrecruiters.com/FernwayGroup/744000155993379-software-engineer-ai',
+      ],
+    ] as const) {
+      expect(looksLikeJob(readJobPage(fixture(name), href, ''), null), name).toBe(true);
+    }
   });
 });

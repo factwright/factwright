@@ -16,8 +16,8 @@
 // `pnpm --filter @factwright/extension e2e` (it needs Playwright's
 // Chromium: `pnpm --filter @factwright/site exec playwright install chromium`). With
 // `-- --screenshots`, it also draws the stores' screenshots, into store/screenshots, from what it
-// shows along the way, and with `-- --shots <folder>`, saves each setup page it checks there, in
-// light and dark.
+// shows along the way, and with `-- --shots <folder>`, saves each setup page it checks there, and
+// the popup on a page that doesn't look like a job's, in light and dark.
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import {
@@ -692,6 +692,57 @@ try {
       'shows a page’s main text open, to check it’s the posting',
     );
     await unknown.close();
+
+    // A page that doesn't look like a job's: its title and company left blank, to save anyway.
+    const notJob = await context.newPage();
+    await notJob.setViewportSize({ width: 360, height: 600 });
+    await notJob.addInitScript(
+      (page) => {
+        const api = (
+          globalThis as unknown as {
+            chrome: { tabs: { query: unknown }; scripting: { executeScript: unknown } };
+          }
+        ).chrome;
+        api.tabs.query = async () => [{ id: 3, url: page.url, title: page.pageTitle }];
+        api.scripting.executeScript = async () => [{ result: page }];
+      },
+      {
+        ...SAMPLE_JOB,
+        url: 'https://weather.example/today/chicago',
+        pageUrl: 'https://weather.example/today/chicago',
+        site: 'weather.example',
+        pageTitle: 'Chicago, IL Weather Forecast',
+        title: 'Chicago, IL Weather Forecast',
+        company: 'Weather Example',
+        location: '',
+        pay: '',
+        employment: '',
+        posted: '',
+        posting: 'Today: sunny, with a high of 61°F. Hourly forecast: wind 10 miles per hour.',
+        source: 'main',
+      },
+    );
+    await notJob.goto(setup.url().replace('setup.html', 'popup.html'));
+    await notJob.getByRole('button', { name: 'Save it anyway' }).waitFor({ timeout: 10_000 });
+    check(
+      (await notJob.getByText('This doesn’t look like a job posting').count()) === 1 &&
+        (await notJob.locator('#role').inputValue()) === '' &&
+        (await notJob.locator('#company').inputValue()) === '' &&
+        (await notJob.getByRole('button', { name: 'Save to Factwright' }).count()) === 0 &&
+        (await notJob.evaluate(() => document.activeElement?.id)) === 'role',
+      'says when a page doesn’t look like a job’s, and fills in no title or company',
+    );
+    await shoot(notJob, '7-not-a-job');
+    await notJob.locator('#role').fill('Meteorologist');
+    await notJob.getByRole('button', { name: 'Save it anyway' }).click();
+    await notJob.getByText('Add the company’s name.').waitFor({ timeout: 10_000 });
+    check(
+      (await notJob.locator('#role').inputValue()) === 'Meteorologist' &&
+        (await notJob.locator('#company').inputValue()) === '' &&
+        (await notJob.evaluate(() => document.activeElement?.id)) === 'company',
+      'and saves it anyway only with what you type, never the site’s name as the company',
+    );
+    await notJob.close();
 
     // With the browser's permission for your own server taken away, setup asks for it back.
     const taken = await context.newPage();
