@@ -72,10 +72,17 @@ describe('UpNext', () => {
     const run = controls();
     const { container } = shown(toApply, run);
     const box = screen.getByRole('region', { name: 'Up next' });
-    // The button says it all, so the step isn't said twice.
-    expect(box.textContent).toBe('Up nextTailor a resume');
+    // The button says it all, so the step isn't said twice. A quick one, which asks nothing, is
+    // beside it.
+    expect(box.textContent).toBe('Up nextTailor a resumeQuick resume');
     await userEvent.click(button('Tailor a resume'));
     expect(run.start).toHaveBeenCalledWith({ skill: 'focused-resume', jobId: job.id });
+    await userEvent.click(button('Quick resume'));
+    expect(run.start).toHaveBeenLastCalledWith({
+      skill: 'focused-resume',
+      jobId: job.id,
+      quick: true,
+    });
     expect((await axe.run(container)).violations).toEqual([]);
     cleanup();
     const fresh = controls();
@@ -197,8 +204,15 @@ describe('UpNext', () => {
     );
     expect(screen.queryByRole('button', { name: 'Tailor a resume' })).toBeNull();
     cleanup();
+    // A quick one says so once too.
+    shown(toApply, controls('working', { skill: 'focused-resume', jobId: job.id, quick: true }));
+    expect(screen.getByRole('region', { name: 'Up next' }).textContent).toBe(
+      'Up nextTailor a resumeClaude is on it',
+    );
+    cleanup();
     shown(toApply, controls('working', { skill: 'salary-check', jobId: 'other--job' }));
     expect((button('Tailor a resume') as HTMLButtonElement).disabled).toBe(true);
+    expect((button('Quick resume') as HTMLButtonElement).disabled).toBe(true);
     cleanup();
     // Before Claude Code is ready, it says where to look.
     shown(toApply, null);

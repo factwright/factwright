@@ -2,6 +2,7 @@ import {
   type Job,
   type JobStatus,
   type KindName,
+  type KindTarget,
   kindNamed,
   type PassReason,
   payLabel,
@@ -96,6 +97,8 @@ export interface JobPanelProps {
   api: FactwrightApi;
   /** The kinds of job the user wants, when there's more than one, to put the job under one. */
   kinds?: readonly KindName[];
+  /** Each kind of job the user wants, with their target pay for it, for the pay to ask for. */
+  targets?: readonly KindTarget[];
   today: string;
   onClose: () => void;
   /** Claude's panel, so the job's Run buttons can start skills. */
@@ -127,6 +130,7 @@ export function JobPanel({
   row,
   api,
   kinds = [],
+  targets = [],
   today,
   onClose,
   run,
@@ -375,7 +379,14 @@ export function JobPanel({
         </header>
 
         {upTop}
-        <FitArea job={job} progress={progress} run={run} today={today} />
+        <FitArea
+          job={job}
+          progress={progress}
+          run={run}
+          today={today}
+          api={api}
+          targets={targets}
+        />
         {/* The same two columns either way, side by side only when expanded, so expanding
             never loses what's being typed. */}
         <div className={styles.columns}>

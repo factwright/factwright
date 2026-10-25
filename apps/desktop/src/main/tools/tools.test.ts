@@ -48,7 +48,15 @@ const POSTING = `<html><body><main><h1>Staff Engineer</h1><p>${'Build the tools 
 let root: string;
 let tracker: Tracker;
 let jobs: JobsService;
-let fetch: Mock<(url: string, json: boolean, limitMs: number) => Promise<unknown>>;
+let fetch: Mock<
+  (
+    url: string,
+    json: boolean,
+    limitMs: number,
+    maxBytes?: number,
+    onRedirect?: (url: string) => void,
+  ) => Promise<unknown>
+>;
 let tools: McpTool[];
 let templates: TemplateLibrary;
 let facts: FactBankFiles;
@@ -459,6 +467,21 @@ describe('job_details', () => {
     expect(answer).toContain('    2026-10-14 10:30  Recruiter screen: scheduled · call ');
     expect(answer).toContain('    2026-10-11  The user marked it Screen');
     expect(answer).not.toContain('### Other jobs at');
+    expect(answer).not.toContain('Pay to ask for');
+  });
+
+  it('gives the pay to ask for: the user’s own, which wins over a suggestion in job.md', async () => {
+    const id = 'acme-robotics--staff-engineer';
+    const notes = join(root, 'applications', FOLDER, 'job.md');
+    writeFileSync(notes, `${readFileSync(notes, 'utf8')}\n- **Pay to ask for:** $185,000\n`);
+    jobs.read();
+    expect(await tool('job_details').run({ job: id })).toContain(
+      '- Pay to ask for: $185,000, as job.md suggests',
+    );
+    jobs.updateJob(id, { payAsk: '$195,000' });
+    expect(await tool('job_details').run({ job: id })).toContain(
+      '- Pay to ask for: $195,000, the user’s own, which wins over any in job.md',
+    );
   });
 
   it('names the user’s other jobs at the company, for their calls and notes', async () => {
@@ -784,6 +807,7 @@ describe('about_you', () => {
         pronouns: 'she/her',
         countries: ['United States', 'Canada'],
         sponsorship: 'later',
+        leaving: 'I want a bigger platform.\nAnd a shorter commute.',
       },
     };
     const answer = await tool('about_you').run({});
@@ -791,6 +815,7 @@ describe('about_you', () => {
       '- Pronouns: she/her',
       '- Countries they can work in without a visa: United States; Canada',
       '- Visa sponsorship: Not now, but later',
+      '- Why they’re leaving their job, or left their last one: I want a bigger platform.\n    And a shorter commute.',
     ]) {
       expect(answer).toContain(line);
     }
@@ -1093,7 +1118,7 @@ describe('read_posting', () => {
 
   it('sends any other link to read_page, without fetching it', async () => {
     expect(await tool('read_posting').run({ url: 'https://acme.example/jobs/staff' })).toBe(
-      'https://acme.example/jobs/staff isn’t a posting on Greenhouse, Lever, Ashby or Gem. Read it with read_page, which asks the user first, or use job_board for a company’s whole board.',
+      'https://acme.example/jobs/staff isn’t a posting on Greenhouse, Lever, Ashby or Gem. Read it with read_page, or use job_board for a company’s whole board.',
     );
     expect(fetch).not.toHaveBeenCalled();
   });
@@ -1158,6 +1183,29 @@ describe('read_page', () => {
     );
     expect(fetch.mock.calls).toEqual([[ASHBY_FEED, true, 15_000]]);
   });
+
+  it('notes each page for the task’s card before it goes, where redirects send it, and failures', async () => {
+    const pages: string[] = [];
+    const call = { ...newCall('hunt'), read: (url: string) => pages.push(url) };
+    fetch.mockImplementation(async (_url, _json, _limitMs, _maxBytes, onRedirect) => {
+      onRedirect?.('https://careers.acme.example/staff');
+      return POSTING;
+    });
+    expect(await tool('read_page').run({ url: 'https://acme.example/jobs/staff' }, call)).toContain(
+      'read via the web page',
+    );
+    // A page that doesn't load was still asked for.
+    fetch.mockRejectedValue(new Error('acme.example answered 404'));
+    await tool('read_page').run({ url: 'https://acme.example/gone' }, call);
+    // A link the fetch turns away never goes, so it isn't one read.
+    await tool('read_page').run({ url: 'http://acme.example/' }, call);
+    await tool('read_page').run({ url: 'https://www.linkedin.com/jobs/view/1' }, call);
+    expect(pages).toEqual([
+      'https://acme.example/jobs/staff',
+      'https://careers.acme.example/staff',
+      'https://acme.example/gone',
+    ]);
+  });
 });
 
 describe('save_posting', () => {
@@ -1193,7 +1241,7 @@ describe('save_posting', () => {
     expect(
       await tool('save_posting').run({ url: 'https://acme.example/jobs/staff', folder: FOLDER }),
     ).toBe(
-      'Nothing read from https://acme.example/jobs/staff yet. Read it with read_page first, which asks the user, then save it.',
+      'Nothing read from https://acme.example/jobs/staff yet. Read it with read_page first, then save it.',
     );
     fetch.mockResolvedValue({ jobs: [] });
     expect(await tool('save_posting').run({ url: ASHBY, folder: FOLDER })).toMatch(
@@ -1323,6 +1371,20 @@ describe('build_resume', () => {
     expect(printed).toContain('@font-face{font-family:"Selawik";font-weight:400;');
     expect(printed).not.toContain('"Caladea"');
     expect(printer.measure.mock.calls[0]?.[0]).toBe(printed);
+  });
+
+  it('tells the task each file it’s about to write, so the app can keep it as it was', async () => {
+    writeResume(resume);
+    const keep = vi.fn();
+    const read = vi.fn();
+    const call = { ...newCall('hunt'), keep, read };
+    await tool('build_resume').run({ folder: FOLDER, format: 'both' }, call);
+    expect(keep.mock.calls.map(([path]) => path)).toEqual([
+      folder('AlexRiveraResume10112026_Acme.pdf'),
+      folder('AlexRiveraResume10112026_Acme.docx'),
+    ]);
+    // Without a task, as in a test of its own, it builds all the same.
+    expect(await tool('build_resume').run({ folder: FOLDER })).toContain('Checks: clean.');
   });
 
   it('turns away a project the user keeps private, by its name, but not one they show', async () => {
@@ -2058,7 +2120,7 @@ describe('the template tools', () => {
     // One of the user's, from before this run.
     await tool('save_template').run({ id: 'theirs', template: file() });
     expect(await save('theirs', { name: 'Mine now' }, true)).toBe(
-      'Not saved: templates/theirs.json is one of the user’s templates from before this run, which this run can’t replace. Save yours under an ID of its own. The user can change theirs in a run that asks first.',
+      'Not saved: templates/theirs.json is one of the user’s templates from before this run, which this run can’t replace. Save yours under an ID of its own: another run can change theirs.',
     );
     expect(await save('mine')).toContain('Saved templates/mine.json');
     expect(await save('mine', { name: 'Mine, wider' }, true)).toContain(

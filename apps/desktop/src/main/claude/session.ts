@@ -8,15 +8,17 @@ import type { Effort } from '../../shared/effort.ts';
 import type { FiledFacts } from '../../shared/facts.ts';
 import { type PlanLevels, planLevels } from '../../shared/levels.ts';
 import type { Model } from '../../shared/models.ts';
+import type { RunChanges as RunChangesView } from '../../shared/run-changes.ts';
 import type { RunScope } from '../../shared/runs.ts';
 import type { BoundRevision } from '../jobs/revisions.ts';
 import type { BoundChanges } from '../jobs/versions.ts';
 import { workspaceDir } from '../jobs/workspace.ts';
+import { asksNothing, asksNothingAfter } from '../policy.ts';
 import { RunActivity, turnEnd } from './activity.ts';
 import { claudeCommand } from './command.ts';
 import { findClaude, nodeFindDeps } from './find.ts';
 import { buildLaunchArgs, launchEnv } from './launch.ts';
-import { loadPermissions } from './permissions.ts';
+import { keepBefore, type RunChanges } from './run-changes.ts';
 import type { PermissionAsker, QuestionAsker, RunServer } from './run-server.ts';
 import { FIRST_RUN_SCREENS, ScreenWatch, TRUST_QUESTION } from './screen.ts';
 import { RUN_TOKEN_VARIABLE, sessionSettings, toolsConfig } from './settings.ts';
@@ -84,7 +86,6 @@ export async function prepareLaunch(options: LaunchOptions): Promise<Launch | nu
     hookUrl: options.server.hookUrl,
     activityUrl: options.server.activityUrl,
     dark: options.dark,
-    permissions: await loadPermissions(options.dataDir),
     ...(options.scope ? { scope: options.scope } : {}),
   });
   await writeFile(settings, JSON.stringify(hookSettings, null, 2));
@@ -165,6 +166,13 @@ export interface SessionDeps {
   permit?: PermissionAsker;
   /** The name of the user's template with an ID, for a permission prompt that would replace it. */
   templateName?: (id: string) => string | null;
+  /**
+   * What each task changes in the workspace, with a copy of each file from before, for Undo:
+   * Claude's own edits, heard before they happen, and what Factwright's tools write.
+   */
+  changes?: RunChanges;
+  /** Hears what the task at hand changed: nothing as it starts, then once each turn of it ends. */
+  onChanges?: (changes: RunChangesView) => void;
 }
 
 interface Run {
@@ -179,6 +187,11 @@ interface Run {
   effort: Effort | undefined;
   levels: PlanLevels;
   scope: RunScope;
+  /**
+   * Why the task at hand asks the user nothing, by its prompt, such as a quick resume's, until
+   * another prompt comes, or null when it may ask.
+   */
+  quiet: { reason: string | null };
   /** Watches for Claude Code's first-run screens, which the user answers one after another. */
   firstRun: ScreenWatch;
   /** Settles once it has exited. */
@@ -265,6 +278,18 @@ export class ClaudeSession {
     }
   }
 
+  /** Starts what the task at hand changes from nothing, and tells the window. */
+  private beginChanges(): void {
+    const started = this.deps.changes?.begin();
+    if (started) this.deps.onChanges?.(started);
+  }
+
+  /** Tells the window what the task at hand changed, as it stands once a turn ends. */
+  private settleChanges(): void {
+    const settled = this.deps.changes?.settle();
+    if (settled) this.deps.onChanges?.(settled);
+  }
+
   private async launch(size: TerminalSize, options: RunOptions): Promise<StartResult> {
     const { prompt, choose, scope = 'hunt', revision, changes } = options;
     const launch = await prepareLaunch({
@@ -280,11 +305,16 @@ export class ClaudeSession {
     if (!launch) return { ok: false, reason: 'not-ready' };
 
     const signals = new RunSignals(this.deps.onSignal);
+    const kept = this.deps.changes;
+    this.beginChanges();
     const { onStep } = this.deps;
     const activity = onStep && new RunActivity(onStep, launch.cwd);
     const trust = new ScreenWatch(TRUST_QUESTION);
     const firstRun = new ScreenWatch(FIRST_RUN_SCREENS);
     let heard = false;
+    // A quick resume asks the user nothing, so from its prompt, the app's or one the user typed,
+    // until the next prompt, Claude's questions are turned away.
+    const quiet = { reason: asksNothing(prompt) };
     const pastScreens = () => {
       heard = true;
       trust.pastIt();
@@ -295,13 +325,25 @@ export class ClaudeSession {
       launch.token,
       (event) => {
         pastScreens();
+        quiet.reason = asksNothingAfter(quiet.reason, event);
+        const hadWork = signals.hasWork();
         signals.hear(event);
         activity?.hear(event);
         const end = turnEnd(event);
         if (end) this.deps.onTurnEnd?.(end);
+        // What the task changed settles once a turn ends, and once the run reads as done without
+        // a Stop hook, as when the user interrupts it, which Claude Code runs none for.
+        if (end || (hadWork && !signals.hasWork())) this.settleChanges();
       },
       {
         ...(activity && { activity: (event: unknown) => activity.started(event) }),
+        // Each file Claude is about to change, and each one Factwright's tools are, is kept as it
+        // was first, and each page they read is noted, for the task's card.
+        ...(kept && {
+          before: (event: unknown) => keepBefore(kept, event),
+          keep: (path: string) => kept.keep(path),
+          read: (url: string) => kept.read(url),
+        }),
         // With no prompt, no hook comes until the user types. Claude Code reaches Factwright's
         // tools once it's past its first-run screens and the question about trust, so then it's
         // waiting for them.
@@ -315,6 +357,7 @@ export class ClaudeSession {
         scope,
         onFiled: this.deps.onFiled,
         ask: this.deps.ask,
+        noQuestions: () => quiet.reason,
         permit: this.deps.permit,
         // A call the user answered in the app is one the run no longer waits on them for.
         onAnswered: (call) => signals.answered(call),
@@ -347,6 +390,7 @@ export class ClaudeSession {
       effort: launch.effort,
       levels: launch.levels,
       scope,
+      quiet,
       firstRun,
       exited: new Promise((resolve) => {
         exited = resolve;
@@ -361,6 +405,7 @@ export class ClaudeSession {
     terminal.onExit(({ exitCode }) => {
       run.stopListening();
       if (this.run === run) this.run = undefined;
+      this.settleChanges();
       this.deps.onSignal(run.stopping || exitCode === 0 ? 'stopped' : 'failed');
       exited();
     });
@@ -373,6 +418,17 @@ export class ClaudeSession {
     this.run?.terminal.write(data);
     // Enter answers a first-run screen, which may bring the next.
     if (data.includes('\r')) this.run?.firstRun.answered();
+  }
+
+  /**
+   * Types a new task's prompt into the run that's open, as the user would: what's changed from
+   * here on is the new task's.
+   */
+  task(prompt: string): StartResult {
+    if (!this.run) return { ok: false, reason: 'not-running' };
+    this.beginChanges();
+    this.run.quiet.reason = asksNothing(prompt);
+    return this.send(prompt);
   }
 
   /** Types a prompt into the run that's open, and sends it, as the user would. */

@@ -37,6 +37,7 @@ const job = (id: string): CollectedJob => ({
   search: null,
   searches: [],
   kindFound: null,
+  suggestedAsk: null,
   folder: null,
   stage: 'review',
   firstSeen: '2026-10-07',
@@ -380,6 +381,27 @@ describe('two computers on one account', () => {
     pc.update();
     expect(pc.tracker.rows()[0]).toMatchObject({ status: 'interview', kind: 'project-manager' });
     expect(await pc.sync()).toMatchObject({ pushed: 0 });
+  });
+
+  it('keep the pay to ask for at a job through a computer from before it, which gets it once it updates', async () => {
+    mac.tracker.saveCollected([job('acme--staff')], AT.now);
+    await mac.sync();
+    await pc.sync();
+    // The PC is still on a version without the pay to ask for, as 0.16 is.
+    pc.goBackTo(9);
+    mac.tracker.updateJob('acme--staff', { payAsk: '$185,000' }, AT);
+    await mac.sync();
+    await pc.sync();
+    // It changes the job without knowing the pay to ask for, and what it sends keeps it.
+    const later: EditContext = { today: '2026-10-13', now: '2026-10-13T09:00:00.000Z' };
+    pc.tracker.updateJob('acme--staff', { status: 'applied' }, later);
+    expect(await pc.sync()).toMatchObject({ pushed: 2 });
+    await mac.sync();
+    expect(mac.tracker.rows()[0]).toMatchObject({ status: 'applied', payAsk: '$185,000' });
+    // Once it updates, it has it too, from what it synced, with nothing to send.
+    pc.update();
+    expect(pc.tracker.rows()[0]).toMatchObject({ status: 'applied', payAsk: '$185,000' });
+    expect(await pc.sync()).toMatchObject({ pulled: 0, pushed: 0 });
   });
 
   it('keep a job’s folder through a computer from before folders, which gets it once it updates', async () => {

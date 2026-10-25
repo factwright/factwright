@@ -65,10 +65,22 @@ function confirmedIn(file: string): Map<string, number> {
   return counts;
 }
 
-/** Whether every confirmed claim in a file is still there, word for word, in its new text. */
-export function keepsConfirmed(before: string, after: string): boolean {
+/**
+ * Whether every confirmed claim in a file is still there, word for word, in its new text, but
+ * for one that may change, such as a correction the user gave.
+ */
+export function keepsConfirmed(
+  before: string,
+  after: string,
+  changing: string | null = null,
+): boolean {
   const kept = confirmedIn(after);
-  for (const [claim, count] of confirmedIn(before)) {
+  const was = confirmedIn(before);
+  if (changing !== null) {
+    const claim = changing.trimEnd();
+    was.set(claim, (was.get(claim) ?? 1) - 1);
+  }
+  for (const [claim, count] of was) {
     if ((kept.get(claim) ?? 0) < count) return false;
   }
   return true;
@@ -172,6 +184,30 @@ export class FactBankFiles {
   }
 
   /**
+   * Puts a correction the user gave for a verified claim in its place: verified still, and every
+   * other confirmed claim in the file word for word as it was.
+   */
+  correct(target: FactTarget, text: string): FactResult {
+    return this.edit(
+      target.path,
+      (file, kind) => {
+        const block = findBlock(factBlocks(file), target);
+        if (!block) return { problem: CHANGED_SINCE };
+        if (!block.tags || block.tags.includes(UNCONFIRMED)) {
+          return { problem: 'Only a verified fact can be corrected this way.' };
+        }
+        if (leavesCodeOpen(block.text)) return { problem: RUNS_ON };
+        const [next, ...more] = factBlocks(text);
+        if (!next?.tags || next.tags.includes(UNCONFIRMED) || more.length > 0) {
+          return { problem: 'A correction is one verified fact.' };
+        }
+        return withChange(file, kind, { ...target, next: text });
+      },
+      { keepConfirmed: true, changing: target.text },
+    );
+  }
+
+  /**
    * Notes something the user said they don't have, as a row of gaps.md's Doesn't have section,
    * starting the file when there's none. A topic it has already stays as it is.
    */
@@ -202,19 +238,22 @@ export class FactBankFiles {
    * Reads a fact bank file, changes it, and saves it whole, answering with the bank as it is
    * then. Just before saving, it reads the file once more: a change made meanwhile, such as by
    * Claude, is never written over. With `keepConfirmed`, a change to any confirmed claim is
-   * refused, whatever made it.
+   * refused, whatever made it, but for the one `changing` names.
    */
   private edit(
     path: string,
     apply: (file: string, kind: FactFileKind) => FactEdit,
-    { keepConfirmed: keep = false } = {},
+    {
+      keepConfirmed: keep = false,
+      changing = null,
+    }: { keepConfirmed?: boolean; changing?: string | null } = {},
   ): FactResult {
     const full = this.file(path);
     const file = full === null ? null : this.readText(full);
     if (full === null || typeof file !== 'string') return { ok: false, message: GONE };
     const next = apply(file, factFileKind(path));
     if (typeof next !== 'string') return stopped(next.problem);
-    if (keep && !keepsConfirmed(file, next)) {
+    if (keep && !keepsConfirmed(file, next, changing)) {
       return stopped('That would change a confirmed fact, which only you can do.');
     }
     if (Buffer.byteLength(next, 'utf8') > FACT_LIMITS.file) {

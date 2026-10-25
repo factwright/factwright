@@ -31,8 +31,20 @@ const picked: McpTool = {
     call?.revision?.findings.map((finding) => finding.id).join(' ') ?? 'No revision',
 };
 
+/** Writes a file, as Factwright's tools do: saying so first, and saying what it read. */
+const save: McpTool = {
+  name: 'save',
+  description: 'Saves a file.',
+  inputSchema: { type: 'object', properties: {} },
+  run: async (_input, call) => {
+    call?.read?.('https://acme.com/careers');
+    call?.keep?.('applications/acme/job.md');
+    return 'Saved';
+  },
+};
+
 describe('RunServer', () => {
-  const server = new RunServer({ tools: [greet, recall, picked], version: '1.2.3' });
+  const server = new RunServer({ tools: [greet, recall, picked, save], version: '1.2.3' });
   afterEach(() => server.stop());
 
   const post = (url: string, body: unknown, headers: Record<string, string> = {}) =>
@@ -72,6 +84,61 @@ describe('RunServer', () => {
     stopOther();
     expect(other.status).toBe(204);
     expect(activity).toHaveBeenCalledOnce();
+  });
+
+  it('keeps what it needs before a call runs, answering only once it has', async () => {
+    await server.start();
+    const kept: string[] = [];
+    const before = vi.fn((event: unknown): unknown => {
+      kept.push((event as { tool_input: { file_path: string } }).tool_input.file_path);
+      return null;
+    });
+    server.listen(TOKEN, () => {}, { before });
+    const edit = {
+      hook_event_name: 'PreToolUse',
+      tool_name: 'Edit',
+      tool_input: { file_path: '/workspace/job.md' },
+    };
+    const response = await post(server.activityUrl, edit);
+    // Heard before the answer: Claude Code waits for the hook, so the file is kept first.
+    expect(kept).toEqual(['/workspace/job.md']);
+    expect(response.status).toBe(204);
+    // A listener that fails lets the call run as it would have.
+    before.mockImplementationOnce(() => {
+      throw new Error('disk full');
+    });
+    expect((await post(server.activityUrl, edit)).status).toBe(204);
+    // What it gives back is the hook's answer, such as to ask the user first.
+    const ask = { hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'ask' } };
+    before.mockReturnValueOnce(ask);
+    const asked = await post(server.activityUrl, edit);
+    expect(asked.status).toBe(200);
+    expect(await asked.json()).toEqual(ask);
+    // A whole new file comes with its start, however big, so it's kept before it's written.
+    const big = {
+      ...edit,
+      tool_name: 'Write',
+      tool_input: { file_path: '/w/big.md', content: 'x'.repeat(5_000_000) },
+    };
+    expect((await post(server.activityUrl, big)).status).toBe(204);
+    expect(kept.at(-1)).toBe('/w/big.md');
+  });
+
+  it('tells the run what Factwright’s tools are about to write, and what they read', async () => {
+    await server.start();
+    const keep = vi.fn();
+    const read = vi.fn();
+    server.listen(TOKEN, () => {}, { keep, read });
+    const response = await post(server.toolsUrl, {
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'tools/call',
+      params: { name: 'save', arguments: {} },
+    });
+    const answer = (await response.json()) as { result: { content: { text: string }[] } };
+    expect(answer.result.content[0]?.text).toBe('Saved');
+    expect(keep).toHaveBeenCalledWith('applications/acme/job.md');
+    expect(read).toHaveBeenCalledWith('https://acme.com/careers');
   });
 
   it("tells a run's tools listener which methods it calls, one at a time or in a batch", async () => {
@@ -344,6 +411,49 @@ describe('RunServer', () => {
         204,
       );
       expect(ask).not.toHaveBeenCalled();
+    });
+
+    it('turns the round away when the task asks nothing, saying why, before anything hears it', async () => {
+      await server.start();
+      const { ask, answer } = dialog();
+      const hooks = vi.fn();
+      const why = 'A quick resume asks the user nothing.';
+      let quiet: string | null = why;
+      server.listen(TOKEN, hooks, { ask, noQuestions: () => quiet });
+      // A subagent's round too, which would otherwise go to the terminal.
+      for (const event of [asked, { ...asked, agent_id: 'research' }]) {
+        const response = await post(server.hookUrl, event);
+        expect(response.status).toBe(200);
+        expect(await response.json()).toEqual({
+          hookSpecificOutput: {
+            hookEventName: 'PreToolUse',
+            permissionDecision: 'deny',
+            permissionDecisionReason: why,
+          },
+        });
+      }
+      // No dialog, and nothing that would have the run read as waiting on the user.
+      expect(ask).not.toHaveBeenCalled();
+      expect(hooks).not.toHaveBeenCalled();
+      // The run's other hooks go on as before.
+      expect((await post(server.hookUrl, { hook_event_name: 'Stop' })).status).toBe(204);
+      expect(hooks).toHaveBeenCalledOnce();
+      // Once the task may ask, the dialog asks.
+      quiet = null;
+      const held = post(server.hookUrl, asked);
+      await answer(null);
+      expect((await held).status).toBe(204);
+      // A task the app can't tell about lets the question be asked.
+      server.listen(TOKEN, () => {}, {
+        ask,
+        noQuestions: () => {
+          throw new Error('No run');
+        },
+      });
+      const again = post(server.hookUrl, asked);
+      await answer(null);
+      expect((await again).status).toBe(204);
+      expect(ask).toHaveBeenCalledTimes(2);
     });
 
     it('keeps what the user answered in the dialog for the run’s tools, once Claude Code reports it', async () => {

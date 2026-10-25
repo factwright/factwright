@@ -186,6 +186,7 @@ export function sampleJob(base: Partial<Job> & Pick<Job, 'id' | 'company' | 'rol
     search: null,
     searches: [HN_RUN],
     kindFound: null,
+    suggestedAsk: null,
     folder: null,
     stage: 'new',
     firstSeen: day(-24),
@@ -212,6 +213,7 @@ export function sampleJob(base: Partial<Job> & Pick<Job, 'id' | 'company' | 'rol
     earlierNotes: null,
     archived: false,
     kind: null,
+    payAsk: null,
     manual: false,
     calls: [],
     callDocs: [],
@@ -241,6 +243,7 @@ export function sampleJobs(): Job[] {
       role: 'Senior Software Engineer, Platform',
       location: 'Hybrid, Seattle',
       pay: listed(175, 205),
+      suggestedAsk: '$200,000',
       stage: 'review',
       fit: { verdict: 'Strong', score: 86, date: day(-20) },
       fitReport: {
@@ -430,6 +433,8 @@ export function sampleJobs(): Job[] {
       company: 'Lumen Health',
       role: 'Senior Full-Stack Engineer',
       pay: listed(160, 190),
+      payAsk: '$185,000',
+      suggestedAsk: '$180,000',
       stage: 'review',
       fit: { verdict: 'Good', score: 72, date: day(-6) },
       sentiment: sentiment(

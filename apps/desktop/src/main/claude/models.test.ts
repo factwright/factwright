@@ -74,6 +74,18 @@ describe('which model Claude runs on', () => {
       findings: ['term-go'],
     };
     expect(modelFor(choices, revision, pro)).toBe('sonnet');
+    // So is a quick resume, a first one or a new version.
+    for (const quick of [
+      { skill: 'focused-resume' as const, jobId: 'acme--staff', quick: true as const },
+      {
+        skill: 'focused-resume' as const,
+        jobId: 'acme--staff',
+        again: true as const,
+        quick: true as const,
+      },
+    ]) {
+      expect(modelFor(choices, quick, pro)).toBe('sonnet');
+    }
     expect(modelFor(choices, { skill: 'job-search' }, pro)).toBe('haiku');
     expect(modelFor(choices, null, pro)).toBe('haiku');
     // Opus picked for everything stays Opus, even where the plan suggests Sonnet.

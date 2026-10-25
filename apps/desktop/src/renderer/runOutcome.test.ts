@@ -50,6 +50,12 @@ describe('runOutcome', () => {
       text: 'Your tailored resume for Acme Robotics is ready.',
       place: { jobId: acme.id, section: 'files' },
     });
+    expect(
+      outcome({ skill: 'focused-resume', jobId: acme.id, quick: true }, (job) => ({
+        ...job,
+        files: [...job.files, pdf('AlexRiveraResume_Acme.pdf')],
+      }))?.text,
+    ).toBe('Your quick resume for Acme Robotics is ready.');
     // Built again in place, it's new too.
     const lumen = named('Lumen Health');
     expect(

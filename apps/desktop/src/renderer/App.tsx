@@ -2,6 +2,7 @@ import {
   JOB_VIEWS,
   type JobView,
   type KindName,
+  type KindTarget,
   LIVE_STATUSES,
   sameCompany,
   viewOf,
@@ -87,6 +88,7 @@ import { useClaudeRun } from './useClaudeRun.ts';
 import { typedClaude, useClaudeStatus } from './useClaudeStatus.ts';
 import { useLevelChoices } from './useLevelChoices.ts';
 import { useRunActivity } from './useRunActivity.ts';
+import { useRunChanges } from './useRunChanges.ts';
 import { useSetupCheck } from './useSetupCheck.ts';
 
 const isView = (value: unknown): value is JobView =>
@@ -114,6 +116,7 @@ export function App({ api }: { api: FactwrightApi }) {
   const approvals = useApprovals(api);
   const run = useClaudeRun(api);
   const activity = useRunActivity(api, run.taskId);
+  const changes = useRunChanges(api, run.taskId);
   const questions = useClaudeQuestions(api);
   const permission = useClaudePermission(api);
   const { jobs, reload } = useJobs(api);
@@ -138,6 +141,13 @@ export function App({ api }: { api: FactwrightApi }) {
       : [],
   );
   const kinds = useMemo<KindName[]>(() => JSON.parse(kindKey), [kindKey]);
+  // Each kind's target pay, for the pay to ask for at a job, which changes as a target does.
+  const targetKey = JSON.stringify(
+    profile
+      ? kindsOf(profile.answers).map(({ id, name, targetPay }) => ({ id, name, targetPay }))
+      : [],
+  );
+  const targets = useMemo<KindTarget[]>(() => JSON.parse(targetKey), [targetKey]);
   const rows = useMemo(
     () => (jobs.state === 'ready' ? jobRows(jobs.list.jobs, today, kinds, clock) : []),
     [jobs, today, kinds, clock],
@@ -372,7 +382,9 @@ export function App({ api }: { api: FactwrightApi }) {
             ? 'practice' in task && task.practice
               ? 'Practice'
               : 'Call prep'
-            : task && RUN_ACTIONS.find((action) => action.skill === task.skill)?.label;
+            : task && 'quick' in task
+              ? 'Quick resume'
+              : task && RUN_ACTIONS.find((action) => action.skill === task.skill)?.label;
   const runTitle =
     task?.skill === SEARCH_SKILL
       ? 'Job search'
@@ -649,6 +661,7 @@ export function App({ api }: { api: FactwrightApi }) {
                 row={selected}
                 api={api}
                 kinds={kinds}
+                targets={targets}
                 today={today}
                 onClose={() => setSelectedId(null)}
                 expanded={alone}
@@ -683,6 +696,7 @@ export function App({ api }: { api: FactwrightApi }) {
               setFactsShown((was) => ({ part, at: (was?.at ?? 0) + 1 }));
             }}
             onDismissFiled={seeFiled}
+            changes={changes}
             asking={
               questions.round
                 ? {

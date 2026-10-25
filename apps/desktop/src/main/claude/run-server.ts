@@ -14,6 +14,11 @@ import { hookReply, roundFrom } from './rounds.ts';
 import { bearerToken, parseJson } from './signals.ts';
 
 const MAX_BODY_BYTES = 1_000_000;
+/**
+ * As much as a tool call's start can carry: a whole new file, which the app keeps a copy of
+ * before it's written, so one cut off would be written with no copy.
+ */
+const MAX_ACTIVITY_BYTES = 60_000_000;
 
 export interface RunServerOptions {
   /** The tools Claude Code may call during a run. */
@@ -69,8 +74,15 @@ interface RunListeners {
   hooks: HookListener;
   /** Hears each tool call as it starts. */
   activity: HookListener | undefined;
+  /**
+   * Hears each tool call before Claude Code may run it, and holds it until it's heard. What it
+   * gives back, if anything, is the hook's answer, such as to ask the user first.
+   */
+  before: ((event: unknown) => unknown) | undefined;
   tools: ToolsListener | undefined;
   ask: QuestionAsker | undefined;
+  /** Why the task at hand asks the user nothing, or null when it may ask. */
+  noQuestions: (() => string | null) | undefined;
   permit: PermissionAsker | undefined;
   onAnswered: AnsweredListener | undefined;
   /** What the words of its permission prompts come from, such as its workspace. */
@@ -93,6 +105,20 @@ interface RunListeners {
 export interface ListenOptions {
   /** Hears each tool call as it starts, from the hook every call has, to follow what Claude does. */
   activity?: HookListener;
+  /**
+   * Hears each tool call from the same hook, before Claude Code may run it: Claude Code waits for
+   * it, so a file can be kept as it was before Claude changes it. What it gives back, if
+   * anything, is the hook's answer, such as to have Claude Code ask the user first when no copy
+   * could be kept.
+   */
+  before?: (event: unknown) => unknown;
+  /**
+   * Hears a file's path just before one of Factwright's tools changes or makes it, so it can be
+   * kept as it was.
+   */
+  keep?: (path: string) => void;
+  /** Hears each page one of Factwright's tools read, by its address. */
+  read?: (url: string) => void;
   /** Hears which MCP methods the run calls. */
   tools?: ToolsListener;
   /** What the run may change without asking. Every run but getting started is "hunt". */
@@ -105,12 +131,34 @@ export interface ListenOptions {
   changes?: BoundChanges;
   /** Asks the user Claude's questions in the app's dialog. Without it, the terminal asks them. */
   ask?: QuestionAsker;
+  /**
+   * Why the task at hand asks the user nothing, such as a quick resume, or null when it may ask.
+   * Claude's questions are then turned away with it, before the dialog or anything else hears
+   * them, so Claude reads why and goes on.
+   */
+  noQuestions?: () => string | null;
   /** Asks the user for Claude Code's permission prompts in the app. Without it, the terminal does. */
   permit?: PermissionAsker;
   /** Hears each call the user answered in the app, which Claude Code no longer waits on them for. */
   onAnswered?: AnsweredListener;
   /** What the words of its permission prompts come from, such as its workspace. */
   context?: AskContext;
+}
+
+/** Whether a hook is Claude about to ask the user a round of questions, from any agent. */
+const isQuestion = (event: unknown) =>
+  typeof event === 'object' &&
+  event !== null &&
+  (event as Record<string, unknown>).hook_event_name === 'PreToolUse' &&
+  (event as Record<string, unknown>).tool_name === 'AskUserQuestion';
+
+/** Why the run's task asks nothing, if it doesn't. One the app can't tell lets the question be. */
+function noQuestionsFor(listener: RunListeners): string | null {
+  try {
+    return listener.noQuestions?.() ?? null;
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -159,12 +207,16 @@ export class RunServer {
   listen(token: string, hooks: HookListener, options: ListenOptions = {}): () => void {
     const {
       activity,
+      before,
+      keep,
+      read,
       tools,
       scope = 'hunt',
       onFiled,
       revision,
       changes,
       ask,
+      noQuestions,
       permit,
       onAnswered,
     } = options;
@@ -173,14 +225,16 @@ export class RunServer {
     this.listeners.set(token, {
       hooks,
       activity,
+      before,
       tools,
       ask,
+      noQuestions,
       permit,
       onAnswered,
       context,
       held,
       allowed: [],
-      call: newCall(scope, onFiled, revision, changes),
+      call: { ...newCall(scope, onFiled, revision, changes), keep, read },
     });
     return () => {
       this.listeners.delete(token);
@@ -205,19 +259,48 @@ export class RunServer {
     }
     let body = '';
     request.setEncoding('utf8');
+    const most = request.url === '/activity' ? MAX_ACTIVITY_BYTES : MAX_BODY_BYTES;
     request.on('data', (chunk: string) => {
       body += chunk;
-      if (body.length > MAX_BODY_BYTES) request.destroy();
+      if (body.length > most) request.destroy();
     });
     request.on('end', () => {
-      // Only heard: a call starting waits on nothing here.
+      // A call starting waits only for what's kept before it runs, such as a file it changes.
       if (request.url === '/activity') {
-        response.writeHead(204).end();
-        listener.activity?.(parseJson(body));
+        const event = parseJson(body);
+        let reply: unknown = null;
+        try {
+          reply = listener.before?.(event) ?? null;
+        } catch {
+          // Nothing kept: the call runs as it would have.
+        }
+        if (reply) {
+          response
+            .writeHead(200, { 'Content-Type': 'application/json' })
+            .end(JSON.stringify(reply));
+        } else {
+          response.writeHead(204).end();
+        }
+        listener.activity?.(event);
         return;
       }
       if (request.url === '/hook') {
         const event = parseJson(body);
+        // A task that asks the user nothing turns its questions away first, with why, which
+        // Claude reads: no dialog opens, the run never reads as waiting, and nothing is on record.
+        const refusal = isQuestion(event) ? noQuestionsFor(listener) : null;
+        if (refusal) {
+          response.writeHead(200, { 'Content-Type': 'application/json' }).end(
+            JSON.stringify({
+              hookSpecificOutput: {
+                hookEventName: 'PreToolUse',
+                permissionDecision: 'deny',
+                permissionDecisionReason: refusal,
+              },
+            }),
+          );
+          return;
+        }
         // Heard before Claude Code carries on, so an answer is on record before Claude reads it.
         // A hook the record can't take is one it doesn't keep, and Claude Code still hears back.
         try {

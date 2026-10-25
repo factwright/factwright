@@ -17,6 +17,7 @@ import {
   letterPlainText,
   nextStep,
   PASS_REASON_LABELS,
+  payAskFor,
   payLabel,
   questionKey,
   readLetterText,
@@ -91,6 +92,8 @@ export function JobView({
       : undefined;
   // Under the first kind only because nothing has said otherwise yet, as the computer says too.
   const undecided = !(kindNamed(job.kind, vault.kinds) ?? kindNamed(job.kindFound, vault.kinds));
+  // The job's own: yours, or your Claude's suggestion. Your target pay stays in Profile.
+  const ask = payAskFor(job, []);
 
   const openResume = async (path: string, format: 'pdf' | 'docx', name: string) => {
     setProblem(null);
@@ -188,6 +191,15 @@ export function JobView({
               <dd>
                 {kind.name}
                 {undecided && ', until a fit check'}
+              </dd>
+            </div>
+          )}
+          {ask && (
+            <div>
+              <dt>Pay to ask for</dt>
+              <dd>
+                {ask.text}
+                {ask.from === 'claude' ? ', your Claude’s suggestion' : ', your own'}
               </dd>
             </div>
           )}

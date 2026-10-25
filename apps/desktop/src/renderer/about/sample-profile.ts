@@ -64,6 +64,13 @@ const TOLD: AboutYou = readAnswers({
   employment: ['full-time'],
   minPay: '$170,000',
   targetPay: '$200,000',
+  applications: {
+    countries: ['United States'],
+    sponsorship: 'no',
+    over18: 'yes',
+    leaving:
+      'I’ve led our platform team for four years and want to build at a bigger scale, on a team that ships developer tools.',
+  },
   looks: [
     { layout: 'minimal', for: 'startup' },
     { layout: 'classic', for: 'established' },

@@ -4,7 +4,7 @@
  * answers it rests on, word for word. And where any claim came from, read back for the window.
  */
 
-import { type FactBlock, UNCONFIRMED } from './facts.ts';
+import { claimParts, claimText, FACT_TAGS, type FactBlock, UNCONFIRMED } from './facts.ts';
 
 /** One question the user answered, and what they answered, as Claude Code reported them. */
 export interface Asked {
@@ -80,6 +80,102 @@ export function answeredClaimText(claim: AnsweredClaim): string {
       `- **Answer:** ${oneLine(answer)}`,
     ]),
   ].join('\n');
+}
+
+/** A correction to a verified claim, from what the user answered. */
+export interface ClaimCorrection {
+  /** Its tags in place of the ones it has, by what they say. Those left out stay as they are. */
+  status?: string | null | undefined;
+  ownership?: string | null | undefined;
+  confidence?: string | null | undefined;
+  /** What resumes say now. */
+  wording: string;
+  /** Details in place of its own. Those left out stay as written. */
+  short?: string | null | undefined;
+  numbers?: string | null | undefined;
+  say?: string | null | undefined;
+  keywords?: string | null | undefined;
+  /** Who said so, and when: the user's first name and the date, such as "Alex 2026-10-25". */
+  source: string;
+  asked: readonly Asked[];
+}
+
+/** The details a correction can give, by their labels in the fact bank's format, in its order. */
+const DETAILS = [
+  ['short', 'Short'],
+  ['numbers', 'Numbers'],
+  ['say', "Say / don't say"],
+  ['keywords', 'Keywords'],
+] as const;
+
+/** A detail's line, such as "- **Numbers:** 12 clinics": its label, then what it says. */
+const DETAIL = /^[ \t]*[-*+][ \t]+\*\*([^*\n]+?):\*\*/;
+
+/** The labels that say where a claim came from, which a correction says anew. */
+const ORIGIN = ['Source', 'Question', 'Answer'];
+
+/**
+ * A verified claim with a correction the user gave in their answers: its new wording, the tags
+ * and details given in place of its own, and its Source the user and the date, then the questions
+ * and answers it rests on now, in place of any before. Everything else under it stays as written,
+ * and it stays verified.
+ */
+export function correctedClaimText(block: FactBlock, correction: ClaimCorrection): string {
+  const parts = claimParts(block);
+  const tags = parts.tags.filter((tag) => tag !== UNCONFIRMED);
+  const groups: readonly (readonly string[])[] = [
+    FACT_TAGS.status,
+    FACT_TAGS.ownership,
+    FACT_TAGS.confidence,
+  ];
+  for (const [i, next] of [
+    correction.status,
+    correction.ownership,
+    correction.confidence,
+  ].entries()) {
+    const group = groups[i] ?? [];
+    if (!next) continue;
+    const at = tags.findIndex((tag) => group.includes(tag));
+    if (at >= 0) {
+      tags[at] = next;
+      continue;
+    }
+    // A tag it had none of goes after the ones that come before it: status, then ownership.
+    const before = groups.slice(0, i).flat();
+    const after = tags.reduce((last, tag, j) => (before.includes(tag) ? j + 1 : last), 0);
+    tags.splice(after, 0, next);
+  }
+  const wanted = new Map<string, string>();
+  for (const [key, label] of DETAILS) {
+    const value = correction[key];
+    if (value && oneLine(value)) wanted.set(label, `- **${label}:** ${oneLine(value)}`);
+  }
+  const details: string[] = [];
+  for (const line of parts.details ? parts.details.split('\n') : []) {
+    const label = line.match(DETAIL)?.[1]?.trim() ?? null;
+    if (label !== null && ORIGIN.includes(label)) continue;
+    const given = label === null ? undefined : wanted.get(label);
+    if (given !== undefined && label !== null) {
+      details.push(given);
+      wanted.delete(label);
+      continue;
+    }
+    details.push(line);
+  }
+  return claimText({
+    ...parts,
+    tags,
+    wording: oneLine(correction.wording),
+    details: [
+      ...details,
+      ...wanted.values(),
+      `- **Source:** ${oneLine(correction.source)}`,
+      ...correction.asked.flatMap(({ question, answer }) => [
+        `- **Question:** ${oneLine(question)}`,
+        `- **Answer:** ${oneLine(answer)}`,
+      ]),
+    ].join('\n'),
+  });
 }
 
 /** Where a claim came from, as its Source line and any questions under it say. */

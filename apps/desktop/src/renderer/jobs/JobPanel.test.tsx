@@ -246,6 +246,102 @@ describe('sorting a job before applying', () => {
   });
 });
 
+describe('the pay to ask for', () => {
+  const TARGETS = [{ id: '', name: '', targetPay: '$180,000' }];
+  /** A job with no pay to ask for of its own yet. */
+  const northwind = (): Job => ({
+    ...byCompany('Northwind Labs'),
+    payAsk: null,
+    suggestedAsk: null,
+  });
+  /** The pay to ask for, as the line says it, without its button. */
+  const line = () =>
+    (screen.getByText('Pay to ask for:').parentElement as HTMLElement).textContent
+      ?.replace(/ (Change|Set it)$/, '')
+      .trim();
+
+  it('goes by the user’s target until they give the job its own, in their words', async () => {
+    const job = northwind();
+    const { api, container } = panel(job, {}, { targets: TARGETS });
+    expect(line()).toBe('Pay to ask for: $180,000, your target');
+    await userEvent.click(screen.getByRole('button', { name: /^Change: the pay to ask for/ }));
+    const box = screen.getByRole('textbox', { name: 'Pay to ask for at Northwind Labs' });
+    expect(box).toHaveProperty('value', '$180,000');
+    expect(container.textContent).toContain('Yours wins over your Claude’s.');
+    await userEvent.clear(box);
+    await userEvent.type(box, '$195,000{Enter}');
+    expect(api.updateJob).toHaveBeenCalledWith(job.id, { payAsk: '$195,000' });
+    // Saved, it reads as it was, until the job list brings the change, with the keyboard's focus
+    // back on Change.
+    expect(screen.queryByRole('textbox', { name: /^Pay to ask for at/ })).toBeNull();
+    expect(document.activeElement).toBe(
+      screen.getByRole('button', { name: /^Change: the pay to ask for/ }),
+    );
+    const results = await axe.run(container, { rules: { 'color-contrast': { enabled: false } } });
+    expect(results.violations).toEqual([]);
+  });
+
+  it('changes nothing when Save is pressed on what it goes by already', async () => {
+    const { api } = panel({ ...northwind(), suggestedAsk: '$190,000' }, {}, { targets: TARGETS });
+    await userEvent.click(screen.getByRole('button', { name: /^Change: the pay to ask for/ }));
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }));
+    expect(api.updateJob).not.toHaveBeenCalled();
+    expect(line()).toBe('Pay to ask for: $190,000, your Claude’s suggestion');
+  });
+
+  it('says whose it is, the user’s own winning over their Claude’s, and goes back', async () => {
+    const job = { ...northwind(), suggestedAsk: '$190,000' };
+    panel(job, {}, { targets: TARGETS });
+    expect(line()).toBe('Pay to ask for: $190,000, your Claude’s suggestion');
+    cleanup();
+    const { api } = panel({ ...job, payAsk: '$200,000' }, {}, { targets: TARGETS });
+    expect(line()).toBe('Pay to ask for: $200,000, your own');
+    await userEvent.click(screen.getByRole('button', { name: /^Change: the pay to ask for/ }));
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Use your Claude’s suggestion, $190,000' }),
+    );
+    expect(api.updateJob).toHaveBeenCalledWith(job.id, { payAsk: null });
+    cleanup();
+    // With no suggestion, back to the target.
+    panel({ ...northwind(), payAsk: '$200,000' }, {}, { targets: TARGETS });
+    await userEvent.click(screen.getByRole('button', { name: /^Change: the pay to ask for/ }));
+    expect(screen.getByRole('button', { name: 'Use your target, $180,000' })).toBeTruthy();
+  });
+
+  it('takes the target of the kind of job it’s under', () => {
+    const targets = [
+      { id: 'developer', name: 'Developer', targetPay: '$180,000' },
+      { id: 'project-manager', name: 'Project manager', targetPay: '$150,000' },
+    ];
+    panel({ ...northwind(), kind: 'project-manager' }, {}, { targets });
+    expect(line()).toBe('Pay to ask for: $150,000, your target for Project manager jobs');
+  });
+
+  it('says when there’s none, and Escape closes its box, never the panel', async () => {
+    const { api, onClose } = panel(northwind());
+    expect(line()).toBe('Pay to ask for: none yet');
+    await userEvent.click(screen.getByRole('button', { name: /^Set it: the pay to ask for/ }));
+    expect(screen.getByRole('textbox', { name: /^Pay to ask for at/ })).toHaveProperty('value', '');
+    await userEvent.keyboard('{Escape}');
+    expect(onClose).not.toHaveBeenCalled();
+    expect(screen.queryByRole('textbox', { name: /^Pay to ask for at/ })).toBeNull();
+    expect(document.activeElement).toBe(
+      screen.getByRole('button', { name: /^Set it: the pay to ask for/ }),
+    );
+    expect(api.updateJob).not.toHaveBeenCalled();
+  });
+
+  it('says why a change didn’t save, and keeps the box open', async () => {
+    panel(northwind(), {
+      updateJob: vi.fn(async () => ({ ok: false as const, message: 'That job is gone.' })),
+    });
+    await userEvent.click(screen.getByRole('button', { name: /^Set it/ }));
+    await userEvent.type(screen.getByRole('textbox', { name: /^Pay to ask for at/ }), '$1{Enter}');
+    expect(screen.getByRole('alert').textContent).toBe('That job is gone.');
+    expect(screen.getByRole('textbox', { name: /^Pay to ask for at/ })).toBeTruthy();
+  });
+});
+
 describe('JobPanel', () => {
   it('shows nothing until a job is picked, so the list has the room', () => {
     panel(null);
@@ -403,7 +499,7 @@ describe('JobPanel', () => {
       within(area('Resumes and cover letters'))
         .getAllByRole('button')
         .map((button) => button.textContent),
-    ).toEqual(['Tailor a resume', 'Write a cover letter']);
+    ).toEqual(['Tailor a resume', 'Quick resume', 'Write a cover letter']);
     expect(within(area('Application questions')).getByRole('button')).toBeTruthy();
     expect(within(area('Questions for Claude')).getByRole('button')).toBeTruthy();
     // Empty areas have nothing to close.

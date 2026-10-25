@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, relative, sep } from 'node:path';
 import { KINDS_FILE } from '@factwright/core';
 import { afterEach, beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
 import { NO_ANSWERS } from '../../shared/about.ts';
@@ -60,6 +60,29 @@ describe('AboutStore', () => {
     expect(answers.roles).toEqual(['Product Designer']);
     expect(json('about-me/answers.json').step).toBe(2);
     expect(existsSync(join(workspace(), 'searches', 'criteria.md'))).toBe(false);
+  });
+
+  it('says each file a save of Claude’s is about to change, and only those, so the app can keep them', () => {
+    store.start();
+    const keep = vi.fn();
+    store.saveAnswers({ roles: ['Staff Engineer'] }, keep);
+    const changed = keep.mock.calls.map(([path]) =>
+      relative(workspace(), path).split(sep).join('/'),
+    );
+    expect(changed).toContain('about-me/answers.json');
+    expect(changed).toContain('searches/criteria.md');
+    // Saving again what's there changes nothing, and a save of the user's own tells no task.
+    keep.mockClear();
+    store.saveAnswers({ roles: ['Staff Engineer'] }, keep);
+    expect(keep).not.toHaveBeenCalled();
+    store.saveAnswers({ roles: ['Designer'] });
+    store.saveHistory(
+      { jobs: [], schools: [{ school: 'State', degree: '', field: '', start: '', end: '' }] },
+      keep,
+    );
+    expect(
+      keep.mock.calls.map(([path]) => relative(workspace(), path).split(sep).join('/')),
+    ).toEqual(['about-me/history.json']);
   });
 
   it('gets the workspace ready for Claude, then keeps the files built from the answers in step', () => {

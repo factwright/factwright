@@ -103,6 +103,7 @@ export function newJobRows(job: {
       kind: null,
       merged_into: null,
       folder: null,
+      pay_ask: null,
     },
     status: { id: job.statusId, job_id: job.id, status: job.status, at: job.today },
   };

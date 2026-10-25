@@ -1,0 +1,83 @@
+/* The pay to ask for, with whose it is, and Change: under the job's pay, in the same type. */
+.ask {
+  margin: 0 0 var(--fw-space-4);
+  font-size: var(--fw-text-sm);
+}
+
+.ask:last-child,
+.edit:last-child {
+  margin-bottom: 0;
+}
+
+.ask p {
+  margin: 0;
+}
+
+.source {
+  color: var(--fw-muted);
+}
+
+/* Change, as a link after the words. */
+.change {
+  margin: 0 0 0 4px;
+  padding: 2px 4px;
+  border: 0;
+  border-radius: var(--fw-radius-sm);
+  background: none;
+  color: var(--fw-accent-text);
+  font: inherit;
+  font-weight: 550;
+  cursor: pointer;
+}
+
+.change:hover {
+  background: var(--fw-hover);
+}
+
+/* Changing it: the box, Save and Cancel on a line, and what Fill does with it under them. */
+.edit {
+  display: grid;
+  gap: var(--fw-space-2);
+  margin: 0 0 var(--fw-space-4);
+  font-size: var(--fw-text-sm);
+}
+
+.label {
+  font-weight: 600;
+}
+
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--fw-space-2);
+}
+
+.input {
+  width: min(100%, 160px);
+}
+
+/* Going back, as a link under the box, in line with its words. */
+.instead {
+  justify-self: start;
+  margin-left: -4px;
+}
+
+.instead:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.hint {
+  margin: 0;
+  color: var(--fw-muted);
+}
+
+.problem {
+  margin: var(--fw-space-2) 0 0;
+  color: var(--fw-bad);
+}
+
+.edit .problem {
+  margin: 0;
+}

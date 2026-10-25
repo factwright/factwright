@@ -29,7 +29,7 @@ export type Backing = keyof typeof MAX_BACKED;
  * The tools that file what the user answered, by their names in Claude Code. A call to one counts
  * only once Claude Code's PreToolUse hook has shown it, from the run's own Claude.
  */
-export const FILING_TOOLS = ['save_fact', 'save_gap', 'verify_fact'] as const;
+export const FILING_TOOLS = ['save_fact', 'save_gap', 'verify_fact', 'correct_fact'] as const;
 
 export type FilingTool = (typeof FILING_TOOLS)[number];
 

@@ -12,6 +12,10 @@ import {
   isSyncedAnswer,
   type Job,
   jobPdfs,
+  KINDS_FILE,
+  type KindTarget,
+  keptLength,
+  kindTargetsIn,
   letterPlainText,
   localDate,
   NO_PRIVATE,
@@ -20,6 +24,7 @@ import {
   onFileJob,
   PROFILE_FILES,
   type ProfileForForms,
+  payAskFor,
   profileAnswer,
   profileForForms,
   type ResumeOnFile,
@@ -68,7 +73,7 @@ import { type Made, rowChange } from './save.ts';
 import {
   decoded,
   fileContents,
-  notesLocation,
+  notesDetails,
   notesPath,
   nothingSynced,
   openChange,
@@ -106,6 +111,8 @@ interface Read {
   /** The jobs the app lists only from job searches' files, which a fill doesn't read. */
   others: Job[];
   profile: ProfileForForms;
+  /** Each kind of job you want, with your target pay for it. */
+  targets: KindTarget[];
   history: WorkHistory;
   /** Files' contents fetched, by their IDs, each once, or null for one the store hasn't. */
   contents: Map<string, Promise<Bytes | null>>;
@@ -285,10 +292,11 @@ export class SyncFill {
     const read = { synced, contents } as Read;
     // Only the folders no job's row names are read by their job.md, as from an app before rows
     // named them.
-    const [notes, answers, history] = await Promise.all([
+    const [notes, answers, history, kinds] = await Promise.all([
       readJobNotes(synced, (path) => this.text(read, path)),
       this.text(read, PROFILE_FILES.answers),
       this.text(read, PROFILE_FILES.history),
+      this.text(read, KINDS_FILE),
     ]);
     const { listed, others } = syncedJobs(synced, notes);
     return {
@@ -297,19 +305,21 @@ export class SyncFill {
       jobs: listed,
       others,
       profile: profileForForms(json(answers)),
+      targets: kindTargetsIn(json(answers), json(kinds)),
       history: readHistory(json(history)),
     };
   }
 
   /**
-   * A job, with what only its folder's job.md says, such as where the job is, for one whose row
-   * named its folder, so its job.md wasn't read for the list.
+   * A job, with what only its folder's job.md says, for one whose row named its folder, so its
+   * job.md wasn't read for the list: where the job is, the kind of job its fit check judged it
+   * as, and the pay to ask for there, as your Claude suggested it.
    */
   private async withNotes(read: Read, job: Job): Promise<Job> {
     const path = job.folder && notesPath(job.folder);
     if (!job.folder || !path || read.notes.has(path)) return job;
     const text = await this.text(read, path);
-    return text ? { ...job, location: notesLocation(read.synced, job.folder, text) } : job;
+    return text ? { ...job, ...notesDetails(read.synced, job.folder, text) } : job;
   }
 
   /** A job by its ID, among all the jobs read. */
@@ -401,8 +411,10 @@ export class SyncFill {
     const you = read.profile.you.name || resume?.name || '';
     const files = job ? await this.offers(read, job, you) : { resume: null, 'cover-letter': null };
     const letter = readLetterText(letterJson);
+    const { targetPay: _, ...profile } = read.profile;
     const onFile: OnFile = {
-      ...read.profile,
+      ...profile,
+      pay: payAskFor(job, read.targets),
       // Never synced: Profile keeps them on the computer Factwright's on.
       kept: NO_PRIVATE,
       resume,
@@ -707,7 +719,9 @@ export class SyncFill {
   private async remember(ask: Extract<InboxAsk, { ask: 'remember' }>): Promise<SyncAnswer> {
     const answers = ask.answers.flatMap(({ kind, text }) => {
       const value = text.trim();
-      return isSyncedAnswer(kind) && value && value.length <= 200 ? [{ kind, text: value }] : [];
+      return isSyncedAnswer(kind) && value && value.length <= keptLength(kind)
+        ? [{ kind, text: value }]
+        : [];
     });
     if (answers.length === 0) return { ok: true, did: 'remember', saved: 0 };
     const { client, keys } = this.deps;

@@ -350,6 +350,12 @@ export async function jobDetails(
       `${job.search.tier ?? 'not rated'}${job.search.score !== null ? ` ${job.search.score}` : ''} (${job.search.source})`,
   );
   add('Pay', job.pay && `${job.pay.text}${job.pay.source === 'estimate' ? ' (estimate)' : ''}`);
+  add(
+    'Pay to ask for',
+    job.payAsk
+      ? `${job.payAsk}, the user’s own, which wins over any in job.md`
+      : job.suggestedAsk && `${job.suggestedAsk}, as job.md suggests`,
+  );
   add('Where', job.location);
   add('Summary', job.summary);
   add(

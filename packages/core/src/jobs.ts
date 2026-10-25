@@ -21,7 +21,7 @@ import {
   titleFit,
   titlesFit,
 } from './matching.ts';
-import { idPart, shortCode } from './new-job.ts';
+import { idPart, JOB_LIMITS, shortCode } from './new-job.ts';
 import { parsePay } from './pay.ts';
 import {
   type FolderRecord,
@@ -117,6 +117,11 @@ export interface CollectedJob {
    * said, as with only one kind of job.
    */
   kindFound: string | null;
+  /**
+   * The pay to ask for there, as your Claude suggested it in the job's job.md, such as "$185,000".
+   * The user's own ask, which the tracker keeps, wins over it.
+   */
+  suggestedAsk: string | null;
   /** Its folder under applications/, once a fit check has made one. */
   folder: string | null;
   stage: JobStage;
@@ -536,6 +541,9 @@ function build(draft: Draft): CollectedJob {
   )[0];
   const source = !first ? '' : first.tool === 'search' ? first.source : SOURCES[first.tool];
 
+  // The newest folder's job.md that suggests one, as long as a pay the user types can be.
+  const suggestion = [...folders].reverse().find((record) => record.ask)?.ask ?? null;
+  const suggestedAsk = suggestion && suggestion.length <= JOB_LIMITS.pay ? suggestion : null;
   // A fit check judges the one job, so its kind wins over a search's.
   const kindFound =
     [...folders].reverse().find((record) => record.kind)?.kind ??
@@ -583,6 +591,7 @@ function build(draft: Draft): CollectedJob {
       : null,
     searches: searchRuns(searches),
     kindFound,
+    suggestedAsk,
     folder: folder?.folder ?? null,
     stage,
     firstSeen: dates[0] ?? null,

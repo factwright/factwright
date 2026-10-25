@@ -230,6 +230,11 @@ export interface TrackerFields {
    * what the job search or fit check found it as.
    */
   kind: string | null;
+  /**
+   * The pay the user asks for there, in their own words, such as "$185,000". Null goes by their
+   * Claude's suggestion, or else their target pay.
+   */
+  payAsk: string | null;
 }
 
 /** A call or interview the user logged for a job: one step in the company's hiring process. */

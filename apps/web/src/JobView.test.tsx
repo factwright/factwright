@@ -211,6 +211,20 @@ describe('a job on the phone', () => {
     expect(screen.queryByText('Kind of job')).toBeNull();
   });
 
+  it('says the pay to ask for there: the user’s own, or else their Claude’s suggestion', async () => {
+    const { keys, vault } = await setUp();
+    const asked = (more: Partial<typeof ACME>) => {
+      cleanup();
+      render(<JobView job={{ ...ACME, ...more }} vault={vault} keys={keys} today={TODAY} />);
+      return within(section('Where it stands')).queryByText('Pay to ask for')?.nextSibling
+        ?.textContent;
+    };
+    expect(asked({ payAsk: '$190,000', suggestedAsk: '$185,000' })).toBe('$190,000, your own');
+    expect(asked({ suggestedAsk: '$185,000' })).toBe('$185,000, your Claude’s suggestion');
+    // A target stays in Profile, which the phone doesn't read.
+    expect(asked({})).toBeUndefined();
+  });
+
   it('shows what the user sent on the application, and their questions with Claude’s answers', async () => {
     const { keys } = await setUp();
     const asked = {

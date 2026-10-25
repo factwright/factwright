@@ -171,6 +171,9 @@ describe('what a field asks for', () => {
         ['How did you hear about this job?', { control: 'choice' }],
         ['What are your salary expectations?'],
         ['Desired compensation', { control: 'number', type: 'number' }],
+        ['What is your current base salary?', { control: 'choice' }],
+        ['Current compensation'],
+        ['What do you currently earn?'],
         ['Are you at least 18 years of age?', { control: 'choice' }],
       ]),
     ).toEqual([
@@ -182,7 +185,145 @@ describe('what a field asks for', () => {
       'how-heard',
       'pay',
       'pay',
+      // What you're paid now isn't what you'd ask for.
+      'question',
+      'question',
+      'question',
       'over-18',
+    ]);
+  });
+
+  it('knows why you’re leaving, before where you work now, however a form asks it', () => {
+    const leaving = [
+      'Reason for leaving',
+      'Reasons for Leaving',
+      'Reason for leaving your current position',
+      'What is your reason for leaving your current employer?',
+      'What’s your reason for leaving?',
+      'Why are you leaving?',
+      'Why are you leaving your current job?',
+      'Why did you leave?',
+      'Why did you leave your last job?',
+      'Why did you leave, or why are you leaving, your most recent position?',
+      'Why are you looking?',
+      'Why are you looking for a new role?',
+      'Why are you currently looking for new opportunities?',
+      'Why are you looking to leave your current role?',
+      'Why are you seeking a new position?',
+      'Reason for wanting to change',
+      'Reason for wanting to change jobs',
+      'Why do you want to leave your current employer?',
+      'Why are you considering leaving your current role?',
+      'Why do you want to change jobs?',
+      'What prompted you to look for a new role?',
+      'What made you start looking?',
+      'Leaving reason',
+      'Reason(s) for leaving current employer',
+      'Please explain why you are leaving your current employer',
+      'Tell us why you’re leaving your current role',
+      'Briefly describe why you are leaving your current position',
+      'Why did you leave or are you leaving your most recent employer?',
+    ];
+    for (const control of ['text', 'long'] as const) {
+      expect(kinds(leaving.map((question) => [question, { control }]))).toEqual(
+        leaving.map(() => 'leaving'),
+      );
+    }
+    // Asked of each job in a part of the form for them, as iCIMS asks it, and by its name alone.
+    expect(fieldKind({ ...field('Reason for Leaving'), section: 'Work Experience 2' })).toBe(
+      'leaving',
+    );
+    expect(
+      fieldKind({ ...field('Reason for leaving your current position'), section: 'Employment' }),
+    ).toBe('leaving');
+    expect(fieldKind(field('', { name: 'reasonForLeaving' }))).toBe('leaving');
+    // What isn't: why the job, what you're after, when you'd leave, where you work now.
+    expect(
+      kinds([
+        ['Why are you interested in this role?', { control: 'long' }],
+        ['Why are you looking at Harbor & Pine?', { control: 'long' }],
+        ['Why are you looking to join our team?', { control: 'long' }],
+        ['What are you looking for in your next role?', { control: 'long' }],
+        ['What prompted you to apply?', { control: 'long' }],
+        ['Reason for applying'],
+        ['When are you leaving your current job?'],
+        ['Do you plan on leaving the area?', { control: 'choice' }],
+        ['Have you taken a leave of absence?', { control: 'choice' }],
+        ['Why do you want to move to Denver?'],
+        [
+          'Do you consent to us asking your current employer about your reason for leaving?',
+          { control: 'choice' },
+        ],
+        ['Current employer'],
+        ['Current job title'],
+      ]),
+    ).toEqual([
+      'question',
+      'question',
+      'question',
+      'question',
+      'question',
+      'question',
+      'question',
+      'question',
+      'question',
+      'question',
+      'consent',
+      'current-company',
+      'current-title',
+    ]);
+    // Why the job, asked in words close to it, and leaving something other than a job.
+    expect(
+      kinds(
+        [
+          'Why are you seeking employment with Harbor & Pine?',
+          'Why are you looking for a position at Harbor & Pine?',
+          'Why are you looking for a new role at Harbor & Pine?',
+          'Why are you searching for a role like this one?',
+          'What led you to consider a role at Harbor & Pine?',
+          'What motivated you to seek out this role?',
+          'Why did you leave the military?',
+          'Why have you left gaps in your employment?',
+        ].map((question) => [question, { control: 'long' }]),
+      ),
+    ).toEqual(Array(8).fill('question'));
+  });
+
+  it('never takes a question about why you’re leaving as asking your title or company', () => {
+    expect(
+      kinds([
+        ['Describe your departure from your current employer'],
+        ['Explain why your current position is ending, if you have left'],
+        ['Current company (leave blank if none)'],
+        ['Current or most recent employer, if you have left'],
+      ]),
+    ).toEqual(['question', 'question', 'current-company', 'current-company']);
+  });
+
+  it('tells why you’re leaving as fast in a question a page made to be slow', () => {
+    for (const question of [
+      'why are you '.repeat(20_000),
+      'reason for '.repeat(20_000),
+      'what prompted you to '.repeat(10_000),
+    ]) {
+      const start = Date.now();
+      fieldKind(field(question, { control: 'long' }));
+      expect(Date.now() - start).toBeLessThan(1000);
+    }
+  });
+
+  it('never takes a box for paragraphs as asking your title or company', () => {
+    expect(
+      kinds([
+        ['Tell us about your current role', { control: 'long' }],
+        ['Current company', { control: 'long' }],
+        ['Most recent position', { control: 'long' }],
+        ['Organization', { control: 'long', autocomplete: 'organization' }],
+      ]),
+    ).toEqual(['question', 'question', 'question', 'question']);
+    expect(kinds([['Current company'], ['Most recent position']])).toEqual([
+      'current-company',
+      'current-title',
     ]);
   });
 

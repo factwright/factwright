@@ -23,7 +23,7 @@ Input: the company (name or link), plus the job posting or `job <id>` if there i
 - Don't target agency recruiters here. `/factwright:unmask-job` handles those.
 
 ## 2. Research
-Search first. `read_page` reads a team or about page, but the user may have to OK each page, so read only the best ones.
+Search first. `read_page` reads a team or about page. Read only the best ones.
 - Search snippets for LinkedIn profiles: `site:linkedin.com/in "<Company>" "<title>"`. They give name, title, and location, but they go stale, so mark those titles "per search, verify".
 - The company's own team, about, and leadership pages; blog authors; conference talks and podcasts; GitHub org members; press releases; founders' posts on Hacker News.
 - Job posts that name a poster or a hiring team.

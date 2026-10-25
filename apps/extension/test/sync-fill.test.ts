@@ -752,6 +752,104 @@ const synced = (replies: Record<string, FieldReply | undefined>) =>
     ),
   );
 
+describe('the pay to ask for, and why you’re leaving, through sync', () => {
+  const LEAVING = 'I want to build data products for more than one team.';
+  const PAY_FIELDS = [
+    asked('Why are you leaving your current role?', { control: 'long' }),
+    asked('What are your salary expectations?'),
+    asked('Desired salary', { control: 'number', type: 'number' }),
+    asked('Salary range', {
+      control: 'choice',
+      options: ['$100,000 - $149,999', '$150,000 - $199,999', '$200,000 or more'],
+    }),
+  ];
+  const ASK = { ...FILL, fields: PAY_FIELDS };
+  /** What each field got, as source and words, from the app and through sync, which agree. */
+  async function both(
+    desktop: Awaited<ReturnType<typeof computer>>,
+    keys: AccountKeys,
+    client: SyncClient,
+  ) {
+    desktop.jobs.read();
+    const app = await answerAsk(ASK, desktop.deps);
+    const synced = ok(await fillFor(client, keys).ask(ASK));
+    if (!app.ok || app.did !== 'fill' || synced.did !== 'fill') throw new Error('No plan.');
+    expect(synced.replies).toEqual(app.replies);
+    return synced.replies.map((reply) => [reply.source, reply.text ?? reply.pick?.[0]]);
+  }
+  /** Profile with why you're leaving, a target pay, and a second kind of job with its own. */
+  function profile(desktop: Awaited<ReturnType<typeof computer>>) {
+    const path = join(desktop.workspace, 'about-me', 'answers.json');
+    const answers = JSON.parse(readFileSync(path, 'utf8'));
+    desktop.write(
+      'about-me/answers.json',
+      JSON.stringify({
+        ...answers,
+        targetPay: '$170,000',
+        applications: { ...answers.applications, leaving: LEAVING },
+      }),
+    );
+    desktop.write(
+      'about-me/kinds-of-job.json',
+      JSON.stringify({
+        first: { id: 'product', name: 'Product' },
+        others: [{ id: 'data', name: 'Data', targetPay: '$210,000' }],
+      }),
+    );
+  }
+
+  it('fills your target for the job’s kind of job, then your Claude’s suggestion, then yours', async () => {
+    const { desktop, keys, client, engine } = await account();
+    profile(desktop);
+    await engine.syncOnce();
+    expect(await both(desktop, keys, client)).toEqual([
+      ['profile', LEAVING],
+      ['profile', '$170,000'],
+      ['profile', '170000'],
+      ['profile', '$150,000 - $199,999'],
+    ]);
+    // Put under the other kind of job, as its row says.
+    const at = { today: '2026-10-23', now: '2026-10-23T18:00:00.000Z' };
+    desktop.tracker.updateJob(JOB, { kind: 'data' }, at);
+    await engine.syncOnce();
+    expect((await both(desktop, keys, client)).slice(1)).toEqual([
+      ['profile', '$210,000'],
+      ['profile', '210000'],
+      ['profile', '$200,000 or more'],
+    ]);
+    // Your Claude suggests one in the job's job.md, which only the job's own folder says.
+    const notes = join(desktop.workspace, 'applications', FOLDER, 'job.md');
+    writeFileSync(notes, `${readFileSync(notes, 'utf8')}\n- **Pay to ask for:** $185,000\n`);
+    await engine.syncOnce();
+    expect((await both(desktop, keys, client)).slice(1)).toEqual([
+      ['claude', '$185,000'],
+      ['claude', '185000'],
+      ['claude', '$150,000 - $199,999'],
+    ]);
+    // Yours, from the job's row, wins.
+    desktop.tracker.updateJob(JOB, { payAsk: '$195,000' }, at);
+    await engine.syncOnce();
+    expect((await both(desktop, keys, client)).slice(1)).toEqual([
+      ['job', '$195,000'],
+      ['job', '195000'],
+      ['job', '$150,000 - $199,999'],
+    ]);
+  });
+
+  it('reads your Claude’s suggestion from every job.md, from an app before rows named folders', async () => {
+    const { desktop, keys, client, engine } = await account({ older: true });
+    profile(desktop);
+    const notes = join(desktop.workspace, 'applications', FOLDER, 'job.md');
+    writeFileSync(notes, `${readFileSync(notes, 'utf8')}\n- **Pay to ask for:** $185,000\n`);
+    await engine.syncOnce();
+    expect((await both(desktop, keys, client)).slice(1)).toEqual([
+      ['claude', '$185,000'],
+      ['claude', '185000'],
+      ['claude', '$150,000 - $199,999'],
+    ]);
+  });
+});
+
 describe('finding a job’s folder through sync', () => {
   /** The form, with a question only where the job is answers: its job.md says. */
   const WHERE = asked('Are you legally authorized to work in the country you applied for?', {

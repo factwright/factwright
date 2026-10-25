@@ -193,6 +193,27 @@ describe('the pay a posting says', () => {
     ).toBe('$150,000–$180,000 a year');
   });
 
+  it('reads text a page made to be slow as fast as any', () => {
+    for (const text of [
+      `$${'1'.repeat(100_000)}x`,
+      `$1${' '.repeat(100_000)}x`,
+      `$1 -${' '.repeat(100_000)}x`,
+      `$1 - $2${' '.repeat(100_000)}x`,
+      `$1 - $2 a${' '.repeat(100_000)}x`,
+      `$1 to${' '.repeat(100_000)}$`,
+      `$1${',111'.repeat(25_000)}x`,
+      `$1${'k'.repeat(100_000)}`,
+      '$'.repeat(100_000),
+      '$1'.repeat(50_000),
+      '$1-$2 '.repeat(16_000),
+      '$1,111 '.repeat(14_000),
+    ]) {
+      const start = Date.now();
+      payInPosting(text);
+      expect(Date.now() - start, text.slice(0, 12)).toBeLessThan(1000);
+    }
+  });
+
   it('reads nothing that isn’t clear: no year or hour, another period, or no believable pay', () => {
     for (const text of [
       '$190,000 — $250,000 USD',

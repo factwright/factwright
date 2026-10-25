@@ -34,7 +34,7 @@ const ON_FILE: OnFile = {
   authorization: 'US citizen',
   start: 'Two weeks’ notice',
   relocate: 'no',
-  targetPay: '$165,000',
+  pay: { text: '$165,000', from: 'target', kind: null },
   resume: {
     from: 'job',
     name: 'Ana María Ruiz',
@@ -279,8 +279,8 @@ describe('answering a form from what’s on file', () => {
     expect(answer('Salary expectations').text).toBe('$165,000');
     const number = { control: 'number' as const, type: 'number' };
     expect(answer('Desired salary', number).text).toBe('165000');
-    const pay = (targetPay: string, question = 'Desired salary') =>
-      answer(question, number, { ...ON_FILE, targetPay });
+    const pay = (text: string, question = 'Desired salary') =>
+      answer(question, number, { ...ON_FILE, pay: { text, from: 'target', kind: null } });
     expect(pay('$150k').text).toBe('150000');
     for (const left of [
       pay('$150-170k'),
@@ -289,11 +289,98 @@ describe('answering a form from what’s on file', () => {
     ]) {
       expect(left).toMatchObject({ source: 'you', left: 'unset' });
     }
-    expect(
-      answer('Desired salary', { control: 'choice', options: ['$100k–$150k', '$150k+'] }),
-    ).toMatchObject({
+    expect(answer('Desired salary', {}, { ...ON_FILE, pay: null })).toMatchObject({
+      source: 'you',
       left: 'unset',
     });
+  });
+
+  it('fills the job’s own ask, saying whose it is, or else your target', () => {
+    const asked = (pay: OnFile['pay']) =>
+      answer('What are your salary expectations?', {}, { ...ON_FILE, pay });
+    expect(asked({ text: '$185,000', from: 'you', kind: null })).toEqual({
+      kind: 'pay',
+      text: '$185,000',
+      source: 'job',
+      from: 'Your ask for this job',
+    });
+    expect(asked({ text: '$180,000', from: 'claude', kind: null })).toEqual({
+      kind: 'pay',
+      text: '$180,000',
+      source: 'claude',
+      from: 'Your Claude’s suggestion for this job',
+    });
+    expect(asked({ text: '$160,000', from: 'target', kind: 'Project manager' })).toEqual({
+      kind: 'pay',
+      text: '$160,000',
+      source: 'profile',
+      from: 'Your target for Project manager jobs',
+    });
+    expect(asked({ text: '$165,000', from: 'target', kind: null })).toEqual({
+      kind: 'pay',
+      text: '$165,000',
+      source: 'profile',
+    });
+  });
+
+  it('picks the option whose band holds the ask, the whole of a range, and leaves the rest', () => {
+    const BANDS = [
+      'Less than $100,000',
+      '$100,000 - $149,999',
+      '$150,000 - $199,999',
+      '$200,000 or more',
+      'Prefer not to say',
+    ];
+    const picked = (text: string, options = BANDS, control: FieldControl = 'choice') =>
+      answer(
+        'Desired salary range',
+        { control, options },
+        { ...ON_FILE, pay: { text, from: 'you', kind: null } },
+      );
+    expect(picked('$185,000')).toEqual({
+      kind: 'pay',
+      pick: ['$150,000 - $199,999'],
+      exact: true,
+      source: 'job',
+      from: 'Your ask for this job',
+    });
+    expect(picked('$95k').pick).toEqual(['Less than $100,000']);
+    expect(picked('$250,000').pick).toEqual(['$200,000 or more']);
+    expect(picked('$160,000 - $180,000').pick).toEqual(['$150,000 - $199,999']);
+    expect(picked('$185,000', BANDS, 'combo').pick).toEqual(['$150,000 - $199,999']);
+    // Where two bands meet at the ask, the higher: an ask is the least you'd want.
+    expect(picked('$150,000', ['$100k-$150k', '$150k-$200k', '$200k+']).pick).toEqual([
+      '$150k-$200k',
+    ]);
+    // By the hour, as both put it.
+    expect(picked('$90 an hour', ['$70 - $85 per hour', '$85 - $100 per hour']).pick).toEqual([
+      '$85 - $100 per hour',
+    ]);
+    // The same words, whatever they say.
+    expect(picked('Negotiable', ['Negotiable', '$100k+']).pick).toEqual(['Negotiable']);
+    // Of two bands that start at the ask, the narrower.
+    expect(picked('$150,000', ['$150,000+', '$150,000 - $199,999']).pick).toEqual([
+      '$150,000 - $199,999',
+    ]);
+    // A tier's number before its band, as some forms put it.
+    expect(picked('$120,000', ['Tier 1 - $50k-$100k', 'Tier 2 - $100k-$150k']).pick).toEqual([
+      'Tier 2 - $100k-$150k',
+    ]);
+    for (const left of [
+      // A range that runs over two bands, or past the last.
+      picked('$140,000 - $160,000'),
+      picked('$150k', ['$50k - $100k', '$100k - $140k']),
+      // No amount to go by.
+      picked('Negotiable'),
+      // Another currency than the ask's.
+      picked('$185,000', ['€100,000 - €150,000', '€150,000 - €200,000']),
+      picked('£85,000', ['$50,000 - $100,000']),
+      picked('$185,000', ['CA$150,000 - CA$199,999', 'C$200,000+']),
+      // Options it hasn't seen yet, as a list that loads as you type.
+      picked('$185,000', []),
+    ]) {
+      expect(left).toEqual({ kind: 'pay', source: 'you', left: 'pick' });
+    }
   });
 
   it('answers an equal-opportunity question only as you set it in Profile', () => {
@@ -685,6 +772,133 @@ describe('answering a form from what’s on file', () => {
       source: 'you',
       left: 'new',
     });
+  });
+});
+
+describe('why you’re leaving', () => {
+  const LEAVING =
+    'I’ve grown all I can on a small team, and I want to build data products at a bigger scale.';
+  const withLeaving: OnFile = {
+    ...ON_FILE,
+    applications: { ...ON_FILE.applications, leaving: LEAVING },
+  };
+
+  it('fills Profile’s answer however a form asks, never your title or company', () => {
+    for (const [question, control] of [
+      ['Reason for leaving your current position', 'text'],
+      ['Reason for leaving current employer', 'long'],
+      ['Why are you looking for a new role?', 'long'],
+      ['Why did you leave your last job?', 'long'],
+      ['Reason for wanting to change', 'long'],
+    ] as const) {
+      expect(answer(question, { control }, withLeaving)).toEqual({
+        kind: 'leaving',
+        text: LEAVING,
+        source: 'profile',
+      });
+    }
+  });
+
+  it('leaves it for you when Profile has none, and never puts your title in its place', () => {
+    for (const question of [
+      'Reason for leaving your current position',
+      'Reason for leaving current employer',
+      'Reason(s) for leaving current employer',
+      'Please explain why you are leaving your current employer',
+      'Tell us why you’re leaving your current role',
+      'Briefly describe why you are leaving your current position',
+    ]) {
+      expect(answer(question)).toEqual({ kind: 'leaving', source: 'you', left: 'unset' });
+    }
+    // However else it's worded, a question about leaving never gets them.
+    expect(answer('Describe your departure from your current employer')).toEqual({
+      kind: 'question',
+      source: 'you',
+      left: 'new',
+    });
+    // A box for paragraphs about where you work now is a question for you or your Claude.
+    expect(answer('Tell us about your current role', { control: 'long' })).toEqual({
+      kind: 'question',
+      source: 'you',
+      left: 'new',
+    });
+    expect(answer('Current company', { control: 'long' })).toMatchObject({ kind: 'question' });
+  });
+
+  it('offers what you sent before and your Claude’s draft for this job beside it', () => {
+    const question = 'Why are you looking to leave your current role?';
+    const onFile: OnFile = {
+      ...withLeaving,
+      sent: [{ question, text: 'I want more scope.', on: '2026-10-12', company: 'Lumen Health' }],
+      suggested: [
+        {
+          question,
+          answer: 'I want to build data products at Harbor & Pine’s scale.',
+          why: null,
+          batch: 1,
+        },
+      ],
+    };
+    expect(answer(question, { control: 'long' }, onFile)).toEqual({
+      kind: 'leaving',
+      text: LEAVING,
+      source: 'profile',
+      others: [
+        {
+          text: 'I want more scope.',
+          source: 'sent',
+          from: 'From your Lumen Health application, Oct 12',
+        },
+        {
+          text: 'I want to build data products at Harbor & Pine’s scale.',
+          source: 'claude',
+          from: 'Your Claude’s draft for this job',
+        },
+      ],
+    });
+    // With nothing in Profile, they answer it, as they answer a form's own question.
+    const blank = { ...onFile, applications: ON_FILE.applications };
+    expect(answer(question, { control: 'long' }, blank)).toMatchObject({
+      kind: 'leaving',
+      text: 'I want more scope.',
+      source: 'sent',
+    });
+  });
+
+  it('keeps to a field’s limit, and picks only the option with Profile’s words', () => {
+    expect(answer('Reason for leaving', { control: 'long', limit: 40 }, withLeaving)).toEqual({
+      kind: 'leaving',
+      source: 'you',
+      left: 'unset',
+    });
+    const options = ['Laid off', 'Resigned', 'Contract ended', 'Other'];
+    expect(answer('Reason for leaving', { control: 'choice', options }, withLeaving)).toEqual({
+      kind: 'leaving',
+      source: 'you',
+      left: 'pick',
+    });
+    const laidOff = { ...ON_FILE, applications: { ...ON_FILE.applications, leaving: 'laid off' } };
+    expect(answer('Reason for leaving', { control: 'choice', options }, laidOff)).toEqual({
+      kind: 'leaving',
+      pick: ['Laid off'],
+      exact: true,
+      source: 'profile',
+    });
+  });
+
+  it('answers it for the newest job alone, where a form asks it of each job', () => {
+    const part = (n: number) => ({ section: `Work Experience ${n}` });
+    const replies = answerForm(
+      [
+        field('Company', part(1)),
+        field('Reason for Leaving', { ...part(1), control: 'long' }),
+        field('Company', part(2)),
+        field('Reason for Leaving', { ...part(2), control: 'long' }),
+      ],
+      withLeaving,
+    );
+    expect(replies[1]).toEqual({ kind: 'leaving', text: LEAVING, source: 'profile' });
+    expect(replies[3]).toEqual({ kind: 'leaving', source: 'you', left: 'new' });
   });
 });
 

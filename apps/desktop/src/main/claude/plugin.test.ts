@@ -5,6 +5,7 @@ import { RESUME_FIELDS } from '@factwright/engine';
 import { describe, expect, it } from 'vitest';
 import { HUNT_SKILLS, RUN_SKILLS, SEARCH_SKILL } from '../../shared/runs.ts';
 import { TERMS_HEADER } from '../about/terms.ts';
+import { runPrompt } from '../policy.ts';
 import { type FactTask, UNVERIFIED_CHOICES } from '../tools/facts.ts';
 import { factwrightTools } from '../tools/index.ts';
 import { buildLaunchArgs, STANDING_RULES } from './launch.ts';
@@ -127,6 +128,70 @@ describe('the plugin’s skills', () => {
       expect(text, folder).toContain(`task: "${task}"`);
       for (const tool of ['save_fact', 'save_gap']) expect(text, folder).toContain(`\`${tool}\``);
     }
+  });
+
+  it('correct a verified fact only with correct_fact, never by editing it for the user to OK', () => {
+    for (const folder of ['focused-resume', 'cover-letter']) {
+      const text = skills.find((skill) => skill.folder === folder)?.text ?? '';
+      expect(text, folder).toContain('`correct_fact`');
+    }
+    const rules = readFileSync(join(pluginDir, STANDING_RULES), 'utf8');
+    expect(rules).toContain('`correct_fact`');
+    // Claude changes files and reads pages without asking, so nothing says the user OKs them.
+    const asking =
+      /may have to OK|asks them to OK|which the user OKs|ordinary edit|asks the user (?:first|each time)|edit the fact in place/;
+    for (const { folder, text } of [...skills, { folder: 'standing rules', text: rules }]) {
+      expect(text, folder).not.toMatch(asking);
+    }
+  });
+
+  it('make a quick resume that asks nothing, uses verified facts only, and says what could make it stronger', () => {
+    const text = skills.find(({ folder }) => folder === 'focused-resume')?.text ?? '';
+    // What the app types for a quick resume, a first one or a new version, word for word.
+    for (const task of [
+      { skill: 'focused-resume' as const, jobId: 'acme--staff', quick: true as const },
+      {
+        skill: 'focused-resume' as const,
+        jobId: 'acme--staff',
+        again: true as const,
+        quick: true as const,
+      },
+    ]) {
+      const typed = runPrompt(task).replace(
+        '/factwright:focused-resume job acme--staff',
+        'job <id>',
+      );
+      expect(text).toContain(`\`${typed}\``);
+    }
+    const quick = text.slice(text.indexOf('## Quick resume'), text.indexOf('## 1. '));
+    expect(quick).toContain(
+      '**Ask nothing.** No AskUserQuestion round, and no question in plain text.',
+    );
+    expect(quick).toContain('**Verified facts only.**');
+    expect(quick).toContain('Leave out every claim tagged `unconfirmed`');
+    // It saves nothing to the fact bank, since it asked nothing.
+    for (const tool of ['save_fact', 'save_gap', 'verify_fact', 'correct_fact']) {
+      expect(quick).toContain(`\`${tool}\``);
+    }
+    expect(quick).toContain('`## What could make it stronger`');
+    for (const part of [
+      'unverified and low-confidence facts',
+      'gaps that matter',
+      'numbers missing',
+    ]) {
+      expect(quick).toContain(part);
+    }
+    expect(text).toContain('A quick resume skips this step: it asks nothing.');
+    // Low-confidence claims are asked about before they're used, so a quick resume leaves them out.
+    expect(quick).toContain('every `low`-confidence one');
+    // The fact-check still runs, and the reply points to the button that asks: New version.
+    expect(quick).toContain("Step 8's fact-check still runs");
+    expect(text).toContain('never for a quick resume');
+    expect(quick).toContain('New version, beside the resume, asks about these');
+    expect(quick).not.toContain('Tailor a resume');
+    expect(quick).toContain('**Fewer pages when it must.**');
+    const rules = readFileSync(join(pluginDir, STANDING_RULES), 'utf8');
+    expect(rules).toContain('A quick resume asks nothing');
   });
 
   it('never tell Claude to save a fact in a file save_fact turns away', () => {

@@ -282,6 +282,85 @@ describe('answering a form to fill', () => {
   });
 });
 
+describe('the pay to ask for, and why you’re leaving', () => {
+  const PAY = [
+    field('What are your salary expectations?'),
+    field('Desired salary', { control: 'number', type: 'number' }),
+    field('Salary range', {
+      control: 'choice',
+      options: ['$100,000 - $149,999', '$150,000 - $199,999', '$200,000 or more'],
+    }),
+  ];
+  const asked = async (fields = PAY) =>
+    ((await fill(fields)) as Filled).replies.map((reply) => [
+      reply.source,
+      reply.text ?? reply.pick?.[0] ?? reply.left,
+    ]);
+
+  it('fills the job’s own ask: the user’s, or else their Claude’s suggestion in job.md', async () => {
+    jobs[0] = { ...(jobs[0] as Job), payAsk: '$185,000', suggestedAsk: '$175,000' };
+    expect(await asked()).toEqual([
+      ['job', '$185,000'],
+      ['job', '185000'],
+      ['job', '$150,000 - $199,999'],
+    ]);
+    jobs[0] = { ...(jobs[0] as Job), payAsk: null };
+    expect(await asked()).toEqual([
+      ['claude', '$175,000'],
+      ['claude', '175000'],
+      ['claude', '$150,000 - $199,999'],
+    ]);
+  });
+
+  it('fills the target of the job’s kind of job without one, or the first kind’s', async () => {
+    about = {
+      ...ABOUT,
+      targetPay: '$210,000',
+      firstKind: { id: 'developer', name: 'Developer' },
+      otherKinds: [
+        {
+          id: 'project-manager',
+          name: 'Project manager',
+          roles: [],
+          fields: [],
+          levels: [],
+          minPay: '',
+          targetPay: '$160,000',
+          payFilter: false,
+        },
+      ],
+    };
+    expect(await asked()).toEqual([
+      ['profile', '$210,000'],
+      ['profile', '210000'],
+      ['profile', '$200,000 or more'],
+    ]);
+    jobs[0] = { ...(jobs[0] as Job), kind: 'project-manager' };
+    expect(await asked()).toEqual([
+      ['profile', '$160,000'],
+      ['profile', '160000'],
+      ['profile', '$150,000 - $199,999'],
+    ]);
+  });
+
+  it('fills why you’re leaving from Profile, never your title or company', async () => {
+    const LEAVING = 'I want to sell to bigger teams than Tidewater has.';
+    const fields = [
+      field('Reason for leaving your current position'),
+      field('Reason for leaving current employer', { control: 'long' }),
+    ];
+    expect(await asked(fields)).toEqual([
+      ['you', 'unset'],
+      ['you', 'unset'],
+    ]);
+    about = { ...ABOUT, applications: { ...ABOUT.applications, leaving: LEAVING } };
+    expect(await asked(fields)).toEqual([
+      ['profile', LEAVING],
+      ['profile', LEAVING],
+    ]);
+  });
+});
+
 describe('answering from the resumes, where Profile is blank', () => {
   const BLANK = { name: '', email: '', phone: '', location: '', linkedin: '', website: '' };
 
@@ -429,6 +508,24 @@ describe('answers to keep', () => {
     expect(about.applications.pronouns).toBe('she/her');
     expect(kept.street).toBe('1420 Larimer St');
     expect(kept.equalOpportunity.gender).toBe('woman');
+  });
+
+  it('keeps why you’re leaving in a few sentences, where the rest take a line', async () => {
+    const leaving = `I want to sell to bigger teams. ${'More of why. '.repeat(40)}`.trim();
+    expect(leaving.length).toBeGreaterThan(200);
+    const answer = await answerAsk(
+      {
+        ask: 'remember',
+        answers: [
+          { kind: 'leaving', text: leaving },
+          { kind: 'pronouns', text: 'x'.repeat(201) },
+        ],
+      },
+      deps,
+    );
+    expect(answer).toEqual({ ok: true, did: 'remember', saved: 1 });
+    expect(about.applications.leaving).toBe(leaving);
+    expect(about.applications.pronouns).toBe('');
   });
 });
 

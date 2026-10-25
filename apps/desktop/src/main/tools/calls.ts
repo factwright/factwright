@@ -39,6 +39,7 @@ export async function saveCallDoc(
   kind: CallDocKind,
   markdown: string,
   workspace: string,
+  keep?: (path: string) => void,
 ): Promise<string> {
   const call = job.calls.find((each) => each.id === callId);
   if (!call || !CALL_ID.test(call.id)) {
@@ -71,6 +72,7 @@ export async function saveCallDoc(
     throw new Error(`Not saved: ${job.id} can't name a folder in the workspace.`);
   }
   await mkdir(dirname(file), { recursive: true });
+  keep?.(file);
   await writeFile(file, `${markdown.trim()}\n`);
   return `Saved in ${path}. The app shows it on the ${CALL_KIND_LABELS[call.kind].toLowerCase()}.`;
 }

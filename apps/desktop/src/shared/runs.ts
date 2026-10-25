@@ -114,10 +114,16 @@ export const TEMPLATE_SOURCE = /^\d{4}-\d{2}-\d{2}-\d{1,3}\.(?:pdf|png|jpg|webp)
  * resumes), more facts, from an interview or from new files and notes, a template in the look of
  * a resume the user likes, or a revision of a job's resume for what its ATS X-ray found. A new
  * version of a job's resume, cover letter or Projects page comes once the app has kept the one
- * before, and changes the user asked for in their own words reach the run through a tool.
+ * before, and changes the user asked for in their own words reach the run through a tool. A quick
+ * resume asks nothing, as a first resume or a new version.
  */
 export type RunTask =
   | { skill: RunSkill; jobId: string }
+  /**
+   * A quick resume, which asks the user nothing: it uses verified facts only, and ends with what
+   * could make it stronger. As a new version too, once the app has kept the one before.
+   */
+  | { skill: 'focused-resume'; jobId: string; quick: true; again?: true }
   /**
    * Drafting the questions of a job's application form in the user's browser, which the browser
    * extension asked for: the run reads them, with their options and limits, in job_details.
@@ -166,23 +172,20 @@ export const HUNT_SKILLS = [
 ] as const;
 
 /**
- * What a run may change without asking. A run started to get to know the user, or to add facts,
- * may save their facts, starting resumes and guide. A run started to make a template may read
- * and save templates, and nothing else, and may replace only the ones it saved: the resume it
- * copies came from anywhere. A revision may do what a run on the job hunt does, but reads what
- * the X-ray found in a posting, and needs nothing from the web, so it can't reach it. Every
- * other run asks first. None of the last three reads the web.
+ * What a run may change without asking. A run on the job hunt changes any file in the workspace,
+ * and reads the web, but changes the facts only through Factwright's fact tools. So does every
+ * other run, apart from what it may never do: a run started to get to know the user, or to add
+ * facts, changes the facts themselves, as the user confirms them, and one that fills in their
+ * work history works from their facts and resumes. A revision reads what the X-ray found in a
+ * posting, and asks before saving a template. A run started to make a template may read and
+ * save templates, and nothing else, and may replace only the ones it saved: the resume it copies
+ * came from anywhere. None of the last four reads the web.
  */
-export type RunScope = 'hunt' | 'profile' | 'template' | 'revise';
+export type RunScope = 'hunt' | 'profile' | 'history' | 'template' | 'revise';
 
 export function scopeOf(task: RunTask | null | undefined): RunScope {
-  if (
-    task?.skill === GET_STARTED_SKILL ||
-    task?.skill === FACTS_SKILL ||
-    task?.skill === HISTORY_SKILL
-  ) {
-    return 'profile';
-  }
+  if (task?.skill === GET_STARTED_SKILL || task?.skill === FACTS_SKILL) return 'profile';
+  if (task?.skill === HISTORY_SKILL) return 'history';
   if (task?.skill === REVISE_SKILL) return 'revise';
   return task?.skill === TEMPLATE_SKILL ? 'template' : 'hunt';
 }

@@ -146,6 +146,9 @@ const MIGRATIONS = [
   // The job's folder under applications/, as the app last found it, so a browser filling a form
   // through sync knows which folder is the job's without reading every folder's job.md.
   `ALTER TABLE jobs ADD COLUMN folder TEXT;`,
+  // The pay the user asks for at a job, in their own words, such as "$185,000". Empty goes by
+  // their Claude's suggestion in the job's job.md, or else their target pay.
+  `ALTER TABLE jobs ADD COLUMN pay_ask TEXT;`,
 ];
 
 /** Latest first. Entries on the same day go by when they were added (SQLite's rowid). */
@@ -466,6 +469,7 @@ export class Tracker {
     if (changes.questions !== undefined) set('questions', JSON.stringify(changes.questions));
     if (changes.archived !== undefined) set('archived', changes.archived ? 1 : 0);
     if (changes.kind !== undefined) set('kind', changes.kind);
+    if (changes.payAsk !== undefined) set('pay_ask', changes.payAsk);
 
     const status = changes.status;
     const statusChanged = status !== undefined && status !== job.status;
@@ -708,8 +712,9 @@ export class Tracker {
    * takes the later of the two decisions the user made, such as passing on it, with its day, a
    * reason or a day to come back, and whether it's archived; on the same day, a decision over New
    * or To review. It keeps the earlier applied date, and takes from the other what it lacks: a
-   * next step, a kind of job, typed pay, the notes kept before notes were dated. The other job's
-   * row stays, pointing at the one kept, so whatever it went by finds that one.
+   * next step, a kind of job, typed pay, the pay to ask for, the notes kept before notes were
+   * dated. The other job's row stays, pointing at the one kept, so whatever it went by finds that
+   * one.
    */
   mergeJobs(keepId: string, otherId: string, context: EditContext): MergeResult {
     const keep = this.row(keepId);
@@ -753,7 +758,8 @@ export class Tracker {
         .prepare(
           `UPDATE jobs SET links = ?, status = ?, status_on = ?, back_on = ?, pass_reason = ?,
              applied_on = ?, next_action = ?, next_on = ?, notes = ?, questions = ?, sent = ?,
-             asks = ?, kind = ?, pay_text = ?, first_seen = ?, archived = ?, updated_at = ?
+             asks = ?, kind = ?, pay_text = ?, pay_ask = ?, first_seen = ?, archived = ?,
+             updated_at = ?
            WHERE id = ?`,
         )
         .run(
@@ -771,6 +777,7 @@ export class Tracker {
           JSON.stringify(asks),
           keep.kind ?? other.kind,
           keep.payText ?? other.payText,
+          keep.payAsk ?? other.payAsk,
           earliest(keep.firstSeen, other.firstSeen),
           archived ? 1 : 0,
           context.now,

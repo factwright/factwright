@@ -40,6 +40,17 @@ describe('For applications, in Profile', () => {
     });
   });
 
+  it('keeps why you’re leaving, in a few sentences, with the rest', async () => {
+    const update = vi.fn((_: AnswerChanges) => {});
+    render(<ApplicationsStep applications={NO_APPLICATIONS} update={update} api={keptApi()} />);
+    const box = screen.getByRole('textbox', { name: 'Why you’re leaving' });
+    expect(box.getAttribute('maxlength')).toBe('1000');
+    await userEvent.type(box, 'A');
+    expect(update).toHaveBeenLastCalledWith({
+      applications: { ...NO_APPLICATIONS, leaving: 'A' },
+    });
+  });
+
   it('keeps the street and equal-opportunity answers apart, each left for you until you choose', async () => {
     const update = vi.fn();
     const api = keptApi();

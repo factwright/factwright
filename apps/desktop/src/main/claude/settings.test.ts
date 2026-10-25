@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'vitest';
+import { type RunScope, scopeOf } from '../../shared/runs.ts';
+import { factwrightTools } from '../tools/index.ts';
 import {
   ANSWER_WAIT_SECONDS,
   RUN_TOKEN_VARIABLE,
@@ -8,6 +10,8 @@ import {
 } from './settings.ts';
 
 const settings = sessionSettings({ hookUrl: 'http://127.0.0.1:4000/hook', dark: false });
+const scoped = (scope: RunScope) =>
+  sessionSettings({ hookUrl: 'http://127.0.0.1:4000/hook', dark: false, scope });
 
 describe('sessionSettings', () => {
   it("uses Claude Code's ANSI theme that matches the app", () => {
@@ -21,7 +25,7 @@ describe('sessionSettings', () => {
     expect(settings.disableClaudeAiConnectors).toBe(true);
   });
 
-  it('lets Claude search, run its skills, use the tools that stay here or read the job APIs, and save its work, without asking', () => {
+  it('lets a run on the job hunt search, read pages, run its skills, use every tool and change any file, without asking', () => {
     expect(settings.permissions.allow).toEqual([
       'WebSearch',
       'Skill(factwright *)',
@@ -43,72 +47,71 @@ describe('sessionSettings', () => {
       'mcp__factwright__save_fact',
       'mcp__factwright__save_gap',
       'mcp__factwright__verify_fact',
+      'mcp__factwright__correct_fact',
+      'mcp__factwright__save_about_you',
+      'mcp__factwright__save_work_history',
+      'mcp__factwright__save_template',
       'mcp__factwright__read_posting',
       'mcp__factwright__save_posting',
       'mcp__factwright__job_board',
       'mcp__factwright__hn_jobs',
-      'Edit(./applications/**)',
-      'Edit(./searches/**)',
-      'Edit(./outreach/**)',
-      'Edit(./guide/confidential-terms.txt)',
+      'mcp__factwright__read_page',
+      'Edit(./**)',
     ]);
+    // Every one of Factwright's tools.
+    const named = factwrightTools({
+      jobs: {} as never,
+      about: {} as never,
+      facts: {} as never,
+      workspace: '',
+      printer: {} as never,
+      templates: {} as never,
+    }).map((tool) => `mcp__factwright__${tool.name}`);
+    expect(named.filter((tool) => !settings.permissions.allow.includes(tool))).toEqual([]);
   });
 
-  it('lets Claude change any file, or read any site, once the user chooses to', () => {
-    const allow = (anyFile: boolean, anySite: boolean) =>
-      sessionSettings({
-        hookUrl: 'http://127.0.0.1:4000/hook',
-        dark: false,
-        permissions: { anyFile, anySite },
-      }).permissions.allow;
-    expect(allow(true, false)).toContain('Edit(./**)');
-    expect(allow(true, false)).not.toContain('Edit(./applications/**)');
-    expect(allow(true, false)).not.toContain('mcp__factwright__read_page');
-    expect(allow(false, true)).toContain('mcp__factwright__read_page');
-    expect(allow(false, true)).not.toContain('Edit(./**)');
+  it('changes the fact bank only through the fact tools, outside getting started and adding facts', () => {
+    for (const scope of ['hunt', 'history', 'revise', 'template'] as const) {
+      const { allow, deny } = scoped(scope).permissions;
+      expect(deny, scope).toContain('Edit(./facts/**)');
+      expect(allow, scope).not.toContain('Edit(./facts/**)');
+    }
+    // Getting started and adding facts change the facts themselves, as the user confirms them.
+    const profile = scoped('profile').permissions;
+    expect(profile.allow).toContain('Edit(./**)');
+    expect(profile.deny).not.toContain('Edit(./facts/**)');
+    expect(scopeOf({ skill: 'get-started' })).toBe('profile');
+    expect(scopeOf({ skill: 'add-facts', mode: 'interview' })).toBe('profile');
+    expect(scopeOf({ skill: 'work-history' })).toBe('history');
   });
 
-  it('asks before saving to the user’s profile, like changing their facts, unless they chose otherwise', () => {
-    const allow = (anyFile: boolean, scope: 'hunt' | 'profile' = 'hunt') =>
-      sessionSettings({
-        hookUrl: 'http://127.0.0.1:4000/hook',
-        dark: false,
-        permissions: { anyFile, anySite: false },
-        scope,
-      }).permissions.allow;
-    expect(allow(false)).not.toContain('mcp__factwright__save_about_you');
-    expect(allow(true)).toContain('mcp__factwright__save_about_you');
-    expect(allow(false, 'profile')).toContain('mcp__factwright__save_about_you');
+  it('files what the user answers without asking, in a run on the job hunt or a revision', () => {
+    const filing = [
+      'mcp__factwright__save_fact',
+      'mcp__factwright__save_gap',
+      'mcp__factwright__verify_fact',
+      'mcp__factwright__correct_fact',
+    ];
+    for (const tool of filing) {
+      expect(scoped('hunt').permissions.allow).toContain(tool);
+      expect(scoped('revise').permissions.allow).toContain(tool);
+      // Getting started and adding facts change the facts themselves, as the user confirms them.
+      for (const scope of ['profile', 'history', 'template'] as const) {
+        expect(scoped(scope).permissions.allow, scope).not.toContain(tool);
+      }
+    }
   });
 
-  it('lets a run started to get to know the user save their facts, starting resumes and guide', () => {
-    const allow = sessionSettings({
-      hookUrl: 'http://127.0.0.1:4000/hook',
-      dark: false,
-      scope: 'profile',
-    }).permissions.allow;
-    expect(allow.slice(-8)).toEqual([
-      'Edit(./applications/**)',
-      'Edit(./searches/**)',
-      'Edit(./outreach/**)',
-      'Edit(./guide/confidential-terms.txt)',
-      'Edit(./facts/**)',
-      'Edit(./base/**)',
-      'Edit(./guide/**)',
-      'Edit(./about-me/read.md)',
-    ]);
-    // Every other run asks first, and none may change the user's answers file.
-    expect(settings.permissions.allow).not.toContain('Edit(./facts/**)');
-    expect(allow).not.toContain('Edit(./about-me/answers.json)');
+  it('saves to the user’s profile without asking, in every run but one making a template', () => {
+    for (const tool of ['mcp__factwright__save_about_you', 'mcp__factwright__save_work_history']) {
+      for (const scope of ['hunt', 'profile', 'history', 'revise'] as const) {
+        expect(scoped(scope).permissions.allow, scope).toContain(tool);
+      }
+      expect(scoped('template').permissions.allow).not.toContain(tool);
+    }
   });
 
-  it('keeps a run for getting to know the user off the web, whatever else the user allows', () => {
-    const { allow, deny } = sessionSettings({
-      hookUrl: 'http://127.0.0.1:4000/hook',
-      dark: false,
-      scope: 'profile',
-      permissions: { anyFile: false, anySite: true },
-    }).permissions;
+  it('keeps every run but one on the job hunt off the web, reading no page and no job API', () => {
     const web = [
       'WebSearch',
       'mcp__factwright__read_posting',
@@ -117,53 +120,22 @@ describe('sessionSettings', () => {
       'mcp__factwright__hn_jobs',
       'mcp__factwright__read_page',
     ];
-    for (const tool of web) {
-      expect(allow).not.toContain(tool);
-      expect(deny).toContain(tool);
+    for (const scope of ['profile', 'history', 'revise', 'template'] as const) {
+      const { allow, deny } = scoped(scope).permissions;
+      for (const tool of web) {
+        expect(allow, scope).not.toContain(tool);
+        expect(deny, scope).toContain(tool);
+      }
     }
-    expect(allow).toContain('mcp__factwright__build_resume');
-    // A hunt run keeps the web.
-    expect(settings.permissions.deny).not.toContain('WebSearch');
-  });
-
-  it('asks before saving a template, unless the run was started to make one or the user chose otherwise', () => {
-    const allow = (anyFile: boolean, scope: 'hunt' | 'profile' | 'template' = 'hunt') =>
-      sessionSettings({
-        hookUrl: 'http://127.0.0.1:4000/hook',
-        dark: false,
-        permissions: { anyFile, anySite: false },
-        scope,
-      }).permissions.allow;
-    expect(allow(false)).not.toContain('mcp__factwright__save_template');
-    expect(allow(false, 'profile')).not.toContain('mcp__factwright__save_template');
-    expect(allow(true)).toContain('mcp__factwright__save_template');
-    expect(allow(false, 'template')).toContain('mcp__factwright__save_template');
-  });
-
-  it('files what the user answers without asking, in a run on the job hunt', () => {
-    const allow = (scope: 'hunt' | 'profile' | 'template') =>
-      sessionSettings({ hookUrl: 'http://127.0.0.1:4000/hook', dark: false, scope }).permissions
-        .allow;
-    const filing = [
-      'mcp__factwright__save_fact',
-      'mcp__factwright__save_gap',
-      'mcp__factwright__verify_fact',
-    ];
-    for (const tool of filing) {
-      expect(allow('hunt')).toContain(tool);
-      // Getting started and adding facts change the facts themselves, as the user confirms them.
-      expect(allow('profile')).not.toContain(tool);
-      expect(allow('template')).not.toContain(tool);
+    // A hunt run reads the web, any page without asking.
+    for (const tool of web) {
+      expect(settings.permissions.allow).toContain(tool);
+      expect(settings.permissions.deny).not.toContain(tool);
     }
   });
 
   it('lets a run for making a template read and save templates without asking, and nothing else', () => {
-    const { allow, deny } = sessionSettings({
-      hookUrl: 'http://127.0.0.1:4000/hook',
-      dark: false,
-      scope: 'template',
-      permissions: { anyFile: false, anySite: true },
-    }).permissions;
+    const { allow, deny } = scoped('template').permissions;
     // Not building a resume or saving an answer, and no files: the resume it copies came from anywhere.
     expect(allow).toEqual([
       'Skill(factwright *)',
@@ -176,62 +148,50 @@ describe('sessionSettings', () => {
     }
   });
 
-  it('keeps a revision off the web, and lets it do the rest of what a run on the job hunt does', () => {
-    const { allow, deny } = sessionSettings({
-      hookUrl: 'http://127.0.0.1:4000/hook',
-      dark: false,
-      scope: 'revise',
-      permissions: { anyFile: false, anySite: true },
-    }).permissions;
-    // It reads what the X-ray found in a posting, so nothing it reads can send it to a site.
-    for (const tool of [
-      'WebSearch',
-      'mcp__factwright__read_posting',
-      'mcp__factwright__job_board',
-      'mcp__factwright__read_page',
-    ]) {
-      expect(allow).not.toContain(tool);
-      expect(deny).toContain(tool);
-    }
+  it('lets a revision do what a run on the job hunt does on this computer, asking before it saves a template', () => {
+    const { allow, deny } = scoped('revise').permissions;
     for (const tool of [
       'mcp__factwright__revision_findings',
       'mcp__factwright__requested_changes',
       'mcp__factwright__build_resume',
       'mcp__factwright__save_fact',
       'mcp__factwright__save_gap',
-      'Edit(./applications/**)',
+      'Edit(./**)',
     ]) {
       expect(allow).toContain(tool);
     }
-    // Changing a template is changing a file, which asks first, even when the user lets Claude
-    // change any file without asking, and never by editing the template's file itself.
+    // It reads what the X-ray found in a posting: changing a template asks first, and never by
+    // editing the template's file itself.
     expect(allow).not.toContain('mcp__factwright__save_template');
-    const anyFile = sessionSettings({
-      hookUrl: 'http://127.0.0.1:4000/hook',
-      dark: false,
-      scope: 'revise',
-      permissions: { anyFile: true, anySite: true },
-    }).permissions;
-    expect(anyFile.allow).toContain('Edit(./**)');
-    expect(anyFile.allow).not.toContain('mcp__factwright__save_template');
-    expect(anyFile.deny).toContain('Edit(./templates/**)');
+    expect(deny).toContain('Edit(./templates/**)');
+    expect(deny).not.toContain('mcp__factwright__save_template');
   });
 
-  it('never lets Claude change its own settings or the instructions it loads', () => {
-    for (const anyFile of [false, true]) {
-      const { deny } = sessionSettings({
-        hookUrl: 'http://127.0.0.1:4000/hook',
-        dark: false,
-        permissions: { anyFile, anySite: anyFile },
-      }).permissions;
-      expect(deny).toEqual([
-        'Edit(./.claude/**)',
-        'Edit(./**/.claude/**)',
-        'Edit(./CLAUDE.md)',
-        'Edit(./**/CLAUDE.md)',
-        'Edit(./**/CLAUDE.local.md)',
-      ]);
+  it('never lets Claude change its own settings, the instructions it loads, or the user’s own files', () => {
+    const never = [
+      'Edit(./.claude/**)',
+      'Edit(./**/.claude/**)',
+      'Edit(./CLAUDE.md)',
+      'Edit(./**/CLAUDE.md)',
+      'Edit(./**/CLAUDE.local.md)',
+      // Claude Code loads these where there's no CLAUDE.md, as in the workspace.
+      'Edit(./AGENTS.md)',
+      'Edit(./**/AGENTS.md)',
+      // The user's own notes, shared files and Profile, which go in through Factwright's tools.
+      'Edit(./about-me/notes.md)',
+      'Edit(./about-me/files/**)',
+      'Edit(./about-me/answers.json)',
+      'Edit(./about-me/history.json)',
+      'Edit(./about-me/kinds-of-job.json)',
+      'Edit(./about-me/beyond-work.json)',
+      'Edit(./linkedin/**)',
+    ];
+    for (const scope of ['hunt', 'profile', 'history', 'revise', 'template'] as const) {
+      expect(scoped(scope).permissions.deny.slice(0, never.length)).toEqual(never);
     }
+    expect(settings.permissions.deny).toEqual([...never, 'Edit(./facts/**)']);
+    // Claude still keeps its own note of what it has read.
+    expect(scoped('profile').permissions.deny).not.toContain('Edit(./about-me/read.md)');
   });
 
   it('hears when Claude starts, uses tools, needs the user, and stops', () => {
@@ -308,7 +268,7 @@ describe('sessionSettings', () => {
     expect(settings.hooks.PreToolUse).toEqual([
       expect.objectContaining({ matcher: 'AskUserQuestion' }),
       expect.objectContaining({
-        matcher: `mcp__${TOOLS_SERVER}__save_fact|mcp__${TOOLS_SERVER}__save_gap|mcp__${TOOLS_SERVER}__verify_fact`,
+        matcher: `mcp__${TOOLS_SERVER}__save_fact|mcp__${TOOLS_SERVER}__save_gap|mcp__${TOOLS_SERVER}__verify_fact|mcp__${TOOLS_SERVER}__correct_fact`,
       }),
     ]);
   });

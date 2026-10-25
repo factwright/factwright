@@ -40,6 +40,10 @@ describe('how hard Claude thinks', () => {
     };
     expect(effortFor(DEFAULT_EFFORT, revision, planLevels('max'))).toBe('xhigh');
     expect(effortFor({ main: 'high', tasks: { 'focused-resume': 'max' } }, revision)).toBe('max');
+    // So is a quick resume.
+    const quick = { skill: 'focused-resume' as const, jobId: 'acme--staff', quick: true as const };
+    expect(effortFor(DEFAULT_EFFORT, quick, planLevels('max'))).toBe('xhigh');
+    expect(effortFor({ main: 'high', tasks: { 'focused-resume': 'max' } }, quick)).toBe('max');
     expect(effortFor(DEFAULT_EFFORT, { skill: 'salary-check', jobId: 'acme--staff' })).toBe(
       'xhigh',
     );

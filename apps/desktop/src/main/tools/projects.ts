@@ -122,6 +122,7 @@ export async function buildProjectsPage(
   const html = renderProjectsHtml(page, template, RESUME_FONTS);
   if (files.some((file) => file.endsWith('.pdf'))) {
     const printed = await deps.printer.print(html);
+    deps.keep?.(join(dir, `${name}.pdf`));
     await writeFile(join(dir, `${name}.pdf`), printed.pdf);
     const fill = printed.lastFill === null ? '' : `, ${printed.lastFill}% full`;
     const pages = printed.pages === 1 ? '1 page' : `${printed.pages} pages`;
@@ -135,7 +136,9 @@ export async function buildProjectsPage(
     }
   }
   if (files.some((file) => file.endsWith('.docx'))) {
-    await writeFile(join(dir, `${name}.docx`), Buffer.from(await projectsDocxFile(page, template)));
+    const docx = Buffer.from(await projectsDocxFile(page, template));
+    deps.keep?.(join(dir, `${name}.docx`));
+    await writeFile(join(dir, `${name}.docx`), docx);
     report.push(
       `Built ${where}/${name}.docx. Word lays it out itself, one column, so check it fits one page there too.`,
     );
