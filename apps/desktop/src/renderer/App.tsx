@@ -382,7 +382,9 @@ export function App({ api }: { api: FactwrightApi }) {
             ? 'practice' in task && task.practice
               ? 'Practice'
               : 'Call prep'
-            : task && RUN_ACTIONS.find((action) => action.skill === task.skill)?.label;
+            : task && 'quick' in task
+              ? 'Quick resume'
+              : task && RUN_ACTIONS.find((action) => action.skill === task.skill)?.label;
   const runTitle =
     task?.skill === SEARCH_SKILL
       ? 'Job search'

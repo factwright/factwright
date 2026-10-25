@@ -114,10 +114,16 @@ export const TEMPLATE_SOURCE = /^\d{4}-\d{2}-\d{2}-\d{1,3}\.(?:pdf|png|jpg|webp)
  * resumes), more facts, from an interview or from new files and notes, a template in the look of
  * a resume the user likes, or a revision of a job's resume for what its ATS X-ray found. A new
  * version of a job's resume, cover letter or Projects page comes once the app has kept the one
- * before, and changes the user asked for in their own words reach the run through a tool.
+ * before, and changes the user asked for in their own words reach the run through a tool. A quick
+ * resume asks nothing, as a first resume or a new version.
  */
 export type RunTask =
   | { skill: RunSkill; jobId: string }
+  /**
+   * A quick resume, which asks the user nothing: it uses verified facts only, and ends with what
+   * could make it stronger. As a new version too, once the app has kept the one before.
+   */
+  | { skill: 'focused-resume'; jobId: string; quick: true; again?: true }
   /**
    * Drafting the questions of a job's application form in the user's browser, which the browser
    * extension asked for: the run reads them, with their options and limits, in job_details.

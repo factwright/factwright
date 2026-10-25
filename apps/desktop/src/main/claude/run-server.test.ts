@@ -413,6 +413,49 @@ describe('RunServer', () => {
       expect(ask).not.toHaveBeenCalled();
     });
 
+    it('turns the round away when the task asks nothing, saying why, before anything hears it', async () => {
+      await server.start();
+      const { ask, answer } = dialog();
+      const hooks = vi.fn();
+      const why = 'A quick resume asks the user nothing.';
+      let quiet: string | null = why;
+      server.listen(TOKEN, hooks, { ask, noQuestions: () => quiet });
+      // A subagent's round too, which would otherwise go to the terminal.
+      for (const event of [asked, { ...asked, agent_id: 'research' }]) {
+        const response = await post(server.hookUrl, event);
+        expect(response.status).toBe(200);
+        expect(await response.json()).toEqual({
+          hookSpecificOutput: {
+            hookEventName: 'PreToolUse',
+            permissionDecision: 'deny',
+            permissionDecisionReason: why,
+          },
+        });
+      }
+      // No dialog, and nothing that would have the run read as waiting on the user.
+      expect(ask).not.toHaveBeenCalled();
+      expect(hooks).not.toHaveBeenCalled();
+      // The run's other hooks go on as before.
+      expect((await post(server.hookUrl, { hook_event_name: 'Stop' })).status).toBe(204);
+      expect(hooks).toHaveBeenCalledOnce();
+      // Once the task may ask, the dialog asks.
+      quiet = null;
+      const held = post(server.hookUrl, asked);
+      await answer(null);
+      expect((await held).status).toBe(204);
+      // A task the app can't tell about lets the question be asked.
+      server.listen(TOKEN, () => {}, {
+        ask,
+        noQuestions: () => {
+          throw new Error('No run');
+        },
+      });
+      const again = post(server.hookUrl, asked);
+      await answer(null);
+      expect((await again).status).toBe(204);
+      expect(ask).toHaveBeenCalledTimes(2);
+    });
+
     it('keeps what the user answered in the dialog for the run’s tools, once Claude Code reports it', async () => {
       await server.start();
       const { ask, answer } = dialog();

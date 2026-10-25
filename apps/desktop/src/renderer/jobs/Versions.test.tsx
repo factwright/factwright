@@ -219,6 +219,33 @@ describe('New version', () => {
     );
   });
 
+  it('offers a quick one beside a resume’s, which keeps the current one too, and asks nothing', async () => {
+    const api = apiStub();
+    const run = controls();
+    render(<NewVersionButton job={job} kind="resume" api={api} run={run} onProblem={vi.fn()} />);
+    await userEvent.click(screen.getByRole('button', { name: 'Quick version' }));
+    expect(api.keepVersion).toHaveBeenCalledWith(job.id, 'resume');
+    await waitFor(() =>
+      expect(run.start).toHaveBeenCalledWith({
+        skill: 'focused-resume',
+        jobId: job.id,
+        again: true,
+        quick: true,
+      }),
+    );
+    cleanup();
+    // Only a resume has one, and while either runs, one says Claude is on it.
+    render(<NewVersionButton job={job} kind="letter" api={api} run={run} onProblem={vi.fn()} />);
+    expect(screen.queryByRole('button', { name: 'Quick version' })).toBeNull();
+    cleanup();
+    const working = controls({ skill: 'focused-resume', jobId: job.id, again: true, quick: true });
+    render(
+      <NewVersionButton job={job} kind="resume" api={api} run={working} onProblem={vi.fn()} />,
+    );
+    expect(screen.getAllByText('Claude is on it')).toHaveLength(1);
+    expect(screen.queryByRole('button', { name: 'Quick version' })).toBeNull();
+  });
+
   it('says why, and starts nothing, when it can’t keep the current one', async () => {
     const api = apiStub();
     api.keepVersion.mockResolvedValueOnce({ ok: false, message: 'Couldn’t keep it.' });
