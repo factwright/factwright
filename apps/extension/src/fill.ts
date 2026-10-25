@@ -549,8 +549,8 @@ export function fieldsToRead(form: PageForm, replies: readonly FieldReply[]): Fi
 
 /**
  * The answers to send once you've applied: what's in each of the form's own questions, as typed
- * or picked. Never what Profile fills, a file, a checkbox, agreeing to something, or an
- * equal-opportunity or personal answer.
+ * or picked, and why you're leaving, as you put it for this job. Never anything else Profile
+ * fills, a file, a checkbox, agreeing to something, or an equal-opportunity or personal answer.
  */
 export function sentAnswers(
   form: PageForm,
@@ -560,7 +560,7 @@ export function sentAnswers(
   return form.fields
     .flatMap((field, at) => {
       const reply = replies[at];
-      if (reply?.kind !== 'question') return [];
+      if (reply?.kind !== 'question' && reply?.kind !== 'leaving') return [];
       if (field.control === 'file' || field.control === 'check' || !field.question) return [];
       const value = fieldValue(field, values);
       return value.trim() ? [{ question: field.question, text: value.trim() }] : [];

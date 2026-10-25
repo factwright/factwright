@@ -12,6 +12,9 @@ describe('parsePay', () => {
     ['Base salary 165000 plus equity', { min: 165_000, max: 165_000 }],
     ['$120k base, 401(k) match', { min: 120_000, max: 120_000 }],
     ['2-3 years of experience, $150k-$180k', { min: 150_000, max: 180_000 }],
+    // A number right after a sentence's full stop is still read.
+    ['The pay range is below.150,000 - 200,000', { min: 150_000, max: 200_000 }],
+    ['Pay..95,000-110,000', { min: 95_000, max: 110_000 }],
   ])('reads "%s"', (text, range) => {
     expect(parsePay(text)).toEqual(range);
   });
@@ -38,9 +41,9 @@ describe('parsePay', () => {
       `401${' '.repeat(100_000)}`,
       `${'1.'.repeat(50_000)}x`,
     ]) {
-      const start = performance.now();
+      const start = Date.now();
       parsePay(text);
-      expect(performance.now() - start).toBeLessThan(1000);
+      expect(Date.now() - start).toBeLessThan(1000);
     }
   });
 
@@ -69,6 +72,11 @@ describe('payBand', () => {
     ['200,000 and above', { min: 200_000, max: Number.POSITIVE_INFINITY }],
     ['$70 - $85 per hour', { min: 145_600, max: 176_800 }],
     ['$150,000', { min: 150_000, max: 150_000 }],
+    ['$50,000 or less', { min: 0, max: 50_000 }],
+    ['$200,000 or greater', { min: 200_000, max: Number.POSITIVE_INFINITY }],
+    // A tier's or level's number before the band isn't money.
+    ['Tier 2 - $100k-$150k', { min: 100_000, max: 150_000 }],
+    ['Level 3 – $150,000 to $199,999', { min: 150_000, max: 199_999 }],
   ])('reads "%s"', (text, band) => {
     expect(payBand(text)).toEqual(band);
   });
@@ -88,9 +96,9 @@ describe('payBand', () => {
       `${'1'.repeat(299)}x`,
       `1${' '.repeat(298)}+`.slice(0, 300),
     ]) {
-      const start = performance.now();
+      const start = Date.now();
       payBand(text);
-      expect(performance.now() - start).toBeLessThan(100);
+      expect(Date.now() - start).toBeLessThan(100);
     }
   });
 });

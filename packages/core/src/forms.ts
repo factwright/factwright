@@ -215,12 +215,39 @@ export const WITHOUT_SPONSORSHIP =
   /\bwithout (the need for |needing |requiring |any )*(visa |employer |company )?sponsor/;
 
 /**
- * Words that ask why you're leaving your job, or why you left your last one: "Reason for leaving",
- * "Why are you looking for a new role?", "What prompted you to look?", but never "Why are you
- * looking at Acme?", which asks why the job.
+ * What comes after "leave" or "leaving" in a question about your job: nothing more, another
+ * question, or the job itself, "your current position", never "the military" or "gaps".
  */
-const LEAVING =
-  /\breasons? (for|of) (your |my )?(leaving|departure|wanting to (leave|change|move on)|(job )?change|changing (jobs?|roles?|employers?|companies|positions?)|(looking|seeking|searching) for (a )?(new|another|change)|considering (a )?(new|change))\b|\bleaving reasons?\b|\bwhy (are|did|do|would|have|were) you (want(ed)? to |wish(ed)? to |plan(ning)? to |decide(d)? to |choose to |chose to |thinking (of|about) |considering |interested in |looking to )?(leave|leaving|left)\b|\bwhy (are|do) you (want to |wish to )?(change|changing|move|moving|switch|switching) (jobs?|roles?|employers?|companies|positions?)\b|\bwhy are you (currently |now )?(looking|searching|seeking|job hunting|on the job market)\b(?! (at|into|to join|to work|forward))|\bwhat (prompted|made|led|motivated|is motivating|is prompting) you to (look|leave|start looking|seek|search|consider)/;
+const JOB_AFTER = String.raw`(?=$| or\b| and\b| (your|the|this|my|that) ((current|last|previous|prior|most recent|present|former) )?(job|role|position|employer|company|organi[sz]ation|team|work)\b)`;
+
+/** A new job of no one company's, as "Why are you looking for a new role?" asks it. */
+const NEW_ROLE = String.raw`(for )?(a |an )?(new|another|different) (role|job|position|opportunity|opportunities|challenge|employer|company)\b(?! (at|with|like|in)\b)`;
+
+/**
+ * Words that ask why you're leaving your job, or why you left your last one: "Reason for leaving",
+ * "Why are you looking for a new role?", "Please explain why you are leaving your current
+ * employer", but never "Why are you looking for a position at Acme?" or "What led you to consider
+ * a role here?", which ask why the job.
+ */
+const LEAVING = new RegExp(
+  [
+    String.raw`\breason( s|s)? (for|of) (your |my )?(leaving|departure|wanting to (leave|change|move on)|(job )?change|changing (jobs?|roles?|employers?|companies|positions?)|(looking|seeking|searching) for (a )?(new|another|change)|considering (a )?(new|change))\b`,
+    String.raw`\bleaving reasons?\b`,
+    String.raw`\bwhy (are|did|do|would|have|were) you (want(ed)? to |wish(ed)? to |plan(ning)? to |decide(d)? to |choose to |chose to |thinking (of|about) |considering |interested in |looking to )?(leave|leaving|left)${JOB_AFTER}`,
+    String.raw`\bwhy (you are|youre|you re|you were|you have|youve|you)( (looking|planning|wanting|hoping|deciding|want|wish|decided|chose|plan) to)? (leave|leaving|left)${JOB_AFTER}`,
+    String.raw`\bwhy (are|do) you (want to |wish to )?(change|changing|move|moving|switch|switching) (jobs?|roles?|employers?|companies|positions?)\b`,
+    String.raw`\bwhy are you (currently |now )?(looking|searching|seeking|job hunting|on the job market)(?=$| ${NEW_ROLE}| to (leave|change|move on|switch|make a (change|move))\b| elsewhere\b| for a change\b)`,
+    String.raw`\bwhat (prompted|made|led|motivated|caused|is motivating|is prompting) you( to)? (leave|start looking|look for (a |an )?(new|another|different) (role|job|position|opportunity|opportunities))\b`,
+  ].join('|'),
+);
+
+/**
+ * Words that ask why, and words about leaving: together, a question about leaving your job, never
+ * where you work now, as "Describe your departure from your current employer". Leaving alone
+ * isn't, as "Current company (leave blank if none)".
+ */
+const ASKS_WHY = /\b(why|reasons?|explain|describe)\b/;
+const ABOUT_LEAVING = /\b(leave|leaving|left|departure|departing)\b/;
 
 /**
  * Rules that say what a field asks, by its question, in order: the first that fits is it. Each
@@ -299,7 +326,8 @@ const RULES: { kind: FieldKind; words: RegExp; also?: RegExp; not?: RegExp }[] =
     kind: 'pay',
     words:
       /\b(salary|compensation|pay|wage|rate) (expectations?|requirements?|range|desired|requested)\b|\b(desired|expected|target|minimum|requested) (base )?(salary|compensation|pay|wage|rate)\b|\bsalary\b|\bcompensation\b/,
-    not: /\b(history|current salary|prior|previous)\b/,
+    // What you're paid now, or were, isn't what you'd ask for.
+    not: /\b(history|prior|previous|past)\b|\bcurrent (base |annual |total |yearly )?(salary|compensation|pay|wage|rate|package)\b|\b(currently|presently) (earn|make|paid)\b/,
   },
   // Cover letters, to type or upload.
   { kind: 'cover-letter', words: /\b(cover|motivation(al)?) letter\b/ },
@@ -757,7 +785,10 @@ function kindAsked(field: FieldToTell): FieldKind {
   if (type === 'email') return 'email';
   if (type === 'tel') return 'phone';
   if (CONSENT.test(question)) return 'consent';
+  // A question about why you're leaving never asks where you work now, however it's worded.
+  const whyLeaving = ASKS_WHY.test(question) && ABOUT_LEAVING.test(question);
   for (const rule of RULES) {
+    if (whyLeaving && (rule.kind === 'current-company' || rule.kind === 'current-title')) continue;
     if (
       rule.words.test(question) &&
       rule.also?.test(question) !== false &&

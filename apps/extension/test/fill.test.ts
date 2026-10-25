@@ -217,6 +217,17 @@ describe('what you sent', () => {
     expect(sentAnswers(form(fields), replies, typed)).toEqual([
       { question: 'Why do you want to join Harbor & Pine?', text: 'Gear that lasts.' },
     ]);
+    // Why you're leaving, as you put it for this job, to say the same in its interviews.
+    const leaving = [field('Why are you leaving?', { ref: 0, control: 'long' })];
+    expect(
+      sentAnswers(
+        form(leaving),
+        [{ kind: 'leaving', text: 'A bigger scale.', source: 'profile' }],
+        values(leaving, ['A bigger scale, on a team that ships tools.']),
+      ),
+    ).toEqual([
+      { question: 'Why are you leaving?', text: 'A bigger scale, on a team that ships tools.' },
+    ]);
   });
 
   it('reads only the form’s own questions and what Profile can keep, never a personal one', () => {

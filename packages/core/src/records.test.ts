@@ -432,5 +432,13 @@ describe('readRecords', () => {
     // And the pay to ask for, as the job's Claude suggested it.
     expect(of(records, 'folder')[0]?.ask).toBe('$185,000');
     expect(of(readRecords(WORKSPACE), 'folder')[0]?.ask).toBeNull();
+    // A field left empty is nothing, never the line after it.
+    const empty = readRecords(
+      memoryWorkspace({
+        [`${ACME}/job.md`]:
+          '# Acme Robotics: Program Manager\n\n- **Pay to ask for:**\n- **Kind of job:** project-manager',
+      }),
+    );
+    expect(of(empty, 'folder')[0]).toMatchObject({ ask: null, kind: 'project-manager' });
   });
 });

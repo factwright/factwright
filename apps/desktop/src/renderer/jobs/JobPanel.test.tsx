@@ -281,6 +281,14 @@ describe('the pay to ask for', () => {
     expect(results.violations).toEqual([]);
   });
 
+  it('changes nothing when Save is pressed on what it goes by already', async () => {
+    const { api } = panel({ ...northwind(), suggestedAsk: '$190,000' }, {}, { targets: TARGETS });
+    await userEvent.click(screen.getByRole('button', { name: /^Change: the pay to ask for/ }));
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }));
+    expect(api.updateJob).not.toHaveBeenCalled();
+    expect(line()).toBe('Pay to ask for: $190,000, your Claude’s suggestion');
+  });
+
   it('says whose it is, the user’s own winning over their Claude’s, and goes back', async () => {
     const job = { ...northwind(), suggestedAsk: '$190,000' };
     panel(job, {}, { targets: TARGETS });

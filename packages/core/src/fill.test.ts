@@ -358,6 +358,14 @@ describe('answering a form from what’s on file', () => {
     ]);
     // The same words, whatever they say.
     expect(picked('Negotiable', ['Negotiable', '$100k+']).pick).toEqual(['Negotiable']);
+    // Of two bands that start at the ask, the narrower.
+    expect(picked('$150,000', ['$150,000+', '$150,000 - $199,999']).pick).toEqual([
+      '$150,000 - $199,999',
+    ]);
+    // A tier's number before its band, as some forms put it.
+    expect(picked('$120,000', ['Tier 1 - $50k-$100k', 'Tier 2 - $100k-$150k']).pick).toEqual([
+      'Tier 2 - $100k-$150k',
+    ]);
     for (const left of [
       // A range that runs over two bands, or past the last.
       picked('$140,000 - $160,000'),
@@ -367,6 +375,7 @@ describe('answering a form from what’s on file', () => {
       // Another currency than the ask's.
       picked('$185,000', ['€100,000 - €150,000', '€150,000 - €200,000']),
       picked('£85,000', ['$50,000 - $100,000']),
+      picked('$185,000', ['CA$150,000 - CA$199,999', 'C$200,000+']),
       // Options it hasn't seen yet, as a list that loads as you type.
       picked('$185,000', []),
     ]) {
@@ -794,9 +803,19 @@ describe('why you’re leaving', () => {
     for (const question of [
       'Reason for leaving your current position',
       'Reason for leaving current employer',
+      'Reason(s) for leaving current employer',
+      'Please explain why you are leaving your current employer',
+      'Tell us why you’re leaving your current role',
+      'Briefly describe why you are leaving your current position',
     ]) {
       expect(answer(question)).toEqual({ kind: 'leaving', source: 'you', left: 'unset' });
     }
+    // However else it's worded, a question about leaving never gets them.
+    expect(answer('Describe your departure from your current employer')).toEqual({
+      kind: 'question',
+      source: 'you',
+      left: 'new',
+    });
     // A box for paragraphs about where you work now is a question for you or your Claude.
     expect(answer('Tell us about your current role', { control: 'long' })).toEqual({
       kind: 'question',

@@ -254,8 +254,9 @@ function readJobNotes(markdown: string) {
     .sort((a, b) => a.at - b.at)[0];
   const company = split ? heading.slice(0, split.at) : heading;
   const role = split ? heading.slice(split.at + split.separator.length) : '';
+  // A field's value is on its own line: an empty one is nothing, never the line after it.
   const field = (name: string) =>
-    markdown.match(new RegExp(`^- \\*\\*${name}:\\*\\*\\s*(.+)$`, 'mi'))?.[1]?.trim() ?? null;
+    markdown.match(new RegExp(`^- \\*\\*${name}:\\*\\*[ \\t]*(.+)$`, 'mi'))?.[1]?.trim() || null;
   return {
     company: company.trim(),
     role: role.replace(/\.\s.*$/, '').trim(),

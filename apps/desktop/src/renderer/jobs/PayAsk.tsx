@@ -103,7 +103,11 @@ export function PayAskLine({
       className={styles.edit}
       onSubmit={(event) => {
         event.preventDefault();
-        void save(text.trim() || null);
+        const typed = text.trim() || null;
+        // Saving what it goes by already changes nothing: Claude's suggestion or the target
+        // stays theirs, not the user's own.
+        if (typed === (job.payAsk ?? (ask?.text || null))) close();
+        else void save(typed);
       }}
     >
       <label className={styles.label} htmlFor={inputId}>

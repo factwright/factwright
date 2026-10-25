@@ -15,7 +15,7 @@ interface Amount {
  * fits, and a number is read from its first digit, so text from a page, such as a long run of
  * spaces or digits, takes as long as it is long, never longer.
  */
-const MONEY = String.raw`(?:(\$)\s*)?(?<![\d.])(\d+(?:\.\d+)?)(?:\s*([kKmM])(?![a-z]))?`;
+const MONEY = String.raw`(?:(\$)\s*)?(?<!\d)(?<!\d\.)(\d+(?:\.\d+)?)(?:\s*([kKmM])(?![a-z]))?`;
 const RANGES = new RegExp(`${MONEY}\\s*(?:–|—|-|to)\\s*${MONEY}`, 'g');
 const AMOUNTS = new RegExp(MONEY, 'g');
 const HOURLY = /\b(hour|hourly|hr)\b|\/\s*h(ou)?r\b/i;
@@ -60,12 +60,13 @@ export function parsePay(text: string | null | undefined): PayRange | null {
   return annual.length > 0 ? { min: Math.min(...annual), max: Math.max(...annual) } : null;
 }
 
-/** Words that make an amount the top of a band, as "Under $50,000" or "Up to $50k" do. */
-const UP_TO = /\b(under|below|less than|lower than|up to|no more than|not more than)\b|^\s*</i;
+/** Words that make an amount the top of a band, as "Under $50,000" or "$50k or less" do. */
+const UP_TO =
+  /\b(under|below|less than|lower than|up to|no more than|not more than|or less|or lower|or below)\b|^\s*</i;
 
 /** Words that make an amount the bottom of a band, as "$200,000 or more" or "Over $200k" do. */
 const AND_UP =
-  /\b(over|above|more than|greater than|at least|or more|or higher|or above|and (above|up|over|higher|more))\b|\d(?:\s*[kKmM])?\s*\+|^\s*>/i;
+  /\b(over|above|more than|greater than|at least|or more|or higher|or above|or greater|and (above|up|over|higher|more|greater))\b|\d(?:\s*[kKmM])?\s*\+|^\s*>/i;
 
 /**
  * The pay a choice's option names, as a band of a year's pay: "$100,000 - $149,999", "Under
@@ -75,12 +76,13 @@ const AND_UP =
 export function payBand(option: string): PayRange | null {
   if (option.length > MAX_BAND) return null;
   const cleaned = withoutParentheses(option.replace(/,/g, ''));
-  const ranged = findAmounts(cleaned);
-  // Two amounts with other words between them, as "$40,000 up to $60,000", are a band too.
-  const all = [...cleaned.matchAll(AMOUNTS)]
+  // The first two amounts that look like money, as in "$40,000 up to $60,000", and never a
+  // tier's number before them, as in "Tier 2 - $100k-$150k". Else a range with one end that
+  // looks like money, as "100-150k".
+  const money = [...cleaned.matchAll(AMOUNTS)]
     .map((match) => toAmount(match[1], match[2], match[3]))
     .filter(looksLikeMoney);
-  const amounts = ranged.length > 1 || all.length < 2 ? ranged : all;
+  const amounts = money.length >= 2 ? money.slice(0, 2) : findAmounts(cleaned);
   const usesThousands = amounts.some((amount) => amount.unit === 'k');
   const hourly = HOURLY.test(cleaned);
   // Unlike a posting's pay, a band can start at nothing, as "$0 - $49,999" does.

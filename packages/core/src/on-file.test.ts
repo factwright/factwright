@@ -242,11 +242,15 @@ describe('what Mark as applied records', () => {
         { question: 'If yes, please explain.', text: 'First.' },
         { question: 'If yes, please explain.', text: 'Second.' },
         { question: 'Anything else?', text: '   ' },
+        { question: 'Why are you leaving?', text: 'A bigger scale.' },
+        { question: 'What are your salary expectations?', text: '$185,000' },
       ]),
     ).toEqual([
       { question: 'Why us?', nth: 0, text: 'Data products.' },
       { question: 'If yes, please explain.', nth: 0, text: 'First.' },
       { question: 'If yes, please explain.', nth: 1, text: 'Second.' },
+      // Why you're leaving, as put for this job, but never the rest of what Profile answers.
+      { question: 'Why are you leaving?', nth: 0, text: 'A bigger scale.' },
     ]);
   });
 

@@ -851,24 +851,40 @@ function yearlyPay(field: FormField, ask: string): number | null {
 const CURRENCY_CODES =
   /\b(eur|gbp|inr|jpy|cny|rmb|cad|aud|nzd|sgd|hkd|chf|sek|nok|dkk|pln|mxn|brl|zar)\b/;
 
-/** The currency a pay names, by its sign or code, or "" for dollars, or none named. */
+/** Dollars of other countries, by the letters before their sign, as "CA$" or "A$". */
+const OTHER_DOLLARS: Readonly<Record<string, string>> = {
+  ca: 'cad',
+  c: 'cad',
+  au: 'aud',
+  a: 'aud',
+  nz: 'nzd',
+  hk: 'hkd',
+  sg: 'sgd',
+  s: 'sgd',
+  mx: 'mxn',
+};
+
+/** The currency a pay names, by its sign or code, or "" for US dollars, or none named. */
 function currencyOf(text: string): string {
   const signs: Record<string, string> = { '€': 'eur', '£': 'gbp', '₹': 'inr', '¥': 'jpy' };
   const sign = /[€£₹¥]/.exec(text)?.[0];
-  return sign ? (signs[sign] ?? '') : (CURRENCY_CODES.exec(text.toLowerCase())?.[1] ?? '');
+  if (sign) return signs[sign] ?? '';
+  const dollars = /\b(ca|c|au|a|nz|hk|sg|s|mx)\$/.exec(text.toLowerCase())?.[1];
+  if (dollars) return OTHER_DOLLARS[dollars] ?? '';
+  return CURRENCY_CODES.exec(text.toLowerCase())?.[1] ?? '';
 }
 
 /**
  * The option whose band holds the pay to ask for, as "$150,000 - $199,999" holds $185,000, and
  * all of it, for an ask that's a range. Where two bands hold it, as "$100k-$150k" and
- * "$150k-$200k" both hold $150,000, the higher: an ask is the least you'd want. Null when none
- * holds it, or the options are in another currency than the ask.
+ * "$150k-$200k" both hold $150,000, the higher, as an ask is the least you'd want, and of two that
+ * start alike, as "$150k+" and "$150k-$199k", the narrower. Null when none holds it, or the
+ * options are in another currency than the ask.
  */
 function payOption(options: readonly string[], ask: string): string | null {
-  const same = options.find((option) => plain(option) === plain(ask));
-  if (same) return same;
   const wanted = parsePay(ask);
-  if (!wanted) return null;
+  // An ask with no amount, as "Negotiable", takes the option with the same words.
+  if (!wanted) return options.find((option) => plain(option) === plain(ask)) ?? null;
   const held = options.flatMap((option) => {
     const band = payBand(option);
     return band &&
@@ -878,7 +894,7 @@ function payOption(options: readonly string[], ask: string): string | null {
       ? [{ option, band }]
       : [];
   });
-  return held.sort((a, b) => b.band.min - a.band.min)[0]?.option ?? null;
+  return held.sort((a, b) => b.band.min - a.band.min || a.band.max - b.band.max)[0]?.option ?? null;
 }
 
 /** Where the pay to ask for came from, as a reply says it. */

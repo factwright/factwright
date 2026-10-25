@@ -171,6 +171,9 @@ describe('what a field asks for', () => {
         ['How did you hear about this job?', { control: 'choice' }],
         ['What are your salary expectations?'],
         ['Desired compensation', { control: 'number', type: 'number' }],
+        ['What is your current base salary?', { control: 'choice' }],
+        ['Current compensation'],
+        ['What do you currently earn?'],
         ['Are you at least 18 years of age?', { control: 'choice' }],
       ]),
     ).toEqual([
@@ -182,6 +185,10 @@ describe('what a field asks for', () => {
       'how-heard',
       'pay',
       'pay',
+      // What you're paid now isn't what you'd ask for.
+      'question',
+      'question',
+      'question',
       'over-18',
     ]);
   });
@@ -209,7 +216,13 @@ describe('what a field asks for', () => {
       'Why are you considering leaving your current role?',
       'Why do you want to change jobs?',
       'What prompted you to look for a new role?',
+      'What made you start looking?',
       'Leaving reason',
+      'Reason(s) for leaving current employer',
+      'Please explain why you are leaving your current employer',
+      'Tell us why you’re leaving your current role',
+      'Briefly describe why you are leaving your current position',
+      'Why did you leave or are you leaving your most recent employer?',
     ];
     for (const control of ['text', 'long'] as const) {
       expect(kinds(leaving.map((question) => [question, { control }]))).toEqual(
@@ -259,6 +272,32 @@ describe('what a field asks for', () => {
       'current-company',
       'current-title',
     ]);
+    // Why the job, asked in words close to it, and leaving something other than a job.
+    expect(
+      kinds(
+        [
+          'Why are you seeking employment with Harbor & Pine?',
+          'Why are you looking for a position at Harbor & Pine?',
+          'Why are you looking for a new role at Harbor & Pine?',
+          'Why are you searching for a role like this one?',
+          'What led you to consider a role at Harbor & Pine?',
+          'What motivated you to seek out this role?',
+          'Why did you leave the military?',
+          'Why have you left gaps in your employment?',
+        ].map((question) => [question, { control: 'long' }]),
+      ),
+    ).toEqual(Array(8).fill('question'));
+  });
+
+  it('never takes a question about why you’re leaving as asking your title or company', () => {
+    expect(
+      kinds([
+        ['Describe your departure from your current employer'],
+        ['Explain why your current position is ending, if you have left'],
+        ['Current company (leave blank if none)'],
+        ['Current or most recent employer, if you have left'],
+      ]),
+    ).toEqual(['question', 'question', 'current-company', 'current-company']);
   });
 
   it('tells why you’re leaving as fast in a question a page made to be slow', () => {
@@ -267,9 +306,9 @@ describe('what a field asks for', () => {
       'reason for '.repeat(20_000),
       'what prompted you to '.repeat(10_000),
     ]) {
-      const start = performance.now();
+      const start = Date.now();
       fieldKind(field(question, { control: 'long' }));
-      expect(performance.now() - start).toBeLessThan(1000);
+      expect(Date.now() - start).toBeLessThan(1000);
     }
   });
 

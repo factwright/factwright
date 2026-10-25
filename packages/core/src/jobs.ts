@@ -21,7 +21,7 @@ import {
   titleFit,
   titlesFit,
 } from './matching.ts';
-import { idPart, shortCode } from './new-job.ts';
+import { idPart, JOB_LIMITS, shortCode } from './new-job.ts';
 import { parsePay } from './pay.ts';
 import {
   type FolderRecord,
@@ -541,8 +541,9 @@ function build(draft: Draft): CollectedJob {
   )[0];
   const source = !first ? '' : first.tool === 'search' ? first.source : SOURCES[first.tool];
 
-  // The newest folder's job.md that suggests one.
-  const suggestedAsk = [...folders].reverse().find((record) => record.ask)?.ask ?? null;
+  // The newest folder's job.md that suggests one, as long as a pay the user types can be.
+  const suggestion = [...folders].reverse().find((record) => record.ask)?.ask ?? null;
+  const suggestedAsk = suggestion && suggestion.length <= JOB_LIMITS.pay ? suggestion : null;
   // A fit check judges the one job, so its kind wins over a search's.
   const kindFound =
     [...folders].reverse().find((record) => record.kind)?.kind ??

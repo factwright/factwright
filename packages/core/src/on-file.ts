@@ -158,8 +158,9 @@ export function sentBefore(jobs: readonly Job[]): SentBefore[] {
 
 /**
  * The answers a form's own questions got, as Mark as applied records them: each question the
- * form asks in its own words, and which time it asks it, for one it asks more than once. Never
- * what Profile answers, an equal-opportunity or personal answer, agreeing to something, or a
+ * form asks in its own words, and which time it asks it, for one it asks more than once, and why
+ * you're leaving, as you put it for this job, to say the same in its interviews. Never anything
+ * else Profile answers, an equal-opportunity or personal answer, agreeing to something, or a
  * blank, whatever the extension sent.
  */
 export function sentAnswersOf(
@@ -178,7 +179,7 @@ export function sentAnswersOf(
       autocomplete: '',
       name: '',
     });
-    if (kind !== 'question') continue;
+    if (kind !== 'question' && kind !== 'leaving') continue;
     const nth = seen.get(key) ?? 0;
     seen.set(key, nth + 1);
     kept.push({ question, nth, text: text.trim() });

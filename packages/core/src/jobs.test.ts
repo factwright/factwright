@@ -267,6 +267,11 @@ describe('collectJobs', () => {
       fitCheck('Acme Robotics', 'Program Manager'),
     ]);
     expect(job?.suggestedAsk).toBe('$185,000');
+    // No longer than a pay the user types can be.
+    expect(
+      collectJobs([folder('Acme Robotics', 'Program Manager', { ask: '1'.repeat(201) })])[0]
+        ?.suggestedAsk,
+    ).toBeNull();
     expect(collectJobs([folder('Acme Robotics', 'Program Manager')])[0]?.suggestedAsk).toBeNull();
     expect(collectJobs([fitCheck('Acme Robotics', 'Program Manager')])[0]?.suggestedAsk).toBeNull();
   });
