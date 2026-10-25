@@ -4,6 +4,8 @@ Notable changes to Factwright, newest first. The format follows [Keep a Changelo
 
 ## Unreleased
 
+## 0.17.0 - 2026-10-25
+
 ### Added
 - Claude's questions have Skip. Send waits until every question has an answer or a skip, rather than sending once any one has an answer and leaving out the rest. Claude hears a skipped question as "The user skipped this question.", with your note if you add one, and a skip is never on record as your answer, so it backs no fact. A skipped question folds to say so, with Answer it to bring it back as you left it.
 - The jobs list has an Added column: the day each job was found or saved, which sorts the list newest first, then oldest first.
