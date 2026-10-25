@@ -52,8 +52,8 @@ import {
 import { type FillWay, fillWays, firstAnswer } from './fill-way.ts';
 import { isToPanel } from './job-site-messages.ts';
 import { statusWords } from './job-words.ts';
-import { keepFill, keptFill } from './kept-fill.ts';
-import { askToSave } from './messages.ts';
+import type { KeptFill } from './kept-fill.ts';
+import { askKept, askToSave, type Message } from './messages.ts';
 import type { FieldFilled, FieldValue, PageAdder, PageField, PageForm } from './page/form.ts';
 import { isWebPage, readFormJob, readFormPage } from './read-tab.ts';
 import { serverName } from './server.ts';
@@ -1258,8 +1258,9 @@ async function fill(state: Filling, onlyEmpty = false): Promise<boolean> {
   }
   state.status = '';
   render(state);
-  // Kept, as a fill in its page is, for the popup to say, and the panel to show as it opens again.
-  void keepFill({
+  // Kept by the background, as a fill in its page is, for the popup to say, and the panel to show
+  // as it opens again.
+  const fill: KeptFill = {
     tabId: state.tabId,
     place: state.place,
     via: state.way.via,
@@ -1269,7 +1270,8 @@ async function fill(state: Filling, onlyEmpty = false): Promise<boolean> {
     shows: state.shows,
     filled: [...state.filled],
     at: Date.now(),
-  });
+  };
+  void ext.runtime.sendMessage({ type: 'keep', fill } satisfies Message).catch(() => {});
   return true;
 }
 
@@ -1468,7 +1470,7 @@ async function showKept(
   before: Filling | null,
   later: () => boolean,
 ): Promise<boolean> {
-  const kept = await keptFill(tabId);
+  const { fill: kept } = await askKept((asked) => ext.runtime.sendMessage(asked), tabId);
   if (!kept || later()) return false;
   const way = ways.find((each) => each.via === kept.via);
   const read = way ? await formValues(kept.place, []) : null;

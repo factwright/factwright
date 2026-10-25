@@ -1,12 +1,14 @@
-import { ext } from './ext.ts';
 import type { FillPlan, FormPlace } from './fill.ts';
+import { keptState } from './kept-state.ts';
 import type { FieldFilled, PageForm } from './page/form.ts';
 
 /**
  * A form Fill filled in its page, as the panel shows it once you open it: from the note's Details,
- * or the popup. It's kept in the browser's memory while it runs, never on the disk, by tab, as the
- * background that filled it may be gone by then, and the panel shows it as it was, without filling
- * it again over what you've typed since.
+ * or the popup. The background keeps it, by tab, and the panel shows it as it was, without filling
+ * it again over what you've typed since. One from Factwright on this computer is kept in the
+ * browser's memory while it runs, as the background may be stopped and started meanwhile. One
+ * through sync, which holds what it read from your job hunt, stays in the background's own memory
+ * alone (kept-state.ts).
  */
 export interface KeptFill {
   tabId: number;
@@ -25,52 +27,30 @@ export interface KeptFill {
   at: number;
 }
 
-/** Where the fills are kept: in the browser's memory, while it runs, never on the disk. */
-const FILLS = 'fills';
-
 /** The most tabs whose fills are kept: more than anyone fills at once. */
 const MOST_TABS = 20;
 
-/** Changes to the fills kept, each after the one before it. */
-let queue: Promise<unknown> = Promise.resolve();
-
-async function fillsKept(): Promise<Record<string, KeptFill>> {
-  const session = ext.storage.session;
-  if (!session) return {};
-  const { [FILLS]: kept } = await session.get(FILLS).catch(() => ({}) as Record<string, unknown>);
-  return kept && typeof kept === 'object' ? (kept as Record<string, KeptFill>) : {};
-}
-
-function change(apply: (all: Record<string, KeptFill>) => void): Promise<void> {
-  const next = queue.then(async () => {
-    const session = ext.storage.session;
-    if (!session) return;
-    const all = await fillsKept();
-    apply(all);
-    const newest = Object.values(all)
-      .sort((a, b) => b.at - a.at)
-      .slice(0, MOST_TABS);
-    await session.set({ [FILLS]: Object.fromEntries(newest.map((each) => [each.tabId, each])) });
-  });
-  queue = next.catch(() => {});
-  return next;
-}
+const fills = keptState<KeptFill>(
+  'fills',
+  (fill) => fill.via === 'sync',
+  MOST_TABS,
+  (fill) => fill.at,
+);
 
 /** Keeps a tab's fill, in place of the one before. */
 export const keepFill = (fill: KeptFill) =>
-  change((all) => {
+  fills.change((all) => {
     all[fill.tabId] = fill;
   });
 
 /** A tab's fill, as kept, or null. */
 export async function keptFill(tabId: number): Promise<KeptFill | null> {
-  await queue;
-  return (await fillsKept())[tabId] ?? null;
+  return (await fills.all())[tabId] ?? null;
 }
 
 /** Forgets a tab's fill, as the tab closes. */
 export const forgetFill = (tabId: number) =>
-  change((all) => {
+  fills.change((all) => {
     delete all[tabId];
   });
 

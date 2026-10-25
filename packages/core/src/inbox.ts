@@ -415,6 +415,11 @@ export type InboxAskAnswer =
       did: 'sent';
       job: AskedJob;
       recorded: number;
+      /**
+       * Whether this marked the job Applied, as it wasn't, which only that Undo takes back.
+       * Factwright from before Undo doesn't say.
+       */
+      marked?: boolean;
       /** Through sync, what Undo puts back, once marking the job Applied changed it. */
       undo?: SentUndo;
     }

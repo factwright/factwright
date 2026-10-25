@@ -467,7 +467,8 @@ describe('what was sent', () => {
       { question: 'Street address', text: '1420 Larimer St' },
       { question: 'Anything else?', text: '  ' },
     ]);
-    expect(answer).toMatchObject({ ok: true, did: 'sent', recorded: 3 });
+    // It marked the job Applied, as it wasn't, which Undo may take back.
+    expect(answer).toMatchObject({ ok: true, did: 'sent', recorded: 3, marked: true });
     expect(deps.jobs.recordAnswers.mock.calls).toEqual([
       [
         'harbor-pine--account-executive',
@@ -483,9 +484,10 @@ describe('what was sent', () => {
     });
   });
 
-  it('leaves a job you applied to as it is', async () => {
-    await sent([{ question: 'Why?', text: 'Because.' }], 'lumen--product-manager');
+  it('leaves a job you applied to as it is, and says it didn’t mark it, so there’s no Undo', async () => {
+    const answer = await sent([{ question: 'Why?', text: 'Because.' }], 'lumen--product-manager');
     expect(deps.jobs.updateJob).not.toHaveBeenCalled();
+    expect(answer).toMatchObject({ ok: true, did: 'sent', marked: false });
   });
 
   it('takes marking a job Applied back, as Undo asks', async () => {

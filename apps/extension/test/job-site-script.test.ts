@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { menuHeight } from '../src/frame-size.ts';
 import type { FieldMenu } from '../src/job-site-messages.ts';
@@ -499,10 +501,12 @@ describe('the script on a job site you allowed', () => {
   });
 
   it('says what the form held as you submit it, and whether its button sends the application', async () => {
-    document.body.insertAdjacentHTML(
-      'beforeend',
-      '<button id="add" type="button">Add another</button><button id="next" type="button">Save and Continue</button><button id="send" type="button">Submit application</button>',
-    );
+    document
+      .querySelector('form')
+      ?.insertAdjacentHTML(
+        'beforeend',
+        '<button id="add" type="button">Add another</button><button id="next" type="button">Save and Continue</button><button id="send" type="button">Submit application</button>',
+      );
     script = startScript(() => true, 0);
     await vi.waitFor(() => expect(frames()).toHaveLength(1));
     input('note').value = 'Gear that lasts.';
@@ -530,7 +534,9 @@ describe('the script on a job site you allowed', () => {
   });
 
   it('says how a submit went once the page moves on: the form gone, or the words that it went in', async () => {
-    document.body.insertAdjacentHTML('beforeend', '<button id="send">Submit</button>');
+    document
+      .querySelector('form')
+      ?.insertAdjacentHTML('beforeend', '<button id="send">Submit</button>');
     script = startScript(() => true, 0);
     await vi.waitFor(() => expect(frames()).toHaveLength(1));
     document.getElementById('send')?.click();
@@ -550,6 +556,73 @@ describe('the script on a job site you allowed', () => {
       expect(sentOf('outcome')).toEqual([
         expect.objectContaining({ submitted: true, form: false, errors: false }),
       ]),
+    );
+  });
+
+  it('hears only the application form’s own buttons, never a posting’s Apply above it', async () => {
+    document.body.insertAdjacentHTML(
+      'afterbegin',
+      '<button id="apply" type="button">Apply</button>',
+    );
+    document.body.insertAdjacentHTML(
+      'beforeend',
+      `<form id="search"><input name="q" type="search"><button id="find">Submit</button></form>
+      <form id="news"><label for="news-email">Your email</label><input id="news-email" type="email"><button id="join">Submit</button></form>
+      <div id="send" role="button">Submit application</div>`,
+    );
+    script = startScript(() => true, 0);
+    await vi.waitFor(() => expect(frames()).toHaveLength(1));
+    // A posting's Apply above the form, a search box's, and a newsletter's, below it, aren't its.
+    document.getElementById('apply')?.click();
+    document.getElementById('find')?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    document.getElementById('join')?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(sentOf('submitting')).toEqual([]);
+    // One in no form, after its fields, as a page's own foot has, is.
+    document.getElementById('send')?.click();
+    await vi.waitFor(() => expect(sentOf('submitting')).toHaveLength(1));
+  });
+
+  it('hears the form sent as you press Enter in one of its boxes, never one the page sends itself', async () => {
+    script = startScript(() => true, 0);
+    await vi.waitFor(() => expect(frames()).toHaveLength(1));
+    const form = document.querySelector('form') as HTMLFormElement;
+    form.addEventListener('submit', (event) => event.preventDefault());
+    // The page's own code sends it, with no key of yours.
+    form.requestSubmit();
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(sentOf('submitting')).toEqual([]);
+    // Enter, in its box.
+    input('name').dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    form.requestSubmit();
+    await vi.waitFor(() => expect(sentOf('submitting')).toHaveLength(1));
+  });
+
+  it('hears the Submit on Workday’s Review, with nothing to fill, and waits for the page to go on', async () => {
+    const step = (n: number, name: string, body: string) => `
+      <div data-automation-id="progressBar"><ol>
+        <li><div>step ${n - 1} of 6</div><label>Self Identify</label></li>
+        <li data-automation-id="progressBarActiveStep"><div>current step ${n} of 6</div><label>${name}</label></li>
+      </ol></div>
+      <main>${body}</main>`;
+    document.body.innerHTML = step(
+      6,
+      'Review',
+      '<p>Check your application.</p><button id="send" type="button">Submit</button>',
+    );
+    script = startScript(() => true, 0);
+    await vi.waitFor(() => expect(sentOf('hello')).toHaveLength(1));
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    document.getElementById('send')?.click();
+    await vi.waitFor(() => expect(sentOf('submitting')).toHaveLength(1));
+    expect(sentOf('submitting')[0]).toMatchObject({ final: true, values: [] });
+    // Review, as Workday sends what's on it, is still the page you submitted, not one it went on to.
+    document.querySelector('main')?.insertAdjacentHTML('beforeend', '<p>Submitting…</p>');
+    await vi.waitFor(() => expect(sentOf('outcome')).toHaveLength(1));
+    expect(sentOf('outcome')[0]).toMatchObject({ submitted: false, form: true });
+    document.body.innerHTML = '<main><h2>Application Submitted</h2></main>';
+    await vi.waitFor(() =>
+      expect(sentOf('outcome').at(-1)).toMatchObject({ submitted: true, form: false }),
     );
   });
 
@@ -577,5 +650,58 @@ describe('the script on a job site you allowed', () => {
     clickIn('name');
     await new Promise((resolve) => setTimeout(resolve, 50));
     expect(extension.sent).toHaveLength(before);
+  });
+});
+
+/**
+ * Each applicant system's own page, as the fixtures have it, and the button that sends it, or
+ * goes on to its next page: what the script says as you press it.
+ */
+describe('submitting, on each applicant system’s own pages', () => {
+  const FIXTURES = join(import.meta.dirname, 'fixtures');
+  const cases: [page: string, button: string, final: boolean][] = [
+    ['greenhouse-application', 'Submit application', true],
+    ['lever-application', 'Submit application', true],
+    ['ashby-application', 'Submit Application', true],
+    ['smartrecruiters-application', 'Next', false],
+    ['smartrecruiters-screening', 'Submit', true],
+    ['successfactors-application', 'Apply', true],
+    ['icims-candidate', 'Submit Profile', false],
+    ['icims-questions', 'Submit', false],
+    ['icims-eeo', 'Submit', true],
+    ['taleo-personal', 'Save and Continue', false],
+    ['taleo-esignature', 'Save and Continue', false],
+    ['workday-my-information', 'Save and Continue', false],
+    ['workday-application-questions', 'Save and Continue', false],
+    ['workday-review', 'Submit', true],
+  ];
+  it.each(cases)('%s: %s', async (name, words, final) => {
+    const html = readFileSync(join(FIXTURES, `${name}.html`), 'utf8');
+    document.documentElement.innerHTML = new DOMParser()
+      .parseFromString(html, 'text/html')
+      .documentElement.innerHTML.replace(/<script[\s\S]*?<\/script>/gi, '')
+      // Without the page's own handlers, whose code the fixtures don't have.
+      .replace(/\son[a-z]+="[^"]*"/gi, '');
+    script = startScript(() => true, 0);
+    await vi.waitFor(() => expect(sentOf('hello')).toHaveLength(1));
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    // The button by its words, as you see it: a page's own kind of button by the words inside it.
+    const button = [
+      ...document.querySelectorAll(
+        'button, input[type="submit"], input[type="button"], [role="button"], spl-button span',
+      ),
+    ]
+      .reverse()
+      .find(
+        (each) =>
+          (each.textContent?.trim() || (each as HTMLInputElement).value || '').replace(
+            /\s+/g,
+            ' ',
+          ) === words,
+      ) as HTMLElement | undefined;
+    if (!button) throw new Error(`No ${words} on ${name}.`);
+    button.click();
+    await vi.waitFor(() => expect(sentOf('submitting')).toHaveLength(1));
+    expect(sentOf('submitting')[0]).toMatchObject({ final });
   });
 });

@@ -488,6 +488,7 @@ describe('filling a form from your job hunt through sync', () => {
       did: 'sent',
       recorded: 1,
       job: { ...plan.job, status: 'applied', appliedOn: '2026-10-23' },
+      marked: true,
       undo: {
         line: expect.any(String),
         row: { status: null, status_on: null, applied_on: null },

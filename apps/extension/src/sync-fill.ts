@@ -667,6 +667,7 @@ export class SyncFill {
       did: 'sent',
       job: askedRow(changed.row),
       recorded,
+      marked: changed.changed && applied,
       ...(changed.changed && applied && { undo: { line: line ?? '', row: before } }),
     };
   }

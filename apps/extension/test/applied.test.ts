@@ -55,9 +55,18 @@ const browser = vi.hoisted(() => {
   return state;
 });
 
-import { left, markFromPopup, outcome, submitted, undoApplied } from '../src/applied.ts';
-import { keepFill } from '../src/kept-fill.ts';
-import { noteFor, notesOn } from '../src/notes.ts';
+import {
+  forgetApplying,
+  left,
+  markFromPopup,
+  outcome,
+  submitted,
+  undoApplied,
+  waitingAt,
+} from '../src/applied.ts';
+import type { FillWay } from '../src/fill-way.ts';
+import { forgetFill, keepFill, keptFill } from '../src/kept-fill.ts';
+import { forgetNotes, noteFor, notesOn, showNote } from '../src/notes.ts';
 
 const URL = 'https://larkspur.wd5.myworkdayjobs.com/en-US/careers/job/apply';
 const PLACE = { tabId: 4, frameId: 0 };
@@ -109,13 +118,19 @@ const plan = (replies: FieldReply[], job: typeof JOB | null = JOB): FillPlan => 
 const WHY = field(0, 'Why do you want to work at Larkspur Energy?');
 const EMAIL = field(1, 'Email', { control: 'text', type: 'email' });
 
-beforeEach(() => {
+beforeEach(async () => {
+  // What the background keeps in its own memory, through sync, goes too.
+  await Promise.all([
+    forgetApplying(PLACE.tabId),
+    forgetFill(PLACE.tabId),
+    forgetNotes(PLACE.tabId),
+  ]);
   for (const key of Object.keys(browser.session)) delete browser.session[key];
   browser.items.settings = { where: 'computer' };
   browser.asks.length = 0;
   browser.put.length = 0;
   browser.answers = {
-    sent: { ok: true, did: 'sent', job: { ...JOB, status: 'applied' }, recorded: 1 },
+    sent: { ok: true, did: 'sent', job: { ...JOB, status: 'applied' }, recorded: 1, marked: true },
     unsent: { ok: true, did: 'unsent', job: JOB, undone: true },
   };
 });
@@ -186,6 +201,36 @@ describe('applied, as you submit', () => {
     expect(browser.asks).toEqual([]);
   });
 
+  it('takes no words on a page that still shows the application as its having gone in, but for the submit that sends it', async () => {
+    await submitted({
+      place: PLACE,
+      doc: D1,
+      form: page('Application Questions', [WHY]),
+      plan: plan([{ kind: 'question', source: 'you', left: 'new' }]),
+      way: onComputer,
+      values: [],
+      final: false,
+    });
+    // Its next page, which says what happens "once your application has been submitted".
+    await outcome({ place: PLACE, doc: D1, submitted: true, form: true, errors: false });
+    expect(browser.asks).toEqual([]);
+  });
+
+  it('forgets a submit the page wanted another answer for, so leaving it marks nothing', async () => {
+    await submitted({
+      place: PLACE,
+      doc: D1,
+      form: page('', [WHY]),
+      plan: plan([{ kind: 'question', source: 'you', left: 'new' }]),
+      way: onComputer,
+      values: [],
+      final: true,
+    });
+    await outcome({ place: PLACE, doc: D1, submitted: false, form: true, errors: true });
+    await outcome({ place: PLACE, doc: D2, submitted: false, form: false, errors: false });
+    expect(browser.asks).toEqual([]);
+  });
+
   it('marks a form on one page you sent once the page moves on, with no form left', async () => {
     await submitted({
       place: PLACE,
@@ -216,6 +261,27 @@ describe('applied, as you submit', () => {
       expect(browser.asks).toEqual([]);
       await vi.advanceTimersByTimeAsync(10_000);
       await vi.waitFor(() => expect(browser.asks.map((ask) => ask.ask)).toEqual(['sent']));
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('takes a page you leave a while after its submit as one it didn’t take', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'Date'] });
+    try {
+      await submitted({
+        place: PLACE,
+        doc: D1,
+        form: page('', [WHY]),
+        plan: plan([{ kind: 'question', source: 'you', left: 'new' }]),
+        way: onComputer,
+        values: [],
+        final: true,
+      });
+      await vi.advanceTimersByTimeAsync(40_000);
+      await left(PLACE, D1);
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(browser.asks).toEqual([]);
     } finally {
       vi.useRealTimers();
     }
@@ -252,6 +318,8 @@ describe('applied, as you submit', () => {
   });
 
   it('keeps what you sent for a job applied to before, with no Undo', async () => {
+    // As you marked it yourself, since the page's answers were read.
+    browser.answers.sent = { ok: true, did: 'sent', job: JOB, recorded: 1, marked: false };
     await submitted({
       place: PLACE,
       doc: D1,
@@ -263,7 +331,59 @@ describe('applied, as you submit', () => {
     });
     await outcome({ place: PLACE, doc: D1, submitted: true, form: false, errors: false });
     const [note] = await notesOn(PLACE.tabId);
-    expect(note?.says).toMatchObject({ is: 'applied', undo: 'cannot' });
+    expect(note?.says).toMatchObject({
+      is: 'applied',
+      undo: 'cannot',
+      says: 'Kept what you sent with Senior Product Manager at Larkspur Energy.',
+    });
+  });
+
+  it('offers no Undo where Factwright from before Undo doesn’t say it marked the job', async () => {
+    browser.answers.sent = { ok: true, did: 'sent', job: JOB, recorded: 1 };
+    await sendTwoPages();
+    await outcome({ place: PLACE, doc: D2, submitted: true, form: false, errors: false });
+    const [note] = await notesOn(PLACE.tabId);
+    expect(note?.says).toEqual({
+      is: 'applied',
+      job: 'Senior Product Manager at Larkspur Energy',
+      undo: 'cannot',
+    });
+  });
+
+  it('keeps what it read through sync in the background’s memory alone, never in the browser’s storage', async () => {
+    const throughSync: FillWay = {
+      via: 'sync',
+      ask: async () => ({ ok: false, reason: 'failed', message: 'Not here.' }),
+    };
+    await submitted({
+      place: PLACE,
+      doc: D1,
+      form: page('', [WHY]),
+      plan: plan([{ kind: 'question', source: 'you', left: 'new' }]),
+      way: throughSync,
+      values: [{ ref: 0, key: WHY.key, value: 'Your grid work.' }],
+      final: true,
+    });
+    await keepFill({
+      tabId: PLACE.tabId,
+      place: PLACE,
+      via: 'sync',
+      instead: false,
+      form: page('', [WHY]),
+      plan: plan([{ kind: 'email', text: 'ana@example.com', source: 'profile' }]),
+      shows: { company: 'Larkspur Energy', role: 'Senior Product Manager' },
+      filled: [],
+      at: Date.now(),
+    });
+    const token = await showNote(
+      PLACE,
+      { is: 'applied', job: 'Senior Product Manager at Larkspur Energy', undo: 'can' },
+      { via: 'sync' },
+    );
+    expect(await waitingAt(PLACE)).toBe(true);
+    expect((await keptFill(PLACE.tabId))?.via).toBe('sync');
+    expect(await noteFor(PLACE.tabId, token)).not.toBeNull();
+    expect(JSON.stringify(browser.session)).not.toMatch(/Larkspur|grid work|ana@example/);
   });
 
   it('marks no job you haven’t saved: the note says to save it', async () => {

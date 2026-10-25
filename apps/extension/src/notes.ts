@@ -4,6 +4,7 @@ import { ext } from './ext.ts';
 import type { FormPlace } from './fill.ts';
 import { NOTE } from './frame-size.ts';
 import type { NoteSays } from './job-site-messages.ts';
+import { keptState } from './kept-state.ts';
 
 /**
  * The small note Factwright puts on a page once it's done something there: "Factwright filled 14
@@ -14,7 +15,8 @@ import type { NoteSays } from './job-site-messages.ts';
  * you clicked the extension's button on, its menu item or its shortcut, the background puts it in
  * the window's bottom right corner itself, for a couple of minutes. What it says is kept here, by a
  * token its frame names, in the browser's memory while it runs, as the background may start again
- * meanwhile.
+ * meanwhile: one that names a job read through sync, in the background's own memory alone
+ * (kept-state.ts).
  */
 
 /** A note on a page, by the token its frame names. */
@@ -25,12 +27,11 @@ export interface Note {
   says: NoteSays;
   /** When it went on the page. */
   at: number;
+  /** The way the job it names came, as a job marked applied: through sync, it's kept in memory. */
+  via?: 'computer' | 'sync';
   /** For a job marked applied: the way it was, and what Undo puts back through sync. */
   applied?: { job: AskedJob; via: 'computer' | 'sync'; undo?: SentUndo };
 }
-
-/** Where the notes are kept: in the browser's memory, while it runs, never on the disk. */
-const NOTES = 'notes';
 
 /** The most notes kept: more than are ever on pages at once. */
 const MOST_NOTES = 40;
@@ -38,55 +39,36 @@ const MOST_NOTES = 40;
 /** How long a note the background put on a page itself stays there, unless you close it first. */
 export const PUT_FOR_MS = 2 * 60 * 1000;
 
-let queue: Promise<unknown> = Promise.resolve();
-
-async function notesKept(): Promise<Record<string, Note>> {
-  const session = ext.storage.session;
-  if (!session) return {};
-  const { [NOTES]: kept } = await session.get(NOTES).catch(() => ({}) as Record<string, unknown>);
-  return kept && typeof kept === 'object' ? (kept as Record<string, Note>) : {};
-}
-
-function change(apply: (all: Record<string, Note>) => void): Promise<void> {
-  const next = queue.then(async () => {
-    const session = ext.storage.session;
-    if (!session) return;
-    const all = await notesKept();
-    apply(all);
-    const newest = Object.values(all)
-      .sort((a, b) => b.at - a.at)
-      .slice(0, MOST_NOTES);
-    await session.set({ [NOTES]: Object.fromEntries(newest.map((each) => [each.token, each])) });
-  });
-  queue = next.catch(() => {});
-  return next;
-}
+const notes = keptState<Note>(
+  'notes',
+  (note) => note.via === 'sync',
+  MOST_NOTES,
+  (note) => note.at,
+);
 
 /** A note, by its token, as its frame in a tab names it: only that tab's. */
 export async function noteFor(tabId: number, token: string): Promise<Note | null> {
-  await queue;
-  const note = (await notesKept())[token];
+  const note = (await notes.all())[token];
   return note && note.tabId === tabId ? note : null;
 }
 
 /** A tab's notes, newest first. */
 export async function notesOn(tabId: number): Promise<Note[]> {
-  await queue;
-  return Object.values(await notesKept())
+  return Object.values(await notes.all())
     .filter((note) => note.tabId === tabId)
     .sort((a, b) => b.at - a.at);
 }
 
 /** Changes what a note says, as once Undo took its job back. */
 export const changeNote = (token: string, says: NoteSays) =>
-  change((all) => {
+  notes.change((all) => {
     const note = all[token];
     if (note) all[token] = { ...note, says };
   });
 
 /** Forgets a tab's notes, as the tab closes. */
 export const forgetNotes = (tabId: number) =>
-  change((all) => {
+  notes.change((all) => {
     for (const [token, note] of Object.entries(all)) if (note.tabId === tabId) delete all[token];
   });
 
@@ -98,8 +80,10 @@ export const forgetNotes = (tabId: number) =>
  */
 export function putNote(token: string, width: number, height: number, ms: number): void {
   const KEY = Symbol.for('factwright note');
-  const own = globalThis as unknown as Record<symbol, HTMLElement | undefined>;
-  own[KEY]?.remove();
+  const TOKEN = Symbol.for('factwright note token');
+  const own = globalThis as unknown as Record<symbol, HTMLElement | string | undefined>;
+  (own[KEY] as HTMLElement | undefined)?.remove();
+  own[TOKEN] = token;
   type Api = { runtime: { getURL(path: string): string } };
   const apis = globalThis as unknown as { browser?: Api; chrome?: Api };
   const runtime = (apis.browser ?? apis.chrome)?.runtime;
@@ -144,33 +128,36 @@ export function putNote(token: string, width: number, height: number, ms: number
   }, ms);
 }
 
-/** Takes the note the background put on a page away: run in the page. */
-export function removeNote(): void {
+/** Takes the note the background put on a page away, or only the one a token names: run in the page. */
+export function removeNote(token?: string): void {
   const KEY = Symbol.for('factwright note');
-  const own = globalThis as unknown as Record<symbol, HTMLElement | undefined>;
-  own[KEY]?.remove();
+  const TOKEN = Symbol.for('factwright note token');
+  const own = globalThis as unknown as Record<symbol, HTMLElement | string | undefined>;
+  if (token !== undefined && own[TOKEN] !== token) return;
+  (own[KEY] as HTMLElement | undefined)?.remove();
   own[KEY] = undefined;
 }
 
 /**
  * Shows a note on a page: through the script there, on a job site you allowed, or else put there
  * by the background, which the browser lets it do on a page you clicked its button on. Says its
- * token, which names it, as the popup's Undo does, though the page didn't take it.
+ * token, which names it, as the popup's Undo does, though the page didn't take it. A note that
+ * names a job says the way it came (`via`).
  */
 export async function showNote(
   place: FormPlace,
   says: NoteSays,
-  applied?: Note['applied'],
+  more: Pick<Note, 'via' | 'applied'> = {},
 ): Promise<string> {
   const token = crypto.randomUUID();
-  await change((all) => {
+  await notes.change((all) => {
     all[token] = {
       token,
       tabId: place.tabId,
       frameId: place.frameId,
       says,
       at: Date.now(),
-      applied,
+      ...more,
     };
   });
   const scripted = await jobFrameAt(place.tabId, place.frameId);
@@ -202,4 +189,19 @@ export async function hideNote(note: Note): Promise<void> {
   await ext.scripting
     .executeScript({ target: { tabId: note.tabId, frameIds: [note.frameId] }, func: removeNote })
     .catch(() => {});
+}
+
+/**
+ * Takes a note off its page as you close it, where the background doesn't know it anymore, as one
+ * that named a job read through sync, once the browser stopped the background meanwhile: the
+ * script on a job site you allowed takes away the one its token names, in whichever frame of the
+ * tab, and so does the page where the background put it.
+ */
+export async function hideLostNote(tabId: number, token: string): Promise<void> {
+  await ext.tabs.sendMessage(tabId, { type: 'job-site', do: 'unnote', token }).catch(() => null);
+  await ext.scripting
+    .executeScript({ target: { tabId, allFrames: true }, func: removeNote, args: [token] })
+    .catch(() => {
+      // A page the browser keeps the extension out of now.
+    });
 }

@@ -32,13 +32,14 @@ import {
   isFromFrame,
   isFromScript,
   type MenuAnswer,
+  type NoteSays,
   type SaveOffer,
   type ToPanel,
   type ToScript,
   type Written,
 } from './job-site-messages.ts';
 import { forgetFill } from './kept-fill.ts';
-import { forgetNotes, hideNote, noteFor } from './notes.ts';
+import { forgetNotes, hideLostNote, hideNote, noteFor } from './notes.ts';
 import type { FieldAnswer, PageField, PageForm } from './page/form.ts';
 import { openPanel } from './panel-open.ts';
 import { serverName } from './server.ts';
@@ -277,15 +278,12 @@ function fieldAt(form: PageForm, ref: number, key: string): number {
 }
 
 /**
- * The form's own questions nothing on file answers, by their keys, which your Claude can draft,
- * for a job you saved: none for a form whose job isn't one.
+ * The form's own questions nothing on file answers, by their keys, which your Claude can draft:
+ * for a job you haven't saved too, which it says to save first, so whether a menu opens on one
+ * says nothing to the page of whether you saved it.
  */
 const openQuestions = (page: OnPage): Set<string> =>
-  new Set(
-    page.plan.job
-      ? draftable(page.form, page.plan.replies, new Map()).map((field) => field.key)
-      : [],
-  );
+  new Set(draftable(page.form, page.plan.replies, new Map()).map((field) => field.key));
 
 /** The menu for each field, as the script asks before it shows one. */
 function menusOf(page: OnPage): FieldMenu[] {
@@ -507,10 +505,15 @@ export async function answerScript(
  * through sync, they're left with the job, for your Claude in Factwright on your computer.
  */
 async function startDrafts(page: OnPage): Promise<void> {
+  if (page.drafting?.is === 'drafting' || page.drafting?.is === 'waiting') return;
+  // A job you saved since the page's answers were asked for is found now.
+  if (!page.plan.job) {
+    const planned = await planFill(page.form, page.shows, page.way);
+    if (planned.ok && planned.did === 'fill') page.plan = planned;
+  }
   const { job } = page.plan;
-  const fields = job ? draftable(page.form, page.plan.replies, new Map()) : [];
-  const going = page.drafting?.is === 'drafting' || page.drafting?.is === 'waiting';
-  if (!job || fields.length === 0 || going) return;
+  const fields = draftable(page.form, page.plan.replies, new Map());
+  if (fields.length === 0) return;
   const now = Date.now();
   const drafting: Drafting = {
     keys: new Set(fields.map((field) => field.key)),
@@ -520,6 +523,11 @@ async function startDrafts(page: OnPage): Promise<void> {
     asking: null,
   };
   page.drafting = drafting;
+  if (!job) {
+    drafting.is = 'failed';
+    drafting.says = 'Save this job first, from Factwright’s button. Then try again.';
+    return;
+  }
   const asked = await askForDrafts(page.form, job.id, fields, page.way);
   if (page.drafting !== drafting) return;
   if (!asked.ok || asked.did !== 'draft') {
@@ -620,23 +628,33 @@ async function buttonFor(tabId: number, token: string): Promise<ScriptAt | null>
   return kept ? { tabId, ...kept } : null;
 }
 
+/** What a note says once Undo can't reach what it marked: the background doesn't know it now. */
+const UNDO_LOST: NoteSays = {
+  is: 'problem',
+  says: 'Undo can’t reach this anymore. Change the job’s status in Factwright.',
+};
+
 /**
  * What a note's frame asks, answered, for a note on a page in its own tab: what it says, Details,
  * which opens the panel (`opening`, which the click itself started), Undo, for a job it marked
- * applied, or Close.
+ * applied, or Close. A note that names a job read through sync is gone once the browser stopped
+ * the background meanwhile: Details and Close still work, and Undo says it can't.
  */
 async function answerNote(
   message: Extract<FromFrame, { do: 'note' | 'details' | 'undo' | 'unnote' }>,
   tab: Tab & { id: number },
   opening: Promise<boolean> | null,
 ): Promise<unknown> {
-  const note = await noteFor(tab.id, message.token);
-  if (!note) return null;
-  if (message.do === 'note') return note.says;
   if (message.do === 'details') return { opened: (await opening) === true };
-  if (message.do === 'undo') return undoApplied(note);
-  await hideNote(note);
-  return {};
+  const note = await noteFor(tab.id, message.token);
+  if (message.do === 'unnote') {
+    if (note) await hideNote(note);
+    else await hideLostNote(tab.id, message.token);
+    return {};
+  }
+  if (!note) return message.do === 'undo' ? UNDO_LOST : null;
+  if (message.do === 'note') return note.says;
+  return undoApplied(note);
 }
 
 /** What the frame asks, answered, for the script in its own tab that shows it. */

@@ -169,10 +169,17 @@ export async function addParts(
 /**
  * Waits while the page reads a resume, as one may once it's given the file, and fills fields in
  * from it, up to a limit, as long as `quiet` passes with no reading: what it fills in from the
- * resume would take the place of what's put there before it's done.
+ * resume would take the place of what's put there before it's done. Words it showed before Fill
+ * put anything in (`ignore`) don't count.
  */
-async function waitForPage(place: FormPlace, quiet: number): Promise<void> {
-  await inPage(place, { do: 'wait', ms: READING_MS, quiet });
+async function waitForPage(place: FormPlace, quiet: number, ignore: string[]): Promise<void> {
+  await inPage(place, { do: 'wait', ms: READING_MS, quiet, ignore });
+}
+
+/** The words about reading a resume a page shows before Fill puts anything in: there all along. */
+async function readingAlready(place: FormPlace): Promise<string[]> {
+  const said = await inPage(place, { do: 'wait', ms: 0, quiet: 0 });
+  return said?.did === 'wait' ? said.seen : [];
 }
 
 /** Outlines fields in orange on the page, as left for you. */
@@ -485,6 +492,8 @@ export async function fillInPasses(
     }
   }
   passes.status?.('Filling the form…');
+  const already = await readingAlready(place);
+  if (stale()) return 'stale';
   /** The answers that went in the form's choices, to check again once it's filled. */
   const choices: { answer: FieldAnswer; field: PageField }[] = [];
   /** Fills some of a form's fields, and keeps how each went, or says why it couldn't. */
@@ -520,7 +529,7 @@ export async function fillInPasses(
     const files = answers.filter((answer) => answer.file);
     const sent = await fillSome(fields, files);
     if (sent !== true) return sent;
-    await waitForPage(place, files.length > 0 ? START_READING_MS : 0);
+    await waitForPage(place, files.length > 0 ? START_READING_MS : 0, already);
     if (stale()) return 'stale';
     const rest = await fillSome(
       fields,
@@ -556,7 +565,7 @@ export async function fillInPasses(
   if (choices.length > 0) {
     await new Promise((done) => setTimeout(done, CHECK_AGAIN_MS));
     if (stale()) return 'stale';
-    await waitForPage(place, 0);
+    await waitForPage(place, 0, already);
     if (stale()) return 'stale';
     const again = await fillForm(
       place,

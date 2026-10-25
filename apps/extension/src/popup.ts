@@ -18,9 +18,9 @@ import { fillWays, type NoWay } from './fill-way.ts';
 import { fillAndNote } from './in-place.ts';
 import type { NoteSays } from './job-site-messages.ts';
 import { statusWords } from './job-words.ts';
-import { counted, type KeptFill, keptFill } from './kept-fill.ts';
-import { askForJob, askToSave, type Message } from './messages.ts';
-import { type Note, notesOn } from './notes.ts';
+import { counted, type KeptFill } from './kept-fill.ts';
+import { askForJob, askKept, askToSave, type Message } from './messages.ts';
+import type { Note } from './notes.ts';
 import type { PageJob } from './page/read-job.ts';
 import { openPanel } from './panel-open.ts';
 import { isWebPage, readTab, type Unread } from './read-tab.ts';
@@ -120,8 +120,9 @@ function fillIn(tab: Tab): void {
 
 /**
  * Asks the browser to let the extension reach Factwright on this computer, or the sync server,
- * straight from the click, before anything is waited on, as Firefox wants, then fills the form
- * from here: the background, which started before then, can't reach Factwright yet in Chrome.
+ * straight from the click, before anything is waited on, as Firefox wants, then fills the form.
+ * Factwright on this computer, from here: the background, which started before then, can't reach
+ * it yet in Chrome. Through sync, from the background, which keeps what it read in its memory.
  */
 function allowFirst(way: NoWay, tab: Tab & { id: number }): void {
   message(
@@ -138,7 +139,13 @@ function allowFirst(way: NoWay, tab: Tab & { id: number }): void {
           void asked.then(async (allowed) => {
             if (!allowed) return;
             show(app, heading(), h('p', { class: 'muted' }, 'Filling the form…'));
-            await fillAndNote(tab);
+            if (way.why === 'sync') {
+              await ext.runtime
+                .sendMessage({ type: 'fill', tab } satisfies Message)
+                .catch(() => {});
+            } else {
+              await fillAndNote(tab);
+            }
             window.close();
           });
         },
@@ -813,13 +820,16 @@ async function start(): Promise<void> {
     watched = form !== null && (await isAllowedPage(form.url));
     const ways = fillable ? await fillWays() : [];
     noWay = Array.isArray(ways) ? null : ways;
-    // What Fill filled on this page, as it is now.
-    const kept = await keptFill(tab.id);
+    // What Fill filled on this page, as it is now, as the background keeps it.
+    const { fill: kept, notes } = await askKept((asked) => ext.runtime.sendMessage(asked), tab.id);
     const pageOf = (url: string) => url.split('#')[0];
-    filledHere = kept && form && pageOf(kept.form.url) === pageOf(form.url) ? kept : null;
+    filledHere =
+      kept && form && pageOf(kept.form.url) === pageOf(form.url) && kept.form.step === form.step
+        ? kept
+        : null;
     // A job marked applied on this page a moment ago, whose note offers Undo.
     appliedNote ??=
-      (await notesOn(tab.id)).find(
+      notes.find(
         (note) =>
           note.says.is === 'applied' &&
           note.says.undo === 'can' &&

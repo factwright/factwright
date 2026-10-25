@@ -10,9 +10,10 @@
 // to keep a new answer you typed, and Draft with Claude. A company's careers page on another site
 // that shows the form in a frame gets them in the frame, and Lever's location box gets the place
 // it suggests. A Greenhouse form you submit, on a page served here, marks its job Applied, with
-// Undo. Turned off in setup, they're gone. On a form with fields you can't see, as a page's traps
-// for bots, it reads only those you can. Nothing real is submitted, and nothing leaves this
-// computer.
+// Undo. Turned off in setup, they're gone, and Fill from the popup still fills the form in its
+// page, with a note whose Details opens the side panel. On a form with fields you can't see, as a
+// page's traps for bots, it reads only those you can. Nothing real is submitted, and nothing
+// leaves this computer.
 // `pnpm --filter @factwright/extension e2e:fill` (it needs Playwright's Chromium, as `e2e` does,
 // and a C compiler, for the helper). With `-- --shots <folder>`, it saves the panel and the filled
 // form there as pictures, to look over a change.
@@ -1295,6 +1296,32 @@ try {
   check(
     left.length === 0 && !form.frames().some((each) => each.url().includes('/frame.html')),
     'turned off in setup, its script is unregistered, and its button and menus are gone',
+  );
+  // As on any site you haven't allowed, Fill from the popup fills the form in its page, with a note
+  // the background puts there, as no script's there, and its Details opens the side panel too.
+  await form.bringToFront();
+  await setup.evaluate(
+    (tab) =>
+      (
+        globalThis as unknown as {
+          chrome: { runtime: { sendMessage(message: unknown): Promise<unknown> } };
+        }
+      ).chrome.runtime.sendMessage({ type: 'fill', tab }),
+    formTabAt,
+  );
+  const offNote = await frameOn('note', 'Factwright filled', 60_000);
+  check(
+    (await fieldValue('email')) === 'ana@example.com',
+    'off the job application sites, Fill from the popup fills the form in its page, with its note',
+  );
+  // The window's side panel may be open still, from Greenhouse's: the browser opening it from this
+  // click, rather than refusing, is what the note says nothing more for.
+  await press(offNote.getByRole('button', { name: 'Details' }));
+  await form.waitForTimeout(1500);
+  check(
+    (await sidePanels()) > 0 &&
+      !(await offNote.locator('body').innerText()).includes('click Factwright’s button'),
+    'and its note’s Details opens Chromium’s side panel there too, from your click',
   );
 
   // The built form function, as the panel sends it into a page, on a form with traps for bots.

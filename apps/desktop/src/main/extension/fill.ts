@@ -252,7 +252,7 @@ function sent(ask: Extract<InboxAsk, { ask: 'sent' }>, deps: FillDeps): InboxAsk
     if (!result.ok) return failed(result.message);
   }
   const now = deps.jobs.job(job.id) ?? job;
-  return { ok: true, did: 'sent', job: askedJob(now), recorded };
+  return { ok: true, did: 'sent', job: askedJob(now), recorded, marked: !applied };
 }
 
 /**

@@ -164,7 +164,7 @@ export type FormTask =
    * Waits while the page reads a resume, as one may once it's given the file, up to `ms`: done once
    * it's shown no reading for `quiet`, as a page starts a beat after it's given the file.
    */
-  | { do: 'wait'; ms: number; quiet: number };
+  | { do: 'wait'; ms: number; quiet: number; ignore?: string[] };
 
 /**
  * What each task gives back. A form the tab has moved on from, to another address, isn't filled:
@@ -187,7 +187,7 @@ export type FormAnswer =
   | { did: 'show'; found: boolean }
   | { did: 'add'; added: number }
   /** Whether the page was still reading a resume once it had waited as long as it may. */
-  | { did: 'wait'; busy: boolean };
+  | { did: 'wait'; busy: boolean; seen: string[] };
 
 /**
  * Reads the application form on the page you're on, fills it, reads what's in it, shows one of
@@ -2431,25 +2431,30 @@ export async function formPage(
     }
   }
   if (task.do === 'wait') {
-    // Words that say the page is reading a resume, as a status beside the field does, and shows.
-    const reading = (): boolean => {
+    // Words that say the page is reading a resume, as a status beside the field does, and shows:
+    // not ones it showed before anything was put in (`ignore`), as a line on what it does with
+    // your resume, which it shows all along.
+    const ignore = new Set(task.ignore ?? []);
+    const reading = (most = 10): string[] => {
+      const found: string[] = [];
       const walker = doc.createTreeWalker(doc.body ?? doc, 4);
-      for (let node = walker.nextNode(); node; node = walker.nextNode()) {
-        const words = node.textContent ?? '';
-        if (words.length > MAX_TEXT || !READING.test(words)) continue;
-        if (node.parentElement && shown(node.parentElement)) return true;
+      for (let node = walker.nextNode(); node && found.length < most; node = walker.nextNode()) {
+        const words = (node.textContent ?? '').trim();
+        if (words.length > MAX_TEXT || !READING.test(words) || ignore.has(words)) continue;
+        if (node.parentElement && shown(node.parentElement)) found.push(words);
       }
-      return false;
+      return found;
     };
     // Done once it's shown none for a moment, or once it's waited as long as it may.
     const until = Date.now() + task.ms;
     let quietSince = Date.now();
     while (Date.now() < until) {
-      if (reading()) quietSince = Date.now();
-      else if (Date.now() - quietSince >= task.quiet) return { did: 'wait', busy: false };
+      if (reading(1).length > 0) quietSince = Date.now();
+      else if (Date.now() - quietSince >= task.quiet) return { did: 'wait', busy: false, seen: [] };
       await sleep(100);
     }
-    return { did: 'wait', busy: reading() };
+    const seen = reading();
+    return { did: 'wait', busy: seen.length > 0, seen };
   }
   if (task.do === 'outline') {
     for (const each of task.fields) {

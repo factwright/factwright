@@ -207,7 +207,11 @@ describe('a page reading a resume', () => {
       <div id="reading" hidden><span>Parsing your resume. Autofilling key fields...</span></div>
       <p>We’ll read every application carefully.</p>`;
     const started = Date.now();
-    expect(await run({ do: 'wait', ms: 5000, quiet: 0 })).toEqual({ did: 'wait', busy: false });
+    expect(await run({ do: 'wait', ms: 5000, quiet: 0 })).toEqual({
+      did: 'wait',
+      busy: false,
+      seen: [],
+    });
     expect(Date.now() - started).toBeLessThan(500);
     const reading = document.getElementById('reading') as HTMLElement;
     reading.hidden = false;
@@ -215,10 +219,34 @@ describe('a page reading a resume', () => {
       reading.hidden = true;
     }, 400);
     const waiting = Date.now();
-    expect(await run({ do: 'wait', ms: 5000, quiet: 200 })).toEqual({ did: 'wait', busy: false });
+    expect(await run({ do: 'wait', ms: 5000, quiet: 200 })).toEqual({
+      did: 'wait',
+      busy: false,
+      seen: [],
+    });
     expect(Date.now() - waiting).toBeGreaterThanOrEqual(400);
     // A page that never stops says it's still reading, once it's waited as long as it may.
     reading.hidden = false;
-    expect(await run({ do: 'wait', ms: 300, quiet: 0 })).toEqual({ did: 'wait', busy: true });
+    expect(await run({ do: 'wait', ms: 300, quiet: 0 })).toEqual({
+      did: 'wait',
+      busy: true,
+      seen: ['Parsing your resume. Autofilling key fields...'],
+    });
+  });
+
+  it('takes no words the page showed all along as its reading one', async () => {
+    document.body.innerHTML = `
+      <p>Processing your resume</p>
+      <div id="reading" hidden><span>Parsing your resume. Autofilling key fields...</span></div>`;
+    // What it shows before anything's put in, as Fill asks first.
+    const before = await run({ do: 'wait', ms: 0, quiet: 0 });
+    expect(before).toEqual({ did: 'wait', busy: true, seen: ['Processing your resume'] });
+    const ignore = before.did === 'wait' ? before.seen : [];
+    const started = Date.now();
+    expect(await run({ do: 'wait', ms: 5000, quiet: 0, ignore })).toMatchObject({ busy: false });
+    expect(Date.now() - started).toBeLessThan(500);
+    // Words that came once it was given the file still count.
+    (document.getElementById('reading') as HTMLElement).hidden = false;
+    expect(await run({ do: 'wait', ms: 300, quiet: 0, ignore })).toMatchObject({ busy: true });
   });
 });

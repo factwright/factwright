@@ -60,11 +60,16 @@ const SETTLE_MAX_MS = 2000;
  */
 const OUTCOME_MS = 60_000;
 
+/** How soon after you press Enter in a form's box the form's being sent counts as yours. */
+const ENTER_MS = 1000;
+
 /**
  * Words on a button that sends an application, as its form's last page's does: "Submit", "Submit
- * application", "Send application", "Apply", "Apply now", "Finish".
+ * application", "Send application", "Apply", "Apply now", "Finish", or iCIMS's "Submit Profile",
+ * on the first of its pages.
  */
-const SENDS = /^(submit|send|apply|finish)( (my|your|the|this))?( (job )?application)?( now)?$/i;
+const SENDS =
+  /^(submit|send|apply|finish)( (my|your|the|this))?( (job )?application| profile)?( now)?$/i;
 
 /** Words on a button that goes on to another page of an application, as "Save and Continue". */
 const GOES_ON = /^(save (and|&) )?(continue|next)\b|^next( step| page)?$|^proceed\b/i;
@@ -204,10 +209,17 @@ export function startScript(
    * token its frame names, and the page it went on, as it goes once the page goes on; or one to
    * show once the page has settled.
    */
-  let note: (Frame & { token: string; on: string }) | null = null;
+  let note: (Frame & { token: string; on: string; step: string }) | null = null;
   let noteWanted: string | null = null;
   /** When you last submitted the form here, or the page you submitted came here, to say how it went. */
   let submittedAt = 0;
+  /**
+   * The page you submitted here, as it was: its address, its step, and whether it showed an
+   * application form, as Workday's Review doesn't, to tell it from the page it goes on to.
+   */
+  let submittedFrom: { url: string; step: string; form: boolean; said: boolean } | null = null;
+  /** When you last pressed Enter, and where: a form you send that way, rather than its page. */
+  let lastEnter: { at: number; target: EventTarget | null } = { at: 0, target: null };
   /** What it last said of how a submit went, so it says each change once. */
   let lastOutcome = '';
   /** The field whose new answer the background will offer to keep, in the next menu. */
@@ -302,8 +314,9 @@ export function startScript(
       if (readAt !== pageUrl()) typed.clear();
       closeMenu();
     }
-    // A note of what was done on the page before goes as it goes on.
-    if (note && note.on !== pageUrl()) hideNote();
+    // A note of what was done on the page before goes as it goes on, to another address or another
+    // step, as Workday's pages keep one address.
+    if (note && (note.on !== pageUrl() || note.step !== form.step)) hideNote();
     readAt = pageUrl();
     if (!looksLikeApplication(form) || buttonHidden) removeButton();
     else if (ready) showButton();
@@ -311,6 +324,10 @@ export function startScript(
   }
 
   // --- What you submit ------------------------------------------------------------------------
+
+  /** Whether an element is a button, or a page's own kind of one, as SmartRecruiters' spl-button. */
+  const isButton = (element: Element) =>
+    element.matches(BUTTONS) || element.localName.endsWith('-button');
 
   /** A button's words: its own, or a box's that's a button, or what names it. */
   const wordsOf = (element: Element): string =>
@@ -322,6 +339,82 @@ export function startScript(
     )
       .replace(/\s+/g, ' ')
       .trim();
+
+  /**
+   * A button's words, or where it has none of its own, as the button inside a page's own kind of
+   * one shows the words it was given, that one's.
+   */
+  const buttonWords = (button: Element): string => {
+    for (let at: Element | null = button; at; ) {
+      const words = wordsOf(at);
+      if (words) return words;
+      const root = at.getRootNode();
+      at = root instanceof ShadowRoot ? root.host : null;
+    }
+    return '';
+  };
+
+  /** The <form> an element is in: its own, or around it, or around the component it's inside. */
+  const formOf = (element: Element): HTMLFormElement | null => {
+    for (let at: Element | null = element; at; ) {
+      const own = (at as Partial<HTMLInputElement>).form ?? at.closest('form');
+      if (own) return own;
+      const root = at.getRootNode();
+      at = root instanceof ShadowRoot ? root.host : null;
+    }
+    return null;
+  };
+
+  /** An element, and each component it's inside, inmost first. */
+  const andHosts = (element: Element): Element[] => {
+    const all = [element];
+    for (let root = element.getRootNode(); root instanceof ShadowRoot; ) {
+      all.push(root.host);
+      root = root.host.getRootNode();
+    }
+    return all;
+  };
+
+  /** Whether one element comes after another on the page, inside components or not. */
+  const follows = (first: Element, later: Element): boolean => {
+    const firsts = andHosts(first);
+    for (const each of andHosts(later)) {
+      const there = firsts.find((one) => one.getRootNode() === each.getRootNode());
+      if (there) {
+        return (
+          there !== each &&
+          Boolean(there.compareDocumentPosition(each) & Node.DOCUMENT_POSITION_FOLLOWING)
+        );
+      }
+    }
+    return false;
+  };
+
+  /** The <form> most of the application's fields are in, or null where they're in none. */
+  const applicationForm = (): HTMLFormElement | null => {
+    const counts = new Map<HTMLFormElement, number>();
+    for (const control of elements.flat()) {
+      const own = formOf(control);
+      if (own) counts.set(own, (counts.get(own) ?? 0) + 1);
+    }
+    let most: HTMLFormElement | null = null;
+    for (const [each, count] of counts)
+      if (count > (most ? (counts.get(most) ?? 0) : 0)) most = each;
+    return most;
+  };
+
+  /**
+   * Whether a button is the application form's own: in the <form> its fields are in, or in none,
+   * after the first of them, as the foot of Workday's and SmartRecruiters' pages is. A posting's
+   * Apply above its form, or another form's button, as a search box's or a newsletter's, isn't. A
+   * page of an application with nothing to fill, as Workday's Review, has its buttons.
+   */
+  const ownButton = (button: Element): boolean => {
+    const first = elements.flat()[0];
+    if (!first) return true;
+    const own = formOf(button);
+    return own ? own === applicationForm() : follows(first, button);
+  };
 
   /** Whether the page is its application's last, as its steps show, or it shows none. */
   const lastStep = (): boolean => {
@@ -338,15 +431,23 @@ export function startScript(
    * You submitted the form, or pressed a page's own button that goes on to the next: what its
    * fields hold now goes to the background, read as the page has it, before its own code sends
    * it, with whether the button sends the application, as the last page's does. A button that does
-   * neither, as Add or Upload, says nothing.
+   * neither, as Add or Upload, says nothing. A page of an application with nothing to fill counts,
+   * as Workday's Review, whose Submit sends it.
    */
   function submitting(words: string): void {
     const asked = form;
-    if (stopped || !asked || !looksLikeApplication(asked)) return;
+    if (stopped || !asked) return;
+    if (!looksLikeApplication(asked) && !(asked.step && asked.fields.length === 0)) return;
     const sends = SENDS.test(words);
     if (!sends && !GOES_ON.test(words)) return;
     const final = sends && (!asked.step || lastStep());
     submittedAt = Date.now();
+    submittedFrom = {
+      url: pageUrl(),
+      step: asked.step,
+      form: looksLikeApplication(asked),
+      said: asked.submitted,
+    };
     lastOutcome = '';
     const fields = asked.fields.map(({ ref, key }) => ({ ref, key }));
     void formPage({ do: 'values', fields }, document, location.href).then((read) => {
@@ -381,9 +482,21 @@ export function startScript(
    */
   function sayOutcome(): void {
     if (!form) return;
+    const shows = looksLikeApplication(form);
+    // Still the page you submitted, as Workday's Review shows until its Submit goes through: it
+    // counts as the form, so it isn't taken as having moved on.
+    const still =
+      submittedFrom !== null &&
+      pageUrl() === submittedFrom.url &&
+      form.step === submittedFrom.step &&
+      (shows || !submittedFrom.form);
+    // Words that it went in count once they're new since you submitted, or the page went on: not
+    // ones it had all along, as "once your application has been submitted, we'll be in touch", nor
+    // ones on a page that came after it with a form, as an application's next page.
+    const says = submittedFrom ? !still || !submittedFrom.said : !shows;
     const now = {
-      submitted: form.submitted,
-      form: looksLikeApplication(form),
+      submitted: form.submitted && says,
+      form: shows || still,
       errors: errorsShow(),
     };
     const said = JSON.stringify(now);
@@ -999,6 +1112,7 @@ export function startScript(
       ...makeFrame(`${ext.runtime.getURL('frame.html')}#note:${token}`, 'Factwright'),
       token,
       on: pageUrl(),
+      step: form?.step ?? '',
     };
     placeTheButton();
   }
@@ -1039,21 +1153,26 @@ export function startScript(
     if (!yourOwn(event)) return;
     const path = event.composedPath?.() ?? [];
     const clicked = [targetOf(event), ...path].find(
-      (each): each is Element => each instanceof Element && each.matches(BUTTONS),
+      (each): each is Element => each instanceof Element && isButton(each),
     );
-    if (clicked && !mine.has(clicked)) submitting(wordsOf(clicked));
+    if (clicked && !mine.has(clicked) && ownButton(clicked)) submitting(buttonWords(clicked));
   };
   /**
-   * A form sent as you pressed Enter in one of its boxes, by the button that sends it, or else its
-   * first: one its button's click already said, a moment ago, isn't said again.
+   * The application's form sent as you pressed Enter in one of its boxes, by the button that sends
+   * it, or else its first: one its button's click already said, a moment ago, isn't said again. A
+   * form the page's own code sends, as it can without you, or another form, says nothing.
    */
   const onSubmit = (event: Event) => {
     if (!yourOwn(event) || Date.now() - submittedAt < 1000) return;
-    const sent = event.target as HTMLFormElement | null;
+    const sent = event.target;
+    const { at, target } = lastEnter;
+    if (!(sent instanceof HTMLFormElement) || Date.now() - at > ENTER_MS) return;
+    if (!(target instanceof Element) || formOf(target) !== sent) return;
+    if (sent !== applicationForm()) return;
     const by =
       (event as SubmitEvent).submitter ??
-      sent?.querySelector?.('button[type="submit"], button:not([type]), input[type="submit"]');
-    submitting(by ? wordsOf(by) : 'Submit');
+      sent.querySelector('button[type="submit"], button:not([type]), input[type="submit"]');
+    submitting(by ? buttonWords(by) : 'Submit');
   };
   const onFocusIn = (event: FocusEvent) => {
     const target = targetOf(event);
@@ -1085,6 +1204,7 @@ export function startScript(
   const onKey = (event: KeyboardEvent) => {
     if (!yourOwn(event)) return;
     if (event.key === 'Tab') lastTab = Date.now();
+    if (event.key === 'Enter') lastEnter = { at: Date.now(), target: targetOf(event) };
     if (!menu) return;
     if (event.key === 'Escape') {
       closeMenu();

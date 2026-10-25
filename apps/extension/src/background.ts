@@ -6,8 +6,18 @@ import { canReachComputer, canSendNow, destination, saveOnComputer } from './com
 import { ext, type Tab } from './ext.ts';
 import { isCopyOnly } from './fill.ts';
 import { fillAndNote } from './in-place.ts';
-import { isApplied, isFill, isLookUp, isSave, isUndo } from './messages.ts';
-import { noteFor } from './notes.ts';
+import { keepFill, keptFill } from './kept-fill.ts';
+import {
+  isApplied,
+  isFill,
+  isKeep,
+  isKept,
+  isLookUp,
+  isSave,
+  isUndo,
+  type KeptHere,
+} from './messages.ts';
+import { noteFor, notesOn } from './notes.ts';
 import { forgetTab, onJobSiteMessage, stopWhereNotAllowed } from './on-job-sites.ts';
 import { openPanel } from './panel-open.ts';
 import { isWebPage, readTab } from './read-tab.ts';
@@ -358,6 +368,21 @@ ext.runtime.onMessage.addListener((message, sender, sendResponse) => {
     void noteFor(message.tabId, message.token)
       .then((note) => (note ? undoApplied(note) : null))
       .then(sendResponse, () => sendResponse(null));
+    return true;
+  }
+  // What Fill did on a tab, for the popup and the panel: through sync, it's in this background's
+  // memory alone, which they can't reach themselves.
+  if (ours && isKept(message)) {
+    void Promise.all([keptFill(message.tabId), notesOn(message.tabId)])
+      .then(([fill, notes]) => ({ fill, notes }) satisfies KeptHere)
+      .then(sendResponse, () => sendResponse(null));
+    return true;
+  }
+  if (ours && isKeep(message)) {
+    void keepFill(message.fill).then(
+      () => sendResponse({}),
+      () => sendResponse(null),
+    );
     return true;
   }
   if (!ours || !isSave(message)) return undefined;

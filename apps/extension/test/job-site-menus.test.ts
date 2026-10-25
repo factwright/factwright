@@ -344,8 +344,8 @@ describe('the script and the frame, as the background answers them', () => {
         { ref: 0, key: FORM.fields[0]?.key, answers: 1, keeps: false, draft: false },
         { ref: 1, key: FORM.fields[1]?.key, answers: 1, keeps: true, draft: false },
         { ref: 2, key: FORM.fields[2]?.key, answers: 0, keeps: false, draft: false },
-        // A question nothing answers, for a form whose job isn't saved: nothing to draft for.
-        { ref: 3, key: FORM.fields[3]?.key, answers: 0, keeps: false, draft: false },
+        // A question nothing answers offers Draft with Claude, for a job you haven't saved too.
+        { ref: 3, key: FORM.fields[3]?.key, answers: 0, keeps: false, draft: true },
       ],
     });
     expect(browser.asks).toHaveLength(1);
@@ -472,6 +472,38 @@ describe('the script and the frame, as the background answers them', () => {
         fromScript,
       ),
     ).toEqual({ offer: false });
+  });
+
+  it('says to save a job you haven’t, from Draft with Claude, and drafts once you have', async () => {
+    await answerScript({ type: 'job-site', do: 'form', form: FORM, job }, fromScript);
+    const why = FORM.fields[3] as PageField;
+    const menu = { type: 'job-site', do: 'menu', ref: 3, key: why.key, token: TOKEN } as const;
+    expect(await answerScript({ ...menu, answers: true, save: false }, fromScript)).toEqual({
+      answers: 0,
+      save: false,
+      draft: true,
+    });
+    expect(
+      await answerFrame({ type: 'job-site', do: 'draft', token: TOKEN }, fromFrame),
+    ).toMatchObject({
+      draft: {
+        is: 'failed',
+        says: 'Save this job first, from Factwright’s button. Then try again.',
+      },
+    });
+    expect(browser.asks.filter((ask) => ask.ask === 'draft')).toEqual([]);
+    // Saved, as from the popup: Try again finds it, and drafts.
+    browser.job = {
+      id: 'acme--engineer',
+      company: 'Acme',
+      role: 'Engineer',
+      status: 'new',
+      appliedOn: null,
+    };
+    expect(
+      await answerFrame({ type: 'job-site', do: 'draft', token: TOKEN }, fromFrame),
+    ).toMatchObject({ draft: { is: 'drafting', questions: 1 } });
+    expect(browser.asks.filter((ask) => ask.ask === 'draft')).toHaveLength(1);
   });
 
   it('has your Claude draft the form’s open questions from a menu, then offers each draft', async () => {

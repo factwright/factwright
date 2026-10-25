@@ -1,15 +1,9 @@
-import {
-  ASK_FIELDS,
-  type AskedJob,
-  JOB_STATUS_LABELS,
-  readStatus,
-  SENT_STATUSES,
-} from '@factwright/core';
-import { ext } from './ext.ts';
+import { ASK_FIELDS, type AskedJob, JOB_STATUS_LABELS, readStatus } from '@factwright/core';
 import { type FillPlan, type FormPlace, fieldsToRead, formValues, sentAnswers } from './fill.ts';
 import { type FillWay, fillWays } from './fill-way.ts';
 import type { NoteSays } from './job-site-messages.ts';
 import { keptFill } from './kept-fill.ts';
+import { keptState } from './kept-state.ts';
 import { changeNote, type Note, showNote } from './notes.ts';
 import type { FieldValue, PageForm } from './page/form.ts';
 import { forApplication, joinSent, NO_EARLIER, type SentAnswer } from './several-pages.ts';
@@ -40,10 +34,9 @@ interface Applying {
   pending: { at: number; final: boolean; onePage: boolean; doc: string } | null;
   /** Whether it's been marked applied. */
   marked: boolean;
+  /** When it last changed. */
+  at: number;
 }
-
-/** Where the applications are kept: in the browser's memory, while it runs, never on the disk. */
-const APPLYING = 'applying';
 
 /** How long after a submit the page has to say how it went: longer than any page takes to load. */
 const OUTCOME_MS = 60_000;
@@ -55,48 +48,45 @@ const OUTCOME_MS = 60_000;
  */
 const GONE_MS = 10_000;
 
+/**
+ * How soon after a submit the page has to go for that to count: as soon as a site takes an
+ * application, with its files, rather than a while after, as when you leave a form it didn't take.
+ */
+const LEFT_WITHIN_MS = 30_000;
+
 const keyOf = (place: FormPlace) => `${place.tabId}:${place.frameId}`;
 
-let queue: Promise<unknown> = Promise.resolve();
+/** The most applications kept: more than anyone sends at once. */
+const MOST_APPLYING = 40;
 
-async function allApplying(): Promise<Record<string, Applying>> {
-  const session = ext.storage.session;
-  if (!session) return memory;
-  const { [APPLYING]: kept } = await session
-    .get(APPLYING)
-    .catch(() => ({}) as Record<string, unknown>);
-  return kept && typeof kept === 'object' ? (kept as Record<string, Applying>) : {};
-}
+/**
+ * The applications being sent, in the browser's memory while it runs, as the background may be
+ * stopped and started between their pages: those through sync, which hold what was read from your
+ * job hunt, in the background's own memory alone (kept-state.ts).
+ */
+const applications = keptState<Applying>(
+  'applying',
+  (each) => each.via === 'sync',
+  MOST_APPLYING,
+  (each) => each.at,
+);
 
-/** Where they're kept in a browser that keeps nothing for a session. */
-const memory: Record<string, Applying> = {};
+const allApplying = () => applications.all();
 
 /** Changes an application, after the changes before it, and says what it is now. */
-function changeApplying(
-  place: FormPlace,
-  apply: (now: Applying | null) => Applying | null,
-): Promise<Applying | null> {
-  const next = queue.then(async () => {
-    const all = await allApplying();
+const changeApplying = (place: FormPlace, apply: (now: Applying | null) => Applying | null) =>
+  applications.change((all) => {
     const now = apply(all[keyOf(place)] ?? null);
-    if (now) all[keyOf(place)] = now;
+    if (now) all[keyOf(place)] = { ...now, at: Date.now() };
     else delete all[keyOf(place)];
-    if (ext.storage.session) await ext.storage.session.set({ [APPLYING]: all });
-    else Object.assign(memory, all);
     return now;
   });
-  queue = next.catch(() => {});
-  return next;
-}
 
 /** Forgets a tab's applications, as it closes. */
-export async function forgetApplying(tabId: number): Promise<void> {
-  const all = await allApplying();
-  for (const key of Object.keys(all)) {
-    const [tab] = key.split(':');
-    if (Number(tab) === tabId) await changeApplying(all[key] as Applying, () => null);
-  }
-}
+export const forgetApplying = (tabId: number) =>
+  applications.change((all) => {
+    for (const [key, each] of Object.entries(all)) if (each.tabId === tabId) delete all[key];
+  });
 
 /**
  * What's being kept of a submit, by its frame: what the page after it says, and the page going
@@ -127,7 +117,6 @@ export function whenSubmitted(
 /** Whether a frame of a tab is waiting to hear how a submit went, which its next page then says. */
 export async function waitingAt(place: FormPlace): Promise<boolean> {
   await kept(place);
-  await queue;
   const pending = (await allApplying())[keyOf(place)]?.pending;
   return Boolean(pending && Date.now() - pending.at < OUTCOME_MS);
 }
@@ -170,6 +159,7 @@ export async function submitted(each: Submitted): Promise<void> {
       sent: joinSent(same ? now.sent : [], sent).slice(0, ASK_FIELDS),
       pending: { at: Date.now(), final: each.final, onePage: !form.step, doc: each.doc },
       marked: false,
+      at: Date.now(),
     };
   });
 }
@@ -187,8 +177,9 @@ export interface Outcome {
 }
 
 /**
- * How a submit went, as the page says: it went in, or the page you submitted, with one page to its
- * form, moved on, with no form and no errors showing. Then the job is marked Applied, once.
+ * How a submit went, as the page says, with nothing wrong showing: it went in, for the submit that
+ * sends the application, or with no form left, or that submit's page moved on, with no form. Then
+ * the job is marked Applied, once. What's wrong with an answer means it didn't go in.
  */
 export async function outcome(said: Outcome): Promise<void> {
   await kept(said.place);
@@ -196,14 +187,15 @@ export async function outcome(said: Outcome): Promise<void> {
   const applying = all[keyOf(said.place)];
   const pending = applying?.pending;
   if (!applying || !pending || Date.now() - pending.at > OUTCOME_MS) return;
-  const movedOn = !said.form && !said.errors && pending.final;
-  if (said.submitted || movedOn) {
+  const saysSo = said.submitted && (pending.final || !said.form);
+  const movedOn = !said.form && pending.final;
+  if (!said.errors && (saysSo || movedOn)) {
     await mark(said.place);
     return;
   }
-  // Another page of the application, loaded anew, as its Save and Continue does: its next submit
-  // is the one to hear about.
-  if (said.doc !== pending.doc && said.form) {
+  // It wants another answer, or it's another page of the application, loaded anew, as its Save
+  // and Continue does: the next submit is the one to hear about.
+  if (said.errors || (said.doc !== pending.doc && said.form)) {
     await changeApplying(said.place, (now) => (now ? { ...now, pending: null } : null));
   }
 }
@@ -217,6 +209,7 @@ export async function left(place: FormPlace, doc: string): Promise<void> {
   await kept(place);
   const pending = (await allApplying())[keyOf(place)]?.pending;
   if (!pending || pending.doc !== doc || !pending.final || !pending.onePage) return;
+  if (Date.now() - pending.at > LEFT_WITHIN_MS) return;
   setTimeout(() => {
     void allApplying().then(async (all) => {
       const now = all[keyOf(place)]?.pending;
@@ -282,22 +275,30 @@ export async function markApplied(
           ? `Factwright didn’t mark ${named(job)} applied: ${answer.message}`
           : `Factwright couldn’t mark ${named(job)} applied. Do it from Factwright’s button.`,
     };
-    return { token: await showNote(place, says), says };
+    return { token: await showNote(place, says, { via }), says };
   }
+  // Undo only for marking it Applied just now, as Factwright says it did: never for a job it was
+  // already, as you marked it yourself since the page was read. Factwright from before Undo doesn't
+  // say, and couldn't undo it.
+  const says: NoteSays =
+    answer.marked === true
+      ? { is: 'applied', job: named(answer.job), undo: 'can' }
+      : answer.marked === false
+        ? {
+            is: 'applied',
+            job: named(answer.job),
+            undo: 'cannot',
+            says: `Kept what you sent with ${named(answer.job)}.`,
+          }
+        : { is: 'applied', job: named(answer.job), undo: 'cannot' };
   const before = readStatus(job.status);
-  const changed = !(before && SENT_STATUSES.includes(before));
-  const says: NoteSays = changed
-    ? { is: 'applied', job: named(answer.job), undo: 'can' }
-    : {
-        is: 'applied',
-        job: named(answer.job),
-        undo: 'cannot',
-        says: `Kept what you sent with ${named(answer.job)}.`,
-      };
   const token = await showNote(place, says, {
-    job: { ...job, status: before ?? 'new' },
     via,
-    ...(answer.undo && { undo: answer.undo }),
+    applied: {
+      job: { ...job, status: before ?? 'new' },
+      via,
+      ...(answer.undo && { undo: answer.undo }),
+    },
   });
   return { token, says };
 }
@@ -334,7 +335,7 @@ export async function undoApplied(note: Note): Promise<NoteSays> {
       says:
         answer && !answer.ok && answer.reason === 'bad-message'
           ? 'Update Factwright on this computer to undo it here, or change its status in Factwright.'
-          : `Couldn’t undo it: ${answer && !answer.ok ? (answer.message ?? 'try again') : 'Factwright didn’t answer'}. Change its status in Factwright.`,
+          : `Couldn’t undo it: ${(answer && !answer.ok ? (answer.message ?? 'try again') : 'Factwright didn’t answer').replace(/\.$/, '')}. Change its status in Factwright.`,
     };
   }
   await changeNote(note.token, says);
