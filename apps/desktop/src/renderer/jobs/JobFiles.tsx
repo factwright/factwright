@@ -1,9 +1,9 @@
 import type { Job, JobDocKind, JobDocs, JobFile, SavedPosting } from '@factwright/core';
 import { fileSize, shortDate } from '@factwright/core';
-import { Button, Dialog, Markdown } from '@factwright/ui';
-import { FileText, FolderOpen } from 'lucide-react';
+import { Button, Dialog, IconButton, Markdown } from '@factwright/ui';
+import { Download, FileText, FolderOpen } from 'lucide-react';
 import { useEffect, useState } from 'react';
-import type { FactwrightApi } from '../../shared/api.ts';
+import type { EditResult, FactwrightApi, SaveFileResult } from '../../shared/api.ts';
 import styles from './JobPanel.module.css';
 import { PanelSection } from './PanelSection.tsx';
 
@@ -20,21 +20,57 @@ const DOCUMENTS: readonly { kind: JobDocKind; name: string; about: string }[] = 
   { kind: 'notes', name: 'Resume notes', about: 'How the resume was tailored' },
 ];
 
+/** Showing a file where it's kept, in the system's own words: in Finder, on a Mac. */
+export const showWords = (platform: string, name?: string) =>
+  platform === 'darwin'
+    ? `Show ${name ? `${name} ` : ''}in Finder`
+    : name
+      ? `Show ${name} in its folder`
+      : 'Show in folder';
+
+/** What a job's file rows do with a file: open it, save a copy, or show it where it's kept. */
+export interface FileActions {
+  open: (path: string) => void;
+  download: (path: string) => void;
+  show: (path: string) => void;
+  platform: string;
+}
+
 /**
- * A resume's or cover letter's file: a PDF previews here, and either opens in the user's own app,
- * ready to attach. A resume can be X-rayed too, to see what an applicant tracking system reads.
+ * What a job's file rows do with its files, saying what went wrong through onProblem: open one in
+ * the user's own app for it, save a copy where they pick, or show it where it's kept.
+ */
+export function fileActions(
+  api: Pick<FactwrightApi, 'platform' | 'openFile' | 'downloadFile' | 'showFile'>,
+  jobId: string,
+  onProblem: (message: string | null) => void,
+): FileActions {
+  const said = (result: EditResult | SaveFileResult) =>
+    onProblem(result.ok ? null : result.message);
+  return {
+    open: (path) => void api.openFile(path).then(said),
+    download: (path) => void api.downloadFile(jobId, path).then(said),
+    show: (path) => void api.showFile(jobId, path).then(said),
+    platform: api.platform,
+  };
+}
+
+/**
+ * A resume's, cover letter's or Projects page's file: a PDF previews here, and any opens in the
+ * user's own app, ready to attach, saves a copy where they pick, or shows where it's kept. A resume
+ * can be X-rayed too, to see what an applicant tracking system reads.
  */
 export function FileRow({
   file,
   today,
   onPreview,
-  onOpen,
+  actions,
   onXRay,
 }: {
   file: JobFile;
   today: string;
   onPreview: (file: JobFile) => void;
-  onOpen: (path: string) => void;
+  actions: FileActions;
   /** For a resume: opens its ATS X-ray. A cover letter has none. */
   onXRay?: (file: JobFile) => void;
 }) {
@@ -72,10 +108,24 @@ export function FileRow({
           size="sm"
           variant="quiet"
           aria-label={`Open ${file.name}`}
-          onClick={() => onOpen(file.path)}
+          onClick={() => actions.open(file.path)}
         >
           Open
         </Button>
+        <IconButton
+          size="sm"
+          variant="quiet"
+          label={`Download ${file.name}`}
+          icon={<Download size={14} aria-hidden="true" />}
+          onClick={() => actions.download(file.path)}
+        />
+        <IconButton
+          size="sm"
+          variant="quiet"
+          label={showWords(actions.platform, file.name)}
+          icon={<FolderOpen size={14} aria-hidden="true" />}
+          onClick={() => actions.show(file.path)}
+        />
       </span>
     </li>
   );

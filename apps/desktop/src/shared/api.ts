@@ -428,6 +428,13 @@ export interface FactwrightApi {
   pasteImage(shot: ShotUpload, jobId: string | null): Promise<PasteResult>;
   /** Opens a resume from the workspace in the user's own app for it. */
   openFile(path: string): Promise<EditResult>;
+  /**
+   * Saves a copy of one of a job's resumes, cover letters or Projects pages where the user picks,
+   * under its own name, in the system's own save dialog. Only a file the job lists.
+   */
+  downloadFile(jobId: string, path: string): Promise<SaveFileResult>;
+  /** Shows one of a job's resumes, cover letters or Projects pages in Finder, or in its folder. */
+  showFile(jobId: string, path: string): Promise<EditResult>;
   /** A resume PDF's bytes, to show its pages in the window. */
   readPdf(path: string): Promise<PdfResult>;
   /** A resume Word file's bytes, for its ATS X-ray. Answers as readPdf does. */

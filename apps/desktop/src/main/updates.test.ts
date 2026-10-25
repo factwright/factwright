@@ -225,11 +225,13 @@ describe('UpdateWatcher on a Mac', () => {
     expect(updater.quitAndInstall).not.toHaveBeenCalled();
   });
 
-  it('quits Claude Code that’s done first, then restarts into the update', async () => {
+  it('quits Claude Code that’s done first, then restarts into the update, once', async () => {
     updater.emit('update-downloaded', { version: '0.2.0' });
     installer.emit('update-downloaded');
     updater.quitAndInstall.mockImplementation(() => closed.push('installed'));
-    expect(await watcher.install()).toBe(true);
+    // Restart now, clicked again while Claude Code closes.
+    const [first, again] = await Promise.all([watcher.install(), watcher.install()]);
+    expect([first, again]).toEqual([true, true]);
     expect(closed).toEqual(['asked', 'closed', 'installed']);
   });
 });

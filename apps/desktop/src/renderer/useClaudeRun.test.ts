@@ -153,32 +153,32 @@ describe('useClaudeRun', () => {
     expect(result.current.phase).toBe('stopped');
   });
 
-  it.each([
-    'done',
-    'ready',
-  ] as const)('quits Claude Code that’s %s as its panel closes, without showing it stop', async (phase) => {
-    const { api, signal } = fakeApi();
-    const { result } = renderHook(() => useClaudeRun(api));
-    act(() => result.current.requestStart(TASK));
-    await act(async () => result.current.onTerminalSize(SIZE));
-    act(() => result.current.showWork(true));
-    act(() => signal(phase));
-    act(() => result.current.close());
-    expect(api.stopClaude).toHaveBeenCalledOnce();
-    expect(result.current.phase).toBe('idle');
-    expect(result.current.open).toBe(false);
-    // Its closing comes in after, and the panel stays away.
-    act(() => signal('stopped'));
-    expect(result.current.phase).toBe('idle');
-    // The next task starts a run of its own, whose closing shows.
-    act(() => result.current.requestStart(TASK));
-    expect(result.current.phase).toBe('starting');
-    await act(async () => result.current.onTerminalSize(SIZE));
-    expect(api.startClaude).toHaveBeenCalledTimes(2);
-    expect(api.runTask).not.toHaveBeenCalled();
-    act(() => signal('stopped'));
-    expect(result.current.phase).toBe('stopped');
-  });
+  it.each(['done', 'ready'] as const)(
+    'quits Claude Code that’s %s as its panel closes, without showing it stop',
+    async (phase) => {
+      const { api, signal } = fakeApi();
+      const { result } = renderHook(() => useClaudeRun(api));
+      act(() => result.current.requestStart(TASK));
+      await act(async () => result.current.onTerminalSize(SIZE));
+      act(() => result.current.showWork(true));
+      act(() => signal(phase));
+      act(() => result.current.close());
+      expect(api.stopClaude).toHaveBeenCalledOnce();
+      expect(result.current.phase).toBe('idle');
+      expect(result.current.open).toBe(false);
+      // Its closing comes in after, and the panel stays away.
+      act(() => signal('stopped'));
+      expect(result.current.phase).toBe('idle');
+      // The next task starts a run of its own, whose closing shows.
+      act(() => result.current.requestStart(TASK));
+      expect(result.current.phase).toBe('starting');
+      await act(async () => result.current.onTerminalSize(SIZE));
+      expect(api.startClaude).toHaveBeenCalledTimes(2);
+      expect(api.runTask).not.toHaveBeenCalled();
+      act(() => signal('stopped'));
+      expect(result.current.phase).toBe('stopped');
+    },
+  );
 
   it('only puts the panel away once Claude Code has closed, or while it works', () => {
     const { api, signal } = fakeApi();

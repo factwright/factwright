@@ -1,9 +1,10 @@
 import { join, resolve, sep } from 'node:path';
-import { CALL_KINDS, callInviteName } from '@factwright/core';
+import { CALL_KINDS, callInviteName, type Job, type JobFile } from '@factwright/core';
 import { describe, expect, it } from 'vitest';
 import {
   contentSecurityPolicy,
   isSafeExternalUrl,
+  listedFile,
   openableFile,
   parseRunTask,
   parseTerminalSize,
@@ -88,6 +89,51 @@ describe('previewablePdf', () => {
     );
     expect(previewablePdf(workspace, 'applications/acme/resume.docx')).toBeNull();
     expect(previewablePdf(workspace, '../elsewhere/secret.pdf')).toBeNull();
+  });
+});
+
+describe('listedFile', () => {
+  const workspace = resolve(sep, 'data', 'workspace');
+  const folder = 'applications/2026-10-07-acme';
+  const file = (name: string): JobFile => ({
+    path: `${folder}/${name}`,
+    name,
+    format: name.endsWith('.pdf') ? 'pdf' : 'docx',
+    size: 40_000,
+    modified: '2026-10-07T12:00:00.000Z',
+  });
+  // Only its files matter here.
+  const job = {
+    id: 'acme--staff-engineer',
+    files: [file('AlexRiveraResume_Acme.pdf'), file('AlexRiveraResume_Acme.docx')],
+    letters: [file('AlexRiveraCoverLetter_Acme.pdf')],
+    projectPages: [file('AlexRiveraProjects_Acme.pdf')],
+  } as unknown as Job;
+
+  it('takes a resume, cover letter or Projects page the job lists', () => {
+    for (const listed of [...job.files, ...job.letters, ...job.projectPages]) {
+      expect(listedFile(workspace, job, listed.path)).toBe(
+        join(workspace, ...listed.path.split('/')),
+      );
+    }
+  });
+
+  it('refuses anything else: another file, an earlier version, or no job', () => {
+    expect(listedFile(workspace, job, `${folder}/job.md`)).toBeNull();
+    expect(
+      listedFile(workspace, job, `${folder}/previous/2026-10-08-093012/AlexRiveraResume_Acme.pdf`),
+    ).toBeNull();
+    expect(listedFile(workspace, job, 'base/startup-ic.pdf')).toBeNull();
+    expect(listedFile(workspace, null, job.files[0]?.path)).toBeNull();
+    expect(listedFile(workspace, job, 42)).toBeNull();
+  });
+
+  it('refuses a listed path that leads outside the workspace', () => {
+    const outside = {
+      ...job,
+      files: [{ ...file('x.pdf'), path: '../elsewhere/secret.pdf' }],
+    } as Job;
+    expect(listedFile(workspace, outside, '../elsewhere/secret.pdf')).toBeNull();
   });
 });
 

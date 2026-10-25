@@ -55,14 +55,17 @@ describe('PanelHeader', () => {
   it.each([
     ['done', 'Done'],
     ['ready', 'Ready'],
-  ] as const)('while %s, offers Close in place of Stop, though Claude Code is still open', (phase, chip) => {
-    const { onStop, onClose } = renderHeader(phase);
-    expect(screen.getByRole('status').textContent).toBe(chip);
-    expect(screen.queryByRole('button', { name: 'Stop' })).toBeNull();
-    screen.getByRole('button', { name: 'Close' }).click();
-    expect(onClose).toHaveBeenCalledOnce();
-    expect(onStop).not.toHaveBeenCalled();
-  });
+  ] as const)(
+    'while %s, offers Close in place of Stop, though Claude Code is still open',
+    (phase, chip) => {
+      const { onStop, onClose } = renderHeader(phase);
+      expect(screen.getByRole('status').textContent).toBe(chip);
+      expect(screen.queryByRole('button', { name: 'Stop' })).toBeNull();
+      screen.getByRole('button', { name: 'Close' }).click();
+      expect(onClose).toHaveBeenCalledOnce();
+      expect(onStop).not.toHaveBeenCalled();
+    },
+  );
 
   it('folds Claude’s work away again', () => {
     const { onShowWork } = renderHeader('working', { workShown: true });

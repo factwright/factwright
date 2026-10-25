@@ -26,8 +26,8 @@ export function isRunning(phase: RunPhase): boolean {
  * The bar along the bottom of the window while Claude has a task: where the run stands, what
  * Claude is doing or what it made, how long it's been, whose Claude it is, and what you can do,
  * such as open what it made, or see Claude's work, the terminal under the bar. Stop is for a run
- * that's starting, working or waiting on the user. Any other closes: Close quits Claude Code that's
- * done, or ready with nothing to do, and puts the bar away in one click.
+ * that's starting, working or waiting on the user. Otherwise it's Close, which quits Claude Code
+ * that's done, or ready with nothing to do, and puts the bar away in one click.
  */
 export function PanelHeader({
   title = 'Claude',

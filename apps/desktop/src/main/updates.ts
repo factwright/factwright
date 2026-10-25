@@ -78,6 +78,8 @@ export class UpdateWatcher {
   private downloaded: UpdateInfo | null = null;
   private timers: ReturnType<typeof setTimeout>[] = [];
   private running = false;
+  /** Set once it's restarting into the update, while Claude Code that's done closes first. */
+  private installing = false;
   /** When it last looked, or started, as coming back to the app looks only if that was a while ago. */
   private lastLook = 0;
 
@@ -143,7 +145,9 @@ export class UpdateWatcher {
    * stop.
    */
   async install(): Promise<boolean> {
+    if (this.installing) return true;
     if (this.status.state !== 'ready' || this.deps.busy?.()) return false;
+    this.installing = true;
     await this.deps.closeClaude?.();
     // Quietly on Windows, then the app opens again; the Mac does the same on its own.
     this.deps.updater.quitAndInstall(true, true);

@@ -64,7 +64,9 @@ describe('useClaudeQuestions', () => {
   it('keeps what the user chose in a round while it’s put aside, and only for that round', () => {
     const { api, tell } = fakeApi();
     const { result } = renderHook(() => useClaudeQuestions(api));
-    const chosen = [{ picks: ['Yes'], other: '', otherOn: false, note: '', noting: false }];
+    const chosen = [
+      { picks: ['Yes'], other: '', otherOn: false, note: '', noting: false, skipped: false },
+    ];
     act(() => result.current.keepDraft(chosen));
     expect(result.current.draft).toBeNull();
     tell(round('a'));

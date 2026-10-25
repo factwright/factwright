@@ -106,7 +106,10 @@ export interface RunResult {
  * else to show for it: it waits on the user's reply, like any other question.
  */
 export const endsAsking = (phase: RunPhase, activity: RunActivity, result: RunResult | null) =>
-  phase === 'done' && !result && !activity.end?.error && (activity.end?.said?.endsWith('?') ?? false);
+  phase === 'done' &&
+  !result &&
+  !activity.end?.error &&
+  (activity.end?.said?.endsWith('?') ?? false);
 
 /**
  * Claude's panel along the bottom of the window: the user's own Claude Code, at work on a task.

@@ -317,7 +317,9 @@ describe('endsAsking', () => {
   });
 
   it('says it doesn’t for a statement, an error, something made, or a run still going', () => {
-    expect(endsAsking('done', ended('Done. The job’s panel shows what changed.'), null)).toBe(false);
+    expect(endsAsking('done', ended('Done. The job’s panel shows what changed.'), null)).toBe(
+      false,
+    );
     expect(endsAsking('done', ended('Classic or Minimal?', true), null)).toBe(false);
     expect(endsAsking('done', ended('Want a letter too?'), { text: 'Ready.', open: null })).toBe(
       false,

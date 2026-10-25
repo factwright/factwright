@@ -1,5 +1,5 @@
 import { join, normalize, resolve, sep } from 'node:path';
-import { ASK_ID, CALL_ID, FOCUS_ID, KIND_ID } from '@factwright/core';
+import { ASK_ID, CALL_ID, FOCUS_ID, type Job, KIND_ID } from '@factwright/core';
 import type { TerminalSize } from '../shared/api.ts';
 import {
   FINDING_ID,
@@ -93,6 +93,17 @@ export function openableFile(workspace: string, path: string): string | null {
   const base = resolve(workspace);
   const file = resolve(base, path);
   return file.startsWith(base + sep) ? file : null;
+}
+
+/**
+ * One of a job's own files the window may save a copy of, or show where it's kept: a resume, cover
+ * letter or Projects page the job lists, inside the workspace. Anything else, an earlier version
+ * included, is null.
+ */
+export function listedFile(workspace: string, job: Job | null, path: unknown): string | null {
+  if (!job || typeof path !== 'string') return null;
+  const files = [...job.files, ...job.letters, ...job.projectPages];
+  return files.some((file) => file.path === path) ? openableFile(workspace, path) : null;
 }
 
 /** The most a PDF may weigh for the window to preview it. Resumes are far smaller. */
