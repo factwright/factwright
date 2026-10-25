@@ -151,7 +151,6 @@ test('sends what the X-ray found for revision, typing only the findings’ IDs',
   });
   expect(kept.before).toMatch(/1 of 3 key terms/);
 
-  await panel.getByRole('button', { name: 'Stop' }).click();
   await panel.getByRole('button', { name: 'Close' }).click();
   await expect(panel).toHaveCount(0);
 });

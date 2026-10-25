@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import type { JobFile } from '@factwright/core';
+import type { Job, JobFile } from '@factwright/core';
 import { cleanup, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import axe from 'axe-core';
@@ -40,11 +40,20 @@ function apiStub(read: PdfResult) {
   return {
     readPdf: vi.fn(async () => read),
     openFile: vi.fn(async () => ({ ok: true }) as const),
+    downloadFile: vi.fn(async () => ({ ok: true, saved: true }) as const),
+    showFile: vi.fn(async () => ({ ok: true }) as const),
+    platform: 'darwin',
   } as unknown as FactwrightApi & {
     readPdf: ReturnType<typeof vi.fn>;
     openFile: ReturnType<typeof vi.fn>;
+    downloadFile: ReturnType<typeof vi.fn>;
+    showFile: ReturnType<typeof vi.fn>;
   };
 }
+
+/** A job whose own files are these; only they matter here. */
+const jobWith = (files: JobFile[]) =>
+  ({ id: 'acme--staff-engineer', files, letters: [], projectPages: [] }) as unknown as Job;
 
 describe('ResumePreview', () => {
   it('draws every page of the resume, and opens it in the user’s PDF app', async () => {
@@ -64,6 +73,35 @@ describe('ResumePreview', () => {
     expect((await axe.run(screen.getByRole('dialog'))).violations).toEqual([]);
     await userEvent.click(screen.getByRole('button', { name: 'Open in your PDF app' }));
     expect(api.openFile).toHaveBeenCalledWith(FILE.path);
+  });
+
+  it('saves a copy of a job’s own file, or shows it in Finder, and says when it can’t', async () => {
+    drawPages.mockResolvedValue([{ number: 1, ...PAGE }]);
+    const api = apiStub({ ok: true, data: new Uint8Array([37]) });
+    render(<ResumePreview file={FILE} api={api} job={jobWith([FILE])} onClose={vi.fn()} />);
+    await userEvent.click(screen.getByRole('button', { name: 'Download' }));
+    expect(api.downloadFile).toHaveBeenCalledWith('acme--staff-engineer', FILE.path);
+    await userEvent.click(screen.getByRole('button', { name: 'Show in Finder' }));
+    expect(api.showFile).toHaveBeenCalledWith('acme--staff-engineer', FILE.path);
+    api.showFile.mockResolvedValueOnce({
+      ok: false,
+      message: 'That file isn’t in your workspace anymore.',
+    });
+    await userEvent.click(screen.getByRole('button', { name: 'Show in Finder' }));
+    expect((await screen.findByRole('alert')).textContent).toBe(
+      'That file isn’t in your workspace anymore.',
+    );
+  });
+
+  it('offers neither for a file the job doesn’t list, such as an earlier version', async () => {
+    drawPages.mockResolvedValue([{ number: 1, ...PAGE }]);
+    const api = apiStub({ ok: true, data: new Uint8Array([37]) });
+    const earlier = { ...FILE, path: 'applications/2026-10-07-acme/previous/1/Resume.pdf' };
+    render(<ResumePreview file={earlier} api={api} job={jobWith([FILE])} onClose={vi.fn()} />);
+    expect(await screen.findByRole('img', { name: 'Page 1 of 1' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Download' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Show in Finder' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Open in your PDF app' })).toBeTruthy();
   });
 
   it('says why when it can’t show the pages', async () => {

@@ -1,4 +1,12 @@
-import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { join } from 'node:path';
 import { expect, test } from '@playwright/test';
 // pdf.js's build for Node, as the ATS X-ray's tests read PDFs.
@@ -48,10 +56,12 @@ const pickView = (name: RegExp) =>
     .filter({ has: opened.window.getByRole('radio', { name }) })
     .click();
 
-/** Closes Claude's panel once its run is done, ready for the next. */
+/**
+ * Closes Claude's panel once its run is done, ready for the next: Close quits Claude Code and puts
+ * the panel away in one click. Stop is only for a run that's still going.
+ */
 async function closeRun() {
   const panel = claudePanel();
-  await panel.getByRole('button', { name: 'Stop' }).click();
   await panel.getByRole('button', { name: 'Close' }).click();
   await expect(panel).toHaveCount(0);
 }
@@ -131,6 +141,100 @@ test('scrolls only its panes, never the window, however far the list runs', asyn
   await pickView(/^To review/);
 });
 
+/** The jobs list's first heading, and the box that scrolls the list sideways, in the page. */
+const LIST = `(() => {
+  const job = document.querySelector('button[aria-label="Sort by job"]');
+  let box = job.parentElement;
+  while (getComputedStyle(box).overflowX !== 'auto') box = box.parentElement;
+  return { job, box };
+})()`;
+
+test('keeps every column’s heading, scrolling the list sideways beside a job with the names pinned', async () => {
+  const { window } = opened;
+  await pickView(/^All/);
+  // No job picked, no job's panel: the list has the room.
+  await expect(window.getByRole('complementary', { name: 'Job details' })).toHaveCount(0);
+  const headings = ['job', 'status', 'fit', 'pay', 'next step', 'added'];
+  for (const heading of headings) {
+    await expect(window.getByRole('button', { name: `Sort by ${heading}` })).toBeAttached();
+  }
+  await window.getByRole('button', { name: /^Acme Robotics/ }).click();
+  await expect(jobPanel()).toBeVisible();
+  // Every heading is still there, and the list scrolls sideways to them, with a fade at its edge.
+  for (const heading of headings) {
+    await expect(window.getByRole('button', { name: `Sort by ${heading}` })).toBeAttached();
+  }
+  /**
+   * Where the list stands, as it scrolls: the job column's heading and a job's name in it, the
+   * next heading, and the last heading's right edge.
+   */
+  const where = () =>
+    window.evaluate<{
+      scrolls: boolean;
+      more: boolean;
+      job: number;
+      name: number;
+      status: number;
+      added: number;
+      right: number;
+    }>(
+      `(() => {
+        const { job, box } = ${LIST};
+        const left = (element) => Math.round(element.getBoundingClientRect().left);
+        const added = document.querySelector('[aria-label^="Sort by added"], [aria-label^="Added,"]');
+        const row = [...document.querySelectorAll('ul[aria-label="Jobs"] button')].find((each) =>
+          each.textContent.startsWith('Acme Robotics'),
+        );
+        return {
+          scrolls: box.scrollWidth > box.clientWidth,
+          more: box.parentElement.hasAttribute('data-more'),
+          job: left(job),
+          name: left(row.firstElementChild),
+          status: left(document.querySelector('button[aria-label="Sort by status"]')),
+          added: Math.round(added.getBoundingClientRect().right),
+          right: Math.round(box.getBoundingClientRect().right),
+        };
+      })()`,
+    );
+  const before = await where();
+  expect(before).toMatchObject({ scrolls: true, more: true });
+  expect(before.added).toBeGreaterThan(before.right);
+  await window.evaluate(`(() => {
+    const { box } = ${LIST};
+    box.scrollTo({ left: box.scrollWidth });
+  })()`);
+  // Scrolled to the end, the jobs' names stay where they were, and the last column is in view.
+  await expect.poll(async () => (await where()).more).toBe(false);
+  const after = await where();
+  expect(after.status).toBeLessThan(before.status);
+  expect(after.job).toBe(before.job);
+  expect(after.name).toBe(before.name);
+  expect(after.added).toBeLessThanOrEqual(after.right);
+  // Added sorts the list by the day each job was found or saved, newest first. In a narrow
+  // window the job's panel is over the list, so it closes first.
+  await jobPanel().getByRole('button', { name: 'Close details' }).click();
+  /** The day each job in the list was added, in the list's order, as times. */
+  const days = async () =>
+    (await window.getByRole('list', { name: 'Jobs' }).getByRole('button').allTextContents()).map(
+      (text) => {
+        const [, month, day, year] = /Added (\w{3}) (\d{1,2})(?:, (\d{4}))?$/.exec(text) ?? [];
+        return Date.parse(`${month} ${day}, ${year ?? new Date().getFullYear()}`);
+      },
+    );
+  await window.getByRole('button', { name: 'Sort by added' }).click();
+  await expect(window.getByRole('button', { name: 'Added, sorted newest first' })).toBeVisible();
+  const newest = await days();
+  expect(new Set(newest).size).toBeGreaterThan(1);
+  expect(newest).toEqual([...newest].sort((a, b) => b - a));
+  await window.getByRole('button', { name: 'Added, sorted newest first' }).click();
+  await expect(window.getByRole('button', { name: 'Added, sorted oldest first' })).toBeVisible();
+  expect(await days()).toEqual([...newest].sort((a, b) => a - b));
+  // Back to the newest activity first, as the other tests expect.
+  await window.getByRole('button', { name: 'Added, sorted oldest first' }).click();
+  await expect(window.getByRole('button', { name: 'Sort by added' })).toBeVisible();
+  await pickView(/^To review/);
+});
+
 test('checks its setup with Claude Code quietly, and it passes', async () => {
   await expect
     .poll(
@@ -172,6 +276,75 @@ test('previews a resume’s pages', async () => {
   await expect(dialog.getByRole('img', { name: 'Page 1 of 1' })).toBeVisible();
   await expect(dialog.getByText('1 page')).toBeVisible();
   await dialog.getByRole('button', { name: 'Done' }).click();
+});
+
+// The save dialog and Finder are stood in for, so nothing opens on the screen of whoever runs the
+// tests: the dialog picks a file in the test's own folder, and showing a file is only noted.
+test('saves a copy of a resume where the user picks, and shows it where it’s kept', async () => {
+  const { app, window } = opened;
+  const resume = join(dataDir, 'workspace', ...ACME_FOLDER.split('/'), ACME_RESUME);
+  const copy = join(dataDir, 'saved', ACME_RESUME);
+  mkdirSync(join(dataDir, 'saved'), { recursive: true });
+  await app.evaluate(({ dialog, shell }, to) => {
+    const noted = globalThis as unknown as {
+      suggested: string[];
+      shown: string[];
+      real: { save: typeof dialog.showSaveDialog; show: typeof shell.showItemInFolder };
+    };
+    noted.suggested = [];
+    noted.shown = [];
+    noted.real = { save: dialog.showSaveDialog, show: shell.showItemInFolder };
+    dialog.showSaveDialog = (async (...args: unknown[]) => {
+      noted.suggested.push((args.at(-1) as { defaultPath?: string }).defaultPath ?? '');
+      return { canceled: false, filePath: to };
+    }) as typeof dialog.showSaveDialog;
+    shell.showItemInFolder = (path: string) => {
+      noted.shown.push(path);
+    };
+  }, copy);
+  const noted = () =>
+    app.evaluate(() => {
+      const { suggested, shown } = globalThis as unknown as {
+        suggested: string[];
+        shown: string[];
+      };
+      return { suggested, shown };
+    });
+  await window.getByRole('button', { name: `Download ${ACME_RESUME}` }).click();
+  await expect.poll(() => existsSync(copy)).toBe(true);
+  expect(readFileSync(copy).equals(readFileSync(resume))).toBe(true);
+  // The dialog suggests the file's own name.
+  expect((await noted()).suggested).toEqual([expect.stringMatching(new RegExp(`${ACME_RESUME}$`))]);
+  const shown =
+    process.platform === 'darwin'
+      ? `Show ${ACME_RESUME} in Finder`
+      : `Show ${ACME_RESUME} in its folder`;
+  await window.getByRole('button', { name: shown }).click();
+  // On a Mac, the app knows the tests' folder by its real path, under /private.
+  await expect
+    .poll(async () => (await noted()).shown.map((path) => realpathSync(path)))
+    .toEqual([realpathSync(resume)]);
+  // Only a file the job lists: nothing else in the workspace, and nothing outside it.
+  for (const path of ['facts/profile.md', `${ACME_FOLDER}/job.md`, '../tracker.db']) {
+    const refused = await window.evaluate(
+      ([job, file]) =>
+        (
+          globalThis as unknown as {
+            factwright: { downloadFile: (job: string, file: string) => Promise<unknown> };
+          }
+        ).factwright.downloadFile(job ?? '', file ?? ''),
+      [ACME_ID, path],
+    );
+    expect(refused).toEqual({ ok: false, message: 'That file isn’t in your workspace anymore.' });
+  }
+  expect((await noted()).suggested).toHaveLength(1);
+  await app.evaluate(({ dialog, shell }) => {
+    const { real } = globalThis as unknown as {
+      real: { save: typeof dialog.showSaveDialog; show: typeof shell.showItemInFolder };
+    };
+    dialog.showSaveDialog = real.save;
+    shell.showItemInFolder = real.show;
+  });
 });
 
 test('X-rays a resume as applicant systems read it, its PDF and its Word file', async () => {
@@ -535,8 +708,11 @@ test('saves to the user’s profile without asking, and lists each change, with 
   // The next task's card starts again, with what it changed.
   await search();
   await expect(changed).toHaveCount(0);
-  await say('save a month of notice');
+  // The user interrupts this one, so no Stop hook comes: the card lists what it changed once the
+  // run reads as done.
+  await say('save a month of notice, then interrupt');
   await expect.poll(() => answers().start).toBe('One month’s notice');
+  await expect(panel.getByRole('status').first()).toHaveText('Done');
   await expect(changed).toContainText('answers.json');
   // View shows it before and after, a line at a time.
   await panel.getByRole('button', { name: 'View about-me/answers.json' }).click();

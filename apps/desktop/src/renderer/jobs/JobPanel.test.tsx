@@ -247,9 +247,9 @@ describe('sorting a job before applying', () => {
 });
 
 describe('JobPanel', () => {
-  it('asks the user to pick a job until one is picked', () => {
+  it('shows nothing until a job is picked, so the list has the room', () => {
     panel(null);
-    expect(screen.getByText('Pick a job to see everything on file for it.')).toBeTruthy();
+    expect(screen.queryByRole('complementary', { name: 'Job details' })).toBeNull();
   });
 
   it('shows the job, why it scored, what people say, files, calls and history', async () => {

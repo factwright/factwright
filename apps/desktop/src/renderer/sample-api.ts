@@ -10,6 +10,7 @@ import {
   type QuestionRound,
   type RoundQuestion,
   type RoundReply,
+  SKIPPED_ANSWER,
 } from '../shared/rounds.ts';
 import { type RunTask, THANKS_SKILL, taskJob } from '../shared/runs.ts';
 import { sampleProfile } from './about/sample-profile.ts';
@@ -369,6 +370,7 @@ const PREP_ROUND: QuestionRound = {
 const noted = (round: QuestionRound, reply: RoundReply): [string, string][] =>
   round.questions.flatMap(({ question }, at): [string, string][] => {
     const answer = reply[at];
+    if (answer?.skipped) return [[question, SKIPPED_ANSWER]];
     if (!answer || !isAnswered(answer)) return [];
     return [[question, [...answer.picks, answer.other.trim()].filter(Boolean).join(', ')]];
   });

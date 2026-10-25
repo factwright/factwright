@@ -41,7 +41,14 @@ function apiStub(projects: string | undefined = PAGE) {
   return {
     jobDocs: vi.fn(async () => ({ projects })),
     openFile: vi.fn(async () => ({ ok: true }) as const),
-  } as unknown as FactwrightApi & { openFile: Mock<FactwrightApi['openFile']> };
+    downloadFile: vi.fn(async () => ({ ok: true, saved: true }) as const),
+    showFile: vi.fn(async () => ({ ok: true }) as const),
+    platform: 'win32',
+  } as unknown as FactwrightApi & {
+    openFile: Mock<FactwrightApi['openFile']>;
+    downloadFile: Mock<FactwrightApi['downloadFile']>;
+    showFile: Mock<FactwrightApi['showFile']>;
+  };
 }
 
 describe('readPageOutline', () => {
@@ -85,6 +92,23 @@ describe('ProjectsPagePart', () => {
       expect(api.openFile).toHaveBeenCalledWith(
         'applications/acme/AlexRiveraProjects10202026_Acme.pdf',
       ),
+    );
+    // On Windows, a file shows in its folder.
+    await userEvent.click(
+      screen.getByRole('button', {
+        name: 'Show AlexRiveraProjects10202026_Acme.pdf in its folder',
+      }),
+    );
+    expect(api.showFile).toHaveBeenCalledWith(
+      job.id,
+      'applications/acme/AlexRiveraProjects10202026_Acme.pdf',
+    );
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Download AlexRiveraProjects10202026_Acme.pdf' }),
+    );
+    expect(api.downloadFile).toHaveBeenCalledWith(
+      job.id,
+      'applications/acme/AlexRiveraProjects10202026_Acme.pdf',
     );
   });
 

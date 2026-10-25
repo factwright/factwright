@@ -394,7 +394,10 @@ export interface ProfilesDeps {
   ownName: () => string;
   /** Moves a folder to the trash, where it can be restored. */
   trash: (path: string) => Promise<void>;
-  /** Whether Claude is working, which restarting the app would stop. */
+  /**
+   * Whether Claude has work going, which restarting the app would stop: working, or waiting on the
+   * user. Claude Code that's done closes as the app restarts.
+   */
   busy: () => boolean;
   /** Restarts the app, which opens the profile chosen. */
   restart: () => void;
@@ -520,7 +523,7 @@ export class Profiles {
     return { ok: true };
   }
 
-  /** Restarts the app on another profile. Not while Claude is working, which would stop it. */
+  /** Restarts the app on another profile. Not while Claude has work going, which would stop it. */
   open(id: unknown): EditResult {
     const { home, open } = this.deps;
     const profile = isId(id) ? readProfile(home, id) : null;
