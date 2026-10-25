@@ -7,7 +7,7 @@ import type { DocVersion } from '../../shared/versions.ts';
 import { OpenXRay } from '../xray/OpenXRay.tsx';
 import { ClaudeButton } from './ClaudeButton.tsx';
 import { CoverLetterPart } from './CoverLetterSection.tsx';
-import { FileRow } from './JobFiles.tsx';
+import { FileRow, fileActions } from './JobFiles.tsx';
 import panel from './JobPanel.module.css';
 import { PanelSection, Part, Placeholder } from './PanelSection.tsx';
 import { ProjectsPagePart } from './ProjectsPageSection.tsx';
@@ -64,10 +64,7 @@ export function ResumesSection({
   /** A resume's PDF and Word file, which share a name, for the X-ray to switch between. */
   const sameResume = (file: JobFile) =>
     job.files.filter((each) => stem(each.name) === stem(file.name));
-  const openFile = async (path: string) => {
-    const result = await api.openFile(path);
-    setProblem(result.ok ? null : result.message);
-  };
+  const actions = fileActions(api, job.id, setProblem);
 
   const resume: RunTask = { skill: 'focused-resume', jobId: job.id };
   const letter = job.letters.length > 0 || job.docKinds.includes('letter');
@@ -121,7 +118,7 @@ export function ResumesSection({
                 file={file}
                 today={today}
                 onPreview={setPreview}
-                onOpen={openFile}
+                actions={actions}
                 onXRay={setXray}
               />
             ))}
@@ -146,7 +143,9 @@ export function ResumesSection({
           {problem}
         </p>
       )}
-      {preview && <ResumePreview file={preview} api={api} onClose={() => setPreview(null)} />}
+      {preview && (
+        <ResumePreview file={preview} api={api} job={job} onClose={() => setPreview(null)} />
+      )}
       {xray && (
         <OpenXRay
           api={api}

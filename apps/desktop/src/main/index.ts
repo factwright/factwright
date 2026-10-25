@@ -237,11 +237,12 @@ function start(home: string, profile: ProfileFolder, stopped: ProfileFolder | nu
       open: profile,
       ownName: () => about.answers().you.name,
       trash: (path) => shell.trashItem(path),
-      busy: () => claude.busy(),
+      // Only work going waits: Claude Code that's done closes as the app restarts.
+      busy: () => claude.working(),
       stopped,
-      restart: () => {
+      restart: async () => {
         // An update that's ready installs as the app restarts, then opens the profile chosen.
-        if (updates?.install()) return;
+        if (await updates?.install()) return;
         // While developing, the screens' server closes with the app, and the tests start it
         // again themselves.
         if (!devUrl && develop('FACTWRIGHT_RELAUNCH') !== 'off') app.relaunch();
@@ -485,7 +486,9 @@ function start(home: string, profile: ProfileFolder, stopped: ProfileFolder | nu
         ? new UpdateWatcher({
             updater: autoUpdater,
             macInstaller: process.platform === 'darwin' ? macInstaller : null,
-            busy: () => claude.busy(),
+            // Only work going waits: Claude Code that's done closes first, then it installs.
+            busy: () => claude.working(),
+            closeClaude: () => claude.closeIdle(),
             onStatus: (status) => window.send('updates:changed', status),
             // Updates are the app's, not a profile's, so their log is in the app's own folder.
             log: (message) => logUpdate(home, message),

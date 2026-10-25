@@ -556,6 +556,7 @@ async function work(text) {
   const notice = {
     'save my notice period': 'Two weeks’ notice',
     'save a month of notice': 'One month’s notice',
+    'save a month of notice, then interrupt': 'One month’s notice',
   }[text];
   if (notice) show(`${await callAllowed('save_about_you', { start: notice })}\n`);
   // As Claude would for a template: start from one of the app's, and save one of the user's own.
@@ -574,6 +575,15 @@ async function work(text) {
       }),
     );
     show('\n');
+  }
+  // A turn the user interrupts runs no Stop hook: Claude Code says it's waiting for them, later.
+  if (text.endsWith(', then interrupt')) {
+    show('Interrupted · What should Claude do instead?\n> ');
+    await hook('Notification', {
+      notification_type: 'idle_prompt',
+      message: 'Claude is waiting for your input',
+    });
+    return;
   }
   // Its turn ends a moment later, with Stop, before it takes the next prompt, as Claude Code's does.
   await new Promise((resolve) => setTimeout(resolve, 300));

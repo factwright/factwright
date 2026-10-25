@@ -144,6 +144,36 @@ describe('JobsPage', () => {
     expect(onSort).toHaveBeenLastCalledWith(null);
   });
 
+  it('keeps a heading for every column, with the day each job was found or saved', async () => {
+    const onSort = vi.fn();
+    page({ onSort, filter: view('new') });
+    expect(
+      screen
+        .getAllByRole('button', { name: /^Sort by/ })
+        .map((heading) => heading.getAttribute('aria-label')),
+    ).toEqual([
+      'Sort by job',
+      'Sort by status',
+      'Sort by fit',
+      'Sort by pay',
+      'Sort by next step',
+      'Sort by added',
+    ]);
+    const added = screen.getByRole('button', { name: /^Bluewave Staffing/ });
+    expect(added.textContent).toMatch(/Added [A-Z][a-z]{2} \d{1,2}(, \d{4})?$/);
+    await userEvent.click(screen.getByRole('button', { name: 'Sort by added' }));
+    expect(onSort).toHaveBeenLastCalledWith({ by: 'added', reversed: false });
+    cleanup();
+    page({ onSort, filter: view('new'), sort: { by: 'added', reversed: false } });
+    expect(screen.getByRole('button', { name: 'Added, sorted newest first' })).toBeTruthy();
+    // The newest saved first: Bluewave a day ago, Copperleaf two, Granite three.
+    expect(
+      within(screen.getByRole('list', { name: 'Jobs' }))
+        .getAllByRole('button')
+        .map((row) => row.textContent?.split('Added ')[0]?.slice(0, 10)),
+    ).toEqual(['Bluewave S', 'Copperleaf', 'Granite He']);
+  });
+
   it('moves between jobs with the arrow keys', async () => {
     page();
     const rows = within(screen.getByRole('list', { name: 'Jobs' })).getAllByRole('button');

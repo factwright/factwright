@@ -227,7 +227,7 @@ const byActivity = (a: JobRow, b: JobRow) =>
   a.job.role.localeCompare(b.job.role);
 
 /** The list's columns, which it can be sorted by. */
-export const SORT_KEYS = ['job', 'status', 'fit', 'pay', 'next'] as const;
+export const SORT_KEYS = ['job', 'status', 'fit', 'pay', 'next', 'added'] as const;
 export type SortKey = (typeof SORT_KEYS)[number];
 
 /** The list sorted by one of its columns, its own way or the other way round. */
@@ -246,8 +246,9 @@ const PRESSING = { urgent: 0, action: 1, info: 2 } as const;
 
 /**
  * Where each column puts a job, its own way round: by company A to Z, by status as a job moves
- * along, the best fit and the highest pay first, and what's most pressing first. A job with
- * nothing in the column, such as no pay listed, has no place, and goes last either way.
+ * along, the best fit and the highest pay first, what's most pressing first, and the newest
+ * found or saved first. A job with nothing in the column, such as no pay listed, has no place,
+ * and goes last either way.
  */
 const PLACES: Readonly<Record<SortKey, (row: JobRow) => readonly string[] | number | null>> = {
   job: ({ job }) => [job.company, job.role],
@@ -258,6 +259,10 @@ const PLACES: Readonly<Record<SortKey, (row: JobRow) => readonly string[] | numb
     return most === null ? null : -most;
   },
   next: ({ next }) => (next ? PRESSING[next.level] : null),
+  added: ({ job }) => {
+    const day = Date.parse(job.firstSeen?.slice(0, 10) ?? '');
+    return Number.isNaN(day) ? null : -day;
+  },
 };
 
 /** Sorts rows by a column, then by the newest activity among jobs it puts level. */

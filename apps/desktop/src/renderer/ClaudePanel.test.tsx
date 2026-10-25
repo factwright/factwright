@@ -4,7 +4,7 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { RunStep } from '../shared/activity.ts';
 import type { FactwrightApi } from '../shared/api.ts';
-import { ClaudePanel, clock, doingLine, QUIET_AFTER_MS } from './ClaudePanel.tsx';
+import { ClaudePanel, clock, doingLine, endsAsking, QUIET_AFTER_MS } from './ClaudePanel.tsx';
 import type { ClaudeRun, RunPhase } from './useClaudeRun.ts';
 import type { RunActivity } from './useRunActivity.ts';
 
@@ -287,6 +287,18 @@ describe('ClaudePanel', () => {
     expect(
       (screen.getByRole('textbox', { name: 'Reply to Claude' }) as HTMLInputElement).value,
     ).toBe('');
+    // It waits on the user, so it offers Stop, not Close.
+    expect(screen.getByRole('button', { name: 'Stop' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Close' })).toBeNull();
+  });
+
+  it('offers Close once Claude is done, which quits Claude Code and puts the bar away', async () => {
+    const done = run(false, false, false, 'done');
+    render(<ClaudePanel api={api()} run={done} plan="Max" />);
+    expect(bar().textContent).toContain('Claude is done.');
+    expect(screen.queryByRole('button', { name: 'Stop' })).toBeNull();
+    await userEvent.click(screen.getByRole('button', { name: 'Close' }));
+    expect(done.close).toHaveBeenCalled();
   });
 
   it('says a task stopped short without saying it’s done', () => {
@@ -330,6 +342,30 @@ describe('ClaudePanel', () => {
     expect(screen.queryByRole('textbox', { name: 'Reply to Claude' })).toBeNull();
     await userEvent.click(screen.getByRole('button', { name: 'Try again' }));
     expect(onRetry).toHaveBeenCalled();
+  });
+});
+
+describe('endsAsking', () => {
+  const ended = (said: string | null, error = false): RunActivity => ({
+    steps: [],
+    lastAt: null,
+    end: { said, error: error ? { kind: 'rate_limit', message: 'Rate limit' } : null },
+  });
+
+  it('says a run that’s done waits on the user when Claude ended on a question', () => {
+    expect(endsAsking('done', ended('Classic or Minimal?'), null)).toBe(true);
+  });
+
+  it('says it doesn’t for a statement, an error, something made, or a run still going', () => {
+    expect(endsAsking('done', ended('Done. The job’s panel shows what changed.'), null)).toBe(
+      false,
+    );
+    expect(endsAsking('done', ended('Classic or Minimal?', true), null)).toBe(false);
+    expect(endsAsking('done', ended('Want a letter too?'), { text: 'Ready.', open: null })).toBe(
+      false,
+    );
+    expect(endsAsking('working', ended('Classic or Minimal?'), null)).toBe(false);
+    expect(endsAsking('done', { steps: [], lastAt: null, end: null }, null)).toBe(false);
   });
 });
 
