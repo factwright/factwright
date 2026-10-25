@@ -56,6 +56,19 @@ describe('following the run that drafts a form’s questions', () => {
     expect(drafts.state('acme--staff', false)).toEqual({ drafting: false, waiting: false });
   });
 
+  it('follows two jobs’ drafts side by side, each on its own', () => {
+    const drafts = new FormDrafts(() => 0);
+    drafts.started('acme--staff');
+    drafts.heard('working', 'acme--staff');
+    drafts.started('globex--pm');
+    drafts.heard('needs-answer', 'globex--pm');
+    expect(drafts.state('acme--staff', false)).toEqual({ drafting: true, waiting: false });
+    expect(drafts.state('globex--pm', false)).toEqual({ drafting: true, waiting: true });
+    drafts.heard('done', 'acme--staff');
+    expect(drafts.state('acme--staff', false).drafting).toBe(false);
+    expect(drafts.state('globex--pm', false).drafting).toBe(true);
+  });
+
   it('waits on the user to trust the workspace, and ends when the run fails or never starts', () => {
     let now = 0;
     const drafts = new FormDrafts(() => now);

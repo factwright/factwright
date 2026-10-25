@@ -51,19 +51,22 @@ export class RunRequests {
  */
 const WORK_WITHIN_MS = 2 * 60 * 1000;
 
+/** Where one job's drafts stand. */
+interface Drafting {
+  since: number;
+  worked: boolean;
+  over: boolean;
+  needsYou: boolean;
+}
+
 /**
- * The run drafting a job's form's questions, as the browser extension follows it: which job's,
- * whether it's still at them, and whether it's waiting on the user in the window. Its turn is over
- * once Claude stops, or the run does, after it got to work. Other runs, side by side, change
- * nothing here.
+ * The runs drafting jobs' forms' questions, as the browser extension follows them, each job's on
+ * its own, as runs go side by side: whether it's still at them, and whether it's waiting on the
+ * user in the window. Its turn is over once Claude stops, or the run does, after it got to work.
  */
 export class FormDrafts {
   private readonly now: () => number;
-  private jobId: string | null = null;
-  private since = 0;
-  private worked = false;
-  private over = true;
-  private needsYou = false;
+  private readonly jobs = new Map<string, Drafting>();
 
   constructor(now: () => number = Date.now) {
     this.now = now;
@@ -71,27 +74,21 @@ export class FormDrafts {
 
   /** The window started a run to draft a job's form's questions. */
   started(jobId: string): void {
-    this.jobId = jobId;
-    this.since = this.now();
-    this.worked = false;
-    this.over = false;
-    this.needsYou = false;
+    this.jobs.set(jobId, { since: this.now(), worked: false, over: false, needsYou: false });
   }
 
-  /** What a run drafting a job's form's questions signalled. Another job's draws nothing here. */
+  /** What a run drafting a job's form's questions signalled. */
   heard(signal: RunSignal, jobId: string): void {
-    if (jobId !== this.jobId) return;
+    const job = this.jobs.get(jobId);
+    if (!job) return;
     if (signal === 'working') {
-      this.worked = true;
-      this.needsYou = false;
+      job.worked = true;
+      job.needsYou = false;
     } else if (signal === 'needs-answer') {
-      this.needsYou = true;
-    } else if (
-      signal === 'failed' ||
-      ((signal === 'done' || signal === 'stopped') && this.worked)
-    ) {
-      this.over = true;
-      this.needsYou = false;
+      job.needsYou = true;
+    } else if (signal === 'failed' || ((signal === 'done' || signal === 'stopped') && job.worked)) {
+      job.over = true;
+      job.needsYou = false;
     }
   }
 
@@ -100,7 +97,8 @@ export class FormDrafts {
    * workspace, or on one of its first-run screens.
    */
   waitsOnYou(jobId: string): void {
-    if (!this.over && jobId === this.jobId) this.needsYou = true;
+    const job = this.jobs.get(jobId);
+    if (job && !job.over) job.needsYou = true;
   }
 
   /**
@@ -108,10 +106,14 @@ export class FormDrafts {
    * question in the window (`asking`).
    */
   state(jobId: string, asking: boolean): { drafting: boolean; waiting: boolean } {
-    if (!this.worked && !this.needsYou && this.now() - this.since > WORK_WITHIN_MS) {
-      this.over = true;
+    const job = this.jobs.get(jobId);
+    if (!job) return { drafting: false, waiting: false };
+    if (!job.worked && !job.needsYou && this.now() - job.since > WORK_WITHIN_MS) job.over = true;
+    // One that's over is let go, so the jobs it follows are only ones being drafted.
+    if (job.over) {
+      this.jobs.delete(jobId);
+      return { drafting: false, waiting: false };
     }
-    const drafting = !this.over && this.jobId === jobId;
-    return { drafting, waiting: drafting && (this.needsYou || asking) };
+    return { drafting: true, waiting: job.needsYou || asking };
   }
 }

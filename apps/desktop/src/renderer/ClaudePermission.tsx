@@ -168,10 +168,10 @@ export function ClaudePermission({
   /** With runs side by side, the run asking, and which of those waiting this is. */
   turn?: DialogTurn | undefined;
   /**
-   * Hears that the answer reached Claude Code, which takes the dialog on to what's waiting next.
-   * Without it, the dialog closes.
+   * Hears that the answer reached Claude Code, or was left to the terminal, which takes the
+   * dialog on to what's waiting next. Without it, the dialog closes.
    */
-  onAnswered?: () => void;
+  onAnswered?: (inTerminal: boolean) => void;
   /** Hears that the user put the prompt aside, or the dialog closed. */
   onClose: () => void;
 }) {
@@ -195,7 +195,7 @@ export function ClaudePermission({
     }));
     setSending(false);
     if (!result.ok) setProblem(result.message);
-    else if (onAnswered) onAnswered();
+    else if (onAnswered) onAnswered(answer === 'terminal');
     else close();
   };
   return (

@@ -539,7 +539,8 @@ export function App({ api }: { api: FactwrightApi }) {
   runRequested.current = ({ id, task: asked }) => {
     const answer = requestedRun(ready, startsNow(claude, asked));
     api.answerRunRequest(id, answer);
-    if (answer === 'started') startRun(asked);
+    // It starts in the background, leaving the tab the user is on, and their work, as they were.
+    if (answer === 'started') startClaude(asked, { background: true });
   };
   useEffect(() => api.onRunRequest((request) => runRequested.current(request)), [api]);
   // A notification says what each task made, or that Claude is done, once, if the user is away.
@@ -596,6 +597,17 @@ export function App({ api }: { api: FactwrightApi }) {
       of: turns.turns.length,
       go: turns.go,
     };
+  };
+  // A turn left to the terminal shows its run's terminal, whichever tab was showing.
+  const answeredFor = (runId: string) => (inTerminal: boolean) => {
+    if (inTerminal) claude.show(runId);
+  };
+  // Claude with no task waits for what the user types: one that's open shows again, rather than
+  // another opening beside it.
+  const startFree = () => {
+    const free = claude.runs.find((run) => run.task === null && isOpen(run.phase));
+    if (free) claude.show(free.id);
+    else startRun();
   };
   const shownRound = turns.shown?.kind === 'questions' ? turns.shown.item.id : null;
   const { keepDraft } = turns;
@@ -657,7 +669,7 @@ export function App({ api }: { api: FactwrightApi }) {
               ? claude.open && claude.selected?.id === openRun.id
                 ? undefined
                 : () => claude.show(openRun.id)
-              : () => startRun()
+              : startFree
           }
           onOpenClaudeSettings={() => setDialog('claude-settings')}
           onOpenExtension={() => setDialog('extension')}
@@ -751,7 +763,7 @@ export function App({ api }: { api: FactwrightApi }) {
                 onSelect={pick}
                 onRetry={reload}
                 canStartClaude={ready}
-                onStartClaude={() => startRun()}
+                onStartClaude={startFree}
                 // A search waits in line behind another, so Find jobs is never busy.
                 canFindJobs={ready}
                 claudeOn={claudeOn}
@@ -954,7 +966,7 @@ export function App({ api }: { api: FactwrightApi }) {
           draft={turns.draft(turns.shown.item.id)}
           onDraft={keepShownDraft}
           // Answered, it goes on to what waits next, as the app takes the round off the list.
-          onAnswered={() => {}}
+          onAnswered={answeredFor(turns.shown.item.runId)}
           onClose={turns.hide}
         />
       )}
@@ -965,7 +977,7 @@ export function App({ api }: { api: FactwrightApi }) {
           ask={turns.shown.item}
           about={aboutRun(turns.shown.item.runId)}
           turn={turnOf(turns.shown)}
-          onAnswered={() => {}}
+          onAnswered={answeredFor(turns.shown.item.runId)}
           onClose={turns.hide}
         />
       )}

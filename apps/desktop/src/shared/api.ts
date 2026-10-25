@@ -157,6 +157,11 @@ export interface RunView {
 export interface RunsView {
   runs: RunView[];
   atOnce: number;
+  /**
+   * Whether a run got past Claude Code's first-run screens and its question about trust. Until
+   * one does, runs start one at a time.
+   */
+  setUp: boolean;
 }
 
 /**

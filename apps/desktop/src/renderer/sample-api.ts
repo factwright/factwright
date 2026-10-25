@@ -529,7 +529,11 @@ export function sampleApi(): FactwrightApi {
   let atOnce: number = AT_ONCE.usual;
   let count = 0;
   const runsListeners = new Set<(view: RunsView) => void>();
-  const runsView = (): RunsView => ({ runs: tabs.map((tab) => ({ ...tab })), atOnce });
+  const runsView = (): RunsView => ({
+    runs: tabs.map((tab) => ({ ...tab })),
+    atOnce,
+    setUp: trusted && firstRunLeft === 0,
+  });
   const tellRuns = () => {
     const view = runsView();
     for (const listener of runsListeners) listener(view);

@@ -9,6 +9,8 @@ export interface ClaudeRuns {
   runs: readonly RunView[];
   /** How many may run at once. */
   atOnce: number;
+  /** Whether a run got past Claude Code's first screens, so runs start side by side. */
+  setUp: boolean;
   /** The run whose tab shows, or null when there's none. */
   selected: RunView | null;
   select: (runId: string) => void;
@@ -20,9 +22,9 @@ export interface ClaudeRuns {
   open: boolean;
   /**
    * Starts Claude, maybe with a task to run on a job, in a run of its own, or puts the task in line
-   * for its turn, and shows its tab.
+   * for its turn, and shows its tab, unless it starts in the background, as one the app asks for.
    */
-  start: (task?: RunTask) => void;
+  start: (task?: RunTask, options?: { background?: boolean }) => void;
   stop: (runId: string) => void;
   /** Closes a run's tab, quitting its Claude Code, or taking its task out of line. */
   close: (runId: string) => void;
@@ -55,10 +57,15 @@ export const isOpen = (phase: RunPhase) =>
   phase === 'done';
 
 /**
- * Whether a task could start now, rather than wait in line: fewer run than may at once, and no
- * other task on its job, or the same part of the job hunt, is going or waiting.
+ * Whether a task could start now, rather than wait in line: fewer run than may at once, no other
+ * task on its job, or the same part of the job hunt, is going or waiting, and no run is still
+ * getting past Claude Code's first screens.
  */
-export function startsNow(view: Pick<ClaudeRuns, 'runs' | 'atOnce'>, task: RunTask): boolean {
+export function startsNow(
+  view: Pick<ClaudeRuns, 'runs' | 'atOnce' | 'setUp'>,
+  task: RunTask,
+): boolean {
+  if (!view.setUp && view.runs.some((run) => run.phase === 'starting')) return false;
   const going = view.runs.filter((run) => BUSY.includes(run.phase)).length;
   const taken = view.runs.some(
     (run) => (run.phase === 'in-line' || BUSY.includes(run.phase)) && sharesLane(run.task, task),
@@ -66,7 +73,7 @@ export function startsNow(view: Pick<ClaudeRuns, 'runs' | 'atOnce'>, task: RunTa
   return going < view.atOnce && !taken;
 }
 
-const NO_RUNS: RunsView = { runs: [], atOnce: AT_ONCE.usual };
+const NO_RUNS: RunsView = { runs: [], atOnce: AT_ONCE.usual, setUp: false };
 
 /**
  * Follows the user's Claude runs, each in a tab of Claude's panel, as the app says where each one
@@ -80,6 +87,20 @@ export function useClaudeRuns(api: FactwrightApi): ClaudeRuns {
   const [open, setOpen] = useState(false);
   // The run the user just asked for, to show once the app says its ID.
   const asked = useRef(0);
+
+  // A run that comes to one of Claude Code's own screens comes forward, with its work open, as
+  // only its terminal takes the answer, and nothing starts until one run is past them.
+  const screens = useRef(new Map<string, string>());
+  useEffect(() => {
+    for (const run of view.runs) {
+      if (run.screen && run.screen !== screens.current.get(run.id)) {
+        setChosen(run.id);
+        setOpen(true);
+      }
+      if (run.screen) screens.current.set(run.id, run.screen);
+      else screens.current.delete(run.id);
+    }
+  }, [view.runs]);
 
   useEffect(() => {
     let live = true;
@@ -104,17 +125,24 @@ export function useClaudeRuns(api: FactwrightApi): ClaudeRuns {
   const runs = refused.length > 0 ? [...view.runs, ...refused] : view.runs;
   // A tab that closed hands over to the newest one left.
   const selected = runs.find((run) => run.id === chosen) ?? runs.at(-1) ?? null;
+  // The tab that shows stays shown, whatever starts beside it in the background.
+  const shownId = selected?.id ?? null;
+  useEffect(() => {
+    if (shownId !== null && shownId !== chosen) setChosen(shownId);
+  }, [shownId, chosen]);
 
   const start = useCallback(
-    (task?: RunTask) => {
+    (task?: RunTask, { background = false }: { background?: boolean } = {}) => {
       // A task runs with its work folded away, unless the user chose to see it. Claude with no
       // task waits for the user to type, which only the terminal takes.
-      setOpen(task ? readPref(SHOW_WORK, false, isBoolean) : true);
-      asked.current += 1;
+      if (!background) setOpen(task ? readPref(SHOW_WORK, false, isBoolean) : true);
+      if (!background) asked.current += 1;
       const ask = asked.current;
+      // The user's own start shows, unless they've started another since.
+      const shows = () => !background && ask === asked.current;
       api.startClaude(task).then(
         (runId) => {
-          if (ask === asked.current) setChosen(runId);
+          if (shows()) setChosen(runId);
         },
         () => {
           const id = `refused-${ask}`;
@@ -130,7 +158,7 @@ export function useClaudeRuns(api: FactwrightApi): ClaudeRuns {
               problem: 'failed',
             },
           ]);
-          if (ask === asked.current) setChosen(id);
+          if (shows()) setChosen(id);
         },
       );
     },
@@ -153,6 +181,7 @@ export function useClaudeRuns(api: FactwrightApi): ClaudeRuns {
   return {
     runs,
     atOnce: view.atOnce,
+    setUp: view.setUp,
     selected,
     select: setChosen,
     open,

@@ -124,7 +124,7 @@ export class ClaudeRuns {
 
   /** Every run, and every task in line, as the window shows them. */
   view(): RunsView {
-    return { runs: this.entries.map(viewOf), atOnce: this.atOnce };
+    return { runs: this.entries.map(viewOf), atOnce: this.atOnce, setUp: this.pastScreens };
   }
 
   /**

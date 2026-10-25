@@ -21,7 +21,7 @@ function fakeApi(started: () => Promise<string> = async () => 'run-1') {
   let tell: (next: RunsView) => void = () => {};
   const api = {
     startClaude: vi.fn(started),
-    claudeRuns: vi.fn(async (): Promise<RunsView> => ({ runs: [], atOnce: 3 })),
+    claudeRuns: vi.fn(async (): Promise<RunsView> => ({ runs: [], atOnce: 3, setUp: true })),
     onClaudeRuns: (listener: (next: RunsView) => void) => {
       tell = listener;
       return () => {};
@@ -32,7 +32,7 @@ function fakeApi(started: () => Promise<string> = async () => 'run-1') {
   };
   return {
     api: api as unknown as FactwrightApi & typeof api,
-    tell: (runs: RunView[], atOnce = 3) => tell({ runs, atOnce }),
+    tell: (runs: RunView[], atOnce = 3) => tell({ runs, atOnce, setUp: true }),
   };
 }
 
@@ -105,6 +105,32 @@ describe('useClaudeRuns', () => {
     expect(api.closeRun).not.toHaveBeenCalled();
   });
 
+  it('starts a run the app asks for in the background, leaving the tab and work shown', async () => {
+    const { api, tell } = fakeApi(async () => 'run-2');
+    const { result } = renderHook(() => useClaudeRuns(api));
+    act(() => tell([view('run-1', 'working')]));
+    act(() => result.current.showWork(true));
+    act(() => result.current.start(TASK, { background: true }));
+    act(() => tell([view('run-1', 'working'), view('run-2', 'starting')]));
+    await waitFor(() => expect(api.startClaude).toHaveBeenCalled());
+    expect(result.current.selected?.id).toBe('run-1');
+    expect(result.current.open).toBe(true);
+  });
+
+  it('brings forward a run at one of Claude Code’s own screens, with its work open', () => {
+    const { api, tell } = fakeApi();
+    const { result } = renderHook(() => useClaudeRuns(api));
+    act(() => tell([view('run-1', 'starting'), view('run-2', 'in-line')]));
+    act(() => result.current.select('run-2'));
+    act(() => tell([{ ...view('run-1', 'starting'), screen: 'trust' }, view('run-2', 'in-line')]));
+    expect(result.current.selected?.id).toBe('run-1');
+    expect(result.current.open).toBe(true);
+    // The user can go elsewhere while it still shows: it comes forward only as a screen comes.
+    act(() => result.current.select('run-2'));
+    act(() => tell([{ ...view('run-1', 'starting'), screen: 'trust' }, view('run-2', 'in-line')]));
+    expect(result.current.selected?.id).toBe('run-2');
+  });
+
   it('stops and replies to the run they’re for', () => {
     const { api } = fakeApi();
     const { result } = renderHook(() => useClaudeRuns(api));
@@ -116,7 +142,11 @@ describe('useClaudeRuns', () => {
 
   it('picks up the runs going before the window listened', async () => {
     const { api } = fakeApi();
-    api.claudeRuns.mockResolvedValueOnce({ runs: [view('run-4', 'working')], atOnce: 2 });
+    api.claudeRuns.mockResolvedValueOnce({
+      runs: [view('run-4', 'working')],
+      atOnce: 2,
+      setUp: true,
+    });
     const { result } = renderHook(() => useClaudeRuns(api));
     await waitFor(() => expect(result.current.runs).toHaveLength(1));
     expect(result.current.atOnce).toBe(2);
@@ -124,16 +154,29 @@ describe('useClaudeRuns', () => {
 });
 
 describe('whether a task starts now', () => {
+  it('waits while a run is still getting past Claude Code’s first screens', () => {
+    const other: RunTask = { skill: 'fit-check', jobId: 'globex--pm' };
+    const starting = [view('run-1', 'starting', other)];
+    expect(startsNow({ runs: starting, atOnce: 3, setUp: false }, TASK)).toBe(false);
+    expect(startsNow({ runs: starting, atOnce: 3, setUp: true }, TASK)).toBe(true);
+    expect(startsNow({ runs: [], atOnce: 3, setUp: false }, TASK)).toBe(true);
+  });
+
   it('starts while fewer run than may, and nothing else is on its job', () => {
     const other: RunTask = { skill: 'fit-check', jobId: 'globex--pm' };
     const runs = (phases: RunPhase[], task: RunTask = other) =>
       phases.map((phase, at) => view(`run-${at}`, phase, task));
-    expect(startsNow({ runs: runs(['working', 'done']), atOnce: 2 }, TASK)).toBe(true);
-    expect(startsNow({ runs: runs(['working', 'needs-answer']), atOnce: 2 }, TASK)).toBe(false);
+    expect(startsNow({ runs: runs(['working', 'done']), atOnce: 2, setUp: true }, TASK)).toBe(true);
     expect(
-      startsNow({ runs: runs(['working'], { ...TASK, skill: 'cover-letter' }), atOnce: 3 }, TASK),
+      startsNow({ runs: runs(['working', 'needs-answer']), atOnce: 2, setUp: true }, TASK),
     ).toBe(false);
-    expect(startsNow({ runs: runs(['in-line'], TASK), atOnce: 3 }, TASK)).toBe(false);
-    expect(startsNow({ runs: runs(['done'], TASK), atOnce: 3 }, TASK)).toBe(true);
+    expect(
+      startsNow(
+        { runs: runs(['working'], { ...TASK, skill: 'cover-letter' }), atOnce: 3, setUp: true },
+        TASK,
+      ),
+    ).toBe(false);
+    expect(startsNow({ runs: runs(['in-line'], TASK), atOnce: 3, setUp: true }, TASK)).toBe(false);
+    expect(startsNow({ runs: runs(['done'], TASK), atOnce: 3, setUp: true }, TASK)).toBe(true);
   });
 });

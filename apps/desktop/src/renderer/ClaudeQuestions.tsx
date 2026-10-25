@@ -76,10 +76,10 @@ export function ClaudeQuestions({
   /** Hears each change to what the user has chosen, to keep it while the round is put aside. */
   onDraft?: (choices: Choice[]) => void;
   /**
-   * Hears that the answers reached Claude, which takes the dialog on to what's waiting next.
-   * Without it, the dialog closes.
+   * Hears that the answers reached Claude, or went to the terminal, which takes the dialog on to
+   * what's waiting next. Without it, the dialog closes.
    */
-  onAnswered?: () => void;
+  onAnswered?: (inTerminal: boolean) => void;
   /** Hears that the user put the round aside, or the dialog closed. */
   onClose: () => void;
 }) {
@@ -112,7 +112,7 @@ export function ClaudeQuestions({
     }));
     setSending(false);
     if (!result.ok) setProblem(result.message);
-    else if (onAnswered) onAnswered();
+    else if (onAnswered) onAnswered(given === 'terminal');
     else close();
   };
   // Send, or Enter in a box or on an option, sends the round only once every question has an

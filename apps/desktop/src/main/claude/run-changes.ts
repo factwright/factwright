@@ -111,6 +111,11 @@ interface Kept {
   after: string | null;
   /** Changed again since the task's last turn ended, by the task itself. */
   touched: boolean;
+  /**
+   * Another task, side by side with this one, changed it too after this one kept its copy, so
+   * putting the copy back would undo that task's change as well.
+   */
+  shared?: boolean;
   /** Once the user undid it: what it was, as the list showed it. */
   undone: Pick<ChangedFile, 'change' | 'lines'> | null;
 }
@@ -215,7 +220,12 @@ export class RunChanges {
       },
       settle: () => (current ? this.settle(current) : null),
       end: () => {
-        if (current) this.live.delete(current);
+        if (!current) return;
+        this.live.delete(current);
+        // A task that changed and read nothing leaves no record, so it takes no other's place.
+        if (current.files.length === 0 && current.pages.length === 0) {
+          rmSync(join(this.folder, current.id), { recursive: true, force: true });
+        }
       },
     };
   }
@@ -258,6 +268,7 @@ export class RunChanges {
     const full = resolve(this.workspace, path);
     const inside = this.inside(full);
     if (!inside) return 'ignored';
+    this.sharing(run, inside);
     const known = run.files.find((each) => each.path === inside);
     if (known) {
       known.touched = true;
@@ -312,6 +323,20 @@ export class RunChanges {
     });
     this.trySave(run);
     return copy ? 'kept' : 'no-copy';
+  }
+
+  /**
+   * Notes that a run is about to change a file another run's task at hand has a copy of, so
+   * Undo there asks first: the copy would put back what this run changes too.
+   */
+  private sharing(run: RunRecord, path: string): void {
+    for (const other of this.live) {
+      if (other === run) continue;
+      const kept = other.files.find((each) => each.path === path && !each.undone);
+      if (!kept || kept.shared) continue;
+      kept.shared = true;
+      this.trySave(other);
+    }
   }
 
   /** Notes a page a run's task read, by its address, and counts the ones past what it keeps. */
@@ -382,6 +407,14 @@ export class RunChanges {
     }
     const full = join(this.workspace, ...kept.path.split('/'));
     const now = this.bytesOf(kept.path);
+    if (!anyway && kept.shared) {
+      return {
+        ok: false,
+        reason: 'since',
+        message:
+          'Another of Claude’s tasks changed this file too. Undo puts it back as it was before this task, and what the other task changed is lost.',
+      };
+    }
     if (!anyway && kept.after !== null && hashOf(now) !== kept.after) {
       return {
         ok: false,

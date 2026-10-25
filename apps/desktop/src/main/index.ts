@@ -332,15 +332,81 @@ function start(home: string, profile: ProfileFolder, stopped: ProfileFolder | nu
     await server.start();
 
     jobs.watch();
+    // The runs drafting forms' questions, as the browser extension follows them.
+    const formDrafts = new FormDrafts();
+    // How many runs may go at once, as the user chose, read before anything can start one.
+    const atOnce = await loadAtOnce(dataDir);
+    // Claude's questions, from every run, which the user answers in turn in a dialog in the
+    // window rather than the terminal.
+    const questions = new Desk<WaitingRound, RoundReply>((rounds) =>
+      window.send('claude:question', rounds),
+    );
+    // Claude Code's permission prompts, which the user answers in the window's dialog too.
+    const permissionAsks = new Desk<WaitingAsk, PermissionAnswer>((asks) =>
+      window.send('claude:permission', asks),
+    );
+    const revisions = new Revisions({ workspace, jobs: () => jobs.list().jobs });
+    const versions = new Versions({
+      workspace,
+      jobs: () => jobs.list().jobs,
+      trash: (path) => shell.trashItem(path),
+    });
+    // What each of Claude's tasks changes, with a copy of each file from before it, kept beside the
+    // workspace rather than in it, so Claude can't reach them, for Undo on the task's card.
+    const runChanges = new RunChanges({
+      workspace,
+      folder: join(dataDir, 'undo'),
+      trash: (path) => shell.trashItem(path),
+    });
+    // The user's Claude runs, side by side, each in a tab of the window's panel, and the line of
+    // tasks waiting their turn. Each run's questions and permission prompts name it.
+    const claude = new ClaudeRuns({
+      open: (id, size, options, events) =>
+        openRun(
+          id,
+          size,
+          options,
+          {
+            dataDir,
+            pluginDir: pluginDir(),
+            server,
+            dark: () => nativeTheme.shouldUseDarkColors,
+            ask: (round, signal) => questions.ask(fromRun(id, round), signal),
+            permit: (ask, signal) => permissionAsks.ask(fromRun(id, ask), signal),
+            templateName: (template) =>
+              templates.list().find((each) => each.own && each.id === template)?.name ?? null,
+            changes: runChanges.forRun(),
+          },
+          events,
+        ),
+      prepare: taskPreparer({ dataDir, revisions, versions }),
+      atOnce,
+      onView: (view) => window.send('claude:runs', view),
+      onOutput: (runId, data) => window.send('claude:output', { runId, data }),
+      onSignal: (run, signal) => {
+        notifyIfAway(window, signal);
+        const drafting = draftsFor(run.task);
+        if (drafting) formDrafts.heard(signal, drafting);
+      },
+      // Claude Code's first-run screens and its question about trust wait on the user too.
+      onScreen: (run) => {
+        notifyIfAway(window, 'needs-answer');
+        const drafting = draftsFor(run.task);
+        if (drafting) formDrafts.waitsOnYou(drafting);
+      },
+      onStep: (runId, step) => window.send('claude:step', { runId, step }),
+      onTurnEnd: (runId, end) => window.send('claude:turn-end', { runId, end }),
+      onFiled: (runId, filed) => window.send('facts:filed', { runId, filed }),
+      onChanges: (runId, changes) => window.send('claude:changes', { runId, changes }),
+    });
     // Jobs the extension saved on this computer, which the helper each browser starts drops
     // in the profile's inbox: the ones that came while the app was closed now, the rest as they
-    // come.
+    // come. The runs come first, as an ask can need them as soon as the inbox starts.
     // The extension's asks as it fills an application form come the same way, while the app
     // is open.
     // Your Claude drafting a form's questions, which the extension asks for: the window starts
     // the run, as only it has Claude's panel, without coming to the front.
     const runRequests = new RunRequests((request) => window.send('claude:run-request', request));
-    const formDrafts = new FormDrafts();
     const drafts: FillDeps['drafts'] = {
       start: async (jobId) => {
         // The window says so before it starts the run, so this comes before the run's signals.
@@ -420,69 +486,6 @@ function start(home: string, profile: ProfileFolder, stopped: ProfileFolder | nu
       },
       500,
     );
-    // Claude's questions, from every run, which the user answers in turn in a dialog in the
-    // window rather than the terminal.
-    const questions = new Desk<WaitingRound, RoundReply>((rounds) =>
-      window.send('claude:question', rounds),
-    );
-    // Claude Code's permission prompts, which the user answers in the window's dialog too.
-    const permissionAsks = new Desk<WaitingAsk, PermissionAnswer>((asks) =>
-      window.send('claude:permission', asks),
-    );
-    const revisions = new Revisions({ workspace, jobs: () => jobs.list().jobs });
-    const versions = new Versions({
-      workspace,
-      jobs: () => jobs.list().jobs,
-      trash: (path) => shell.trashItem(path),
-    });
-    // What each of Claude's tasks changes, with a copy of each file from before it, kept beside the
-    // workspace rather than in it, so Claude can't reach them, for Undo on the task's card.
-    const runChanges = new RunChanges({
-      workspace,
-      folder: join(dataDir, 'undo'),
-      trash: (path) => shell.trashItem(path),
-    });
-    // The user's Claude runs, side by side, each in a tab of the window's panel, and the line of
-    // tasks waiting their turn. Each run's questions and permission prompts name it.
-    const claude = new ClaudeRuns({
-      open: (id, size, options, events) =>
-        openRun(
-          id,
-          size,
-          options,
-          {
-            dataDir,
-            pluginDir: pluginDir(),
-            server,
-            dark: () => nativeTheme.shouldUseDarkColors,
-            ask: (round, signal) => questions.ask(fromRun(id, round), signal),
-            permit: (ask, signal) => permissionAsks.ask(fromRun(id, ask), signal),
-            templateName: (template) =>
-              templates.list().find((each) => each.own && each.id === template)?.name ?? null,
-            changes: runChanges.forRun(),
-          },
-          events,
-        ),
-      prepare: taskPreparer({ dataDir, revisions, versions }),
-      atOnce: await loadAtOnce(dataDir),
-      onView: (view) => window.send('claude:runs', view),
-      onOutput: (runId, data) => window.send('claude:output', { runId, data }),
-      onSignal: (run, signal) => {
-        notifyIfAway(window, signal);
-        const drafting = draftsFor(run.task);
-        if (drafting) formDrafts.heard(signal, drafting);
-      },
-      // Claude Code's first-run screens and its question about trust wait on the user too.
-      onScreen: (run) => {
-        notifyIfAway(window, 'needs-answer');
-        const drafting = draftsFor(run.task);
-        if (drafting) formDrafts.waitsOnYou(drafting);
-      },
-      onStep: (runId, step) => window.send('claude:step', { runId, step }),
-      onTurnEnd: (runId, end) => window.send('claude:turn-end', { runId, end }),
-      onFiled: (runId, filed) => window.send('facts:filed', { runId, filed }),
-      onChanges: (runId, changes) => window.send('claude:changes', { runId, changes }),
-    });
     // Once the window shows, the profile has started, so it opens again next time. A note that
     // couldn't be written then is tried again as the window comes forward, or the app quits.
     window.open().once('ready-to-show', () => profiles.started());
