@@ -1,7 +1,7 @@
 import { statSync } from 'node:fs';
-import { readFile, writeFile } from 'node:fs/promises';
+import { copyFile, readFile, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
-import { join } from 'node:path';
+import { basename, extname, join } from 'node:path';
 import { ASK_ID, localDate } from '@factwright/core';
 import { isRequestId } from '@factwright/sync';
 import {
@@ -67,7 +67,9 @@ import type { JobsService } from './jobs/service.ts';
 import type { Versions } from './jobs/versions.ts';
 import type { JobOpener } from './open-job.ts';
 import {
+  copyProblem,
   JOB_ID,
+  listedFile,
   MAX_PREVIEW_BYTES,
   openableFile,
   parseRunTask,
@@ -193,6 +195,16 @@ const fileSize = (path: string) => {
 const isFile = (path: string) => {
   try {
     return statSync(path).isFile();
+  } catch {
+    return false;
+  }
+};
+
+/** Whether two paths are one file, as when the user picks a file to save a copy over itself. */
+const sameFile = (a: string, b: string) => {
+  try {
+    const [x, y] = [statSync(a), statSync(b)];
+    return x.dev === y.dev && x.ino === y.ino;
   } catch {
     return false;
   }
@@ -606,6 +618,47 @@ export function registerIpc({
     }
     const failed = await shell.openPath(file);
     return failed ? { ok: false, message: 'Your computer couldn’t open that file.' } : { ok: true };
+  });
+
+  // One of a job's own files, as its panel lists them: a copy saved where the user picks, under its
+  // own name, or the file shown where it's kept.
+  const jobFile = (jobId: unknown, path: unknown) => {
+    const file = listedFile(workspace, isId(jobId) ? jobs.job(jobId) : null, path);
+    return file && isFile(file) ? file : null;
+  };
+  const GONE = { ok: false, message: 'That file isn’t in your workspace anymore.' } as const;
+  ipcMain.handle(
+    'files:download',
+    async (event, jobId: unknown, path: unknown): Promise<SaveFileResult> => {
+      if (!fromApp(event)) throw new Error('Refused a request from a page outside the app.');
+      const file = jobFile(jobId, path);
+      if (!file) return GONE;
+      const kind = extname(file).slice(1).toLowerCase();
+      const window = BrowserWindow.fromWebContents(event.sender);
+      const options = {
+        defaultPath: join(app.getPath('downloads'), basename(file)),
+        filters: [{ name: kind === 'pdf' ? 'PDF' : 'Word document', extensions: [kind] }],
+      };
+      const choice = window
+        ? await dialog.showSaveDialog(window, options)
+        : await dialog.showSaveDialog(options);
+      if (choice.canceled || !choice.filePath) return { ok: true, saved: false };
+      if (sameFile(file, choice.filePath)) return { ok: true, saved: true };
+      try {
+        await copyFile(file, choice.filePath);
+        return { ok: true, saved: true };
+      } catch (error) {
+        // A new version may have replaced it while the dialog was open.
+        if (!isFile(file)) return GONE;
+        return { ok: false, message: copyProblem((error as NodeJS.ErrnoException).code) };
+      }
+    },
+  );
+  answer('files:show', (jobId, path): EditResult => {
+    const file = jobFile(jobId, path);
+    if (!file) return GONE;
+    shell.showItemInFolder(file);
+    return { ok: true };
   });
 
   answer('files:pdf', async (path): Promise<PdfResult> => {

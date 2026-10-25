@@ -36,7 +36,6 @@ const words = () => {
 async function finishRun() {
   const panel = claudePanel();
   await expect(panel.getByRole('status').first()).toHaveText('Done');
-  await panel.getByRole('button', { name: 'Stop' }).click();
   await panel.getByRole('button', { name: 'Close' }).click();
   await expect(panel).toHaveCount(0);
 }

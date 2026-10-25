@@ -4,7 +4,15 @@ Notable changes to Factwright, newest first. The format follows [Keep a Changelo
 
 ## Unreleased
 
+### Added
+- Claude's questions have Skip. Send waits until every question has an answer or a skip, rather than sending once any one has an answer and leaving out the rest. Claude hears a skipped question as "The user skipped this question.", with your note if you add one, and a skip is never on record as your answer, so it backs no fact. A skipped question folds to say so, with Answer it to bring it back as you left it.
+- The jobs list has an Added column: the day each job was found or saved, which sorts the list newest first, then oldest first.
+- Each resume, cover letter and Projects page file has Download, which saves a copy where you pick, under its own name, and Show in Finder, or Show in folder on Windows, in its row and in its preview. The app does either only for a file the job lists.
+
 ### Changed
+- A run that's done, or ready with nothing to do, shows Close in place of Stop. Close quits Claude Code and puts the bar away in one click. Stop stays for a run that's starting, working or waiting on you. A turn you interrupt in the terminal reads done once Claude Code says it's waiting for you, about a minute later, rather than working for good.
+- Updates and switching profiles wait only while Claude is working or waits on you, not whenever Claude Code is open. Restart now quits a Claude Code that's done first, then installs, and says Restarting… meanwhile.
+- The jobs list never hides a column's heading, so you can sort by Next step and Pay at any width. When the window is too narrow for every column, the list scrolls sideways, with the jobs' names pinned and a fade at the edge where there's more. Until you pick a job, no panel takes room beside the list.
 - The browser extension's popup says when a page doesn't look like a job posting, such as a search engine's results, a weather page or a news article. It fills in no job title or company from such a page, so it isn't saved as a job by mistake, and Save it anyway saves it with the title and company you type. It goes by a job's signs: the job data job sites publish, a job site or applicant system it knows, an application form, words about jobs in the page's address or title, and the things postings say, in English and as German, French, Spanish and Dutch ones most often put them, such as their duties, the qualifications they ask for, their pay and their equal-opportunity line. A page needs two of these, or one where it shows no text to go by, and a search engine's results never look like a job's, whatever they say. The right-click menu and the shortcut leave such a page for the popup, now text selected on a search engine's results too, which they used to save at once, and in Firefox the button's "!" says why. Once you've cleared a job's company and tried to save, the popup no longer puts back the one its address names. This reaches the stores with the extension's next version.
 
 ## 0.16.0 - 2026-10-24

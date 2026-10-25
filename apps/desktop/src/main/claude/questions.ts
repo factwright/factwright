@@ -1,4 +1,5 @@
 import { oneLine } from '@factwright/core';
+import { SKIPPED_ANSWER } from '../../shared/rounds.ts';
 
 /** A question the user answered in a run, as Claude Code's hooks reported it. */
 export interface Answered {
@@ -204,7 +205,8 @@ export class QuestionLog {
       // Claude Code keys the answers by each question exactly as Claude wrote it.
       const note = notes[raw];
       const answer = answerOf(answers[raw]) ?? (questions.length === 1 && typed ? typed : null);
-      if (!answer) continue;
+      // A question the user skipped in the app's dialog has no answer to back anything.
+      if (!answer || answer === SKIPPED_ANSWER) continue;
       const picked = options.find((option) => option.label.trim() === answer);
       this.heard.push({
         key: questionKey(raw),

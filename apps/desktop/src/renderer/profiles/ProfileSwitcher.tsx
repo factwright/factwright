@@ -7,7 +7,7 @@ import styles from './Profiles.module.css';
 /**
  * The open profile, at the top of the sidebar once there's more than one. Its menu switches to
  * another, which restarts Factwright on it, adds one, or manages them. Switching waits while
- * Claude is working, as restarting would stop it.
+ * Claude is working, or waits on the user, as restarting would stop it.
  */
 export function ProfileSwitcher({
   profiles,
@@ -17,7 +17,7 @@ export function ProfileSwitcher({
   onManage,
 }: {
   profiles: ProfileEntry[];
-  /** Whether Claude is working, which switching would stop. */
+  /** Whether Claude has work going, which switching would stop: working, or waiting on the user. */
   busy: boolean;
   onOpen: (profile: ProfileEntry) => void;
   onAdd: () => void;

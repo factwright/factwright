@@ -50,6 +50,7 @@ export interface ClaudeRun {
   hide: () => void;
   /** Shows or hides Claude's work as the user asks, and keeps that for the next task. */
   showWork: (open: boolean) => void;
+  /** Puts the panel away, quitting Claude Code that's done, or ready with nothing to do. */
   close: () => void;
 }
 
@@ -80,14 +81,15 @@ export function useClaudeRun(api: FactwrightApi): ClaudeRun {
   // A run waiting for the terminal's size, with its task. Cleared the moment it launches, so it
   // launches once.
   const pending = useRef<{ task: RunTask | undefined } | null>(null);
-  // Set while a run closes to make way for one on another model, so its closing isn't shown.
-  const replacing = useRef(false);
+  // Set while a run closes out of sight, so its closing isn't shown: to make way for one on
+  // another model, or as the user closes the panel.
+  const closing = useRef(false);
 
   useEffect(
     () =>
       api.onClaudeSignal((signal) => {
-        if (replacing.current && (signal === 'stopped' || signal === 'failed')) {
-          replacing.current = false;
+        if (closing.current && (signal === 'stopped' || signal === 'failed')) {
+          closing.current = false;
           return;
         }
         setPhase(signal);
@@ -147,7 +149,7 @@ export function useClaudeRun(api: FactwrightApi): ClaudeRun {
           if (result.ok) return;
           // The task needs a run of its own, so this run makes way for a new one.
           if (result.reason === 'new-run') {
-            replacing.current = true;
+            closing.current = true;
             api.stopClaude();
           }
           // Otherwise Claude Code closed since the last signal: start it again with the task.
@@ -199,12 +201,17 @@ export function useClaudeRun(api: FactwrightApi): ClaudeRun {
       writePref(SHOW_WORK, shown);
     }, []),
     close: useCallback(() => {
+      // Claude Code that's done, or ready with nothing to do, quits as its panel goes.
+      if (phase === 'done' || phase === 'ready') {
+        closing.current = true;
+        api.stopClaude();
+      }
       setOpen(false);
       setPhase('idle');
       setProblem(undefined);
       setTrustAsked(false);
       setFirstRun(false);
-    }, []),
+    }, [api, phase]),
     trustAsked,
     firstRun,
     // Enter picks an answer, so the question about trust, or a first-run screen, is behind the
