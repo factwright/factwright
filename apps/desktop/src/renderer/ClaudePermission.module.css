@@ -5,8 +5,7 @@
 }
 
 /* The file it's about, as a path to read at a glance. */
-.file,
-.url {
+.file {
   margin: 0;
   padding: var(--fw-space-2) var(--fw-space-3);
   border: 1px solid var(--fw-border);
@@ -17,15 +16,9 @@
   overflow-wrap: anywhere;
 }
 
-/* A path or address exactly as it is, spaces and all. */
+/* A path exactly as it is, spaces and all. */
 .file {
   white-space: pre-wrap;
-}
-
-/* A web page's whole address, every character of it. */
-.url {
-  white-space: pre-wrap;
-  word-break: break-all;
 }
 
 .note code {

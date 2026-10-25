@@ -25,7 +25,7 @@ If `find_job` finds the job and `job_details` names a posting saved from the use
 - **In-house recruiter** (works at the company): that's already applying direct.
 
 ## 3. Hunt
-Search first, and stop once one candidate has strong evidence. `read_page` confirms a match, but the user may have to OK each page, so read only the most promising.
+Search first, and stop once one candidate has strong evidence. `read_page` confirms a match. Read only the most promising.
 - Exact-phrase searches, in quotes, of the distinctive sentences.
 - The same phrases restricted to applicant-system sites: `job-boards.greenhouse.io`, `boards.greenhouse.io`, `jobs.lever.co`, `jobs.ashbyhq.com`, `myworkdayjobs.com`, `apply.workable.com`, `jobs.smartrecruiters.com`, `bamboohr.com`, `jobs.gem.com`, `ats.rippling.com`, `wellfound.com`, `ycombinator.com/companies`.
 - Board listings: read the apply link. It often redirects straight to the employer's applicant system.

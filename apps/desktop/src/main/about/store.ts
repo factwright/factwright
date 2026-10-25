@@ -101,6 +101,11 @@ export class AboutStore {
   private readonly templates: () => TemplateInfo[];
   /** The fact bank's files, which the user reads and changes on its own page. */
   readonly facts: FactBankFiles;
+  /**
+   * Hears each file's path just before a save changes it, while one of Claude's tasks saves to
+   * the profile, so the app can keep it as it was.
+   */
+  private keeping: ((path: string) => void) | null = null;
 
   constructor(deps: AboutStoreDeps) {
     this.workspace = deps.workspace;
@@ -132,6 +137,7 @@ export class AboutStore {
   private write(file: string, contents: string | Uint8Array): void {
     const target = this.path(file);
     if (typeof contents === 'string' && this.read(file) === contents) return;
+    this.keeping?.(target);
     mkdirSync(dirname(target), { recursive: true });
     const temporary = join(dirname(target), `.${randomUUID()}.tmp`);
     writeFileSync(temporary, contents);
@@ -247,9 +253,22 @@ export class AboutStore {
     this.write(KINDS_FILE, `${JSON.stringify({ ...kept, first, others }, null, 2)}\n`);
   }
 
-  /** Saves the window's changes, already checked, and answers with all the answers. */
-  saveAnswers(changes: AnswerChanges): AboutYou {
-    return this.saveAll(applyChanges(this.answers(), changes));
+  /**
+   * Saves the window's changes, or Claude's, already checked, and answers with all the answers.
+   * For Claude's, `keep` hears each file's path just before it changes.
+   */
+  saveAnswers(changes: AnswerChanges, keep?: (path: string) => void): AboutYou {
+    return this.keepingFor(keep, () => this.saveAll(applyChanges(this.answers(), changes)));
+  }
+
+  /** Runs a save with `keep` hearing each file it changes, just before it does. */
+  private keepingFor<T>(keep: ((path: string) => void) | undefined, save: () => T): T {
+    this.keeping = keep ?? null;
+    try {
+      return save();
+    } finally {
+      this.keeping = null;
+    }
   }
 
   notes(): string {
@@ -410,15 +429,17 @@ export class AboutStore {
 
   /**
    * Saves the work history and education whole, as checked, when they change, and answers with
-   * them as kept.
+   * them as kept. For Claude's, `keep` hears the file's path just before it changes.
    */
-  saveHistory(history: WorkHistory): WorkHistory {
+  saveHistory(history: WorkHistory, keep?: (path: string) => void): WorkHistory {
     const kept = readHistory(history);
     const before = this.history();
     if (JSON.stringify(before) === JSON.stringify(kept)) return kept;
-    this.write(
-      HISTORY_FILE,
-      `${JSON.stringify({ updated: localTime(this.now()), ...kept }, null, 2)}\n`,
+    this.keepingFor(keep, () =>
+      this.write(
+        HISTORY_FILE,
+        `${JSON.stringify({ updated: localTime(this.now()), ...kept }, null, 2)}\n`,
+      ),
     );
     return kept;
   }

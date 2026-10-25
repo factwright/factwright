@@ -70,7 +70,7 @@ Ask in **one round** of AskUserQuestion, up to 4 questions, most valuable first:
 2. **Gaps that matter.** Must-haves first, then nice-to-haves: requirements that are `partial` or `none`, aren't settled in gaps.md, and that the user plausibly has, judged from what's near them in the facts. fit-check.md's **Worth asking you** items come first. Word each question yourself, say why you ask, and give easy, neutral options:
    - Question: "The posting wants GraphQL. Your facts show REST APIs and React. Have you used GraphQL?"
    - Options: "Yes, in production" / "Some: a side project, a course, or an earlier role" / "No"
-3. **Missing numbers.** A match the letter leans on with no number, such as "About how many clinics used the scheduling platform?", with ranges as options.
+3. **Missing numbers.** A match the letter leans on with no number, naming its fact by its title in quotes, such as "Your fact “Scheduling platform” has no number. About how many clinics used it?", with ranges as options.
 4. **Why this job,** when nothing on file says why the user wants it: "What draws you to Acme?", with options from the posting and what's on file, such as the product, the problem the team names, or the company's stage. Their own words are an answer too.
 5. **Who it's to,** when only the people to message suggest a name (step 2), and **anything personal** the posting asks a letter to include that isn't on file, such as pay expectations.
 
@@ -83,7 +83,7 @@ Skip a question whose answer wouldn't change the letter, and never ask about tri
 - **No,** in any words, such as "No, I haven't": `save_gap`, with the topic in the words you asked about.
 - **Use and verify:** `verify_fact`. **Use this once:** use it in this letter, and leave it unverified. **Don't use:** leave it out.
 - **A correction to an unverified fact,** or a note on their pick: use it as they put it, and save it with `save_fact`, giving the fact's title as `replaces`. They verify it in the Fact bank.
-- **A new number, or a correction, for a verified fact:** edit the fact in place, with its Source set to `<first name> <YYYY-MM-DD>` (their name is in `facts/profile.md`), then use it. Claude Code asks them to OK the change. If they don't, use the fact as it was.
+- **A new number, or a correction, for a verified fact:** `correct_fact`, with the fact's file and title, its new wording, and any details or tags that change, such as its numbers. Word it from the fact's own words and what they picked or typed: it takes every new number, word and tag only from their answer, and the fact stays verified, with their name and today as its Source. Then use it. If it turns the answer away, use the fact as it was.
 - **Why they want the job:** it's about this job, not their experience, so it goes in `notes.md` under `## Cover letter`, in their words, and never in `facts/`.
 - **Who it's to:** address it as they pick, and note where the name came from in `notes.md`.
 - **Something personal the posting asks for,** such as pay expectations: use it as they put it. When it holds for every job, save it with `save_about_you`, so nobody asks again. One job's pay stays with that job.

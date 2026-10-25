@@ -20,8 +20,6 @@ function titleOf(ask: PermissionAsk): string {
       return ask.outside
         ? 'Let Claude read a file outside your job hunt?'
         : 'Let Claude read a file?';
-    case 'page':
-      return 'Let Claude read a web page?';
     case 'profile':
       return 'Let Claude save this to your profile?';
     case 'template':
@@ -101,17 +99,6 @@ function Details({ ask }: { ask: PermissionAsk }) {
           <p className={styles.note}>
             Claude reads your job hunt’s own files without asking. Check this is a file you want it
             to see.
-          </p>
-        </>
-      );
-    case 'page':
-      return (
-        <>
-          <p className={styles.url}>{ask.url}</p>
-          <p className={styles.note}>
-            Reading it sends the page’s address to <strong>{ask.host}</strong>. A job post could try
-            to steer Claude into sending your details to a site in a link, so check it’s an address
-            you expect.
           </p>
         </>
       );

@@ -75,9 +75,10 @@ function leftOut(input: unknown, kept: WorkHistory): string[] {
  */
 export function saveHistory(
   input: unknown,
-  about: { saveHistory(history: WorkHistory): WorkHistory },
+  about: { saveHistory(history: WorkHistory, keep?: (path: string) => void): WorkHistory },
+  keep?: (path: string) => void,
 ): string {
-  const kept = about.saveHistory(readHistory(input ?? NO_HISTORY));
+  const kept = about.saveHistory(readHistory(input ?? NO_HISTORY), keep);
   const positions = positionsOf(kept).length;
   const notes = leftOut(input, kept);
   return [
