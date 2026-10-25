@@ -6,6 +6,7 @@ import {
   isJobAddress,
   jobAddress,
   jobFromTab,
+  looksLikeJob,
   needsChecking,
   toSave,
 } from '../src/tab-job.ts';
@@ -147,6 +148,204 @@ describe('the job to save', () => {
   });
 });
 
+describe('whether a page looks like a job’s', () => {
+  /** A page on a site it doesn't know, as reading it gives: its main text, and nothing more. */
+  const unknown = (href: string, title: string, text: string) =>
+    readJobPage(
+      new DOMParser().parseFromString(`<title>${title}</title><main>${text}</main>`, 'text/html'),
+      href,
+      '',
+    );
+  const POSTING =
+    '<h2>What you’ll do</h2><p>Run our data platform.</p><h2>Requirements</h2><p>Five years of SQL.</p><p>$120,000 – $150,000 a year. Fernway is an equal opportunity employer.</p>';
+
+  it('does for a posting on a careers site it doesn’t know, by its address, title or words', () => {
+    // Its address and title alone.
+    const careers = unknown(
+      'https://www.fernway.example/careers/data-lead',
+      'Data Lead | Fernway',
+      '<p>Join us.</p>',
+    );
+    expect(careers.source).toBe('main');
+    expect(looksLikeJob(careers, null)).toBe(true);
+    // A careers site's route after "#/", and a query naming a job, as an embedded board's does.
+    expect(
+      looksLikeJob(unknown('https://fernway.example/#/openings/7', 'Data Lead', ''), null),
+    ).toBe(true);
+    expect(
+      looksLikeJob(
+        unknown('https://fernway.example/about?gh_jid=4461450008', 'Data Lead', ''),
+        null,
+      ),
+    ).toBe(true);
+    // What it says alone, at an address and under a title that say nothing of jobs.
+    expect(looksLikeJob(unknown('https://fernway.example/p/7a1c', 'Fernway', POSTING), null)).toBe(
+      true,
+    );
+    // A word run into the next in its address, as an older careers site's "ViewJob.aspx".
+    expect(
+      looksLikeJob(
+        unknown('https://www.mercy.example/ViewJob.aspx?id=8812', 'Mercy', '<p>Full-time.</p>'),
+        null,
+      ),
+    ).toBe(true);
+  });
+
+  it('does for a posting in German, French, Spanish or Dutch', () => {
+    for (const [href, title, text] of [
+      [
+        'https://www.firma.example/karriere/softwareentwickler',
+        'Softwareentwickler (m/w/d) | Firma GmbH',
+        '<h2>Ihre Aufgaben</h2><p>Sie bauen unsere Plattform.</p><h2>Ihr Profil</h2><p>Mehrjährige Berufserfahrung.</p><h2>Wir bieten</h2><p>Vollzeitstelle, 30 Tage Urlaub.</p>',
+      ],
+      [
+        'https://societe.example/p/42',
+        'Développeur web (H/F)',
+        '<h2>Vos missions</h2><p>Développer nos outils.</p><h2>Votre profil</h2><p>3 ans d’expérience.</p>',
+      ],
+      [
+        'https://empresa.example/p/42',
+        'Empresa',
+        '<h2>Requisitos</h2><p>Tres años de experiencia.</p><p>Jornada completa.</p>',
+      ],
+      [
+        'https://bedrijf.example/p/42',
+        'Bedrijf',
+        '<h2>Wat ga je doen</h2><p>Je bouwt ons platform.</p><h2>Wat vragen wij</h2><p>Drie jaar werkervaring.</p>',
+      ],
+    ] as const) {
+      expect(looksLikeJob(unknown(href, title, text), null), href).toBe(true);
+    }
+  });
+
+  it('does with one sign where the page shows no text to go by, as one that’s all a form', () => {
+    const form = readJobPage(
+      new DOMParser().parseFromString(
+        '<title>Registered Nurse - ICU</title><form><h1>Registered Nurse - ICU</h1><p>Nights.</p></form>',
+        'text/html',
+      ),
+      'https://www.mercy.example/Detail.aspx?id=8812',
+      '',
+    );
+    expect(form.posting).toBe('');
+    expect(looksLikeJob(form, null)).toBe(true);
+    expect(
+      looksLikeJob(unknown('https://radio.example/', 'Radio Example: News and Music', ''), null),
+    ).toBe(false);
+  });
+
+  it('does for a job’s own data, a job site’s own posting, or text you selected', () => {
+    const read = (source: PageJob['source'], posting = 'Run our data platform.') => ({
+      ...jobFromTab('https://fernway.example/p/7a1c', 'Fernway'),
+      posting,
+      source,
+    });
+    expect(looksLikeJob(read('structured'), null)).toBe(true);
+    expect(looksLikeJob(read('page'), null)).toBe(true);
+    expect(looksLikeJob(read('selection'), null)).toBe(true);
+    // Where only its data or a job site's layout says it is.
+    expect(looksLikeJob({ ...read('main'), location: 'Austin, TX' }, null)).toBe(true);
+    expect(looksLikeJob(read('main'), null)).toBe(false);
+    expect(looksLikeJob(read('page', ''), null)).toBe(false);
+  });
+
+  it('does for any page of an applicant system’s, and leaves LinkedIn and Indeed to their addresses', () => {
+    expect(
+      looksLikeJob(unknown('https://jobs.lever.co/harbor-and-pine', 'Harbor & Pine', ''), null),
+    ).toBe(true);
+    expect(
+      looksLikeJob(
+        unknown('https://acme.wd5.myworkdayjobs.com/en-US/External', 'Careers', ''),
+        null,
+      ),
+    ).toBe(true);
+    // LinkedIn's feed isn't one job's page, which the popup and a save without it say instead.
+    const feed = unknown('https://www.linkedin.com/feed/', 'Feed | LinkedIn', '');
+    expect(looksLikeJob(feed, null)).toBe(true);
+    expect(needsChecking(feed, toSave(feed), null)).toMatch(/one job/);
+  });
+
+  it('gives a page it can’t read, or a LinkedIn job by its link alone, the benefit of the doubt', () => {
+    const pdf = jobFromTab('https://example.com/annual-report.pdf', 'annual-report.pdf');
+    expect(looksLikeJob(pdf, 'unreadable')).toBe(true);
+    const linkOnly = jobFromTab(
+      'https://www.linkedin.com/jobs/view/4012345678/',
+      'Jobs | LinkedIn',
+    );
+    expect(looksLikeJob(linkOnly, 'linkedin-link-only')).toBe(true);
+  });
+
+  it('doesn’t for a search engine’s results, whatever they say', () => {
+    for (const href of [
+      'https://www.google.com/search?q=data+lead+jobs',
+      'https://www.google.co.uk/search?q=data+lead+jobs&oq=data',
+      'https://www.bing.com/search?q=data+lead+jobs',
+      'https://duckduckgo.com/?q=data+lead+jobs',
+      'https://html.duckduckgo.com/html/',
+      'https://search.yahoo.com/search?p=data+lead+jobs',
+      // Yahoo's own search box and next pages put more after the path.
+      'https://search.yahoo.com/search;_ylt=AwrE;_ylc=X1MDMjc?p=data+lead+jobs&fr=sfp',
+      // A search sent from a form, which leaves what's searched for out of the address.
+      'https://www.startpage.com/sp/search',
+      'https://www.startpage.com/do/dsearch?query=data+lead+jobs',
+    ]) {
+      expect(looksLikeJob(unknown(href, 'data lead jobs - Search', POSTING), null), href).toBe(
+        false,
+      );
+    }
+    // Not even with a posting's text selected among them, which a save without the popup took.
+    const selected = readJobPage(
+      new DOMParser().parseFromString(
+        `<title>data lead jobs - Google Search</title><main>${POSTING}</main>`,
+        'text/html',
+      ),
+      'https://www.google.com/search?q=data+lead+jobs&ibp=htl;jobs',
+      'Run our data platform, with five years of SQL. '.repeat(6),
+    );
+    expect(selected.source).toBe('selection');
+    expect(looksLikeJob(selected, null)).toBe(false);
+    expect(needsChecking(selected, toSave(selected), null)).toMatch(/look like a job/);
+    // A search engine's other pages, such as its own careers site, are read as any other.
+    expect(
+      looksLikeJob(
+        unknown(
+          'https://www.google.com/about/careers/applications/jobs/results/123-data-lead',
+          'Data Lead — Careers',
+          '',
+        ),
+        null,
+      ),
+    ).toBe(true);
+  });
+
+  it('doesn’t for a page with no sign of a job, or only one', () => {
+    for (const [href, title, text] of [
+      [
+        'https://weather.example/today/chicago',
+        'Chicago, IL Weather Forecast',
+        '<p>Today: sunny, with a high of 61°F. Hourly forecast: wind 10 miles per hour.</p>',
+      ],
+      [
+        'https://news.example/2026/10/24/council-budget',
+        'Council passes the city’s budget',
+        '<p>The budget adds benefits for the city’s parks and libraries.</p>',
+      ],
+      // A title that names a role, on a page that says nothing else of a job.
+      [
+        'https://docs.example/python/guide',
+        'The Python Developer’s Guide',
+        '<p>Install Python, then run the script.</p>',
+      ],
+      // An address about jobs, on a page that says nothing else of one.
+      ['https://fernway.example/careers', 'Fernway', '<p>Our story, from 1998.</p>'],
+      // A posting's word in another language, in passing, as a recipe's "requisitos".
+      ['https://recetas.example/tortilla', 'Tortilla', '<p>Requisitos: huevos y patatas.</p>'],
+    ] as const) {
+      expect(looksLikeJob(unknown(href, title, text), null), href).toBe(false);
+    }
+  });
+});
+
 describe('a save without the popup', () => {
   const read = (overrides: Partial<PageJob>): PageJob => ({
     ...jobFromTab('https://jobs.lever.co/harbor-and-pine/4f1c', 'Senior PM'),
@@ -184,5 +383,19 @@ describe('a save without the popup', () => {
     expect(needsChecking(empty, toSave(empty), null)).toMatch(/posting/);
     const pdf = jobFromTab('https://example.com/annual-report.pdf', 'annual-report.pdf');
     expect(needsChecking(pdf, toSave(pdf), 'unreadable')).toMatch(/can’t read/);
+    // A page that doesn't look like a job's at all, though it names a title and a company.
+    const weather = read({
+      url: 'https://weather.example/today/chicago',
+      pageUrl: 'https://weather.example/today/chicago',
+      site: 'weather.example',
+      pageTitle: 'Chicago, IL Weather Forecast',
+      title: 'Chicago, IL Weather Forecast',
+      company: 'Weather Example',
+      posting: 'Today: sunny, with a high of 61°F.',
+      source: 'main',
+    });
+    expect(needsChecking(weather, toSave(weather), null)).toBe(
+      'This doesn’t look like a job posting.',
+    );
   });
 });

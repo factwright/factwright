@@ -13,7 +13,7 @@ import { openPanel } from './panel-open.ts';
 import { isWebPage, readTab, type Unread } from './read-tab.ts';
 import type { JobToSave, SaveResult } from './save.ts';
 import { serverName } from './server.ts';
-import { isJobAddress, toSave } from './tab-job.ts';
+import { isJobAddress, looksLikeJob, toSave } from './tab-job.ts';
 
 /**
  * The popup under the toolbar button: it reads the job on the page you're on, lets you check its
@@ -28,6 +28,12 @@ let savingTo: Destination = null;
 
 /** The tab's application form, to fill, when the page has one. */
 let fillable: Tab | null = null;
+
+/**
+ * Whether the page doesn't look like a job's, so the popup fills in no title or company and saves
+ * it only if you say to anyway.
+ */
+let notAJob = false;
 
 /**
  * Opens the panel beside the page, which fills the form there. It's opened straight from the
@@ -187,7 +193,10 @@ function form(
   problem?: string,
   keepPosting = true,
 ): void {
-  const start = toSave(page);
+  const read = toSave(page);
+  // The company its address names is only a first guess: never on a page that doesn't look like a
+  // job's, nor once you've tried to save, when the form shows what you typed.
+  const start = notAJob || problem ? { ...read, company: page.company.trim() } : read;
   const hasPosting = Boolean(start.posting.trim());
   const keep = h('input', { id: 'keep', type: 'checkbox', checked: hasPosting && keepPosting });
   const save = async (event: Event) => {
@@ -233,6 +242,12 @@ function form(
   show(
     app,
     heading(),
+    notAJob &&
+      h(
+        'p',
+        { class: 'note' },
+        'This doesn’t look like a job posting, so it didn’t fill in a title or company. If it is one, add them, then save it anyway.',
+      ),
     filling &&
       h(
         'div',
@@ -261,15 +276,17 @@ function form(
         { class: 'actions' },
         h(
           'button',
-          { class: filling ? '' : 'primary', type: 'submit', id: 'save' },
-          'Save to Factwright',
+          { class: filling || notAJob ? '' : 'primary', type: 'submit', id: 'save' },
+          notAJob ? 'Save it anyway' : 'Save to Factwright',
         ),
       ),
     ),
     settingsLink(),
   );
   if (!filling) {
-    (document.getElementById(start.company ? 'save' : 'company') as HTMLElement | null)?.focus();
+    // On a page that doesn't look like a job's, the title comes first, as you fill both in.
+    const first = notAJob && !start.role ? 'role' : start.company ? 'save' : 'company';
+    (document.getElementById(first) as HTMLElement | null)?.focus();
   }
 }
 
@@ -396,7 +413,9 @@ async function start(): Promise<void> {
     const framed = found && looksLikeApplication(found.form) ? null : await framedSystem(tab.id);
     fillable = (found && looksLikeApplication(found.form)) || framed ? tab : null;
   }
-  form(to, page, unread);
+  // A page with an application form is a job's, whatever else it shows.
+  notAJob = !fillable && !looksLikeJob(page, unread);
+  form(to, notAJob ? { ...page, title: '', company: '' } : page, unread);
 }
 
 void start();
