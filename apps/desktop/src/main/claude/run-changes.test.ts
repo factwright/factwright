@@ -11,7 +11,7 @@ import {
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { editedPath, KEPT_RUNS, RunChanges } from './run-changes.ts';
+import { ASK_WITHOUT_COPY, editedPath, KEPT_RUNS, keepBefore, RunChanges } from './run-changes.ts';
 
 let dataDir: string;
 let workspace: string;
@@ -86,6 +86,7 @@ describe('what a task changed', () => {
         },
       ],
       pages: [],
+      morePages: 0,
     });
     expect(id).toBe(`20261025-140311-123-${id.slice(-6)}`);
   });
@@ -145,7 +146,7 @@ describe('what a task changed', () => {
     write('notes.md', 'y');
     expect(run.settle()?.files).toHaveLength(1);
     const second = run.begin();
-    expect(second).toEqual({ id: second.id, files: [], pages: [] });
+    expect(second).toEqual({ id: second.id, files: [], pages: [], morePages: 0 });
     expect(second.id).not.toBe(first.id);
     expect(run.settle()?.files).toEqual([]);
     // The first task's list is still there, by its ID.
@@ -168,10 +169,80 @@ describe('what a task changed', () => {
 
   it('keeps its copies outside the workspace, for the newest tasks only', () => {
     const run = changes();
-    const ids = Array.from({ length: KEPT_RUNS + 3 }, () => run.begin().id);
+    const ids = Array.from({ length: KEPT_RUNS + 3 }, (_, i) => {
+      const { id } = run.begin();
+      run.keep(`notes-${i}.md`);
+      return id;
+    });
     const kept = readdirSync(folder).sort();
     expect(kept).toEqual(ids.slice(-KEPT_RUNS));
     expect(readdirSync(workspace)).toEqual([]);
+  });
+
+  it('leaves no record of a task that changed and read nothing, so it takes no other’s place', () => {
+    const run = changes();
+    const empty = run.begin();
+    const next = run.begin();
+    expect(readdirSync(folder)).toEqual([next.id]);
+    expect(run.changes(empty.id)).toBeNull();
+  });
+
+  it('counts the pages past what it keeps', () => {
+    const run = changes();
+    run.begin();
+    for (let i = 0; i < 205; i++) run.read(`https://site${i}.example/`);
+    const settled = run.settle();
+    expect(settled?.pages).toHaveLength(200);
+    expect(settled?.morePages).toBe(5);
+  });
+
+  it('says what became of each file, so Claude Code asks first when no copy could be kept', () => {
+    write('job.md', 'job');
+    write('big.pdf', 'x'.repeat(26_000_000));
+    const outside = join(dataDir, 'outside.md');
+    writeFileSync(outside, 'mine');
+    symlinkSync(at('job.md'), at('linked.md'));
+    const run = changes();
+    run.begin();
+    expect(run.keep('job.md')).toBe('kept');
+    expect(run.keep('job.md')).toBe('kept');
+    expect(run.keep('applications/new/notes.md')).toBe('new');
+    expect(run.keep('big.pdf')).toBe('no-copy');
+    expect(run.keep('linked.md')).toBe('no-copy');
+    symlinkSync(dataDir, at('elsewhere'));
+    expect(run.keep('elsewhere/new.md')).toBe('no-copy');
+    expect(run.keep(outside)).toBe('ignored');
+    const pre = (file_path: string) => ({
+      hook_event_name: 'PreToolUse',
+      tool_name: 'Write',
+      tool_input: { file_path, content: '' },
+    });
+    expect(keepBefore(run, pre(at('job.md')))).toBeNull();
+    expect(keepBefore(run, pre(at('big.pdf')))).toEqual(ASK_WITHOUT_COPY);
+    expect(keepBefore(run, { hook_event_name: 'PreToolUse', tool_name: 'Read' })).toBeNull();
+    // A recorder that fails asks first too.
+    const broken = {
+      keep: () => {
+        throw new Error('disk full');
+      },
+    };
+    expect(keepBefore(broken, pre(at('job.md')))).toEqual(ASK_WITHOUT_COPY);
+  });
+
+  it('lists a file it couldn’t copy, with no Undo, and never takes it for a new one', async () => {
+    write('guide/voice.md', 'mine');
+    const run = changes();
+    const { id } = run.begin();
+    // Its folder of copies is gone, as on a disk that filled up.
+    rmSync(join(folder, id), { recursive: true });
+    expect(run.keep('guide/voice.md')).toBe('no-copy');
+    write('guide/voice.md', 'changed');
+    expect(run.settle()?.files).toEqual([
+      { path: 'guide/voice.md', change: 'changed', lines: null, canUndo: false, undone: false },
+    ]);
+    expect(await run.undo(id, 'guide/voice.md')).toMatchObject({ ok: false, reason: 'failed' });
+    expect(read('guide/voice.md')).toBe('changed');
+    expect(trashed).toEqual([]);
   });
 
   it('hears the file each of Claude Code’s edits is about to change, and nothing else', () => {
@@ -218,11 +289,37 @@ describe('undo', () => {
           },
         ],
         pages: [],
+        morePages: 0,
       },
     });
     // Undone twice, it stays as it is.
     expect(await run.undo(id, 'guide/rules.md')).toMatchObject({ ok: true });
     expect(read('guide/rules.md')).toBe('Rule one\n');
+  });
+
+  it('lists a file the task changes again after an Undo, with Undo again, from the same copy', async () => {
+    write('job.md', 'before');
+    const run = changes();
+    const { id } = run.begin();
+    run.keep('job.md');
+    write('job.md', 'first try');
+    run.settle();
+    await run.undo(id, 'job.md');
+    expect(read('job.md')).toBe('before');
+    // The user replies, and Claude tries again in the same task.
+    run.keep('job.md');
+    write('job.md', 'second try');
+    expect(run.settle()?.files).toEqual([
+      {
+        path: 'job.md',
+        change: 'changed',
+        lines: { added: 1, removed: 1 },
+        canUndo: true,
+        undone: false,
+      },
+    ]);
+    expect(await run.undo(id, 'job.md')).toMatchObject({ ok: true });
+    expect(read('job.md')).toBe('before');
   });
 
   it('moves a file the task made to the trash', async () => {

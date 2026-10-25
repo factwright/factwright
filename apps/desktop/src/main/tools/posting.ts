@@ -12,7 +12,7 @@ import {
   type SavedPosting,
   WORKSPACE_PATHS,
 } from '@factwright/core';
-import { FetchRefused, fetchPublic } from './safe-fetch.ts';
+import { FetchRefused, fetchPublic, linkProblem } from './safe-fetch.ts';
 
 /** Less text than this means the page needs a browser or a sign-in to show the posting. */
 const MIN_POSTING_LENGTH = 400;
@@ -27,10 +27,19 @@ export const FOLDER_NAME = /^[\w][\w.-]{0,119}$/;
 export interface FetchDeps {
   /**
    * Fetches a public page or API within a time limit, in milliseconds, and a size limit, in
-   * bytes, when it's given. Tests pass their own.
+   * bytes, when it's given, telling `onRedirect` each address a redirect sends it to before it
+   * goes there. Tests pass their own.
    */
-  fetch?: (url: string, json: boolean, limitMs: number, maxBytes?: number) => Promise<unknown>;
+  fetch?: (
+    url: string,
+    json: boolean,
+    limitMs: number,
+    maxBytes?: number,
+    onRedirect?: (url: string) => void,
+  ) => Promise<unknown>;
   now?: () => Date;
+  /** Hears each address a redirect sends a fetch to, before it goes there. */
+  onRedirect?: ((url: string) => void) | undefined;
 }
 
 type Fetch = (url: string, json: boolean, maxBytes?: number) => Promise<unknown>;
@@ -43,6 +52,7 @@ export function fetchInTime(deps: FetchDeps): Fetch {
   return async (address, json, maxBytes) => {
     const left = giveUpAt - clock().getTime();
     if (left <= 0) throw new Error('the site took too long to answer');
+    if (deps.onRedirect) return fetch(address, json, left, maxBytes, deps.onRedirect);
     return maxBytes === undefined
       ? fetch(address, json, left)
       : fetch(address, json, left, maxBytes);
@@ -143,15 +153,18 @@ export async function readLink(
   if (deps.feedsOnly && !isFeedPosting(parsed.href)) {
     return `${parsed.href} isn’t a posting on Greenhouse, Lever, Ashby or Gem. Read it with read_page, or use job_board for a company’s whole board.`;
   }
+  // Each page a request goes to is noted for the task's card before it goes, so one that fails,
+  // or redirects somewhere else, is noted too. One the fetch turns away outright never goes.
+  if (!linkProblem(parsed)) deps.onRead?.(parsed.href);
   let page: Posting | null;
   try {
-    page = await readFrom(parsed.href, fetchInTime(deps), deps.feedsOnly);
+    const fetch = fetchInTime({ ...deps, ...(deps.onRead && { onRedirect: deps.onRead }) });
+    page = await readFrom(parsed.href, fetch, deps.feedsOnly);
   } catch (error) {
     return error instanceof FetchRefused
       ? `Not read: ${reasonOf(error)}`
       : `Couldn’t read ${parsed.href} (${reasonOf(error)}).`;
   }
-  deps.onRead?.(parsed.href);
   if (!page?.text.trim()) {
     return deps.feedsOnly
       ? `The applicant system has no posting at ${parsed.href}. It may have closed: check with job_board, or read the link with read_page.`

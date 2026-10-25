@@ -29,8 +29,13 @@ export interface ChangedFile {
 export interface RunChanges {
   id: string;
   files: ChangedFile[];
-  /** The pages it read, by their addresses, in the order it read them. */
+  /**
+   * The pages it read, by their addresses, in the order it read them: each one a request went
+   * to, one that failed or redirected included.
+   */
   pages: string[];
+  /** How many more pages it read than the list keeps. */
+  morePages: number;
 }
 
 /** A changed file of text, before and after the task, for the user to look through. */

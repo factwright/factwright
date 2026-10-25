@@ -198,7 +198,12 @@ export function sampleChanges(mode: string | null) {
   let files: SampleFile[] = [];
   let undone = new Set<string>();
   let asked = mode !== 'since';
-  let current: RunChanges = { id: '20261025-140311-000-a1b2c3', files: [], pages: [] };
+  let current: RunChanges = {
+    id: '20261025-140311-000-a1b2c3',
+    files: [],
+    pages: [],
+    morePages: 0,
+  };
   const view = (): RunChanges => ({
     ...current,
     files: files.map((file) => changedOf(file, undone.has(file.path))),
@@ -217,6 +222,7 @@ export function sampleChanges(mode: string | null) {
         id: `20261025-14${String(count).padStart(4, '0')}-000-a1b2c3`,
         files: [],
         pages: [],
+        morePages: 0,
       };
       tell();
     },

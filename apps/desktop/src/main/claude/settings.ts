@@ -42,7 +42,8 @@ const edits = (path: string) => `Edit(./${path})`;
 
 /**
  * Files Claude never changes: Claude Code's own settings and the instructions it loads, which a
- * job post could otherwise use to steer later runs.
+ * job post could otherwise use to steer later runs. Where there's no CLAUDE.md, as in the
+ * workspace, Claude Code loads AGENTS.md files in their place.
  */
 const NEVER_CHANGED = [
   '.claude/**',
@@ -50,6 +51,24 @@ const NEVER_CHANGED = [
   'CLAUDE.md',
   '**/CLAUDE.md',
   '**/CLAUDE.local.md',
+  'AGENTS.md',
+  '**/AGENTS.md',
+];
+
+/**
+ * The user's own words and Profile, which later runs read as theirs: their notes, the files they
+ * shared, LinkedIn's export, and what Profile keeps, such as the contact details applications
+ * get. Claude never edits them itself: what the user tells it goes in through Factwright's
+ * tools, which check it. Claude keeps its own note of what it has read, about-me/read.md.
+ */
+const USERS_OWN = [
+  'about-me/notes.md',
+  'about-me/files/**',
+  'about-me/answers.json',
+  'about-me/history.json',
+  'about-me/kinds-of-job.json',
+  'about-me/beyond-work.json',
+  'linkedin/**',
 ];
 
 /**
@@ -105,8 +124,9 @@ function allowed(scope: RunScope): string[] {
  *   a posting, and otherwise runs as a run on the job hunt does, apart from saving a template,
  *   which asks first. A run started to make a template copies a resume from anywhere, so it may
  *   read and save templates without asking, and nothing else, and never reads the web either.
- * - never: changing Claude Code's settings or the instructions it loads, and outside getting
- *   started and adding facts, changing the fact bank other than through Factwright's fact tools
+ * - never: changing Claude Code's settings or the instructions it loads, the user's own notes,
+ *   shared files and Profile other than through Factwright's tools, and outside getting started
+ *   and adding facts, the fact bank other than through Factwright's fact tools
  * - hooks that tell the app, over HTTP on this computer, where the run stands, what the user
  *   answers Claude's questions, which Claude calls the tools that file the answers, and when the
  *   session ends, which the self-test listens for. The ones for Claude's questions and Claude
@@ -146,6 +166,7 @@ export function sessionSettings({
       allow: allowed(scope),
       deny: [
         ...NEVER_CHANGED.map(edits),
+        ...USERS_OWN.map(edits),
         ...(scope === 'profile' ? [] : [edits(FACTS)]),
         ...(scope === 'hunt' ? [] : OFF_THE_WEB),
         // A revision changes a template only through save_template, which asks.

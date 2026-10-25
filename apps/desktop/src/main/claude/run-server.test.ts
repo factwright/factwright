@@ -89,8 +89,9 @@ describe('RunServer', () => {
   it('keeps what it needs before a call runs, answering only once it has', async () => {
     await server.start();
     const kept: string[] = [];
-    const before = vi.fn((event: unknown) => {
+    const before = vi.fn((event: unknown): unknown => {
       kept.push((event as { tool_input: { file_path: string } }).tool_input.file_path);
+      return null;
     });
     server.listen(TOKEN, () => {}, { before });
     const edit = {
@@ -107,6 +108,20 @@ describe('RunServer', () => {
       throw new Error('disk full');
     });
     expect((await post(server.activityUrl, edit)).status).toBe(204);
+    // What it gives back is the hook's answer, such as to ask the user first.
+    const ask = { hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'ask' } };
+    before.mockReturnValueOnce(ask);
+    const asked = await post(server.activityUrl, edit);
+    expect(asked.status).toBe(200);
+    expect(await asked.json()).toEqual(ask);
+    // A whole new file comes with its start, however big, so it's kept before it's written.
+    const big = {
+      ...edit,
+      tool_name: 'Write',
+      tool_input: { file_path: '/w/big.md', content: 'x'.repeat(5_000_000) },
+    };
+    expect((await post(server.activityUrl, big)).status).toBe(204);
+    expect(kept.at(-1)).toBe('/w/big.md');
   });
 
   it('tells the run what Factwright’s tools are about to write, and what they read', async () => {

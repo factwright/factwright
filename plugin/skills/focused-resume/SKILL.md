@@ -91,7 +91,7 @@ Skip a question whose answer wouldn't change the resume, and never ask about tri
 - **No,** in any words, such as "No, I haven't": `save_gap`, with the topic in the words you asked about.
 - **Use and verify:** `verify_fact`. **Use this once:** use it in this resume, and leave it unverified. **Don't use:** leave it out.
 - **A correction to an unverified fact,** or a note on their pick: use it as they put it, and save it with `save_fact`, giving the fact's title as `replaces`. They verify it in the Fact bank.
-- **A new number, or a correction, for a verified fact:** `correct_fact`, with the fact's file and title, its new wording, and any details or tags that change, such as its numbers. It takes new numbers and keywords only from their answer, and the fact stays verified, with their name and today as its Source. Then use it. If it turns the answer away, use the fact as it was.
+- **A new number, or a correction, for a verified fact:** `correct_fact`, with the fact's file and title, its new wording, and any details or tags that change, such as its numbers. Word it from the fact's own words and what they picked or typed: it takes every new number, word and tag only from their answer, and the fact stays verified, with their name and today as its Source. Then use it. If it turns the answer away, use the fact as it was.
 
 The user just told you these, so the resume can use them. Note in notes.md which lines rest on today's answers.
 

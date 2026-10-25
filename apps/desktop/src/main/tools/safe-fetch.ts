@@ -173,19 +173,22 @@ function get(
 
 /**
  * Fetches a public https page or API, following up to five redirects and checking each one,
- * within a time and size limit. JSON answers come back parsed.
+ * within a time and size limit, telling `onRedirect` each address a redirect sends it to before
+ * it goes there. JSON answers come back parsed.
  */
 export async function fetchPublic(
   address: string,
   json: boolean,
   limitMs = TIME_LIMIT_MS,
   maxBytes = MAX_BYTES,
+  onRedirect?: (url: string) => void,
 ): Promise<unknown> {
   const deadline = Date.now() + Math.min(limitMs, TIME_LIMIT_MS);
   let url = new URL(address);
   for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
     const problem = linkProblem(url);
     if (problem) throw new FetchRefused(problem);
+    if (hop > 0) onRedirect?.(url.href);
     const answer = await get(url, json, deadline, maxBytes);
     if (answer.location !== undefined) {
       if (!answer.location) throw new Error(`${url.hostname} sent a redirect without an address`);

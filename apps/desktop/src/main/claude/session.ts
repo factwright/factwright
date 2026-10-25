@@ -17,7 +17,7 @@ import { RunActivity, turnEnd } from './activity.ts';
 import { claudeCommand } from './command.ts';
 import { findClaude, nodeFindDeps } from './find.ts';
 import { buildLaunchArgs, launchEnv } from './launch.ts';
-import { editedPath, type RunChanges } from './run-changes.ts';
+import { keepBefore, type RunChanges } from './run-changes.ts';
 import type { PermissionAsker, QuestionAsker, RunServer } from './run-server.ts';
 import { FIRST_RUN_SCREENS, ScreenWatch, TRUST_QUESTION } from './screen.ts';
 import { RUN_TOKEN_VARIABLE, sessionSettings, toolsConfig } from './settings.ts';
@@ -297,10 +297,7 @@ export class ClaudeSession {
         // Each file Claude is about to change, and each one Factwright's tools are, is kept as it
         // was first, and each page they read is noted, for the task's card.
         ...(kept && {
-          before: (event: unknown) => {
-            const path = editedPath(event);
-            if (path) kept.keep(path);
-          },
+          before: (event: unknown) => keepBefore(kept, event),
           keep: (path: string) => kept.keep(path),
           read: (url: string) => kept.read(url),
         }),
