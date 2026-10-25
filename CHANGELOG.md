@@ -13,6 +13,7 @@ Notable changes to Factwright, newest first. The format follows [Keep a Changelo
 - Each task starts a run of its own, rather than going into the Claude Code that's open. You can still type a follow-up into a finished run's terminal until you close it. Another job's task no longer greys out the buttons: it waits in line, or starts beside it. Updates and switching profiles wait while any run has work going or a task waits in line.
 - Claude Code's first-run screens and its question about trust come once: until one run is past them, only one starts at a time, and the rest start without them.
 - Fit checks, salary checks and unmasked listings add their row to the job hunt's logs through Factwright's own tool, which writes one row at a time, so two runs never write a log at once. Your Claude can't edit those logs itself.
+- Undo on a file another task changed too, side by side, such as a log or a fact file, asks first, as putting it back would undo that task's change as well.
 - A run's name leads with the job's company, such as "Acme Robotics · Fit check", in its tab, its bar and the dialogs it asks in.
 
 ## 0.17.0 - 2026-10-25
