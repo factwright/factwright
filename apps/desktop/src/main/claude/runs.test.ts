@@ -395,6 +395,27 @@ describe('the size a run starts at', () => {
     expect(opened.at(-1)?.size).toEqual({ cols: 120, rows: 20 });
   });
 
+  it('lets go of a run that closed while what was held for it was being kept', async () => {
+    let kept: () => void = () => {};
+    const claude = runs({
+      prepare: async () => ({
+        ok: true,
+        options: {},
+        started: () =>
+          new Promise<void>((resolve) => {
+            kept = resolve;
+          }),
+      }),
+    });
+    claude.start(resume('acme'));
+    await settle();
+    run('run-1').exit('failed');
+    kept();
+    await settle();
+    expect(lastView()).toEqual(['run-1 failed']);
+    expect(claude.busy()).toBe(false);
+  });
+
   it('stops a run asked to stop while it was starting', async () => {
     let release: (run: OpenRun) => void = () => {};
     const claude = runs({

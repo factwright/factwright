@@ -312,15 +312,14 @@ export class ClaudeRuns {
       else this.failed(entry, opened);
       return;
     }
-    await prepared.started(true).catch(() => {});
+    // Its own from here on, before anything else is awaited, so its exit, whenever it comes,
+    // finds it.
     entry.run = opened;
     // Closed or stopped while it started: it goes now.
-    if (entry.stopped) {
-      opened.stop();
-      return;
-    }
-    if (entry.typed) opened.write(entry.typed);
+    if (entry.stopped) opened.stop();
+    else if (entry.typed) opened.write(entry.typed);
     entry.typed = '';
+    await prepared.started(true).catch(() => {});
   }
 
   /** The size the last terminal said, or, before any has, whatever comes first. */
