@@ -331,6 +331,8 @@ const CLEAR_RANGE = new RegExp(
     String.raw`([$£€])\s?${AMOUNT}\s*(?:-|–|—|to)\s*([$£€])?\s?${AMOUNT}`,
     String.raw`(?:\s*(?:USD|CAD|AUD|GBP|EUR))?,?\s*`,
     String.raw`(?:(?:(?:a|an|per)\s+|\/\s?)(year|yr|annum|hour|hr)\b|(annually|yearly|hourly)\b)`,
+    // Not a time, as "a year ago" or "a year earlier" is.
+    String.raw`(?!\s+(?:ago|earlier|before|later|prior)\b)`,
   ].join(''),
   'i',
 );

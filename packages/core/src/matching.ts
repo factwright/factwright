@@ -602,11 +602,12 @@ export const hasOwnPosting = (job: { links: readonly { url: string }[] }) =>
  * How a job on a page goes with the jobs on file, as the browser extension tells when it saves the
  * page, and when its popup says whether the job is saved:
  * - **same:** a job with the same posting, by its address or its ID, which saving finds there;
- * - **joins:** the same role at the same company, where one of the two has no posting of its own,
- *   only a board's address, a Hacker News post or the company's site, so saving adds the page's
- *   link and posting to it;
- * - **role:** the one job with the same role at the same company, with another posting of its own,
- *   which filling a form takes as the form's job, and saving makes a new job beside.
+ * - **joins:** the one job with the same role at the same company, its title the same however
+ *   it's written, where one of the two has no posting of its own, only a board's address, a Hacker
+ *   News post or the company's site, so saving adds the page's link and posting to it;
+ * - **role:** the one job with the same role at the company, as matching reads it otherwise, as
+ *   one with another posting of its own, or a title saying more, which filling a form takes as the
+ *   form's job, and saving makes a new job beside.
  */
 export type SavedHow = 'same' | 'joins' | 'role';
 
@@ -619,9 +620,22 @@ export function savedJobFor<T extends JobIdentity>(
   const same = matches.find(({ match }) => match === 'posting');
   if (same) return { job: same.job, how: 'same' };
   const roles = matches.filter(({ match }) => match === 'role');
+  // Joining changes the job on file, so only one job it can't be mistaken for: the same company
+  // and the same title, never one whose name only holds the page's, or whose title says more.
   const pagePosting = hasOwnPosting({ links: [{ url: page.url }] });
-  const joins = roles.find(({ job }) => !pagePosting || !hasOwnPosting(job));
-  if (joins) return { job: joins.job, how: 'joins' };
+  const name = { company: page.company, companyKey: companyKey(page.company) };
+  const title = readTitle(page.role);
+  const joins = roles.filter(
+    ({ job }) =>
+      (!pagePosting || !hasOwnPosting(job)) &&
+      companyMatch(
+        { company: job.company, companyKey: job.companyKey || companyKey(job.company) },
+        name,
+      ) === 'same' &&
+      titleFit(readTitle(job.role), title) === 'same',
+  );
+  const [joined, ...others] = joins;
+  if (joined && others.length === 0) return { job: joined.job, how: 'joins' };
   const [only, ...more] = roles;
   return only && more.length === 0 ? { job: only.job, how: 'role' } : null;
 }

@@ -219,6 +219,11 @@ button.link:hover {
   text-decoration: underline;
 }
 
+/* Alone on its line, in line with the words above it. */
+button.link:first-child {
+  padding-left: 0;
+}
+
 a {
   color: var(--fw-accent-text);
 }

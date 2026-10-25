@@ -52,7 +52,7 @@ export function withFrame(page: PageJob, framed: PageJob, posting: boolean): Pag
 /**
  * Reads the frames of a tab, where the page you clicked on has any the browser lets the extension
  * reach: the one with the text you selected, or else an applicant system's posting. LinkedIn's
- * frames are never read, as nothing in them is the job's.
+ * frames are never read, on LinkedIn or in another site's page, as nothing in them is the job's.
  */
 async function readFrames(tabId: number, page: PageJob): Promise<PageJob> {
   if (page.source === 'selection' || isLinkedIn(page.pageUrl)) return page;
@@ -63,7 +63,9 @@ async function readFrames(tabId: number, page: PageJob): Promise<PageJob> {
       func: frameShows,
     });
     frames = each.flatMap(({ frameId, result }) =>
-      frameId && result && typeof result.href === 'string' ? [{ frameId, ...result }] : [],
+      frameId && result && typeof result.href === 'string' && !isLinkedIn(result.href)
+        ? [{ frameId, ...result }]
+        : [],
     );
   } catch {
     return page;

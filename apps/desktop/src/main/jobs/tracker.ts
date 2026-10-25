@@ -645,11 +645,13 @@ export class Tracker {
    * Adds a job the extension saved on this computer, as it adds one through sync: the same
    * rows, as New, with its history's first line, and an ID from its company and role. A job the
    * job hunt has already, by @factwright/core's savedJobFor, is added to instead: the same
-   * posting, by its link or its ID, is that job, and nothing is added; the same role at the
-   * company, where one of the two has no posting of its own, as a job a Hacker News search found
-   * by its company's board, gets the link. Another posting of the same role is a job of its own,
-   * as is anything else, with the next ID free, "-2" on, when another job holds it. A job the user
-   * merged into another is the one they kept, as what it went by is now that one's.
+   * posting, by its link or its ID, is that job, and nothing is added; the one job with the same
+   * role at the company, where one of the two has no posting of its own, as a job a Hacker News
+   * search found by its company's board, gets the link. Another posting of the same role is a job
+   * of its own, as is anything else, with the next ID free, "-2" on, when another job holds it,
+   * unless that job has the same link, as one saved before from a page that isn't one job's, such
+   * as a careers page. A job the user merged into another is the one they kept, as what it went by
+   * is now that one's.
    */
   addSavedJob(
     job: { company: string; role: string; link: string; pay: string },
@@ -658,11 +660,15 @@ export class Tracker {
     const all = this.rows();
     const merged = mergedTargets(all);
     const kept = all.filter((row) => !merged.get(row.id));
-    const linked = kept.find((row) => job.link && hasLink(row, job.link));
-    if (linked) return { ok: true, id: linked.id, already: true };
     const found = savedJobFor(kept, { url: job.link, company: job.company, role: job.role });
-    if (found?.how === 'same') return { ok: true, id: found.job.id, already: true };
+    const already = (id: string): SavedJobResult => ({
+      ok: true,
+      id: this.resolve(id) ?? id,
+      already: true,
+    });
+    if (found?.how === 'same') return already(found.job.id);
     if (found?.how === 'joins') {
+      if (hasLink(found.job, job.link)) return already(found.job.id);
       const links = [...found.job.links, { url: job.link, label: 'Posting' }];
       this.db
         .prepare('UPDATE jobs SET links = ?, updated_at = ? WHERE id = ?')
@@ -673,7 +679,11 @@ export class Tracker {
     const base = jobIdFor(job.company, job.role, code);
     for (let n = 1; n <= MAX_SAME; n++) {
       const id = n === 1 ? base : `${base}-${n}`;
-      if (this.row(id)) continue;
+      const held = this.row(id);
+      if (held) {
+        if (hasLink(held, job.link)) return already(id);
+        continue;
+      }
       const rows = newJobRows({
         id,
         ...job,

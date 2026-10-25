@@ -258,22 +258,34 @@ const SAMPLE_FORM = {
  * The popup on a job's page, as clicking the toolbar button opens it: the tab it reads stands in
  * here, as a test can't click the toolbar, with the job the page's own function reads there, and
  * the application form it reads, if any. The tab is the popup's own, so the browser has a window
- * to open the panel in. The saves it makes are real.
+ * to open the panel in. The saves it makes are real, unless `failing` says what saving answers,
+ * as when the sync server can't be reached.
  */
 async function popupOn(
   context: BrowserContext,
   setup: Page,
   page: typeof SAMPLE_JOB,
   form: typeof SAMPLE_FORM | null = null,
+  failing: { message: string } | null = null,
 ): Promise<Page> {
   const popup = await context.newPage();
   await popup.setViewportSize({ width: 360, height: 480 });
   await popup.addInitScript(
-    ({ shown, form }) => {
+    ({ shown, form, failing }) => {
       type Tabs = { query(asked: unknown): Promise<{ id?: number; windowId?: number }[]> };
+      type Runtime = { sendMessage(message: { type?: string }): Promise<unknown> };
       const api = (
-        globalThis as unknown as { chrome: { tabs: Tabs; scripting: { executeScript: unknown } } }
+        globalThis as unknown as {
+          chrome: { tabs: Tabs; runtime: Runtime; scripting: { executeScript: unknown } };
+        }
       ).chrome;
+      if (failing) {
+        const send = api.runtime.sendMessage.bind(api.runtime);
+        api.runtime.sendMessage = async (message) =>
+          message?.type === 'save'
+            ? { ok: false, reason: 'offline', message: failing.message }
+            : send(message);
+      }
       const query = api.tabs.query.bind(api.tabs);
       api.tabs.query = async () => {
         const [own] = await query({ active: true, currentWindow: true });
@@ -293,7 +305,7 @@ async function popupOn(
         return [{ frameId: 0, result: shown }];
       };
     },
-    { shown: page, form },
+    { shown: page, form, failing },
   );
   await popup.goto(setup.url().replace('setup.html', 'popup.html'));
   return popup;
@@ -701,15 +713,20 @@ try {
     );
     await popup.close();
 
-    // On the same page again, the popup knows the job's saved, through sync, and offers no save.
+    // On the same page again, the popup knows the job's saved, through sync, and offers no save,
+    // but for the page's posting, which a job saved without one takes.
     const known = await popupOn(context, setup, SAMPLE_JOB);
     await known.getByText('In your job hunt').waitFor({ timeout: 10_000 });
     check(
       ((await known.locator('.card.job').textContent()) ?? '').includes('Harbor & Pine · New') &&
-        (await known.getByRole('button').count()) === 0,
+        (await known.getByRole('button', { name: /^save (to factwright|and fill)/i }).count()) ===
+          0,
       'the popup knows a job you saved, with its status, and offers no save',
     );
     await shoot(known, 'popup-3-saved');
+    await known.getByRole('button', { name: 'Save this page’s posting with it' }).click();
+    await known.getByText('With the posting as you first saved it.').waitFor({ timeout: 15_000 });
+    check(true, 'and keeps the posting the job has, saving this page’s only for one without');
     await known.close();
     // On its application, a saved job's page with a form, it offers to fill it.
     const applying = await popupOn(
@@ -785,6 +802,32 @@ try {
     if (panelled === 'button') await shoot(unsaved, 'popup-6-saved-fill');
     if (!unsaved.isClosed()) await unsaved.close();
     for (const page of context.pages().slice(pages)) await page.close();
+
+    // Where saving doesn't work, the form can still be filled.
+    const elsewhere = 'https://jobs.lever.co/harborpine/77aa11bb/apply';
+    const offline = await popupOn(
+      context,
+      setup,
+      {
+        ...SAMPLE_JOB,
+        url: elsewhere,
+        pageUrl: elsewhere,
+        title: 'Data Scientist',
+        posting: '',
+        source: 'page',
+      },
+      { ...SAMPLE_FORM, url: elsewhere },
+      { message: 'Couldn’t reach your sync server. Try again.' },
+    );
+    await offline.getByRole('button', { name: 'Save and fill' }).click();
+    await offline.getByText('Couldn’t reach your sync server. Try again.').waitFor({
+      timeout: 15_000,
+    });
+    check(
+      (await offline.getByRole('button', { name: 'Fill without saving' }).count()) === 1,
+      'where saving doesn’t work, it offers to fill the form without saving',
+    );
+    await offline.close();
 
     // A job a Hacker News search found by its company's whole board, as the app syncs it: saving
     // it from its own posting adds the posting to it, and makes no copy.

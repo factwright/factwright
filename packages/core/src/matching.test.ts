@@ -431,6 +431,28 @@ describe('savedJobFor', () => {
     expect(savedJobFor([linkedIn, other], greenhouse)).toBeNull();
   });
 
+  it('joins only the one job it can’t be mistaken for: the same company and title', () => {
+    const post = page('https://news.ycombinator.com/item?id=45678901', 'Acme', 'Software Engineer');
+    // Two that say more about the same work: either could be it, so neither is joined.
+    const payments = job('acme--software-engineer-payments', 'Acme', 'Software Engineer, Payments');
+    const platform = job('acme--software-engineer-platform', 'Acme', 'Software Engineer, Platform');
+    expect(savedJobFor([payments, platform], post)).toBeNull();
+    expect(savedJobFor([payments], post)).toEqual({ job: payments, how: 'role' });
+    // A company whose name only holds the page's is another company to join.
+    const apple = job('apple--software-engineer', 'Apple', 'Software Engineer');
+    const greenhouse = page(
+      'https://job-boards.greenhouse.io/alg/jobs/4012345',
+      'Apple Leisure Group',
+      'Software Engineer',
+    );
+    expect(savedJobFor([apple], greenhouse)).toEqual({ job: apple, how: 'role' });
+    // Two the same: it can't tell which.
+    const twin = { ...found, id: `${found.id}-2` };
+    expect(
+      savedJobFor([found, twin], page('https://apply.workable.com/seeq/j/1B6E0A1710/')),
+    ).toBeNull();
+  });
+
   it('finds none for another posting on the same site, another role, or another company', () => {
     const lever = job(
       'acme--staff-engineer',

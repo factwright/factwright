@@ -500,6 +500,28 @@ describe('addSavedJob', () => {
     ).toEqual({ ok: true, id: found, already: true });
   });
 
+  it('tells two roles saved from one careers page apart, and finds each again', () => {
+    const careers = 'https://harborpine.example/careers';
+    expect(saved({ role: 'Data Analyst', link: careers })).toEqual({
+      ok: true,
+      id: 'harbor-and-pine--data-analyst',
+      already: false,
+    });
+    expect(saved({ role: 'Product Designer', link: `${careers}#designer` })).toEqual({
+      ok: true,
+      id: 'harbor-and-pine--product-designer',
+      already: false,
+    });
+    expect(saved({ role: 'Data Analyst', link: careers })).toEqual({
+      ok: true,
+      id: 'harbor-and-pine--data-analyst',
+      already: true,
+    });
+    expect(row('harbor-and-pine--data-analyst')?.links).toEqual([
+      { url: careers, label: 'Posting' },
+    ]);
+  });
+
   it('makes another posting of the same role a job of its own', () => {
     tracker.saveCollected(
       [

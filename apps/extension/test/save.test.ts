@@ -450,6 +450,85 @@ describe('saving a job through sync', () => {
     ).toEqual({ ok: true, id: found, already: true, posting: 'none' });
   });
 
+  it('tells two roles saved from one careers page apart, and finds each again', async () => {
+    const { client, keys } = await account();
+    const careers = { ...JOB, url: 'https://northwind.example/careers', site: 'northwind.example' };
+    expect(await save(client, keys, { ...careers, role: 'Data Analyst' })).toMatchObject({
+      id: 'northwind--data-analyst',
+      already: false,
+    });
+    expect(
+      await save(client, keys, { ...careers, role: 'Product Designer' }, 'status-2'),
+    ).toMatchObject({ id: 'northwind--product-designer', already: false });
+    expect(
+      await save(client, keys, { ...careers, role: 'Data Analyst' }, 'status-3'),
+    ).toMatchObject({ id: 'northwind--data-analyst', already: true });
+    expect(await savedText(client, keys, 'northwind--product-designer')).toBe(JOB.posting);
+  });
+
+  it('joins no job that has a posting of its own by the time it would, as another save made', async () => {
+    const { client, keys } = await account();
+    const found = 'seeq--ai-software-engineer-staff-principal';
+    const board = { url: 'https://apply.workable.com/seeq', label: 'Board' };
+    await syncedJob(client, keys, found, {
+      company: 'Seeq',
+      company_key: 'seeq',
+      role: 'AI Software Engineer, Staff/Principal',
+      links: JSON.stringify([board]),
+    });
+    const seeq = {
+      url: 'https://apply.workable.com/seeq/j/1B6E0A1710/',
+      site: 'apply.workable.com',
+      company: 'Seeq',
+      role: 'AI Software Engineer - Staff/Principal',
+      pay: '',
+      posting: 'About Seeq',
+    };
+    // Another device adds another posting to the job just after this save read sync's jobs, as
+    // it reads the job again to join it.
+    const record = await recordId(keys, rowName('jobs', found));
+    const other = async () => {
+      const { changes } = await client.changes(0);
+      const latest = changes.findLast((each) => each.record === record);
+      const plain = latest && (await openRecord(keys, record, latest.version, latest.data));
+      const current = plain && decodeRecord(plain);
+      if (!latest || current?.kind !== 'row' || !current.row) throw new Error('No job to change.');
+      const links = [
+        board,
+        { url: 'https://apply.workable.com/seeq/j/0BEAE8BEA3/', label: 'Posting' },
+      ];
+      const row = { ...current.row, links: JSON.stringify(links) };
+      const body = { kind: 'row', table: 'jobs', id: found, row, device: 'Mac', at: '' };
+      const version = latest.version + 1;
+      const data = await sealRecord(keys, record, version, encodeRecord(body as SyncRecord));
+      await client.push([{ record, base: latest.version, data, file: null, deleted: false }]);
+    };
+    let raced = false;
+    const racing = new Proxy(client, {
+      get(target, key) {
+        if (key === 'versions') {
+          return async (asked: string) => {
+            if (asked === record && !raced) {
+              raced = true;
+              await other();
+            }
+            return target.versions(asked);
+          };
+        }
+        const value = Reflect.get(target, key, target);
+        return typeof value === 'function' ? value.bind(target) : value;
+      },
+    });
+    expect(await save(racing, keys, seeq)).toMatchObject({
+      ok: true,
+      id: `${found}-2`,
+      already: false,
+    });
+    expect(raced).toBe(true);
+    const job = await readRecord(client, keys, rowName('jobs', found));
+    expect(job?.kind === 'row' && String(job.row?.links)).not.toContain('1B6E0A1710');
+  });
+
   it('finds the job kept for one the user merged into another', async () => {
     const { client, keys } = await account();
     await syncedJob(client, keys, 'northwind--staff-engineer', {

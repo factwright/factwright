@@ -201,6 +201,8 @@ describe('the pay a posting says', () => {
       '$245,000 - $161,000 a year',
       '$100,000 - €120,000 a year',
       'We raised $5M - $10M a year ago',
+      'We grew from $20,000 - $50,000 a year ago',
+      'Revenue went from $200,000 to $900,000 a year earlier',
       '401(k) match, 20-25 days off a year',
       'Competitive pay',
       '',

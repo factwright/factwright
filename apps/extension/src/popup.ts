@@ -242,7 +242,8 @@ const saveHere = (to: Exclude<Destination, null>, job: JobToSave) =>
  * Saves a job, then, on an application form's page, fills the form: the panel opens beside the
  * page, as Chrome lets it straight after the click that saved the job, and fills the form with the
  * job on file. Firefox opens its sidebar only straight from a click, so there, as once the click is
- * a while ago, the popup says the job's saved, with Fill to click.
+ * a while ago, the popup says the job's saved, with Fill to click. Saving only a posting for a job
+ * on file, `fill` is false, and the popup says how it went, with Fill to click.
  */
 async function saveIt(
   to: Exclude<Destination, null>,
@@ -250,8 +251,9 @@ async function saveIt(
   unread: Unread,
   job: JobToSave,
   keepPosting: boolean,
+  fill = true,
 ): Promise<void> {
-  const filling = fillable;
+  const filling = fill ? fillable : null;
   saving();
   const result = await saveHere(to, job);
   if (result.ok && filling) {
@@ -334,9 +336,10 @@ function statusWords(job: AskedJob): string {
 
 /**
  * A job you saved, as it's on file: its title, company and status, with Fill for the page's
- * application form, and nothing to save. One found by its role, at the company, says so: one you
- * saved by its company's board, a Hacker News post or its site gets this page's link and posting
- * when you save this one, and one with another posting of its own can be saved as a job of its own.
+ * application form, and no save, but for this page's posting, which a job saved without one, as by
+ * its link alone, takes. One found by its role, at the company, says so: the one you saved by its
+ * company's board, a Hacker News post or its site gets this page's link and posting when you save
+ * this one, and any other, as one with another posting of its own, can be saved as a job of its own.
  */
 function saved(
   to: Exclude<Destination, null>,
@@ -354,6 +357,13 @@ function saved(
       : filling && button('Fill this application', () => fillIn(filling), true);
   const another =
     how === 'role' && linkButton('It’s another job: save it', () => summary(to, page, unread));
+  // Saving it again adds a posting it doesn't have yet, and keeps one it has.
+  const posting =
+    how === 'same' &&
+    Boolean(read.posting.trim()) &&
+    linkButton('Save this page’s posting with it', () => {
+      void saveIt(to, shown, unread, read, true, false);
+    });
   show(
     app,
     heading(),
@@ -371,8 +381,12 @@ function saved(
         'You saved it from another page. Save this one to add its link and posting to it.',
       ),
     how === 'role' &&
-      h('p', { class: 'small muted' }, 'You saved it from another posting with this title.'),
-    (main || another) && h('div', { class: 'actions' }, main, another),
+      h(
+        'p',
+        { class: 'small muted' },
+        'You saved a job at this company with a title like this one.',
+      ),
+    (main || another || posting) && h('div', { class: 'actions' }, main, another, posting),
     settingsLink(),
   );
   if (main) main.focus();
@@ -419,6 +433,7 @@ function form(
     h('dt', {}, 'Posting'),
     h('dd', {}, postingLine({ ...page, posting: start.posting })),
   );
+  const filling = fillable;
   const preview =
     hasPosting &&
     h(
@@ -455,6 +470,8 @@ function form(
         'div',
         { class: 'actions' },
         h('button', { class: notAJob ? '' : 'primary', type: 'submit', id: 'save' }, saveWords()),
+        // Where saving didn't work, the form can still be filled.
+        Boolean(problem) && filling && linkButton('Fill without saving', () => fillIn(filling)),
       ),
     ),
     settingsLink(),

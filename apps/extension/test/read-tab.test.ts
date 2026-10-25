@@ -158,6 +158,25 @@ describe('reading a tab', () => {
     expect(browser.runs).toEqual([[0], 'all']);
   });
 
+  it('never reads a LinkedIn frame in another site’s page', async () => {
+    browser.frames = [
+      {
+        frameId: 0,
+        url: 'https://careers.lumen.example/jobs/7',
+        html: '<main><h1>Routing Engineer</h1><p>Apply below.</p></main>',
+      },
+      {
+        frameId: 3,
+        url: 'https://www.linkedin.com/embed/feed/update/1',
+        html: `<p id="post">${'Hiring now. '.repeat(40)}</p>`,
+        select: '#post',
+      },
+    ];
+    const { page } = await readTab({ id: 1, url: 'https://careers.lumen.example/jobs/7' });
+    expect(page.source).not.toBe('selection');
+    expect(browser.runs).toEqual([[0], 'all']);
+  });
+
   it('never reads LinkedIn’s frames', async () => {
     browser.frames = [
       {

@@ -1,5 +1,6 @@
 import {
   type AskedJob,
+  hasOwnPosting,
   JOB_LIMITS,
   jobIdFor,
   localDate,
@@ -196,8 +197,9 @@ export async function savedThroughSync(
 
 /**
  * Adds a link to a job's row, as one change from its latest version, so whatever another device
- * changed stays: on another device's newer version, it's added again to that. The job's ID, or
- * null once it's gone.
+ * changed stays: on another device's newer version, it's added again to that, unless that one has
+ * a posting of its own by then, where the link is to one too, as another save may have added
+ * meanwhile. The job's ID, or null once it's gone, or has another posting.
  */
 async function joinJob(
   client: SyncClient,
@@ -206,12 +208,15 @@ async function joinJob(
   link: string,
   made: Made,
 ): Promise<string | null> {
+  const posted = hasOwnPosting({ links: [{ url: link }] });
   let current = await currentJob(client, keys, id);
   for (let attempt = 0; attempt < CHANGES && current; attempt++) {
     const { row, version } = current;
     if (!row.row) return null;
     if (hasLink(row.row, link)) return id;
-    const links = [...trackedRow(row.row as StoredRow).links, { url: link, label: 'Posting' }];
+    const job = trackedRow(row.row as StoredRow);
+    if (posted && hasOwnPosting(job)) return null;
+    const links = [...job.links, { url: link, label: 'Posting' }];
     const joined = { ...row.row, links: JSON.stringify(links), updated_at: made.at };
     const [result] = (await client.push([await rowChange(keys, 'jobs', id, joined, made, version)]))
       .results;
@@ -316,11 +321,13 @@ export async function saveJob(
   const pause = deps.pause ?? ((ms: number) => new Promise((resolve) => setTimeout(resolve, ms)));
   try {
     const jobs = await syncedJobs(client, keys);
-    const linked = jobs.find((job) => fields.link && sameLink(job, fields.link));
-    const found = linked
-      ? { job: linked, how: 'same' }
-      : savedJobFor(jobs, { url: fields.link, company: fields.company, role: fields.role });
-    if (found?.how === 'same') {
+    const found = savedJobFor(jobs, {
+      url: fields.link,
+      company: fields.company,
+      role: fields.role,
+    });
+    // The same posting, or the same role with this link already, as from a careers page.
+    if (found?.how === 'same' || (found?.how === 'joins' && sameLink(found.job, fields.link))) {
       const kept = await addPosting(client, keys, found.job.id, posting, made, pause);
       return { ok: true, id: found.job.id, already: true, posting: kept };
     }
