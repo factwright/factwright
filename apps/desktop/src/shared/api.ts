@@ -31,7 +31,6 @@ import type {
 } from './facts.ts';
 import type { ModelChoices } from './models.ts';
 import type { PermissionAnswer, PermissionAsk } from './permission-asks.ts';
-import type { ClaudePermissions } from './permissions.ts';
 import type {
   AddFileResult,
   AddTemplateResult,
@@ -44,6 +43,7 @@ import type {
 import type { AddProfileResult, ProfileList } from './profiles.ts';
 import type { RevisionRequest, RevisionState } from './revision.ts';
 import type { QuestionRound, RoundReply } from './rounds.ts';
+import type { ChangeView, RunChanges, UndoResult } from './run-changes.ts';
 import type { RunRequest, RunRequestAnswer, RunTask } from './runs.ts';
 import type { SaveHelperView, SetUpResult } from './save-helper.ts';
 import type {
@@ -325,6 +325,22 @@ export interface FactwrightApi {
    * Returns a function that stops listening.
    */
   onClaudeTurnEnd(listener: (end: TurnEnd) => void): () => void;
+  /**
+   * Listens for what Claude's task at hand changed in the job hunt, and the pages it read: nothing
+   * as a task starts, then all of it once each of its turns ends. Returns a function that stops
+   * listening.
+   */
+  onRunChanges(listener: (changes: RunChanges) => void): () => void;
+  /**
+   * A file of text a task changed, before and after it, by the task's ID and the file's path in
+   * the workspace. Null for one that isn't text, or is too long to show.
+   */
+  viewChange(runId: string, path: string): Promise<ChangeView | null>;
+  /**
+   * Puts a file a task changed back as it was before the task, or moves one it made to the
+   * trash. One that changed again since the task is left as it is, unless `anyway`.
+   */
+  undoChange(runId: string, path: string, anyway: boolean): Promise<UndoResult>;
   /** Sends Claude a reply, such as to a question it stopped to ask, as if typed and sent. */
   replyToClaude(text: string): void;
   /**
@@ -481,10 +497,6 @@ export interface FactwrightApi {
   claudeEffort(): Promise<EffortChoices>;
   /** Changes how hard Claude thinks, from its next start or the next task that needs another. */
   setClaudeEffort(effort: EffortChoices): Promise<EffortChoices>;
-  /** What Claude may do without asking. */
-  claudePermissions(): Promise<ClaudePermissions>;
-  /** Changes what Claude may do without asking, from its next start. */
-  setClaudePermissions(permissions: ClaudePermissions): Promise<ClaudePermissions>;
   /** Where sync stands on this computer. */
   syncStatus(): Promise<SyncStatus>;
   /** Listens for changes in where sync stands. Returns a function that stops listening. */

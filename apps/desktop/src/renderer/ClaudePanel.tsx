@@ -8,9 +8,11 @@ import { taskJob } from '../shared/runs.ts';
 import styles from './ClaudePanel.module.css';
 import { PanelHeader } from './PanelHeader.tsx';
 import { isBoolean, usePref } from './prefs.ts';
+import { TaskChanges } from './TaskChanges.tsx';
 import { TerminalView } from './TerminalView.tsx';
 import type { ClaudeRun, RunPhase } from './useClaudeRun.ts';
 import type { RunActivity } from './useRunActivity.ts';
+import type { RunChangesState } from './useRunChanges.ts';
 
 const plural = (count: number, one: string, many: string) =>
   count === 1 ? `1 ${one}` : `${count} ${many}`;
@@ -119,7 +121,8 @@ export const endsAsking = (phase: RunPhase, activity: RunActivity, result: RunRe
  * user's answer: Claude Code's first-run screens, its question about trusting the workspace, and
  * anything the app's dialogs leave to it. Claude's questions and Claude Code's permission prompts
  * open in dialogs, and one the user puts aside waits in the bar, with a way back to it. When the
- * run saves the user's answers to their fact bank, it says so, with a way to verify them.
+ * run saves the user's answers to their fact bank, it says so, with a way to verify them. Once a
+ * task is done, its card lists the files it changed, each with Undo, and the pages it read.
  */
 export function ClaudePanel({
   api,
@@ -134,6 +137,7 @@ export function ClaudePanel({
   onReviewFiled,
   onDismissFiled,
   asking = null,
+  changes = null,
 }: {
   api: FactwrightApi;
   run: ClaudeRun;
@@ -164,6 +168,8 @@ export function ClaudePanel({
     open: boolean;
     onAnswer: () => void;
   } | null;
+  /** What the task at hand changed and read, with a way to put a file back. */
+  changes?: RunChangesState | null;
 }) {
   const [pasteProblem, setPasteProblem] = useState<string | null>(null);
   const [reply, setReply] = useState('');
@@ -314,6 +320,9 @@ export function ClaudePanel({
           </form>
         </div>
       )}
+      {changes?.changes && !working && (
+        <TaskChanges api={api} changes={changes.changes} undo={changes.undo} />
+      )}
       {words && (
         <div className={styles.filed}>
           <BookCheck size={15} aria-hidden="true" className={styles.filedIcon} />
@@ -347,8 +356,8 @@ export function ClaudePanel({
             <Notice title="Claude Code asks once whether to trust your workspace">
               Use the arrow keys to pick “Yes, I trust this folder”, then press Enter. Its note
               about running files doesn’t apply here: in Factwright, Claude Code has no shell, so it
-              can’t run programs. It only reads and writes files in your workspace, and asks you
-              before it writes.
+              can’t run programs. It only reads and writes files in your workspace, and once a task
+              is done, it lists each file it changed, with Undo.
             </Notice>
           </div>
         )}

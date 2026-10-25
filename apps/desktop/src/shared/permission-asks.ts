@@ -36,12 +36,6 @@ export type PermissionAsk = { id: string } & (
       replaces: boolean;
     })
   | (FilePlace & { kind: 'read' })
-  | {
-      kind: 'page';
-      url: string;
-      /** The site the page's address goes to, such as "example.com". */
-      host: string;
-    }
   | { kind: 'profile'; changes: ProfileChange[] }
   | {
       kind: 'template';

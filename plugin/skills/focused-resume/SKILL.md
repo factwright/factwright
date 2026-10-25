@@ -38,7 +38,7 @@ If there's no fact bank yet, say so, suggest `/factwright:add-facts` ("interview
   - `## The user's notes`, verbatim
 
 ## 2. Research the company (brief)
-- Read the company's site with `read_page`: the link the user gave, plus its about or careers page if it's useful (the user may have to OK each page). Run 1–2 web searches at most, for stage and funding, size, product, customers, and tech stack.
+- Read the company's site with `read_page`: the link the user gave, plus its about or careers page if it's useful. Run 1–2 web searches at most, for stage and funding, size, product, customers, and tech stack.
 - Append `## Company notes` to job.md: what they do, stage and size, domain, stack, and the words they use about themselves.
 - Pick the **style** with `guide/styles/README.md`, then read that style's file.
 - Pick the **track** from the role title and scope.
@@ -66,7 +66,7 @@ Ask in **one round** of AskUserQuestion, up to 4 questions, most valuable first:
 2. **Gaps that matter.** Must-haves first, then nice-to-haves: requirements that are `partial` or `none`, aren't settled in gaps.md, and that the user plausibly has, judged from what's near them in the facts. fit-check.md's **Worth asking you** items come first. Word each question yourself, say why you ask, and give easy, neutral options:
    - Question: "The posting wants Kafka. Your facts show RabbitMQ at Beacon. Have you run Kafka, or another event-streaming platform?"
    - Options: "Yes, in production" / "Some: a side project, a course, or an earlier role" / "No"
-3. **Missing numbers.** A claim the job leans on with no number, such as "About how many clinics used the scheduling platform?", with ranges as options.
+3. **Missing numbers.** A claim the job leans on with no number, naming it by its title in quotes, such as "Your fact “Scheduling platform” has no number. About how many clinics used it?", with ranges as options.
 
 Skip a question whose answer wouldn't change the resume, and never ask about trivia. A claim in gaps.md **Needs confirmation** that the resume would use is worth a question too.
 - **Follow up once** on a yes that's missing where, when, how much or how many, in a second round. Ask about the next gaps in that round only if a must-have is still open. Don't nag.
@@ -77,7 +77,7 @@ Skip a question whose answer wouldn't change the resume, and never ask about tri
 - **No,** in any words, such as "No, I haven't": `save_gap`, with the topic in the words you asked about.
 - **Use and verify:** `verify_fact`. **Use this once:** use it in this resume, and leave it unverified. **Don't use:** leave it out.
 - **A correction to an unverified fact,** or a note on their pick: use it as they put it, and save it with `save_fact`, giving the fact's title as `replaces`. They verify it in the Fact bank.
-- **A new number, or a correction, for a verified fact:** edit the fact in place, with its Source set to `<first name> <YYYY-MM-DD>` (their name is in `facts/profile.md`), then use it. Claude Code asks them to OK the change. If they don't, use the fact as it was.
+- **A new number, or a correction, for a verified fact:** `correct_fact`, with the fact's file and title, its new wording, and any details or tags that change, such as its numbers. Word it from the fact's own words and what they picked or typed: it takes every new number, word and tag only from their answer, and the fact stays verified, with their name and today as its Source. Then use it. If it turns the answer away, use the fact as it was.
 
 The user just told you these, so the resume can use them. Note in notes.md which lines rest on today's answers.
 

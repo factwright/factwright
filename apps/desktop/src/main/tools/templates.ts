@@ -24,6 +24,8 @@ export interface TemplateToolDeps {
   workspace: string;
   printer: ResumePrinter;
   templates: TemplateLibrary;
+  /** Hears each file's path just before it's written, so the app can keep it as it was. */
+  keep?: ((path: string) => void) | undefined;
 }
 
 /** The parts of a resume a template's look has no place for, in words for Claude. */
@@ -109,8 +111,9 @@ export async function saveTemplate(
   }
   const before = deps.templates.has(input.id) && !call.templates.has(input.id);
   if (input.replace && before && call.scope === 'template') {
-    return `Not saved: ${TEMPLATES_FOLDER}/${input.id}.json is one of the user’s templates from before this run, which this run can’t replace. Save yours under an ID of its own. The user can change theirs in a run that asks first.`;
+    return `Not saved: ${TEMPLATES_FOLDER}/${input.id}.json is one of the user’s templates from before this run, which this run can’t replace. Save yours under an ID of its own: another run can change theirs.`;
   }
+  deps.keep?.(`${TEMPLATES_FOLDER}/${input.id}.json`);
   const saved = await deps.templates.save(given, input.id, input.replace, before);
   if (!saved.ok) {
     return ['Not saved. Fix these, then save again:', ...saved.problems.map((p) => `- ${p}`)].join(
@@ -123,6 +126,7 @@ export async function saveTemplate(
   const printed = await deps.printer.print(renderHtml(preview.resume, template, RESUME_FONTS));
   const file = join(deps.workspace, ...path.split('/'));
   await mkdir(dirname(file), { recursive: true });
+  deps.keep?.(file);
   await writeFile(file, printed.pdf);
   const fill = printed.lastFill === null ? '' : `, the last one ${printed.lastFill}% full`;
   // A cover letter in it, from the same person, with the header their resume has.
@@ -130,6 +134,7 @@ export async function saveTemplate(
   const letter = { ...previewLetter(), name, headline, contact: contact ?? {} };
   const letterPath = deps.templates.letterPreviewPath(template.id);
   const letterPrinted = await deps.printer.print(renderLetterHtml(letter, template, RESUME_FONTS));
+  deps.keep?.(letterPath);
   await writeFile(join(deps.workspace, ...letterPath.split('/')), letterPrinted.pdf);
   const letterPages = letterPrinted.pages === 1 ? '1 page' : `${letterPrinted.pages} pages`;
   const none = templateHasNoPlaceFor(template);

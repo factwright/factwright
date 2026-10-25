@@ -1,5 +1,3 @@
-import { WORKSPACE_PATHS } from '@factwright/core';
-import { ASK_FIRST, type ClaudePermissions } from '../../shared/permissions.ts';
 import type { RunScope } from '../../shared/runs.ts';
 import { TEMPLATES_FOLDER } from '../resume/templates.ts';
 import {
@@ -32,28 +30,20 @@ export const ANSWER_WAIT_SECONDS = 24 * 60 * 60;
 /** The plugin's name in its plugin.json, which names its skills, as in /factwright:fit-check. */
 const PLUGIN = 'factwright';
 
-/** Where the skills save their work, which Claude may change without asking. */
-const WORK_FOLDERS = [WORKSPACE_PATHS.jobs, WORKSPACE_PATHS.searches, WORKSPACE_PATHS.outreach];
-
 /**
- * The list of words that must never appear on a resume, which Claude adds to as the user names
- * them. Adding to it only makes the resume check stricter, so it needs no OK either.
+ * The user's fact bank, which every resume and answer is built from. Outside the runs that build
+ * it with the user, getting started and adding facts, it changes only through Factwright's fact
+ * tools, which take only what the user answered in the run.
  */
-const CONFIDENTIAL_TERMS = 'guide/confidential-terms.txt';
-
-/**
- * What a run started to get to know the user, or to add facts, may change without asking too:
- * their fact bank, starting resumes and guide, and the note of what it has read. That's the work
- * the user started it for, and it reads only their own files, not job posts.
- */
-const PROFILE_FILES = ['facts/**', 'base/**', 'guide/**', 'about-me/read.md'];
+const FACTS = 'facts/**';
 
 /** A rule for changing files in the workspace, which is where Claude runs. */
 const edits = (path: string) => `Edit(./${path})`;
 
 /**
- * Files Claude never changes, whatever the user allows: Claude Code's own settings and the
- * instructions it loads, which a job post could otherwise use to steer later runs.
+ * Files Claude never changes: Claude Code's own settings and the instructions it loads, which a
+ * job post could otherwise use to steer later runs. Where there's no CLAUDE.md, as in the
+ * workspace, Claude Code loads AGENTS.md files in their place.
  */
 const NEVER_CHANGED = [
   '.claude/**',
@@ -61,101 +51,102 @@ const NEVER_CHANGED = [
   'CLAUDE.md',
   '**/CLAUDE.md',
   '**/CLAUDE.local.md',
+  'AGENTS.md',
+  '**/AGENTS.md',
 ];
 
 /**
- * What a run for getting to know the user, or for making a template, may never use: the web,
- * and the tools that read job posts. The first may change the user's facts and guide without
- * asking, and the second their templates, so nothing it reads may come from a page that could
- * tell it what to write. Job searches and fit checks get runs of their own.
+ * The user's own words and Profile, which later runs read as theirs: their notes, the files they
+ * shared, LinkedIn's export, and what Profile keeps, such as the contact details applications
+ * get. Claude never edits them itself: what the user tells it goes in through Factwright's
+ * tools, which check it. Claude keeps its own note of what it has read, about-me/read.md.
+ */
+const USERS_OWN = [
+  'about-me/notes.md',
+  'about-me/files/**',
+  'about-me/answers.json',
+  'about-me/history.json',
+  'about-me/kinds-of-job.json',
+  'about-me/beyond-work.json',
+  'linkedin/**',
+];
+
+/**
+ * What a run that isn't on the job hunt may never use: the web, and the tools that read job
+ * posts. Getting started and adding facts change the user's facts, a run for their work history
+ * their Profile, and a template run their templates, so nothing they read may come from a page
+ * that could tell them what to write. A revision reads what an X-ray found in a posting already.
+ * Job searches and fit checks get runs of their own.
  */
 const OFF_THE_WEB = [
   'WebSearch',
   ...[...PUBLIC_API_TOOLS, ...WEB_TOOLS].map((tool) => `mcp__${TOOLS_SERVER}__${tool}`),
 ];
 
-/** What Claude may do without asking, from the user's choices and what the run is for. */
-function allowed(permissions: ClaudePermissions, scope: RunScope): string[] {
-  // Saving to the user's profile is like changing their facts: allowed when those are.
-  const profile = scope === 'profile' || permissions.anyFile ? PROFILE_TOOLS : [];
-  // Saving a template is the point of a template run. Otherwise it's like changing a file, but
-  // a revision reads what an X-ray found in a posting, so it always asks first.
-  const templates =
-    scope === 'template' || (permissions.anyFile && scope !== 'revise') ? TEMPLATE_TOOLS : [];
+/** What Claude may do without asking, from what the run is for. */
+function allowed(scope: RunScope): string[] {
+  const skills = `Skill(${PLUGIN} *)`;
+  const named = (tools: readonly string[]) => tools.map((tool) => `mcp__${TOOLS_SERVER}__${tool}`);
   // A template run copies a resume from anywhere, so it reads and saves templates and nothing
-  // else without asking: not building a resume or saving an answer, either. A run on the job hunt
-  // files what the user answers it without asking, since that files only what they answered.
+  // else without asking: no files, no resume to build, no answer to save.
+  if (scope === 'template') return [skills, ...named([...TEMPLATE_READS, ...TEMPLATE_TOOLS])];
+  // Every other run changes any file in the workspace without asking, as its task needs, apart
+  // from what the deny rules keep: the user sees each change on the task's card, with Undo. A run
+  // on the job hunt files what the user answers it, since that files only what they answered.
   // Getting started and adding facts change the facts themselves, as the user confirms them. A
-  // revision does what a run on the job hunt does on this computer, and nothing on the web.
+  // revision does what a run on the job hunt does on this computer, and nothing on the web, but
+  // it reads what an X-ray found in a posting, so saving a template asks first.
   const tools =
-    scope === 'template'
-      ? [...TEMPLATE_READS, ...templates, ...profile]
-      : scope === 'profile'
-        ? [...LOCAL_TOOLS, ...profile, ...templates]
-        : scope === 'revise'
-          ? [...LOCAL_TOOLS, ...FACT_TOOLS, ...profile, ...templates]
-          : [
-              ...LOCAL_TOOLS,
-              ...FACT_TOOLS,
-              ...profile,
-              ...templates,
-              ...PUBLIC_API_TOOLS,
-              ...(permissions.anySite ? WEB_TOOLS : []),
-            ];
-  // A template run copies a resume from anywhere, so it changes no file without asking.
-  const files =
-    scope === 'template'
-      ? []
-      : [
-          ...WORK_FOLDERS.map((folder) => `${folder}/**`),
-          CONFIDENTIAL_TERMS,
-          ...(scope === 'profile' ? PROFILE_FILES : []),
-        ];
-  return [
-    ...(scope === 'hunt' ? ['WebSearch'] : []),
-    `Skill(${PLUGIN} *)`,
-    ...tools.map((tool) => `mcp__${TOOLS_SERVER}__${tool}`),
-    ...(permissions.anyFile ? [edits('**')] : files.map(edits)),
-  ];
+    scope === 'profile' || scope === 'history'
+      ? [...LOCAL_TOOLS, ...PROFILE_TOOLS, ...TEMPLATE_TOOLS]
+      : scope === 'revise'
+        ? [...LOCAL_TOOLS, ...FACT_TOOLS, ...PROFILE_TOOLS]
+        : [
+            ...LOCAL_TOOLS,
+            ...FACT_TOOLS,
+            ...PROFILE_TOOLS,
+            ...TEMPLATE_TOOLS,
+            ...PUBLIC_API_TOOLS,
+            ...WEB_TOOLS,
+          ];
+  return [...(scope === 'hunt' ? ['WebSearch'] : []), skills, ...named(tools), edits('**')];
 }
 
 /**
  * The settings Factwright passes with `--settings` for one run:
  * - Claude Code's ANSI theme, so the panel's own colors are the only ones it shows
  * - no claude.ai connectors (such as the user's mail or drive), since job posts are untrusted
- * - without asking: web searches, Factwright's skills, its tools that stay on this computer,
- *   such as reading what's on file, building resumes and filing what the user answers Claude as
- *   facts that wait for them to verify, its tools that read only fixed public
- *   job APIs (the applicant systems' postings and boards, and Hacker News's hiring thread), and
- *   saving work in the job, search and outreach folders. Searches and those APIs never reach a
- *   site a post names.
- * - asking first, unless the user chose otherwise: changing any other file, such as the facts,
- *   and reading any other page, since a job post could steer Claude to send the user's details
- *   to a site in a link. A run started to get to know the user, or to add facts, may change their
- *   facts, starting resumes and guide without asking too, and in return never reads the web. A
- *   run started to make a template may read and save templates without asking, and nothing
- *   else, and never reads the web either. Nor does a revision, which reads what a resume's X-ray
- *   found in a posting, and otherwise runs as a run on the job hunt does.
- * - never: changing Claude Code's settings or the instructions it loads
+ * - without asking: web searches, reading web pages, Factwright's skills and tools, and changing
+ *   any file in the workspace. Each task's card lists what it changed, with Undo, and the pages
+ *   it read. Factwright's tools refuse LinkedIn's pages, and anything on this computer or the
+ *   user's network. A run started to get to know the user, to add facts or to fill in their work
+ *   history never reads the web, nor does a revision, which reads what a resume's X-ray found in
+ *   a posting, and otherwise runs as a run on the job hunt does, apart from saving a template,
+ *   which asks first. A run started to make a template copies a resume from anywhere, so it may
+ *   read and save templates without asking, and nothing else, and never reads the web either.
+ * - never: changing Claude Code's settings or the instructions it loads, the user's own notes,
+ *   shared files and Profile other than through Factwright's tools, and outside getting started
+ *   and adding facts, the fact bank other than through Factwright's fact tools
  * - hooks that tell the app, over HTTP on this computer, where the run stands, what the user
  *   answers Claude's questions, which Claude calls the tools that file the answers, and when the
  *   session ends, which the self-test listens for. The ones for Claude's questions and Claude
  *   Code's permission prompts wait while the user answers them in the app's dialogs. Another
  *   hears each tool call as it starts, on a path of its own, so the window can say what Claude
- *   is doing.
+ *   is doing, and the app keeps each file as it was before Claude changes it.
  */
 export function sessionSettings({
   hookUrl,
   activityUrl,
   dark,
-  permissions = ASK_FIRST,
   scope = 'hunt',
 }: {
   hookUrl: string;
-  /** Where each tool call says it's starting, so the window can say what Claude is doing. */
+  /**
+   * Where each tool call says it's starting, so the window can say what Claude is doing, and a
+   * file is kept as it was before Claude changes it.
+   */
   activityUrl?: string;
   dark: boolean;
-  permissions?: ClaudePermissions;
   scope?: RunScope;
 }) {
   const http = (timeout: number, url = hookUrl) => [
@@ -172,9 +163,11 @@ export function sessionSettings({
     theme: dark ? 'dark-ansi' : 'light-ansi',
     disableClaudeAiConnectors: true,
     permissions: {
-      allow: allowed(permissions, scope),
+      allow: allowed(scope),
       deny: [
         ...NEVER_CHANGED.map(edits),
+        ...USERS_OWN.map(edits),
+        ...(scope === 'profile' ? [] : [edits(FACTS)]),
         ...(scope === 'hunt' ? [] : OFF_THE_WEB),
         // A revision changes a template only through save_template, which asks.
         ...(scope === 'revise' ? [edits(`${TEMPLATES_FOLDER}/**`)] : []),
@@ -188,7 +181,8 @@ export function sessionSettings({
       PreToolUse: [
         { matcher: 'AskUserQuestion', hooks: http(ANSWER_WAIT_SECONDS) },
         { matcher: FILING_TOOLS.map(hookToolName).join('|'), hooks: hook },
-        // Every call as it starts, to say what Claude is doing, apart from the hooks above.
+        // Every call as it starts, to say what Claude is doing, and to keep a file as it was before
+        // Claude changes it, apart from the hooks above.
         ...(activityUrl ? [{ hooks: http(HOOK_SECONDS, activityUrl) }] : []),
       ],
       PostToolUse: [{ hooks: hook }],

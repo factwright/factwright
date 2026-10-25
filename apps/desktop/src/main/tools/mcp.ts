@@ -27,6 +27,13 @@ export interface ToolCall {
    * in the app. No other run has them.
    */
   changes?: BoundChanges | undefined;
+  /**
+   * Hears a file's path, in full or in the workspace, just before a tool changes or makes it, so
+   * the app can keep a copy of it from before the task, for Undo.
+   */
+  keep?: ((path: string) => void) | undefined;
+  /** Hears each page a tool read, by its address, for the task's card. */
+  read?: ((url: string) => void) | undefined;
 }
 
 /** A run's tool calls, before it has saved or been told anything. */

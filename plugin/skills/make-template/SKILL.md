@@ -33,7 +33,7 @@ Input: `from templates/sources/<file>`, a PDF or a picture the app kept. Without
 - Name it for its look, such as "Navy Sidebar", never for a company or a person. Its ID comes from the name: `navy-sidebar`.
 - `save_template` with the ID and the whole template, in the format below. It checks the template, saves it to the user's templates, and prints a preview PDF of the made-up resume the app's gallery shows, and one of a cover letter in it. If it says what to fix, fix that and save again.
 - It says which parts of a resume the template has no place for. They should be just the ones the resume you're copying doesn't have.
-- Save under a new ID. This run can replace only templates it saved itself, so the user's own are safe from it. To change one of theirs, they ask in a run that asks first.
+- Save under a new ID. This run can replace only templates it saved itself, so the user's own are safe from it. To change one of theirs, they ask in another run.
 
 ## 4. Compare, and refine
 - Read the preview, then compare it with the resume you're copying: its parts and their order, the page's layout, the header, the headings, how a job reads, the spacing, the colors and the type. Fix what's off, and `save_template` again with replace. Two or three rounds usually do it.

@@ -129,6 +129,21 @@ describe('the plugin’s skills', () => {
     }
   });
 
+  it('correct a verified fact only with correct_fact, never by editing it for the user to OK', () => {
+    for (const folder of ['focused-resume', 'cover-letter']) {
+      const text = skills.find((skill) => skill.folder === folder)?.text ?? '';
+      expect(text, folder).toContain('`correct_fact`');
+    }
+    const rules = readFileSync(join(pluginDir, STANDING_RULES), 'utf8');
+    expect(rules).toContain('`correct_fact`');
+    // Claude changes files and reads pages without asking, so nothing says the user OKs them.
+    const asking =
+      /may have to OK|asks them to OK|which the user OKs|ordinary edit|asks the user (?:first|each time)|edit the fact in place/;
+    for (const { folder, text } of [...skills, { folder: 'standing rules', text: rules }]) {
+      expect(text, folder).not.toMatch(asking);
+    }
+  });
+
   it('never tell Claude to save a fact in a file save_fact turns away', () => {
     for (const { folder, text } of skills) {
       for (const line of text.split('\n').filter((each) => each.includes('`save_fact`'))) {

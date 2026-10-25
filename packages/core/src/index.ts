@@ -3,8 +3,10 @@ export {
   type Asked,
   answeredClaimText,
   answerSource,
+  type ClaimCorrection,
   type ClaimOrigin,
   claimOrigin,
+  correctedClaimText,
   oneLine,
   type SharedKind,
 } from './answered.ts';

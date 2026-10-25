@@ -20,7 +20,7 @@ Input: `job <id>` from the app, maybe with `question <id>`. The questions are in
 - Anything about the user comes from `facts/`, `about_you` and what's on file, with the same limits as anything that goes out. Claims tagged `unconfirmed` don't count until they confirm them.
 
 ## 2. Research when the question needs it
-- Web searches run without asking. `read_page` asks the user each time unless they chose otherwise, so read only the pages that matter.
+- Web searches and `read_page` run without asking. Read only the pages that matter: the user sees each one.
 - Prefer recent, first-hand sources: the company's own pages and engineering blog, interview reports, and news. Say how recent they are and how sure you are.
 - Never sign in anywhere, and never contact anyone.
 

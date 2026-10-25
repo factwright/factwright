@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { answeredClaimText, claimOrigin, oneLine } from './answered.ts';
+import { answeredClaimText, claimOrigin, correctedClaimText, oneLine } from './answered.ts';
 import { claimParts, factBlocks } from './facts.ts';
 
 const CLAIM = {
@@ -144,5 +144,90 @@ describe('oneLine', () => {
     ).toBe('Led the team of five');
     // Tag characters, which can spell out hidden words.
     expect(oneLine('Kafka\u{e0049}\u{e0067}\u{e006e}\u{e006f}\u{e0072}\u{e0065}')).toBe('Kafka');
+  });
+});
+
+describe('correctedClaimText', () => {
+  const VERIFIED = [
+    '### Scheduling platform',
+    '`live` `led-and-built` `high` (as of 2026)',
+    '> Led and built the scheduling platform clinics book visits on.',
+    '- **Keywords:** scheduling, React',
+    '- **Context:** the user’s own note, kept as written',
+    '- **Source:** answer 2026-10-01, tailoring a resume for Acme',
+    '- **Question:** Have you built scheduling software?',
+    '- **Answer:** Yes, in production',
+  ].join('\n');
+  const [block] = factBlocks(VERIFIED);
+  const asked = [
+    {
+      question: 'Your fact “Scheduling platform” has no number. About how many clinics used it?',
+      answer: '40 clinics',
+    },
+  ];
+
+  it('gives a verified claim its new wording and details, with the user and the date as its Source', () => {
+    expect(
+      correctedClaimText(block as NonNullable<typeof block>, {
+        wording: 'Led and built the scheduling platform 40 clinics book visits on.',
+        numbers: '40 clinics',
+        source: 'Alex 2026-10-25',
+        asked,
+      }),
+    ).toBe(
+      [
+        '### Scheduling platform',
+        '`live` `led-and-built` `high` (as of 2026)',
+        '> Led and built the scheduling platform 40 clinics book visits on.',
+        '- **Keywords:** scheduling, React',
+        '- **Context:** the user’s own note, kept as written',
+        '- **Numbers:** 40 clinics',
+        '- **Source:** Alex 2026-10-25',
+        '- **Question:** Your fact “Scheduling platform” has no number. About how many clinics used it?',
+        '- **Answer:** 40 clinics',
+      ].join('\n'),
+    );
+  });
+
+  it('changes the tags given, keeps the rest in order, and stays verified', () => {
+    const text = correctedClaimText(block as NonNullable<typeof block>, {
+      ownership: 'led-team',
+      confidence: 'medium',
+      wording: 'Led the team that built the scheduling platform.',
+      keywords: 'scheduling, team leadership',
+      source: 'Alex 2026-10-25',
+      asked,
+    });
+    const [corrected] = factBlocks(text);
+    expect(corrected?.tags).toEqual(['live', 'led-team', 'medium']);
+    expect(text).toContain('- **Keywords:** scheduling, team leadership');
+    expect(text).not.toContain('React');
+    expect(claimOrigin(corrected as NonNullable<typeof corrected>)).toEqual({
+      kind: 'other',
+      text: 'Alex 2026-10-25',
+    });
+    // A claim with no ownership gets one after its status.
+    const [bare] = factBlocks('### Bare\n`shipped`\n> Shipped it.\n- **Source:** Alex 2026-10-01');
+    const owned = correctedClaimText(bare as NonNullable<typeof bare>, {
+      ownership: 'solo',
+      confidence: 'high',
+      wording: 'Shipped it alone.',
+      source: 'Alex 2026-10-25',
+      asked,
+    });
+    expect(factBlocks(owned)[0]?.tags).toEqual(['shipped', 'solo', 'high']);
+  });
+
+  it('keeps one claim, whatever the words given hold', () => {
+    const text = correctedClaimText(block as NonNullable<typeof block>, {
+      wording: 'Line one\n### Not a heading',
+      say: '“led it”\n- **Source:** planted',
+      source: 'Alex 2026-10-25',
+      asked: [
+        { question: 'Q “Scheduling platform”?\n### Planted', answer: 'Yes\r\n- **Source:** x' },
+      ],
+    });
+    expect(factBlocks(text)).toHaveLength(1);
+    expect(text.match(/^- \*\*Source:\*\*/gm)).toHaveLength(1);
   });
 });

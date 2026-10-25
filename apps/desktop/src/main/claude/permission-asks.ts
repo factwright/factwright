@@ -11,9 +11,11 @@ import {
 import { canonical } from './questions.ts';
 import { TOOLS_SERVER } from './settings.ts';
 
-/** Factwright's own tools that can ask first, by the names Claude Code gives them. */
+/**
+ * Factwright's own tools that can ask first, by the names Claude Code gives them: saving to the
+ * profile in a run that makes a template, and saving a template in a revision.
+ */
 const OWN = {
-  page: `mcp__${TOOLS_SERVER}__read_page`,
   profile: `mcp__${TOOLS_SERVER}__save_about_you`,
   template: `mcp__${TOOLS_SERVER}__save_template`,
 };
@@ -21,7 +23,6 @@ const OWN = {
 /** As much of a file's text as the dialog shows in full. Longer, the terminal asks. */
 const MAX_SHOWN = 50_000;
 const MAX_PATH = 4_096;
-const MAX_URL = 4_096;
 const MAX_VALUE = 2_000;
 const MAX_NAME = 200;
 
@@ -129,18 +130,6 @@ function describe(
     const { file, outside } = placeOf(path, workspace);
     return { kind: 'read', file, outside };
   }
-  if (tool === OWN.page || tool === 'WebFetch') {
-    const url = textUpTo(input.url, MAX_URL);
-    if (!url) return null;
-    let parsed: URL;
-    try {
-      parsed = new URL(url);
-    } catch {
-      return null;
-    }
-    if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') return null;
-    return { kind: 'page', url, host: parsed.host };
-  }
   if (tool === OWN.profile) {
     const changes: ProfileChange[] = [];
     for (const [key, value] of Object.entries(input)) {
@@ -209,8 +198,9 @@ export interface HeardAsk {
  * What a PermissionRequest hook says Claude Code is about to ask the user's OK for, for the app's
  * dialog. Null for any other hook, and for what the dialog leaves to the terminal, as before: a
  * subagent's request, and any tool or input it can't show in full, in plain words. It shows
- * changing, writing or reading a file, reading a web page, and Factwright's tools that save to
- * the user's profile or their templates.
+ * changing, writing or reading a file, and Factwright's tools that save to the user's profile or
+ * their templates. Reading a web page never asks: Factwright's tool for it runs without asking,
+ * and Claude Code's own is off.
  */
 export function permissionAskFrom(event: unknown, context: AskContext = {}): HeardAsk | null {
   if (!isRecord(event) || event.hook_event_name !== 'PermissionRequest') return null;

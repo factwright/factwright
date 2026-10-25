@@ -6,9 +6,8 @@ import { useClaudePermission } from './useClaudePermission.ts';
 
 const ask = (id: string): PermissionAsk => ({
   id,
-  kind: 'page',
-  url: 'https://example.com',
-  host: 'example.com',
+  kind: 'profile',
+  changes: [{ label: 'When you can start', value: 'Two weeks’ notice' }],
 });
 
 describe('useClaudePermission', () => {

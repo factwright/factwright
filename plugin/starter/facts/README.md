@@ -54,8 +54,8 @@ Each claim gets its own `###` heading, so it can be cited as `file.md#claim-titl
 
 ## Adding facts
 - File each fact where it belongs, in the claim format: under its role's section, when the job's file has one for each title.
-- While Claude works on a job, it saves the user's answers with Factwright's tools: a yes as a claim tagged `unconfirmed`, with its source and the questions it rests on, and a "No, I haven't" as a row under **Doesn't have** in `gaps.md`, so nobody asks again. The tools never change a verified claim.
-- When the user corrects a fact, edit it in place and update its Source. Never keep two versions.
+- While Claude works on a job, it saves the user's answers with Factwright's tools: a yes as a claim tagged `unconfirmed`, with its source and the questions it rests on, and a "No, I haven't" as a row under **Doesn't have** in `gaps.md`, so nobody asks again. A new number or a correction for a verified claim goes in its place with `correct_fact`, verified still, with the user's name and the date as its Source.
+- When the user corrects a fact, it changes in place, with its Source updated. Never keep two versions.
 - Plain, active wording. No "I", no fluff.
 
 ## Confidentiality

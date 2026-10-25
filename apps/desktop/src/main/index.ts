@@ -21,6 +21,7 @@ import { PrivateAnswers } from './about/private.ts';
 import { AboutStore } from './about/store.ts';
 import { Desk } from './claude/desk.ts';
 import { useClaudeFolder } from './claude/launch.ts';
+import { RunChanges } from './claude/run-changes.ts';
 import { FormDrafts, RunRequests } from './claude/run-requests.ts';
 import { RunServer } from './claude/run-server.ts';
 import { checkSetup, SetupChecker } from './claude/self-test.ts';
@@ -408,6 +409,13 @@ function start(home: string, profile: ProfileFolder, stopped: ProfileFolder | nu
     const permissionAsks = new Desk<PermissionAsk, PermissionAnswer>((ask) =>
       window.send('claude:permission', ask),
     );
+    // What each of Claude's tasks changes, with a copy of each file from before it, kept beside the
+    // workspace rather than in it, so Claude can't reach them, for Undo on the task's card.
+    const runChanges = new RunChanges({
+      workspace,
+      folder: join(dataDir, 'undo'),
+      trash: (path) => shell.trashItem(path),
+    });
     const claude = new ClaudeSession({
       dataDir,
       pluginDir: pluginDir(),
@@ -436,6 +444,8 @@ function start(home: string, profile: ProfileFolder, stopped: ProfileFolder | nu
       permit: (ask, signal) => permissionAsks.ask(ask, signal),
       templateName: (id) =>
         templates.list().find((template) => template.own && template.id === id)?.name ?? null,
+      changes: runChanges,
+      onChanges: (changes) => window.send('claude:changes', changes),
     });
     // Once the window shows, the profile has started, so it opens again next time. A note that
     // couldn't be written then is tried again as the window comes forward, or the app quits.
@@ -512,6 +522,7 @@ function start(home: string, profile: ProfileFolder, stopped: ProfileFolder | nu
       workspace,
       sync,
       dataDir,
+      runChanges,
       updates,
       profiles,
       reminders,
