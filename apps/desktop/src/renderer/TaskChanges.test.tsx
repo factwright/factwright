@@ -54,6 +54,7 @@ const CHANGES: RunChanges = {
     },
   ],
   pages: ['https://www.northwindlabs.com/about', 'https://jobs.ashbyhq.com/northwind/4f1c'],
+  morePages: 0,
 };
 
 function shown(
@@ -172,6 +173,12 @@ describe('TaskChanges', () => {
   it('shows nothing for a task that changed nothing and read nothing', () => {
     const { container } = shown({ ...CHANGES, files: [], pages: [] });
     expect(container.textContent).toBe('');
+  });
+
+  it('counts the pages past what the list keeps', () => {
+    shown({ ...CHANGES, files: [], pages: ['https://acme.com/a'], morePages: 4 });
+    expect(screen.getByText('Claude read 5 pages.')).toBeTruthy();
+    expect(screen.getByText('and 4 more')).toBeTruthy();
   });
 
   it('says what changed in a sentence', () => {

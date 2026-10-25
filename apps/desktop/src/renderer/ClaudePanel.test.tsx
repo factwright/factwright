@@ -232,6 +232,7 @@ describe('ClaudePanel', () => {
           },
         ],
         pages: ['https://acme.com/careers'],
+        morePages: 0,
       },
       undo: vi.fn(),
     };

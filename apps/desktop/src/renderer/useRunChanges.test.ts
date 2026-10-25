@@ -16,6 +16,7 @@ const FIRST: RunChanges = {
     },
   ],
   pages: [],
+  morePages: 0,
 };
 
 function apiWith(undone: UndoResult) {

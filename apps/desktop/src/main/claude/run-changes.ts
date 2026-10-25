@@ -8,6 +8,7 @@ import {
   realpathSync,
   renameSync,
   rmSync,
+  type Stats,
   writeFileSync,
 } from 'node:fs';
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
@@ -61,6 +62,40 @@ export function editedPath(event: unknown): string | null {
   return typeof path === 'string' && path.trim() !== '' ? path : null;
 }
 
+/**
+ * What became of a file a task is about to change: a copy kept, noted as new, changed with no
+ * copy to put back (too big, a copy that failed, or a link), or left alone, outside the workspace.
+ */
+export type KeepResult = 'kept' | 'new' | 'no-copy' | 'ignored';
+
+/**
+ * The PreToolUse hook's answer when the app couldn't keep a copy of a file Claude is about to
+ * change: Claude Code asks the user first, since Undo couldn't put it back.
+ */
+export const ASK_WITHOUT_COPY = {
+  hookSpecificOutput: {
+    hookEventName: 'PreToolUse',
+    permissionDecision: 'ask',
+    permissionDecisionReason:
+      'Factwright couldn’t keep a copy of this file for Undo, such as one too big to copy, so it asks first.',
+  },
+};
+
+/**
+ * Keeps a copy of the file a tool call is about to change, from its PreToolUse hook, and gives
+ * the hook's answer: nothing, so the call runs as it would have, or asking the user first when no
+ * copy could be kept. Null for a call that changes no file.
+ */
+export function keepBefore(changes: Pick<RunChanges, 'keep'>, event: unknown): unknown {
+  const path = editedPath(event);
+  if (!path) return null;
+  try {
+    return changes.keep(path) === 'no-copy' ? ASK_WITHOUT_COPY : null;
+  } catch {
+    return ASK_WITHOUT_COPY;
+  }
+}
+
 /** One file a task changed, as its record keeps it. */
 interface Kept {
   /** Its path in the workspace, with "/" between its parts. */
@@ -86,6 +121,8 @@ interface RunRecord {
   started: string;
   files: Kept[];
   pages: string[];
+  /** How many more pages it read than the record keeps. */
+  morePages?: number;
   /** How many bytes its copies take. */
   bytes: number;
 }
@@ -145,8 +182,15 @@ export class RunChanges {
     this.now = deps.now ?? (() => new Date());
   }
 
-  /** Starts a new task's record, with nothing changed yet, and lets the oldest tasks' copies go. */
+  /**
+   * Starts a new task's record, with nothing changed yet, and lets the oldest tasks' copies go. A
+   * task before it that changed and read nothing leaves no record, so it takes no newer one's place.
+   */
   begin(): RunChangesView {
+    const was = this.current;
+    if (was && was.files.length === 0 && was.pages.length === 0) {
+      rmSync(join(this.folder, was.id), { recursive: true, force: true });
+    }
     const id = newId(this.now());
     this.current = { id, started: this.now().toISOString(), files: [], pages: [], bytes: 0 };
     try {
@@ -156,60 +200,84 @@ export class RunChanges {
       // Nothing can be kept, so nothing can be undone. The task goes on.
     }
     this.prune();
-    return { id, files: [], pages: [] };
+    return { id, files: [], pages: [], morePages: 0 };
   }
 
   /**
    * Keeps a copy of a file before the task at hand first changes it, by its path in full or in
-   * the workspace. A file outside the workspace, or reached through a link, is left alone, as is
-   * anything that isn't a file. One that isn't there yet is noted as new.
+   * the workspace, and says what became of it. A file outside the workspace is left alone. One
+   * that isn't there yet is noted as new. One too big to copy is noted with no copy, so nothing
+   * can put it back, and one reached through a link, there or not, gets no copy either. A file the user undid that changes again is
+   * the task's again, with the copy from before the task.
    */
-  keep(path: string): void {
+  keep(path: string): KeepResult {
     const run = this.current;
-    if (!run) return;
+    if (!run) return 'ignored';
     const full = resolve(this.workspace, path);
     const inside = this.inside(full);
-    if (!inside) return;
+    if (!inside) return 'ignored';
     const known = run.files.find((each) => each.path === inside);
     if (known) {
       known.touched = true;
-      return;
-    }
-    if (run.files.length >= MAX_FILES) return;
-    let kept: Kept;
-    try {
-      const found = lstatSync(full);
-      if (!found.isFile() || !this.reachable(full)) return;
-      const copy =
-        found.size <= MAX_COPY_BYTES && run.bytes + found.size <= MAX_RUN_BYTES
-          ? String(run.files.length + 1)
-          : null;
-      if (copy) {
-        copyFileSync(full, join(this.folder, run.id, COPIES, copy));
-        run.bytes += found.size;
+      if (known.undone) {
+        known.undone = null;
+        this.trySave(run);
       }
-      kept = {
+      return known.existed && !known.copy ? 'no-copy' : 'kept';
+    }
+    if (run.files.length >= MAX_FILES) return 'no-copy';
+    let found: Stats;
+    try {
+      found = lstatSync(full);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') return 'no-copy';
+      // A new file in a folder that's a link would land wherever the link goes.
+      if (!this.reachableUp(full)) return 'no-copy';
+      run.files.push({
         path: inside,
-        existed: true,
-        copy,
-        ...(!copy && { size: found.size, changed: found.mtimeMs }),
+        existed: false,
+        copy: null,
         after: null,
         touched: true,
         undone: null,
-      };
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== 'ENOENT' || !this.reachableUp(full)) return;
-      kept = { path: inside, existed: false, copy: null, after: null, touched: true, undone: null };
+      });
+      this.trySave(run);
+      return 'new';
     }
-    run.files.push(kept);
+    if (found.isDirectory()) return 'ignored';
+    if (!found.isFile() || !this.reachable(full)) return 'no-copy';
+    let copy: string | null =
+      found.size <= MAX_COPY_BYTES && run.bytes + found.size <= MAX_RUN_BYTES
+        ? String(run.files.length + 1)
+        : null;
+    if (copy) {
+      try {
+        copyFileSync(full, join(this.folder, run.id, COPIES, copy));
+        run.bytes += found.size;
+      } catch {
+        // No copy, such as on a full disk: the file is listed, but nothing can put it back.
+        copy = null;
+      }
+    }
+    run.files.push({
+      path: inside,
+      existed: true,
+      copy,
+      ...(!copy && { size: found.size, changed: found.mtimeMs }),
+      after: null,
+      touched: true,
+      undone: null,
+    });
     this.trySave(run);
+    return copy ? 'kept' : 'no-copy';
   }
 
-  /** Notes a page the task at hand read, by its address. */
+  /** Notes a page the task at hand read, by its address, and counts the ones past what it keeps. */
   read(url: string): void {
     const run = this.current;
-    if (!run || run.pages.includes(url) || run.pages.length >= MAX_PAGES) return;
-    run.pages.push(url);
+    if (!run || run.pages.includes(url)) return;
+    if (run.pages.length >= MAX_PAGES) run.morePages = (run.morePages ?? 0) + 1;
+    else run.pages.push(url);
     this.trySave(run);
   }
 
@@ -334,7 +402,7 @@ export class RunChanges {
       const change = now === null ? 'gone' : 'changed';
       files.push({ path: kept.path, change, lines, canUndo: true, undone: false });
     }
-    return { id: run.id, files, pages: [...run.pages] };
+    return { id: run.id, files, pages: [...run.pages], morePages: run.morePages ?? 0 };
   }
 
   /** A file's path in the workspace, with "/" between its parts, or null when it's elsewhere. */

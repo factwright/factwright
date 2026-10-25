@@ -685,11 +685,194 @@ const onlyNo = ({ answer }: Answered) => {
 };
 
 /**
+ * The user's own words in their answers: what they picked or typed, and their notes. Never the
+ * question, nor what an option said under it, which Claude wrote.
+ */
+const ownWords = (answers: readonly Answered[]) =>
+  answers.map(({ answer, notes }) => `${answer} ${notes ?? ''}`).join(' ');
+
+/** A claim's lines that say where it came from, which say nothing about the user's work. */
+const ORIGIN_LINE = /^\s*[-*+]\s+\*\*(?:Source|Question|Answer):\*\*/;
+
+/** What a claim says: its title, wording and details, but not where it came from, such as a date. */
+function claimContent(block: FactBlock): string {
+  const parts = claimParts(block);
+  const details = parts.details.split('\n').filter((each) => !ORIGIN_LINE.test(each));
+  return [parts.title, parts.tagNote, parts.wording, ...details].join('\n');
+}
+
+/** A detail of a claim, such as its Short or its Say / don't say, as written, or "". */
+function detailOf(details: string, label: string): string {
+  const found = details
+    .split('\n')
+    .find((each) => each.replace(/^\s*[-*+]\s+\*\*/, '').startsWith(`${label}:**`));
+  return found?.replace(/^\s*[-*+]\s+\*\*[^*]+:\*\*/, '') ?? '';
+}
+
+/** Words that carry nothing a correction could plant: they join the words that do. */
+const GLUE = new Set(
+  'a an the and or but so yet of to in on at by for with from into onto over under per as than then that this these those it its their them they there here we us our you your he she his her was were is are be been being am has have had do does did done will would can could should may might must about around roughly nearly almost approximately more most less fewer each every all both some any such very also only just still now up down out off across after before during while since until which who whom whose what where when why how yes yeah yep ok okay right'.split(
+    ' ',
+  ),
+);
+
+/** The words in some text that carry its meaning, lowercase, leaving numbers to numbersIn. */
+const meaningWords = (text: string): string[] =>
+  words(text)
+    .trim()
+    .split(' ')
+    .filter((word) => word.length > 1 && !GLUE.has(word) && !/^\p{N}/u.test(word));
+
+/** Words that turn what follows around, as their letters come out of words(): "isn't" is "isn t". */
+const NEGATING = new Set([
+  'not',
+  'never',
+  'no',
+  'none',
+  'nor',
+  'without',
+  'cannot',
+  'isn',
+  'wasn',
+  'aren',
+  'weren',
+  'hasn',
+  'haven',
+  'hadn',
+  'didn',
+  'doesn',
+  'don',
+  'won',
+  'wouldn',
+  'couldn',
+  'shouldn',
+]);
+
+/** How many times some text turns something around: "not", "never", "isn't" and the rest. */
+const negationsIn = (text: string) =>
+  words(text)
+    .trim()
+    .split(' ')
+    .filter((word) => NEGATING.has(word)).length;
+
+/** The ways a user says a tag in their own words, such as "in production" for live. */
+const TAG_SAID: Readonly<Record<string, readonly string[]>> = {
+  live: ['live', 'in production'],
+  shipped: ['shipped', 'released', 'launched'],
+  beta: ['beta'],
+  built: ['built'],
+  'in-progress': ['in progress', 'still building', 'ongoing'],
+  'pre-launch': ['pre launch'],
+  'plan-only': ['plan only', 'just a plan', 'only a plan'],
+  solo: ['solo', 'alone', 'by myself', 'on my own'],
+  'led-and-built': ['led and built'],
+  'took-over': ['took over', 'took it over'],
+  'led-team': ['led team', 'led the team', 'led a team'],
+  high: ['high'],
+  medium: ['medium'],
+  low: ['low'],
+};
+
+/** Confidence from least to most, as a hedge goes. */
+const CONFIDENCE: readonly string[] = ['low', 'medium', 'high'];
+
+/** Whether a user's own words say a tag, with no "not" or "never" just before it. */
+function saysTag(own: string, tag: string): boolean {
+  const said = words(own).trim().split(' ');
+  return (TAG_SAID[tag] ?? [tag.replaceAll('-', ' ')]).some((phrase) => {
+    const parts = phrase.split(' ');
+    for (let at = 0; at + parts.length <= said.length; at++) {
+      if (!parts.every((part, i) => said[at + i] === part)) continue;
+      if (!said.slice(Math.max(0, at - 3), at).some((word) => NEGATING.has(word))) return true;
+    }
+    return false;
+  });
+}
+
+/**
+ * Why a verified fact can't take a correction as given, or null when every number, word and tag
+ * it gains is the user's own: in what they picked or typed, or in the fact already, apart from
+ * where it came from. Something in it must be new from the user, and it may not lose a "not" or
+ * a "never" the fact had, unless the user said its status changed.
+ */
+function correctionProblem(
+  claim: FactBlock,
+  next: {
+    wording: string;
+    short: string | null;
+    numbers: string | null;
+    say: string | null;
+    keywords: string | null;
+  },
+  tags: { status: string | null; ownership: string | null; confidence: string | null },
+  own: string,
+): string | null {
+  const content = claimContent(claim);
+  const texts = Object.values(next).filter((each): each is string => Boolean(each));
+  const ownNumbers = numbersIn(own);
+  const hadNumbers = numbersIn(content);
+  const numbers = texts.flatMap((each) => [...numbersIn(each)]);
+  const newNumber = numbers.find((number) => !ownNumbers.has(number) && !hadNumbers.has(number));
+  if (newNumber) {
+    return `${newNumber} isn’t in what the user picked or typed, or in the fact. A correction takes its numbers from their answer, never from your question: offer them as options, such as ranges.`;
+  }
+  const ownMeaning = new Set(meaningWords(own));
+  const hadMeaning = new Set(meaningWords(content));
+  const meaning = texts.flatMap(meaningWords);
+  const newWord = meaning.find((word) => !ownMeaning.has(word) && !hadMeaning.has(word));
+  if (newWord) {
+    return `“${newWord}” isn’t in what the user picked or typed, or in the fact. Word the correction from the fact’s own words and the user’s.`;
+  }
+  const { tags: had = [] } = claimParts(claim);
+  const groups = {
+    status: FACT_TAGS.status,
+    ownership: FACT_TAGS.ownership,
+    confidence: FACT_TAGS.confidence,
+  };
+  const changed = (Object.keys(groups) as (keyof typeof groups)[]).flatMap((group) => {
+    const to = tags[group];
+    const from = had.find((tag) => (groups[group] as readonly string[]).includes(tag)) ?? null;
+    return to && to !== from ? [{ group, from, to }] : [];
+  });
+  for (const { group, from, to } of changed) {
+    // Less confidence only hedges the fact.
+    if (group === 'confidence' && from && CONFIDENCE.indexOf(to) < CONFIDENCE.indexOf(from))
+      continue;
+    if (!saysTag(own, to)) {
+      return `the user didn’t say it’s ${to.replaceAll('-', ' ')}. A correction changes a tag only when their answer says so, such as by picking “${(TAG_SAID[to]?.[0] ?? to).replace(/^./, (letter) => letter.toUpperCase())}”.`;
+    }
+  }
+  const gained =
+    numbers.some((number) => ownNumbers.has(number) && !hadNumbers.has(number)) ||
+    meaning.some((word) => ownMeaning.has(word) && !hadMeaning.has(word));
+  if (!gained && changed.length === 0) {
+    return 'nothing in it comes from the user’s answer. A correction puts in what they said: a number, a word or a tag. If they said the fact is right as it is, leave it.';
+  }
+  const parts = claimParts(claim);
+  const before = [
+    parts.wording,
+    detailOf(parts.details, 'Short'),
+    detailOf(parts.details, "Say / don't say"),
+  ];
+  const after = [
+    next.wording,
+    next.short ?? detailOf(parts.details, 'Short'),
+    next.say ?? detailOf(parts.details, "Say / don't say"),
+  ];
+  const statusSaid = changed.some((each) => each.group === 'status');
+  if (!statusSaid && negationsIn(after.join(' ')) < negationsIn(before.join(' '))) {
+    return 'it drops a “not” or a “never” the fact had. Only the user takes those out, in the Fact bank.';
+  }
+  return null;
+}
+
+/**
  * Corrects a verified fact, in its place, from the user's answers in this run: a new number, or
- * a correction they gave, to a question that names the fact by its title in quotes. Every number
- * it gains must be one the user saw or gave, and so must every keyword. It stays verified, with
- * its Source the user and today, as when they verify a fact in the app, and the questions and
- * answers it rests on. A fact that waits to be verified is corrected with save_fact and replaces.
+ * a correction they gave, to a question that names the fact by its title in quotes. Every number,
+ * word and tag it gains comes from what the user picked or typed, or from the fact itself: never
+ * from the question, which Claude wrote. It stays verified, with its Source the user and today,
+ * as when they verify a fact in the app, and the questions and answers it rests on. A fact that
+ * waits to be verified is corrected with save_fact and replaces.
  */
 export async function correctFact(
   input: Record<string, unknown>,
@@ -746,27 +929,9 @@ export async function correctFact(
         `Not saved: the user wasn’t sure (“${first.answer}”). Leave the fact as it is, and leave out a number they didn’t give.`,
       );
     }
-    const asked = askedText(answers);
     // What the fact said already is the user's, verified. What it gains must come from them now.
-    const known = new Set([...numbersIn(asked), ...numbersIn(claim.text)]);
-    const stated = [wording, details.short, details.numbers, details.say, details.keywords]
-      .flatMap((each) => [...numbersIn(each ?? '')])
-      .find((number) => !known.has(number));
-    if (stated) {
-      throw new Error(
-        `Not saved: ${stated} isn’t in the user’s answer, your question or the fact. Leave out a number they didn’t give, or ask them for it.`,
-      );
-    }
-    const unasked = (details.keywords ?? '')
-      .split(/[,;]/)
-      .map((term) => term.trim())
-      .filter(Boolean)
-      .find((term) => !hasTerm(claim.text, term) && !hasTerm(asked, term));
-    if (unasked) {
-      throw new Error(
-        `Not saved: “${unasked}” isn’t in the fact, the question or the user’s answer. A correction adds only the terms the user talked about.`,
-      );
-    }
+    const problem = correctionProblem(claim, { wording, ...details }, tags, ownWords(answers));
+    if (problem) throw new Error(`Not saved: ${problem}`);
     const text = correctedClaimText(claim, {
       ...tags,
       wording,

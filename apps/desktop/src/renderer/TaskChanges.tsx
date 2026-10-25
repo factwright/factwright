@@ -16,10 +16,15 @@ const plural = (count: number, one: string, many: string) =>
   count === 1 ? `1 ${one}` : `${count} ${many}`;
 
 /** What a task changed, in a sentence: "Claude changed 3 files and read 2 pages." */
-export function changesWords({ files, pages }: Pick<RunChanges, 'files' | 'pages'>): string {
+export function changesWords({
+  files,
+  pages,
+  morePages = 0,
+}: Pick<RunChanges, 'files' | 'pages'> & { morePages?: number }): string {
+  const read = pages.length + morePages;
   const changed = files.length > 0 ? `changed ${plural(files.length, 'file', 'files')}` : '';
-  const read = pages.length > 0 ? `read ${plural(pages.length, 'page', 'pages')}` : '';
-  return `Claude ${[changed, read].filter(Boolean).join(' and ')}.`;
+  const reading = read > 0 ? `read ${plural(read, 'page', 'pages')}` : '';
+  return `Claude ${[changed, reading].filter(Boolean).join(' and ')}.`;
 }
 
 /** A file that isn't text, by what it is, such as "PDF". */
@@ -317,6 +322,9 @@ export function TaskChanges({
                   {pageWords(url)}
                 </li>
               ))}
+              {changes.morePages > 0 && (
+                <li className={styles.page}>and {plural(changes.morePages, 'more', 'more')}</li>
+              )}
             </ul>
           </div>
         )}

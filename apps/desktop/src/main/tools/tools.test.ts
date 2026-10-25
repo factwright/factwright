@@ -48,7 +48,15 @@ const POSTING = `<html><body><main><h1>Staff Engineer</h1><p>${'Build the tools 
 let root: string;
 let tracker: Tracker;
 let jobs: JobsService;
-let fetch: Mock<(url: string, json: boolean, limitMs: number) => Promise<unknown>>;
+let fetch: Mock<
+  (
+    url: string,
+    json: boolean,
+    limitMs: number,
+    maxBytes?: number,
+    onRedirect?: (url: string) => void,
+  ) => Promise<unknown>
+>;
 let tools: McpTool[];
 let templates: TemplateLibrary;
 let facts: FactBankFiles;
@@ -1157,6 +1165,29 @@ describe('read_page', () => {
       `Couldn’t read ${ASHBY} (the site took too long to answer).`,
     );
     expect(fetch.mock.calls).toEqual([[ASHBY_FEED, true, 15_000]]);
+  });
+
+  it('notes each page for the task’s card before it goes, where redirects send it, and failures', async () => {
+    const pages: string[] = [];
+    const call = { ...newCall('hunt'), read: (url: string) => pages.push(url) };
+    fetch.mockImplementation(async (_url, _json, _limitMs, _maxBytes, onRedirect) => {
+      onRedirect?.('https://careers.acme.example/staff');
+      return POSTING;
+    });
+    expect(await tool('read_page').run({ url: 'https://acme.example/jobs/staff' }, call)).toContain(
+      'read via the web page',
+    );
+    // A page that doesn't load was still asked for.
+    fetch.mockRejectedValue(new Error('acme.example answered 404'));
+    await tool('read_page').run({ url: 'https://acme.example/gone' }, call);
+    // A link the fetch turns away never goes, so it isn't one read.
+    await tool('read_page').run({ url: 'http://acme.example/' }, call);
+    await tool('read_page').run({ url: 'https://www.linkedin.com/jobs/view/1' }, call);
+    expect(pages).toEqual([
+      'https://acme.example/jobs/staff',
+      'https://careers.acme.example/staff',
+      'https://acme.example/gone',
+    ]);
   });
 });
 

@@ -167,24 +167,31 @@ describe('sessionSettings', () => {
     expect(deny).not.toContain('mcp__factwright__save_template');
   });
 
-  it('never lets Claude change its own settings or the instructions it loads', () => {
-    for (const scope of ['hunt', 'profile', 'history', 'revise', 'template'] as const) {
-      expect(scoped(scope).permissions.deny.slice(0, 5)).toEqual([
-        'Edit(./.claude/**)',
-        'Edit(./**/.claude/**)',
-        'Edit(./CLAUDE.md)',
-        'Edit(./**/CLAUDE.md)',
-        'Edit(./**/CLAUDE.local.md)',
-      ]);
-    }
-    expect(settings.permissions.deny).toEqual([
+  it('never lets Claude change its own settings, the instructions it loads, or the user’s own files', () => {
+    const never = [
       'Edit(./.claude/**)',
       'Edit(./**/.claude/**)',
       'Edit(./CLAUDE.md)',
       'Edit(./**/CLAUDE.md)',
       'Edit(./**/CLAUDE.local.md)',
-      'Edit(./facts/**)',
-    ]);
+      // Claude Code loads these where there's no CLAUDE.md, as in the workspace.
+      'Edit(./AGENTS.md)',
+      'Edit(./**/AGENTS.md)',
+      // The user's own notes, shared files and Profile, which go in through Factwright's tools.
+      'Edit(./about-me/notes.md)',
+      'Edit(./about-me/files/**)',
+      'Edit(./about-me/answers.json)',
+      'Edit(./about-me/history.json)',
+      'Edit(./about-me/kinds-of-job.json)',
+      'Edit(./about-me/beyond-work.json)',
+      'Edit(./linkedin/**)',
+    ];
+    for (const scope of ['hunt', 'profile', 'history', 'revise', 'template'] as const) {
+      expect(scoped(scope).permissions.deny.slice(0, never.length)).toEqual(never);
+    }
+    expect(settings.permissions.deny).toEqual([...never, 'Edit(./facts/**)']);
+    // Claude still keeps its own note of what it has read.
+    expect(scoped('profile').permissions.deny).not.toContain('Edit(./about-me/read.md)');
   });
 
   it('hears when Claude starts, uses tools, needs the user, and stops', () => {

@@ -14,6 +14,11 @@ import { hookReply, roundFrom } from './rounds.ts';
 import { bearerToken, parseJson } from './signals.ts';
 
 const MAX_BODY_BYTES = 1_000_000;
+/**
+ * As much as a tool call's start can carry: a whole new file, which the app keeps a copy of
+ * before it's written, so one cut off would be written with no copy.
+ */
+const MAX_ACTIVITY_BYTES = 60_000_000;
 
 export interface RunServerOptions {
   /** The tools Claude Code may call during a run. */
@@ -69,8 +74,11 @@ interface RunListeners {
   hooks: HookListener;
   /** Hears each tool call as it starts. */
   activity: HookListener | undefined;
-  /** Hears each tool call before Claude Code may run it, and holds it until it's heard. */
-  before: HookListener | undefined;
+  /**
+   * Hears each tool call before Claude Code may run it, and holds it until it's heard. What it
+   * gives back, if anything, is the hook's answer, such as to ask the user first.
+   */
+  before: ((event: unknown) => unknown) | undefined;
   tools: ToolsListener | undefined;
   ask: QuestionAsker | undefined;
   permit: PermissionAsker | undefined;
@@ -97,9 +105,11 @@ export interface ListenOptions {
   activity?: HookListener;
   /**
    * Hears each tool call from the same hook, before Claude Code may run it: Claude Code waits for
-   * it, so a file can be kept as it was before Claude changes it.
+   * it, so a file can be kept as it was before Claude changes it. What it gives back, if
+   * anything, is the hook's answer, such as to have Claude Code ask the user first when no copy
+   * could be kept.
    */
-  before?: HookListener;
+  before?: (event: unknown) => unknown;
   /**
    * Hears a file's path just before one of Factwright's tools changes or makes it, so it can be
    * kept as it was.
@@ -223,20 +233,28 @@ export class RunServer {
     }
     let body = '';
     request.setEncoding('utf8');
+    const most = request.url === '/activity' ? MAX_ACTIVITY_BYTES : MAX_BODY_BYTES;
     request.on('data', (chunk: string) => {
       body += chunk;
-      if (body.length > MAX_BODY_BYTES) request.destroy();
+      if (body.length > most) request.destroy();
     });
     request.on('end', () => {
       // A call starting waits only for what's kept before it runs, such as a file it changes.
       if (request.url === '/activity') {
         const event = parseJson(body);
+        let reply: unknown = null;
         try {
-          listener.before?.(event);
+          reply = listener.before?.(event) ?? null;
         } catch {
           // Nothing kept: the call runs as it would have.
         }
-        response.writeHead(204).end();
+        if (reply) {
+          response
+            .writeHead(200, { 'Content-Type': 'application/json' })
+            .end(JSON.stringify(reply));
+        } else {
+          response.writeHead(204).end();
+        }
         listener.activity?.(event);
         return;
       }

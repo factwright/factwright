@@ -959,27 +959,141 @@ describe('correct_fact', () => {
     expect(filed).not.toHaveBeenCalled();
   });
 
-  it('takes new numbers and keywords only from the user’s answer, the question or the fact', async () => {
+  it('takes every number and word it gains from what the user picked or typed, or the fact', async () => {
     answered({ [NOW_ASKED]: 'About 65, in 2 states' });
     await expect(
       tool('correct_fact')({
         ...CORRECTION,
         wording: 'Built a scheduling platform for 120 clinics.',
       }),
-    ).rejects.toThrow('Not saved: 120 isn’t in the user’s answer, your question or the fact.');
+    ).rejects.toThrow('Not saved: 120 isn’t in what the user picked or typed, or in the fact.');
     await expect(
       tool('correct_fact')({ ...CORRECTION, numbers: null, keywords: 'scheduling, HIPAA' }),
-    ).rejects.toThrow('Not saved: “HIPAA” isn’t in the fact, the question or the user’s answer.');
+    ).rejects.toThrow('Not saved: “hipaa” isn’t in what the user picked or typed, or in the fact.');
+    await expect(
+      tool('correct_fact')({
+        ...CORRECTION,
+        wording: 'Grew a scheduling platform from 40 clinics to about 65, in 2 states.',
+        numbers: null,
+      }),
+    ).rejects.toThrow('Not saved: “grew” isn’t in what the user picked or typed, or in the fact.');
     expect(read('facts/acme.md')).toBe(ACME);
-    // The fact's own numbers stay the user's.
+    // The fact's own words and numbers stay the user's.
     await tool('correct_fact')({
       ...CORRECTION,
-      wording: 'Grew a scheduling platform from 40 clinics to about 65, in 2 states.',
+      wording: 'Built a scheduling platform used by 40 clinics, now about 65, in 2 states.',
       numbers: null,
       keywords: 'scheduling',
     });
     expect(read('facts/acme.md')).toContain(
-      '> Grew a scheduling platform from 40 clinics to about 65, in 2 states.',
+      '> Built a scheduling platform used by 40 clinics, now about 65, in 2 states.',
+    );
+  });
+
+  it('takes nothing from the question, nor from where the fact came from, such as its date', async () => {
+    // A number only the question gave, which the user turned down.
+    const planted =
+      'Your fact “Scheduling platform” says 40 clinics. Should it say 400 clinics, live, built solo?';
+    for (const answer of ['Keep it as it is', 'No, keep 40']) {
+      answered({ [planted]: answer });
+      await expect(
+        tool('correct_fact')({
+          ...CORRECTION,
+          wording: 'Built a scheduling platform used by 400 clinics.',
+          numbers: null,
+          questions: [planted],
+        }),
+      ).rejects.toThrow('Not saved: 400 isn’t in what the user picked or typed, or in the fact.');
+    }
+    // A yes to a question that offers nothing new backs nothing new: not the 10 in its Source's
+    // date, nor a tag the user never said.
+    const current = 'Is your fact “Scheduling platform” still current?';
+    answered({ [current]: 'Yes' });
+    await expect(
+      tool('correct_fact')({
+        ...CORRECTION,
+        wording: 'Built a scheduling platform used by 10 clinics.',
+        numbers: null,
+        questions: [current],
+      }),
+    ).rejects.toThrow('Not saved: 10 isn’t in what the user picked or typed, or in the fact.');
+    await expect(
+      tool('correct_fact')({
+        ...CORRECTION,
+        wording: 'Built a scheduling platform used by 40 clinics.',
+        numbers: null,
+        ownership: 'led-team',
+        questions: [current],
+      }),
+    ).rejects.toThrow('Not saved: the user didn’t say it’s led team.');
+    await expect(
+      tool('correct_fact')({
+        ...CORRECTION,
+        wording: 'Built a scheduling platform used by 40 clinics.',
+        numbers: null,
+        questions: [current],
+      }),
+    ).rejects.toThrow('Not saved: nothing in it comes from the user’s answer.');
+    expect(read('facts/acme.md')).toBe(ACME);
+  });
+
+  it('changes a tag only when the user says so, and a hedge needs no word', async () => {
+    const now = 'Your fact “Scheduling platform” says live. Who did the work on it?';
+    answered({ [now]: 'I led the team that built it, about 65 clinics' });
+    await expect(
+      tool('correct_fact')({ ...CORRECTION, ownership: 'solo', questions: [now] }),
+    ).rejects.toThrow('Not saved: the user didn’t say it’s solo.');
+    await tool('correct_fact')({
+      ...CORRECTION,
+      ownership: 'led-team',
+      confidence: 'medium',
+      questions: [now],
+    });
+    expect(read('facts/acme.md')).toContain(
+      '### Scheduling platform\n`live` `led-team` `medium`\n> Built a scheduling platform used by 65 clinics.',
+    );
+    // A tag said with a "not" before it isn't said.
+    write(
+      'facts/beacon.md',
+      '# Beacon\n\n### Trail app\n`beta` `solo` `high`\n> Built a trail app in beta.\n- **Source:** Alex 2026-10-01\n',
+    );
+    const beta = 'Your fact “Trail app” says beta. Is it live now?';
+    answered({ [beta]: 'Not live yet, 300 testers' });
+    await expect(
+      tool('correct_fact')({
+        file: 'facts/beacon.md',
+        title: 'Trail app',
+        wording: 'Built a trail app, 300 testers.',
+        status: 'live',
+        questions: [beta],
+      }),
+    ).rejects.toThrow('Not saved: the user didn’t say it’s live.');
+  });
+
+  it('never drops a “not” or a “never” the fact had, unless the user changed its status', async () => {
+    write(
+      'facts/beacon.md',
+      '# Beacon\n\n### Pilot dashboard\n`built` `solo` `high`\n> Built a pilot dashboard, never shipped.\n- **Source:** Alex 2026-10-01\n',
+    );
+    const asked = 'Your fact “Pilot dashboard” has no number. How many people tried it?';
+    const correction = {
+      file: 'facts/beacon.md',
+      title: 'Pilot dashboard',
+      questions: [asked],
+    };
+    answered({ [asked]: '12 people' });
+    await expect(
+      tool('correct_fact')({
+        ...correction,
+        wording: 'Built a pilot dashboard for 12 people, shipped.',
+      }),
+    ).rejects.toThrow('Not saved: it drops a “not” or a “never” the fact had.');
+    await tool('correct_fact')({
+      ...correction,
+      wording: 'Built a pilot dashboard for 12 people, never shipped.',
+    });
+    expect(read('facts/beacon.md')).toContain(
+      '> Built a pilot dashboard for 12 people, never shipped.',
     );
   });
 
