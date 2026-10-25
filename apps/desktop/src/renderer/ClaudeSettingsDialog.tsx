@@ -17,6 +17,7 @@ import {
   type ModelTask,
   modelWithout,
 } from '../shared/models.ts';
+import { AT_ONCE } from '../shared/runs.ts';
 import styles from './ClaudeSettingsDialog.module.css';
 import { RUN_ACTIONS } from './jobs/RunActions.tsx';
 
@@ -33,8 +34,19 @@ const TASKS: readonly { task: ModelTask; label: string }[] = [
 
 type SettingsApi = Pick<
   FactwrightApi,
-  'claudeModels' | 'setClaudeModels' | 'claudeEffort' | 'setClaudeEffort'
+  | 'claudeModels'
+  | 'setClaudeModels'
+  | 'claudeEffort'
+  | 'setClaudeEffort'
+  | 'runsAtOnce'
+  | 'setRunsAtOnce'
 >;
+
+/** How many tasks may run at once, as the setting offers them. */
+const AT_ONCE_CHOICES = Array.from(
+  { length: AT_ONCE.most - AT_ONCE.least + 1 },
+  (_, at) => AT_ONCE.least + at,
+);
 
 /** A task's own choice, or none to go back to what everything uses. */
 function choose<T extends string>(
@@ -48,7 +60,8 @@ function choose<T extends string>(
 
 /**
  * How Claude works on the job hunt: which model it runs on and how hard it thinks, for
- * everything and for each task, and what it does without asking. Each choice saves as it's made.
+ * everything and for each task, how many tasks it runs at once, and what it does without asking.
+ * Each choice saves as it's made.
  */
 export function ClaudeSettingsDialog({
   api,
@@ -69,9 +82,11 @@ export function ClaudeSettingsDialog({
   const suggested = planLevels(plan, method);
   const [models, setModels] = useState<ModelChoices | null>(null);
   const [effort, setEffort] = useState<EffortChoices | null>(null);
+  const [atOnce, setAtOnce] = useState<number | null>(null);
   const [byTask, setByTask] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
   const modelsHeading = useId();
+  const atOnceHeading = useId();
   const askingHeading = useId();
 
   useEffect(() => {
@@ -80,6 +95,7 @@ export function ClaudeSettingsDialog({
       setEffort(levels);
       setByTask(Object.keys({ ...chosen.tasks, ...levels.tasks }).length > 0);
     });
+    void api.runsAtOnce().then(setAtOnce, () => setAtOnce(AT_ONCE.usual));
   }, [api]);
 
   const failed = () => setProblem('That didn’t save. Try again.');
@@ -111,6 +127,17 @@ export function ClaudeSettingsDialog({
       const kept = await api.claudeEffort();
       setEffort(kept);
       onSaved?.({ effort: kept });
+    }
+  };
+
+  const changeAtOnce = async (next: number) => {
+    setAtOnce(next);
+    try {
+      setAtOnce(await api.setRunsAtOnce(next));
+      setProblem(null);
+    } catch {
+      failed();
+      setAtOnce(await api.runsAtOnce().catch(() => AT_ONCE.usual));
     }
   };
 
@@ -225,6 +252,33 @@ export function ClaudeSettingsDialog({
           </details>
         </section>
       )}
+      {atOnce !== null && (
+        <section aria-labelledby={atOnceHeading} className={styles.section}>
+          <h3 id={atOnceHeading} className={styles.heading}>
+            Tasks at once
+          </h3>
+          <p className={styles.lead}>
+            Each task runs in a Claude of its own, in a tab of Claude’s panel, side by side with the
+            others. Past this many, a task waits in line and starts by itself. Two tasks on one job
+            never run at once. More at once uses your plan faster.
+          </p>
+          <div className={styles.grid}>
+            <span className={styles.row}>Run at once</span>
+            <Select
+              aria-label="Tasks at once"
+              value={String(atOnce)}
+              onChange={(event) => void changeAtOnce(Number(event.target.value))}
+            >
+              {AT_ONCE_CHOICES.map((count) => (
+                <option key={count} value={count}>
+                  {count === 1 ? '1 task' : `${count} tasks`}
+                  {count === AT_ONCE.usual ? ' (recommended)' : ''}
+                </option>
+              ))}
+            </Select>
+          </div>
+        </section>
+      )}
       <section aria-labelledby={askingHeading} className={styles.section}>
         <h3 id={askingHeading} className={styles.heading}>
           Without asking
@@ -243,8 +297,8 @@ export function ClaudeSettingsDialog({
         </p>
       )}
       <p className={styles.note}>
-        Changes apply the next time Claude starts, or when a task needs another model or more effort
-        than Claude is open with.
+        A model or effort you change applies from the next task, as each task starts a Claude of its
+        own.
       </p>
       <DialogActions>
         <Button variant="primary" onClick={onClose}>

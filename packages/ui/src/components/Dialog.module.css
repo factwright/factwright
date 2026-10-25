@@ -42,6 +42,17 @@
   padding-top: 4px;
 }
 
+/* Above the title, such as which of several the dialog shows. */
+.above {
+  display: flex;
+  align-items: center;
+  gap: var(--fw-space-2);
+  min-height: 24px;
+  margin: -2px 0 6px;
+  color: var(--fw-muted);
+  font-size: var(--fw-text-sm);
+}
+
 .title {
   margin: 0;
   font-size: 17px;

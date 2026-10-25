@@ -54,8 +54,8 @@ const WORK_WITHIN_MS = 2 * 60 * 1000;
 /**
  * The run drafting a job's form's questions, as the browser extension follows it: which job's,
  * whether it's still at them, and whether it's waiting on the user in the window. Its turn is over
- * once Claude stops, or the run does, after it got to work: a run that makes way for the new one
- * stops first.
+ * once Claude stops, or the run does, after it got to work. Other runs, side by side, change
+ * nothing here.
  */
 export class FormDrafts {
   private readonly now: () => number;
@@ -78,8 +78,9 @@ export class FormDrafts {
     this.needsYou = false;
   }
 
-  /** What the run signalled. */
-  heard(signal: RunSignal): void {
+  /** What a run drafting a job's form's questions signalled. Another job's draws nothing here. */
+  heard(signal: RunSignal, jobId: string): void {
+    if (jobId !== this.jobId) return;
     if (signal === 'working') {
       this.worked = true;
       this.needsYou = false;
@@ -95,11 +96,11 @@ export class FormDrafts {
   }
 
   /**
-   * Claude Code waits on the user before the run gets to work: to trust the workspace, or on one
-   * of its first-run screens.
+   * Claude Code waits on the user before the run drafting a job's form gets to work: to trust the
+   * workspace, or on one of its first-run screens.
    */
-  waitsOnYou(): void {
-    if (!this.over) this.needsYou = true;
+  waitsOnYou(jobId: string): void {
+    if (!this.over && jobId === this.jobId) this.needsYou = true;
   }
 
   /**

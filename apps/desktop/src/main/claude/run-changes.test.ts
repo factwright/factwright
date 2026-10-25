@@ -19,8 +19,9 @@ let folder: string;
 let trashed: string[];
 let clock: number;
 
-const changes = () =>
-  new RunChanges({
+/** The record of what tasks changed, and one run's tasks in it, as the tests drive them. */
+const changes = () => {
+  const store = new RunChanges({
     workspace,
     folder,
     trash: async (path) => {
@@ -29,6 +30,15 @@ const changes = () =>
     },
     now: () => new Date(clock++),
   });
+  return {
+    ...store.forRun(),
+    undo: (id: string, path: string, anyway?: boolean) => store.undo(id, path, anyway),
+    see: (id: string, path: string) => store.see(id, path),
+    changes: (id: string) => store.changes(id),
+    /** Another run's tasks, side by side with this one's. */
+    forRun: () => store.forRun(),
+  };
+};
 
 const at = (path: string) => join(workspace, ...path.split('/'));
 const write = (path: string, text: string) => {

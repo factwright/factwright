@@ -8,9 +8,10 @@ import {
   shortDate,
 } from '@factwright/core';
 import { FitBadge, StatusPill, VisuallyHidden } from '@factwright/ui';
-import { ArrowDown, ArrowUp, Check, ChevronRight } from 'lucide-react';
+import { ArrowDown, ArrowUp, Check, ChevronRight, Clock, LoaderCircle } from 'lucide-react';
 import { type KeyboardEvent, type MouseEvent, useEffect, useRef, useState } from 'react';
 import styles from './JobList.module.css';
+import type { TaskState } from './RunActions.tsx';
 import type { JobRow, ListSort, SortKey } from './rows.ts';
 
 /** Each kind of call in a word or two, for a row's line of steps. */
@@ -161,6 +162,7 @@ export function JobList({
   later,
   sort = null,
   onSort,
+  claudeOn,
 }: {
   rows: readonly JobRow[];
   view: JobView;
@@ -177,6 +179,8 @@ export function JobList({
   sort?: ListSort | null;
   /** Sorts by a column, once its heading is clicked. */
   onSort?: (by: SortKey) => void;
+  /** Whether Claude is on a task for a job now, or has one in line for it, if either. */
+  claudeOn?: (jobId: string) => TaskState | null;
 }) {
   const pickedHere = picks ? rows.filter((row) => picks.picked.has(row.job.id)).length : 0;
   const allPicked = rows.length > 0 && pickedHere === rows.length;
@@ -188,6 +192,7 @@ export function JobList({
     const found = job.search?.source ?? job.searches.at(-1)?.source;
     const selected = job.id === selectedId;
     const picked = picks?.picked.has(job.id) ?? false;
+    const claude = claudeOn?.(job.id) ?? null;
     return (
       <li
         key={job.id}
@@ -225,6 +230,19 @@ export function JobList({
               {found && (showFound || againAfter(row)) && (
                 <span className={styles.found}>
                   {job.search?.again ? `Found again · ${found}` : found}
+                </span>
+              )}
+              {claude && (
+                <span
+                  className={`${styles.claude} ${claude === 'in-line' ? styles.claudeLater : ''}`}
+                >
+                  <VisuallyHidden>, </VisuallyHidden>
+                  {claude === 'running' ? (
+                    <LoaderCircle className={styles.claudeSpin} size={11} aria-hidden="true" />
+                  ) : (
+                    <Clock size={11} aria-hidden="true" />
+                  )}
+                  {claude === 'running' ? 'Claude is on it' : 'In line'}
                 </span>
               )}
             </span>

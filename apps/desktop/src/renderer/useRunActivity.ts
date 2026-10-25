@@ -1,11 +1,11 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import type { RunStep, TurnEnd } from '../shared/activity.ts';
 import type { FactwrightApi } from '../shared/api.ts';
 
 /** The most steps kept for one task, the latest, however long it runs. */
 const MAX_STEPS = 200;
 
-/** What Claude has done in the task at hand, when it last did something, and how it stopped. */
+/** What Claude has done in a run's task, when it last did something, and how it stopped. */
 export interface RunActivity {
   /** Its tool calls, in the order they started, each as it stands now. */
   steps: readonly RunStep[];
@@ -24,32 +24,41 @@ function merged(steps: readonly RunStep[], step: RunStep): readonly RunStep[] {
   return steps.map((each, i) => (i === at ? step : each));
 }
 
-const NOTHING: RunActivity = { steps: [], lastAt: null, end: null };
+export const NOTHING_DONE: RunActivity = { steps: [], lastAt: null, end: null };
 
 /**
- * Follows what Claude does in the task at hand, a tool call at a time, and how each of its turns
- * ends, as Claude Code's hooks tell it. Another task, by its ID, starts with nothing done.
+ * Follows what Claude does in each run, a tool call at a time, and how each of its turns ends, as
+ * Claude Code's hooks tell it, by the run's ID. A run whose tab closed is let go. Each run is one
+ * task, so a new one starts with nothing done.
  */
-export function useRunActivity(api: FactwrightApi, taskId: number): RunActivity {
-  const [heard, setHeard] = useState<{ taskId: number; activity: RunActivity }>({
-    taskId,
-    activity: NOTHING,
-  });
-  if (heard.taskId !== taskId) setHeard({ taskId, activity: NOTHING });
+export function useRunActivity(
+  api: Pick<FactwrightApi, 'onClaudeStep' | 'onClaudeTurnEnd'>,
+  runIds: readonly string[],
+): (runId: string) => RunActivity {
+  const [heard, setHeard] = useState<Readonly<Record<string, RunActivity>>>({});
   useEffect(() => {
-    const stopSteps = api.onClaudeStep((step) =>
-      setHeard((was) => ({
-        ...was,
-        activity: { ...was.activity, steps: merged(was.activity.steps, step), lastAt: Date.now() },
-      })),
+    const change = (runId: string, next: (was: RunActivity) => RunActivity) =>
+      setHeard((all) => ({ ...all, [runId]: next(all[runId] ?? NOTHING_DONE) }));
+    const stopSteps = api.onClaudeStep(({ runId, step }) =>
+      change(runId, (was) => ({ ...was, steps: merged(was.steps, step), lastAt: Date.now() })),
     );
-    const stopEnds = api.onClaudeTurnEnd((end) =>
-      setHeard((was) => ({ ...was, activity: { ...was.activity, end } })),
+    const stopEnds = api.onClaudeTurnEnd(({ runId, end }) =>
+      change(runId, (was) => ({ ...was, end })),
     );
     return () => {
       stopSteps();
       stopEnds();
     };
   }, [api]);
-  return heard.taskId === taskId ? heard.activity : NOTHING;
+  // The runs whose tabs closed take nothing kept with them.
+  const key = runIds.join(' ');
+  useEffect(() => {
+    const open = new Set(key.split(' '));
+    setHeard((all) =>
+      Object.keys(all).every((runId) => open.has(runId))
+        ? all
+        : Object.fromEntries(Object.entries(all).filter(([runId]) => open.has(runId))),
+    );
+  }, [key]);
+  return useCallback((runId: string) => heard[runId] ?? NOTHING_DONE, [heard]);
 }

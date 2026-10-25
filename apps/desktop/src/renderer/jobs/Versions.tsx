@@ -11,7 +11,7 @@ import {
   type DocVersion,
   MAX_CHANGES,
 } from '../../shared/versions.ts';
-import { ClaudeButton, isRunning } from './ClaudeButton.tsx';
+import { ClaudeButton, isComing } from './ClaudeButton.tsx';
 import panel from './JobPanel.module.css';
 import type { RunControls } from './RunActions.tsx';
 import styles from './Versions.module.css';
@@ -76,10 +76,18 @@ export function NewVersionButton({
     onProblem(kept.ok ? null : kept.message);
     if (kept.ok) run?.start(next);
   };
+  // The version before is kept first, which moves the job's files, so it waits for the job's
+  // other tasks.
   const again = (
-    <ClaudeButton run={run} task={task} label="New version" onStart={() => void start(task)} />
+    <ClaudeButton
+      run={run}
+      task={task}
+      label="New version"
+      alone
+      onStart={() => void start(task)}
+    />
   );
-  if (kind !== 'resume' || isRunning(run, task)) return again;
+  if (kind !== 'resume' || isComing(run, task)) return again;
   const quick: RunTask = { skill: 'focused-resume', jobId: job.id, again: true, quick: true };
   return (
     <>
@@ -88,6 +96,7 @@ export function NewVersionButton({
         run={run}
         task={quick}
         label="Quick version"
+        alone
         onStart={() => void start(quick)}
       />
     </>
@@ -112,7 +121,7 @@ export function RequestChanges({
 }) {
   const [open, setOpen] = useState(false);
   // While Claude makes a new one, New version says Claude is on it, so this waits out of sight.
-  const making = isRunning(run, { skill: SKILLS[kind], jobId: job.id });
+  const making = isComing(run, { skill: SKILLS[kind], jobId: job.id });
   if (keptAsSent(job, kind) || making) return null;
   const task: RunTask =
     kind === 'resume'
@@ -120,7 +129,13 @@ export function RequestChanges({
       : { skill: 'cover-letter', jobId: job.id, changes: true };
   return (
     <>
-      <ClaudeButton run={run} task={task} label="Request changes" onStart={() => setOpen(true)} />
+      <ClaudeButton
+        run={run}
+        task={task}
+        label="Request changes"
+        alone
+        onStart={() => setOpen(true)}
+      />
       {open && (
         <ChangesDialog
           job={job}

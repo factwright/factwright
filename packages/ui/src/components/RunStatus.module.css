@@ -40,9 +40,17 @@
   color: var(--fw-ok);
 }
 
+.in-line,
 .stopped {
   background: var(--fw-tone-gray-bg);
   color: var(--fw-tone-gray-fg);
+}
+
+/* Waiting its turn, with nothing going yet: a ring, not a dot, which high contrast keeps too. */
+.in-line .dot {
+  box-sizing: border-box;
+  border: 1.5px solid currentColor;
+  background: transparent;
 }
 
 .failed {

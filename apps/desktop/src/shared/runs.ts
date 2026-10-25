@@ -194,6 +194,29 @@ export function scopeOf(task: RunTask | null | undefined): RunScope {
 export const taskJob = (task: RunTask | null): string | null =>
   task && 'jobId' in task ? task.jobId : null;
 
+/** How many of Claude's runs may go at once: three, unless the user picks from one to five. */
+export const AT_ONCE = { least: 1, most: 5, usual: 3 } as const;
+
+/** A number of runs at once the app takes, or null. */
+export const atOnceFrom = (value: unknown): number | null =>
+  Number.isInteger(value) && (value as number) >= AT_ONCE.least && (value as number) <= AT_ONCE.most
+    ? (value as number)
+    : null;
+
+/**
+ * What a task works on, which two tasks never share at once: its job, by the job's ID; the user's
+ * facts and Profile, which getting started, adding facts and filling in their work history all
+ * change; the job searches; or the templates. Null for Claude with no task, waiting for what the
+ * user types.
+ */
+export function laneOf(task: RunTask | null): string | null {
+  if (!task) return null;
+  const job = taskJob(task);
+  if (job) return `job:${job}`;
+  if (task.skill === GET_STARTED_SKILL || task.skill === FACTS_SKILL) return 'profile';
+  return task.skill === HISTORY_SKILL ? 'profile' : task.skill;
+}
+
 /** The call a task works on, such as prep for it, or null for one on no call in particular. */
 export const taskCall = (task: RunTask | null): string | null =>
   task && 'callId' in task ? task.callId : null;

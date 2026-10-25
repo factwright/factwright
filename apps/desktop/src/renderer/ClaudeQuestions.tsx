@@ -11,7 +11,8 @@ import {
   takesNumber,
 } from '../shared/rounds.ts';
 import styles from './ClaudeQuestions.module.css';
-import type { Choice } from './useClaudeQuestions.ts';
+import { type DialogTurn, TurnLine } from './DialogTurn.tsx';
+import type { Choice } from './useWaitingTurns.ts';
 
 const startChoice = (question: RoundQuestion): Choice => ({
   picks: [],
@@ -58,18 +59,28 @@ export function ClaudeQuestions({
   api,
   round,
   about,
+  turn,
   draft = null,
   onDraft,
+  onAnswered,
   onClose,
 }: {
   api: Pick<FactwrightApi, 'answerClaude'>;
   round: QuestionRound;
-  /** What the run is for, such as "Tailored resume · Acme Robotics", or null for a plain run. */
+  /** What the run is for, such as "Acme Robotics · Tailored resume", or null for a plain run. */
   about: string | null;
+  /** With runs side by side, the run asking, and which of those waiting this is. */
+  turn?: DialogTurn | undefined;
   /** What the user chose before they put the round aside, to carry on from. */
   draft?: Choice[] | null;
   /** Hears each change to what the user has chosen, to keep it while the round is put aside. */
   onDraft?: (choices: Choice[]) => void;
+  /**
+   * Hears that the answers reached Claude, which takes the dialog on to what's waiting next.
+   * Without it, the dialog closes.
+   */
+  onAnswered?: () => void;
+  /** Hears that the user put the round aside, or the dialog closed. */
   onClose: () => void;
 }) {
   const [choices, setChoices] = useState(() =>
@@ -100,8 +111,9 @@ export function ClaudeQuestions({
       message: 'Your answers didn’t reach Claude. Try again.',
     }));
     setSending(false);
-    if (result.ok) close();
-    else setProblem(result.message);
+    if (!result.ok) setProblem(result.message);
+    else if (onAnswered) onAnswered();
+    else close();
   };
   // Send, or Enter in a box or on an option, sends the round only once every question has an
   // answer or a skip.
@@ -116,6 +128,7 @@ export function ClaudeQuestions({
       description={
         about ? `From your Claude, working on ${about}.` : 'From your Claude, in its panel below.'
       }
+      above={turn && <TurnLine turn={turn} />}
       size="lg"
       onClose={onClose}
     >

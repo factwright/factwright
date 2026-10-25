@@ -40,6 +40,7 @@ describe('sessionSettings', () => {
       'mcp__factwright__about_you',
       'mcp__factwright__past_answers',
       'mcp__factwright__save_answer',
+      'mcp__factwright__log_check',
       'mcp__factwright__save_call_prep',
       'mcp__factwright__save_thank_you',
       'mcp__factwright__list_templates',
@@ -167,7 +168,7 @@ describe('sessionSettings', () => {
     expect(deny).not.toContain('mcp__factwright__save_template');
   });
 
-  it('never lets Claude change its own settings, the instructions it loads, or the user’s own files', () => {
+  it('never lets Claude change its own settings, the instructions it loads, the user’s own files, or the logs', () => {
     const never = [
       'Edit(./.claude/**)',
       'Edit(./**/.claude/**)',
@@ -185,6 +186,10 @@ describe('sessionSettings', () => {
       'Edit(./about-me/kinds-of-job.json)',
       'Edit(./about-me/beyond-work.json)',
       'Edit(./linkedin/**)',
+      // The job hunt's logs, which runs side by side add to through log_check, one row at a time.
+      'Edit(./searches/fit-checks.md)',
+      'Edit(./searches/salary-checks.md)',
+      'Edit(./searches/unmask-checks.md)',
     ];
     for (const scope of ['hunt', 'profile', 'history', 'revise', 'template'] as const) {
       expect(scoped(scope).permissions.deny.slice(0, never.length)).toEqual(never);

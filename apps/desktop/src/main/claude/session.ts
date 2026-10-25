@@ -1,9 +1,9 @@
 import { randomBytes } from 'node:crypto';
-import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, rm, writeFile } from 'node:fs/promises';
 import { delimiter, dirname, join } from 'node:path';
 import { type IPty, spawn } from 'node-pty';
 import type { RunStep, TurnEnd } from '../../shared/activity.ts';
-import type { RunSignal, StartResult, TerminalSize } from '../../shared/api.ts';
+import type { RunSignal, TerminalSize } from '../../shared/api.ts';
 import type { Effort } from '../../shared/effort.ts';
 import type { FiledFacts } from '../../shared/facts.ts';
 import { type PlanLevels, planLevels } from '../../shared/levels.ts';
@@ -18,7 +18,7 @@ import { RunActivity, turnEnd } from './activity.ts';
 import { claudeCommand } from './command.ts';
 import { findClaude, nodeFindDeps } from './find.ts';
 import { buildLaunchArgs, launchEnv } from './launch.ts';
-import { keepBefore, type RunChanges } from './run-changes.ts';
+import { keepBefore, type TaskChanges } from './run-changes.ts';
 import type { PermissionAsker, QuestionAsker, RunServer } from './run-server.ts';
 import { FIRST_RUN_SCREENS, ScreenWatch, TRUST_QUESTION } from './screen.ts';
 import { RUN_TOKEN_VARIABLE, sessionSettings, toolsConfig } from './settings.ts';
@@ -34,6 +34,8 @@ export interface Launch {
   env: NodeJS.ProcessEnv;
   /** The run's own token, which its hooks and tool calls carry. */
   token: string;
+  /** The settings and MCP config written for it, which no other run uses. */
+  files: string[];
   /** The levels that suit the user's plan, as Claude Code reported it just before. */
   levels: PlanLevels;
   /** Which model it runs on and how hard it thinks, when it was given them. */
@@ -53,7 +55,7 @@ export interface LaunchOptions {
   pluginDir: string;
   server: Pick<RunServer, 'hookUrl' | 'activityUrl' | 'toolsUrl'>;
   dark: boolean;
-  /** Names the run's settings files, so runs that overlap don't share them. */
+  /** Names the run's settings files, so runs side by side don't share them. */
   name: string;
   /**
    * Which model it runs on and how hard it thinks, from the levels that suit the user's plan,
@@ -109,6 +111,7 @@ export async function prepareLaunch(options: LaunchOptions): Promise<Launch | nu
     // The token reaches Claude Code's hooks and tool calls through its environment, never a file.
     env: { ...launchEnv(process.env, path), [RUN_TOKEN_VARIABLE]: token },
     token,
+    files: [settings, mcpConfig],
     levels,
     model: chosen?.model,
     effort: chosen?.effort,
@@ -137,29 +140,14 @@ export interface RunOptions {
   changes?: BoundChanges | undefined;
 }
 
-/** What a run needs from the app: where things live, and where its output and signals go. */
-export interface SessionDeps {
+/** What a run needs from the app: where things live, and who answers what it asks the user. */
+export interface RunDeps {
   /** The app's own data folder, which holds the workspace and each run's settings. */
   dataDir: string;
   pluginDir: string;
   /** Hears the run's hooks and answers its calls to Factwright's tools. */
   server: RunServer;
   dark: () => boolean;
-  onOutput: (data: string) => void;
-  onSignal: (signal: RunSignal) => void;
-  /** Hears what Claude does, a tool call at a time, as it starts and once it's done. */
-  onStep?: (step: RunStep) => void;
-  /** Hears how each turn ends: what Claude said last, or the error that ended it. */
-  onTurnEnd?: (end: TurnEnd) => void;
-  /** Claude Code is asking whether to trust the workspace, which it does once. */
-  onTrust: () => void;
-  /**
-   * Claude Code is showing its first-run screens, which it does until someone presses Enter
-   * through them once.
-   */
-  onFirstRun: () => void;
-  /** The run filed facts from the user's answers, which wait for the user to verify them. */
-  onFiled?: (filed: FiledFacts) => void;
   /** Asks the user Claude's questions in the app's dialog. Without it, the terminal asks them. */
   ask?: QuestionAsker;
   /** Asks the user for Claude Code's permission prompts in the app. Without it, the terminal does. */
@@ -167,290 +155,210 @@ export interface SessionDeps {
   /** The name of the user's template with an ID, for a permission prompt that would replace it. */
   templateName?: (id: string) => string | null;
   /**
-   * What each task changes in the workspace, with a copy of each file from before, for Undo:
+   * What the run's task changes in the workspace, with a copy of each file from before, for Undo:
    * Claude's own edits, heard before they happen, and what Factwright's tools write.
    */
-  changes?: RunChanges;
-  /** Hears what the task at hand changed: nothing as it starts, then once each turn of it ends. */
-  onChanges?: (changes: RunChangesView) => void;
+  changes?: TaskChanges;
 }
 
-interface Run {
-  terminal: IPty;
-  /** Its signals, which say whether it has work going. */
-  signals: RunSignals;
-  stopListening: () => void;
-  /** Set when the user stops the run, so its exit doesn't read as a failure. */
-  stopping: boolean;
-  /** The model it runs on, how hard it thinks, and the levels that suited the plan it runs on. */
-  model: Model | undefined;
-  effort: Effort | undefined;
-  levels: PlanLevels;
-  scope: RunScope;
-  /**
-   * Why the task at hand asks the user nothing, by its prompt, such as a quick resume's, until
-   * another prompt comes, or null when it may ask.
-   */
-  quiet: { reason: string | null };
-  /** Watches for Claude Code's first-run screens, which the user answers one after another. */
-  firstRun: ScreenWatch;
+/**
+ * A screen of Claude Code's own, which only its terminal answers: its first-run screens, which it
+ * shows until someone presses Enter through them once, or its question about trusting the
+ * workspace, which it asks once.
+ */
+export type RunScreen = 'first-run' | 'trust';
+
+/** What a run tells the app as it goes. */
+export interface RunEvents {
+  output: (data: string) => void;
+  /** Where it stands, from Claude Code's hooks. */
+  signal: (signal: RunSignal) => void;
+  /** A screen of Claude Code's own it shows now, or null once the user answered it. */
+  screen: (screen: RunScreen | null) => void;
+  /** Claude Code is past its first-run screens and the question about trust. */
+  past: () => void;
+  /** What Claude does, a tool call at a time, as it starts and once it's done. */
+  step?: (step: RunStep) => void;
+  /** How each turn ends: what Claude said last, or the error that ended it. */
+  turnEnd?: (end: TurnEnd) => void;
+  /** It filed facts from the user's answers, which wait for the user to verify them. */
+  filed?: (filed: FiledFacts) => void;
+  /** What its task changed: nothing as it starts, then once each turn of it ends. */
+  changes?: (changes: RunChangesView) => void;
+  /** It closed: stopped, by the user or as Claude Code quit, or failed. */
+  exit: (signal: 'stopped' | 'failed') => void;
+}
+
+/** One run of the user's Claude Code, in a terminal of its own. */
+export interface OpenRun {
+  /** Sends what the user types. */
+  write: (data: string) => void;
+  /** Types a prompt and sends it, as the user would. */
+  send: (prompt: string) => void;
+  resize: (size: TerminalSize) => void;
+  stop: () => void;
+  /** Whether it has work going: starting, working, or waiting on the user. */
+  hasWork: () => boolean;
   /** Settles once it has exited. */
   exited: Promise<void>;
 }
 
-/** How long the app waits for Claude Code to close before it restarts anyway. */
-const CLOSE_WAIT_MS = 5000;
+/**
+ * Starts one run of the user's Claude Code, locked down in the workspace, with its own token,
+ * signals and settings files, named for it, so runs side by side share none of them. Says why
+ * not when Claude Code isn't ready, or wouldn't start.
+ */
+export async function openRun(
+  name: string,
+  size: TerminalSize,
+  options: RunOptions,
+  deps: RunDeps,
+  events: RunEvents,
+): Promise<OpenRun | 'not-ready' | 'failed'> {
+  const { prompt, choose, scope = 'hunt', revision, changes } = options;
+  const launch = await prepareLaunch({
+    dataDir: deps.dataDir,
+    pluginDir: deps.pluginDir,
+    server: deps.server,
+    dark: deps.dark(),
+    name,
+    scope,
+    ...(choose ? { choose } : {}),
+    ...(prompt ? { prompt } : {}),
+  });
+  if (!launch) return 'not-ready';
 
-/** The user's Claude Code, running in the panel. One run at a time. */
-export class ClaudeSession {
-  private readonly deps: SessionDeps;
-  private run: Run | undefined;
-  private starting = false;
-
-  constructor(deps: SessionDeps) {
-    this.deps = deps;
-  }
-
-  /** Whether a run is starting or going. */
-  busy(): boolean {
-    return this.starting || this.run !== undefined;
-  }
-
-  /**
-   * Whether a run has work going: Claude Code is starting, Claude is working, or it waits on the
-   * user. Restarting the app would stop that, so updates and switching profiles wait for it.
-   * Claude Code that's done, or ready with nothing to do yet, has none.
-   */
-  working(): boolean {
-    return this.starting || (this.run?.signals.hasWork() ?? false);
-  }
-
-  /**
-   * Quits Claude Code that has no work going, as before the app restarts, and settles once it has
-   * closed, or after a few seconds whatever happens. A run with work going is left as it is.
-   */
-  async closeIdle(): Promise<void> {
-    const run = this.run;
-    if (!run || this.working()) return;
-    this.stop();
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    await Promise.race([
-      run.exited,
-      new Promise<void>((resolve) => {
-        timer = setTimeout(resolve, CLOSE_WAIT_MS);
+  const signals = new RunSignals(events.signal);
+  const kept = deps.changes;
+  const tellChanges = (view: RunChangesView | null | undefined) => {
+    if (view) events.changes?.(view);
+  };
+  tellChanges(kept?.begin());
+  const activity = events.step && new RunActivity(events.step, launch.cwd);
+  const trust = new ScreenWatch(TRUST_QUESTION);
+  const firstRun = new ScreenWatch(FIRST_RUN_SCREENS);
+  let heard = false;
+  // A quick resume asks the user nothing, so from its prompt, the app's or one the user typed,
+  // until the next prompt, Claude's questions are turned away.
+  const quiet = { reason: asksNothing(prompt) };
+  const pastScreens = () => {
+    if (!heard) events.past();
+    heard = true;
+    trust.pastIt();
+    firstRun.pastIt();
+  };
+  // Listening first, so no hook can arrive before the run is ready for it.
+  const stopListening = deps.server.listen(
+    launch.token,
+    (event) => {
+      pastScreens();
+      quiet.reason = asksNothingAfter(quiet.reason, event);
+      const hadWork = signals.hasWork();
+      signals.hear(event);
+      activity?.hear(event);
+      const end = turnEnd(event);
+      if (end) events.turnEnd?.(end);
+      // What the task changed settles once a turn ends, and once the run reads as done without
+      // a Stop hook, as when the user interrupts it, which Claude Code runs none for.
+      if (end || (hadWork && !signals.hasWork())) tellChanges(kept?.settle());
+    },
+    {
+      ...(activity && { activity: (event: unknown) => activity.started(event) }),
+      // Each file Claude is about to change, and each one Factwright's tools are, is kept as it
+      // was first, and each page they read is noted, for the task's card.
+      ...(kept && {
+        before: (event: unknown) => keepBefore(kept, event),
+        keep: (path: string) => kept.keep(path),
+        read: (url: string) => kept.read(url),
       }),
-    ]);
-    clearTimeout(timer);
-  }
-
-  /** The model the open run is on, or undefined when none is open. */
-  model(): Model | undefined {
-    return this.run?.model;
-  }
-
-  /** How hard the open run thinks, or undefined when none is open. */
-  effort(): Effort | undefined {
-    return this.run?.effort;
-  }
-
-  /**
-   * The levels that suited the user's plan at the open run's start, or undefined when none is
-   * open.
-   */
-  levels(): PlanLevels | undefined {
-    return this.run?.levels;
-  }
-
-  /** What the open run may change without asking, or undefined when none is open. */
-  scope(): RunScope | undefined {
-    return this.run?.scope;
-  }
-
-  /** Starts a run, once one that's stopping has closed, such as to change models. */
-  async start(size: TerminalSize, options: RunOptions = {}): Promise<StartResult> {
-    if (this.run?.stopping) await this.run.exited;
-    if (this.busy()) return { ok: false, reason: 'busy' };
-    this.starting = true;
-    try {
-      return await this.launch(size, options);
-    } finally {
-      this.starting = false;
-    }
-  }
-
-  /** Starts what the task at hand changes from nothing, and tells the window. */
-  private beginChanges(): void {
-    const started = this.deps.changes?.begin();
-    if (started) this.deps.onChanges?.(started);
-  }
-
-  /** Tells the window what the task at hand changed, as it stands once a turn ends. */
-  private settleChanges(): void {
-    const settled = this.deps.changes?.settle();
-    if (settled) this.deps.onChanges?.(settled);
-  }
-
-  private async launch(size: TerminalSize, options: RunOptions): Promise<StartResult> {
-    const { prompt, choose, scope = 'hunt', revision, changes } = options;
-    const launch = await prepareLaunch({
-      dataDir: this.deps.dataDir,
-      pluginDir: this.deps.pluginDir,
-      server: this.deps.server,
-      dark: this.deps.dark(),
-      name: 'panel',
-      scope,
-      ...(choose ? { choose } : {}),
-      ...(prompt ? { prompt } : {}),
-    });
-    if (!launch) return { ok: false, reason: 'not-ready' };
-
-    const signals = new RunSignals(this.deps.onSignal);
-    const kept = this.deps.changes;
-    this.beginChanges();
-    const { onStep } = this.deps;
-    const activity = onStep && new RunActivity(onStep, launch.cwd);
-    const trust = new ScreenWatch(TRUST_QUESTION);
-    const firstRun = new ScreenWatch(FIRST_RUN_SCREENS);
-    let heard = false;
-    // A quick resume asks the user nothing, so from its prompt, the app's or one the user typed,
-    // until the next prompt, Claude's questions are turned away.
-    const quiet = { reason: asksNothing(prompt) };
-    const pastScreens = () => {
-      heard = true;
-      trust.pastIt();
-      firstRun.pastIt();
-    };
-    // Listening first, so no hook can arrive before the run is ready for it.
-    const stopListening = this.deps.server.listen(
-      launch.token,
-      (event) => {
+      // With no prompt, no hook comes until the user types. Claude Code reaches Factwright's
+      // tools once it's past its first-run screens and the question about trust, so then it's
+      // waiting for them.
+      tools: (method: string) => {
+        if (method !== 'tools/list' || heard) return;
         pastScreens();
-        quiet.reason = asksNothingAfter(quiet.reason, event);
-        const hadWork = signals.hasWork();
-        signals.hear(event);
-        activity?.hear(event);
-        const end = turnEnd(event);
-        if (end) this.deps.onTurnEnd?.(end);
-        // What the task changed settles once a turn ends, and once the run reads as done without
-        // a Stop hook, as when the user interrupts it, which Claude Code runs none for.
-        if (end || (hadWork && !signals.hasWork())) this.settleChanges();
+        if (!prompt) signals.ready();
       },
-      {
-        ...(activity && { activity: (event: unknown) => activity.started(event) }),
-        // Each file Claude is about to change, and each one Factwright's tools are, is kept as it
-        // was first, and each page they read is noted, for the task's card.
-        ...(kept && {
-          before: (event: unknown) => keepBefore(kept, event),
-          keep: (path: string) => kept.keep(path),
-          read: (url: string) => kept.read(url),
-        }),
-        // With no prompt, no hook comes until the user types. Claude Code reaches Factwright's
-        // tools once it's past its first-run screens and the question about trust, so then it's
-        // waiting for them.
-        ...(!prompt && {
-          tools: (method: string) => {
-            if (method !== 'tools/list' || heard) return;
-            pastScreens();
-            signals.ready();
-          },
-        }),
-        scope,
-        onFiled: this.deps.onFiled,
-        ask: this.deps.ask,
-        noQuestions: () => quiet.reason,
-        permit: this.deps.permit,
-        // A call the user answered in the app is one the run no longer waits on them for.
-        onAnswered: (call) => signals.answered(call),
-        context: { workspace: launch.cwd, templateName: this.deps.templateName },
-        ...(revision && { revision }),
-        ...(changes && { changes }),
-      },
-    );
-    let terminal: IPty;
-    try {
-      terminal = spawn(launch.file, launch.args, {
-        name: 'xterm-256color',
-        cols: size.cols,
-        rows: size.rows,
-        cwd: launch.cwd,
-        env: launch.env,
-      });
-    } catch (error) {
-      stopListening();
-      return { ok: false, reason: 'failed', message: String(error) };
-    }
-
-    let exited = () => {};
-    const run: Run = {
-      terminal,
-      signals,
-      stopListening,
-      stopping: false,
-      model: launch.model,
-      effort: launch.effort,
-      levels: launch.levels,
       scope,
-      quiet,
-      firstRun,
-      exited: new Promise((resolve) => {
-        exited = resolve;
-      }),
-    };
-    this.run = run;
-    terminal.onData((data) => {
-      this.deps.onOutput(data);
-      if (firstRun.saw(data)) this.deps.onFirstRun();
-      if (trust.saw(data)) this.deps.onTrust();
+      onFiled: events.filed,
+      ask: deps.ask,
+      noQuestions: () => quiet.reason,
+      permit: deps.permit,
+      // A call the user answered in the app is one the run no longer waits on them for.
+      onAnswered: (call) => signals.answered(call),
+      context: { workspace: launch.cwd, templateName: deps.templateName },
+      ...(revision && { revision }),
+      ...(changes && { changes }),
+    },
+  );
+  let terminal: IPty;
+  try {
+    terminal = spawn(launch.file, launch.args, {
+      name: 'xterm-256color',
+      cols: size.cols,
+      rows: size.rows,
+      cwd: launch.cwd,
+      env: launch.env,
     });
-    terminal.onExit(({ exitCode }) => {
-      run.stopListening();
-      if (this.run === run) this.run = undefined;
-      this.settleChanges();
-      this.deps.onSignal(run.stopping || exitCode === 0 ? 'stopped' : 'failed');
-      exited();
-    });
-    // Claude Code may first show its first-run screens and ask whether to trust the workspace,
-    // which the window explains, so the run stays "starting" until a hook says otherwise.
-    return { ok: true };
+  } catch {
+    stopListening();
+    kept?.end();
+    return 'failed';
   }
 
-  write(data: string): void {
-    this.run?.terminal.write(data);
-    // Enter answers a first-run screen, which may bring the next.
-    if (data.includes('\r')) this.run?.firstRun.answered();
-  }
-
-  /**
-   * Types a new task's prompt into the run that's open, as the user would: what's changed from
-   * here on is the new task's.
-   */
-  task(prompt: string): StartResult {
-    if (!this.run) return { ok: false, reason: 'not-running' };
-    this.beginChanges();
-    this.run.quiet.reason = asksNothing(prompt);
-    return this.send(prompt);
-  }
-
-  /** Types a prompt into the run that's open, and sends it, as the user would. */
-  send(prompt: string): StartResult {
-    const run = this.run;
-    if (!run) return { ok: false, reason: 'not-running' };
-    run.signals.prompted();
-    run.terminal.write(prompt);
-    // Typed together, Claude Code could read the Enter as part of a paste rather than a send.
-    setTimeout(() => {
-      if (this.run === run) run.terminal.write('\r');
-    }, 150);
-    return { ok: true };
-  }
-
-  resize(size: TerminalSize): void {
-    this.run?.terminal.resize(size.cols, size.rows);
-  }
-
-  stop(): void {
-    if (!this.run) return;
-    this.run.stopping = true;
-    this.run.terminal.kill();
-  }
+  let stopping = false;
+  let closed = false;
+  let exited = () => {};
+  const done = new Promise<void>((resolve) => {
+    exited = resolve;
+  });
+  terminal.onData((data) => {
+    events.output(data);
+    if (firstRun.saw(data)) events.screen('first-run');
+    if (trust.saw(data)) events.screen('trust');
+  });
+  terminal.onExit(({ exitCode }) => {
+    closed = true;
+    stopListening();
+    tellChanges(kept?.settle());
+    kept?.end();
+    // Its settings were for it alone: the next run of the same name writes its own.
+    void Promise.all(launch.files.map((file) => rm(file, { force: true }))).catch(() => {});
+    events.exit(stopping || exitCode === 0 ? 'stopped' : 'failed');
+    exited();
+  });
+  // Claude Code may first show its first-run screens and ask whether to trust the workspace,
+  // which the window explains, so the run stays "starting" until a hook says otherwise.
+  return {
+    write: (data) => {
+      if (closed) return;
+      terminal.write(data);
+      // Enter answers a screen of Claude Code's own, which may bring the next.
+      if (data.includes('\r') && !heard) {
+        firstRun.answered();
+        events.screen(null);
+      }
+    },
+    send: (text) => {
+      if (closed) return;
+      // A prompt the user sends starts another task, which asks nothing only if it's a quick
+      // resume's, as its hook says too.
+      signals.prompted();
+      terminal.write(text);
+      // Typed together, Claude Code could read the Enter as part of a paste rather than a send.
+      setTimeout(() => {
+        if (!closed) terminal.write('\r');
+      }, 150);
+    },
+    resize: (next) => {
+      if (!closed) terminal.resize(next.cols, next.rows);
+    },
+    stop: () => {
+      if (closed) return;
+      stopping = true;
+      terminal.kill();
+    },
+    hasWork: () => !closed && signals.hasWork(),
+    exited: done,
+  };
 }

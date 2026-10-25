@@ -1,33 +1,21 @@
 import { Button, type RunState, RunStatus, VisuallyHidden } from '@factwright/ui';
 import { ChevronDown, ChevronUp } from 'lucide-react';
 import type { ReactNode } from 'react';
+import type { RunPhase } from '../shared/api.ts';
 import styles from './ClaudePanel.module.css';
 import { BUSY } from './jobs/RunActions.tsx';
-import type { RunPhase } from './useClaudeRun.ts';
 
 /** The run's state as the status chip shows it. A run that couldn't start counts as failed. */
 export function chipState(phase: RunPhase, problem: string | undefined): RunState {
-  if (phase === 'idle') return problem ? 'failed' : 'stopped';
-  return phase;
-}
-
-/** Whether Claude Code is still open. */
-export function isRunning(phase: RunPhase): boolean {
-  return (
-    phase === 'starting' ||
-    phase === 'ready' ||
-    phase === 'working' ||
-    phase === 'needs-answer' ||
-    phase === 'done'
-  );
+  return problem ? 'failed' : phase;
 }
 
 /**
- * The bar along the bottom of the window while Claude has a task: where the run stands, what
- * Claude is doing or what it made, how long it's been, whose Claude it is, and what you can do,
- * such as open what it made, or see Claude's work, the terminal under the bar. Stop is for a run
- * that's starting, working or waiting on the user. Otherwise it's Close, which quits Claude Code
- * that's done, or ready with nothing to do, and puts the bar away in one click.
+ * The bar of the run Claude's panel shows: where it stands, what Claude is doing or what it made,
+ * how long it's been, whose Claude it is, and what you can do, such as open what it made, or see
+ * Claude's work, the terminal under the bar. Stop is for a run that's starting, working or waiting
+ * on the user. Otherwise it's Close, which quits Claude Code that's done, or ready with nothing to
+ * do, and closes the run's tab in one click, or takes a task waiting in line out of it.
  */
 export function PanelHeader({
   title = 'Claude',
@@ -37,7 +25,7 @@ export function PanelHeader({
   text,
   elapsed = null,
   action = null,
-  workShown,
+  workShown = false,
   onShowWork,
   onStop,
   onClose,
@@ -55,11 +43,11 @@ export function PanelHeader({
   elapsed?: string | null;
   /** What to do next, such as answering Claude or opening what it made. */
   action?: ReactNode;
-  /** Whether Claude's work, the terminal, shows under the bar. */
-  workShown: boolean;
-  onShowWork: (shown: boolean) => void;
+  /** Whether Claude's work, the terminal, shows under the bar, for a run that has one. */
+  workShown?: boolean;
+  onShowWork?: (shown: boolean) => void;
   onStop: () => void;
-  /** Puts the bar away, quitting Claude Code first while it's open. */
+  /** Closes the run's tab, quitting Claude Code first while it's open. */
   onClose: () => void;
   /** The task is done, with something to show for it. */
   finished?: boolean;
@@ -88,21 +76,23 @@ export function PanelHeader({
         {plan ? `Runs on your own Claude · ${plan}` : 'Runs on your own Claude'}
       </span>
       {action}
-      <Button
-        size="sm"
-        variant="quiet"
-        aria-expanded={workShown}
-        icon={
-          workShown ? (
-            <ChevronDown size={14} aria-hidden="true" />
-          ) : (
-            <ChevronUp size={14} aria-hidden="true" />
-          )
-        }
-        onClick={() => onShowWork(!workShown)}
-      >
-        {workShown ? 'Hide Claude’s work' : 'Show Claude’s work'}
-      </Button>
+      {onShowWork && (
+        <Button
+          size="sm"
+          variant="quiet"
+          aria-expanded={workShown}
+          icon={
+            workShown ? (
+              <ChevronDown size={14} aria-hidden="true" />
+            ) : (
+              <ChevronUp size={14} aria-hidden="true" />
+            )
+          }
+          onClick={() => onShowWork(!workShown)}
+        >
+          {workShown ? 'Hide Claude’s work' : 'Show Claude’s work'}
+        </Button>
+      )}
       {stoppable ? (
         <Button variant="quiet" size="sm" onClick={onStop}>
           Stop

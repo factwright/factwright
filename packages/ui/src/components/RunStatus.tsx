@@ -1,8 +1,9 @@
 import { cx } from '../cx.ts';
 import styles from './RunStatus.module.css';
 
-/** Where a Claude run can stand, as the app's panel shows it. */
+/** Where a Claude run can stand, as the app's panel shows it, waiting in line for its turn first. */
 export const RUN_STATES = [
+  'in-line',
   'starting',
   'ready',
   'working',
@@ -15,6 +16,7 @@ export const RUN_STATES = [
 export type RunState = (typeof RUN_STATES)[number];
 
 const LABELS: Readonly<Record<RunState, string>> = {
+  'in-line': 'In line',
   starting: 'Starting',
   ready: 'Ready',
   working: 'Working',

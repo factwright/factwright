@@ -6,19 +6,23 @@ import type { FactwrightApi } from '../shared/api.ts';
 import { useRunActivity } from './useRunActivity.ts';
 
 function fakeApi() {
-  let step: (value: RunStep) => void = () => {};
-  let end: (value: TurnEnd) => void = () => {};
+  let step: (heard: { runId: string; step: RunStep }) => void = () => {};
+  let end: (heard: { runId: string; end: TurnEnd }) => void = () => {};
   const api = {
-    onClaudeStep: (listener: (value: RunStep) => void) => {
+    onClaudeStep: (listener: typeof step) => {
       step = listener;
       return () => {};
     },
-    onClaudeTurnEnd: (listener: (value: TurnEnd) => void) => {
+    onClaudeTurnEnd: (listener: typeof end) => {
       end = listener;
       return () => {};
     },
   } as unknown as FactwrightApi;
-  return { api, step: (value: RunStep) => step(value), end: (value: TurnEnd) => end(value) };
+  return {
+    api,
+    step: (value: RunStep, runId = 'run-1') => step({ runId, step: value }),
+    end: (value: TurnEnd, runId = 'run-1') => end({ runId, end: value }),
+  };
 }
 
 const read = (state: RunStep['state'], id = 'toolu_1'): RunStep => ({
@@ -31,31 +35,31 @@ const read = (state: RunStep['state'], id = 'toolu_1'): RunStep => ({
 describe('useRunActivity', () => {
   it('keeps each step as it stands, in the order they started, and how the turn ended', () => {
     const { api, step, end } = fakeApi();
-    const { result } = renderHook(({ taskId }) => useRunActivity(api, taskId), {
-      initialProps: { taskId: 1 },
-    });
-    expect(result.current).toEqual({ steps: [], lastAt: null, end: null });
+    const { result } = renderHook(() => useRunActivity(api, ['run-1']));
+    expect(result.current('run-1')).toEqual({ steps: [], lastAt: null, end: null });
     act(() => step(read('running')));
     act(() => step(read('running', 'toolu_2')));
     act(() => step(read('done')));
-    expect(result.current.steps).toEqual([read('done'), read('running', 'toolu_2')]);
-    expect(result.current.lastAt).not.toBeNull();
+    expect(result.current('run-1').steps).toEqual([read('done'), read('running', 'toolu_2')]);
+    expect(result.current('run-1').lastAt).not.toBeNull();
     // A start heard after its end leaves the end be.
     act(() => step(read('running')));
-    expect(result.current.steps[0]).toEqual(read('done'));
+    expect(result.current('run-1').steps[0]).toEqual(read('done'));
     act(() => end({ said: 'Done.', error: null }));
-    expect(result.current.end).toEqual({ said: 'Done.', error: null });
+    expect(result.current('run-1').end).toEqual({ said: 'Done.', error: null });
   });
 
-  it('starts another task with nothing done', () => {
+  it('keeps each run’s apart, and lets a run go once its tab closes', () => {
     const { api, step } = fakeApi();
-    const { result, rerender } = renderHook(({ taskId }) => useRunActivity(api, taskId), {
-      initialProps: { taskId: 1 },
+    const { result, rerender } = renderHook(({ runs }) => useRunActivity(api, runs), {
+      initialProps: { runs: ['run-1', 'run-2'] },
     });
     act(() => step(read('done')));
-    rerender({ taskId: 2 });
-    expect(result.current).toEqual({ steps: [], lastAt: null, end: null });
-    act(() => step(read('running', 'toolu_3')));
-    expect(result.current.steps).toEqual([read('running', 'toolu_3')]);
+    act(() => step(read('running', 'toolu_3'), 'run-2'));
+    expect(result.current('run-1').steps).toEqual([read('done')]);
+    expect(result.current('run-2').steps).toEqual([read('running', 'toolu_3')]);
+    rerender({ runs: ['run-2'] });
+    expect(result.current('run-1')).toEqual({ steps: [], lastAt: null, end: null });
+    expect(result.current('run-2').steps).toHaveLength(1);
   });
 });
