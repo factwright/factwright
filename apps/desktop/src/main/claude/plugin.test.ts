@@ -174,10 +174,22 @@ describe('the plugin’s skills', () => {
       expect(quick).toContain(`\`${tool}\``);
     }
     expect(quick).toContain('`## What could make it stronger`');
-    for (const part of ['unverified facts', 'gaps that matter', 'numbers missing']) {
+    for (const part of [
+      'unverified and low-confidence facts',
+      'gaps that matter',
+      'numbers missing',
+    ]) {
       expect(quick).toContain(part);
     }
     expect(text).toContain('A quick resume skips this step: it asks nothing.');
+    // Low-confidence claims are asked about before they're used, so a quick resume leaves them out.
+    expect(quick).toContain('every `low`-confidence one');
+    // The fact-check still runs, and the reply points to the button that asks: New version.
+    expect(quick).toContain("Step 8's fact-check still runs");
+    expect(text).toContain('never for a quick resume');
+    expect(quick).toContain('New version, beside the resume, asks about these');
+    expect(quick).not.toContain('Tailor a resume');
+    expect(quick).toContain('**Fewer pages when it must.**');
     const rules = readFileSync(join(pluginDir, STANDING_RULES), 'utf8');
     expect(rules).toContain('A quick resume asks nothing');
   });
