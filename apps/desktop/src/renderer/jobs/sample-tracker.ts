@@ -77,6 +77,8 @@ type TrackerApi = Pick<
   | 'deleteNote'
   | 'onJobsChanged'
   | 'openFile'
+  | 'downloadFile'
+  | 'showFile'
   | 'readPdf'
   | 'readWord'
   | 'copyText'
@@ -670,6 +672,8 @@ export function sampleTracker(
     readShot: async (path) => shots.get(path)?.bytes ?? null,
     pasteImage: async () => ({ ok: true, file: '/sample/workspace/screenshots/pasted-1.png' }),
     openFile: async () => ({ ok: false, message: 'The sample screens can’t open files.' }),
+    downloadFile: async () => ({ ok: false, message: 'The sample screens can’t save files.' }),
+    showFile: async () => ({ ok: false, message: 'The sample screens can’t show files.' }),
     // Every resume is the same made-up one, made by the engine as the app makes it. A cover
     // letter shows the sample page.
     readPdf: async (path) => ({

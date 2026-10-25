@@ -169,6 +169,8 @@ export interface SessionDeps {
 
 interface Run {
   terminal: IPty;
+  /** Its signals, which say whether it has work going. */
+  signals: RunSignals;
   stopListening: () => void;
   /** Set when the user stops the run, so its exit doesn't read as a failure. */
   stopping: boolean;
@@ -183,6 +185,9 @@ interface Run {
   exited: Promise<void>;
 }
 
+/** How long the app waits for Claude Code to close before it restarts anyway. */
+const CLOSE_WAIT_MS = 5000;
+
 /** The user's Claude Code, running in the panel. One run at a time. */
 export class ClaudeSession {
   private readonly deps: SessionDeps;
@@ -196,6 +201,33 @@ export class ClaudeSession {
   /** Whether a run is starting or going. */
   busy(): boolean {
     return this.starting || this.run !== undefined;
+  }
+
+  /**
+   * Whether a run has work going: Claude Code is starting, Claude is working, or it waits on the
+   * user. Restarting the app would stop that, so updates and switching profiles wait for it.
+   * Claude Code that's done, or ready with nothing to do yet, has none.
+   */
+  working(): boolean {
+    return this.starting || (this.run?.signals.hasWork() ?? false);
+  }
+
+  /**
+   * Quits Claude Code that has no work going, as before the app restarts, and settles once it has
+   * closed, or after a few seconds whatever happens. A run with work going is left as it is.
+   */
+  async closeIdle(): Promise<void> {
+    const run = this.run;
+    if (!run || this.working()) return;
+    this.stop();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    await Promise.race([
+      run.exited,
+      new Promise<void>((resolve) => {
+        timer = setTimeout(resolve, CLOSE_WAIT_MS);
+      }),
+    ]);
+    clearTimeout(timer);
   }
 
   /** The model the open run is on, or undefined when none is open. */
@@ -277,7 +309,7 @@ export class ClaudeSession {
           tools: (method: string) => {
             if (method !== 'tools/list' || heard) return;
             pastScreens();
-            this.deps.onSignal('ready');
+            signals.ready();
           },
         }),
         scope,
@@ -308,6 +340,7 @@ export class ClaudeSession {
     let exited = () => {};
     const run: Run = {
       terminal,
+      signals,
       stopListening,
       stopping: false,
       model: launch.model,
@@ -346,6 +379,7 @@ export class ClaudeSession {
   send(prompt: string): StartResult {
     const run = this.run;
     if (!run) return { ok: false, reason: 'not-running' };
+    run.signals.prompted();
     run.terminal.write(prompt);
     // Typed together, Claude Code could read the Enter as part of a paste rather than a send.
     setTimeout(() => {

@@ -30,7 +30,7 @@ import styles from './App.module.css';
 import { GetStarted } from './about/GetStarted.tsx';
 import { ProfilePage } from './about/ProfilePage.tsx';
 import { needsGettingStarted, useProfile } from './about/useProfile.ts';
-import { ClaudePanel, type RunResult, turnErrorWords } from './ClaudePanel.tsx';
+import { ClaudePanel, endsAsking, type RunResult, turnErrorWords } from './ClaudePanel.tsx';
 import { ClaudePermission } from './ClaudePermission.tsx';
 import { ClaudeQuestions } from './ClaudeQuestions.tsx';
 import { ClaudeSettingsDialog } from './ClaudeSettingsDialog.tsx';
@@ -449,6 +449,10 @@ export function App({ api }: { api: FactwrightApi }) {
       go: () => outcome.place && goTo(outcome.place),
     },
   };
+  // Work going, which restarting the app would stop: a run that's starting, working or waiting on
+  // the user, as for a reply to a question Claude asked in its own words. Updates and switching
+  // profiles wait for it. Claude Code that's done closes as the app restarts.
+  const workGoing = BUSY.includes(run.phase) || endsAsking(run.phase, activity, result);
   // Opens what the task made from the notification that says so, too.
   const openResult = useRef<(() => void) | null>(null);
   openResult.current = result?.open?.go ?? null;
@@ -502,7 +506,7 @@ export function App({ api }: { api: FactwrightApi }) {
           {...(profiles.list && {
             profiles: {
               list: profileList,
-              busy: isRunning(run.phase),
+              busy: workGoing,
               onOpen: askToSwitch,
               onAdd: () => setDialog('add-profile'),
               onManage: () => setDialog('profiles'),
@@ -541,13 +545,15 @@ export function App({ api }: { api: FactwrightApi }) {
           factsToVerify={profile?.status.facts.unconfirmed || undefined}
           update={{
             status: update,
-            busy: isRunning(run.phase),
+            busy: workGoing,
             unsaved: hasUnsaved,
-            onRestart: () => {
-              // The profile saves as the user types, so what's waiting to save goes first. Facts and
-              // notes have Save buttons: the card asks before restarting over them.
-              void about.flush().finally(() => api.installUpdate());
-            },
+            // The profile saves as the user types, so what's waiting to save goes first. Facts and
+            // notes have Save buttons: the card asks before restarting over them.
+            onRestart: () =>
+              about.flush().then(
+                () => api.installUpdate(),
+                () => api.installUpdate(),
+              ),
           }}
           version={api.version}
         />
@@ -765,7 +771,7 @@ export function App({ api }: { api: FactwrightApi }) {
       {dialog === 'add-profile' && (
         <AddProfileDialog
           api={api}
-          busy={isRunning(run.phase)}
+          busy={workGoing}
           firstName={
             currentProfile?.first && !currentProfile.named
               ? (profile?.answers.you.name ?? '')

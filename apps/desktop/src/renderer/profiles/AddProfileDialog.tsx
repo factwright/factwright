@@ -32,7 +32,7 @@ export function AddProfileDialog({
   onClose,
 }: {
   api: Pick<FactwrightApi, 'addProfile'>;
-  /** Whether Claude is working, which opening the new profile would stop. */
+  /** Whether Claude has work going, which opening the new profile would stop. */
   busy: boolean;
   /**
    * With only one profile so far, the name to suggest for it, such as the person's own from

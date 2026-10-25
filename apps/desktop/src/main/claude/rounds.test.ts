@@ -43,7 +43,13 @@ const heard = () => {
   return found;
 };
 
-const answer = (picks: string[], other = '', note = '') => ({ picks, other, note });
+const answer = (picks: string[], other = '', note = '') => ({
+  picks,
+  other,
+  note,
+  skipped: false,
+});
+const skip = (note = '') => ({ picks: [], other: '', note, skipped: true });
 
 describe('roundFrom', () => {
   it('reads a round Claude is about to ask, with the input Claude Code gave', () => {
@@ -218,13 +224,22 @@ describe('parseReply', () => {
       parseReply(round, [answer(['Yes, in production']), answer(['Kubernetes', 'Kafka'], 'Go')]),
     ).toEqual([
       answer(['Yes, in production']),
-      { picks: ['Kafka', 'Kubernetes'], other: 'Go', note: '' },
+      { picks: ['Kafka', 'Kubernetes'], other: 'Go', note: '', skipped: false },
     ]);
   });
 
-  it('takes a question left unanswered, while another is answered', () => {
-    expect(parseReply(round, [answer([], '', 'Ask me later'), answer(['Kafka'])])).not.toBeNull();
-    expect(parseReply(round, [answer([]), answer([], '  ')])).toBeNull();
+  it('takes a question skipped, with a note or without, and any other answered', () => {
+    expect(parseReply(round, [skip('Ask me later'), answer(['Kafka'])])).toEqual([
+      skip('Ask me later'),
+      answer(['Kafka']),
+    ]);
+    expect(parseReply(round, [skip(), skip()])).toEqual([skip(), skip()]);
+  });
+
+  it('refuses a round with a question neither answered nor skipped', () => {
+    expect(parseReply(round, [answer([], '', 'Ask me later'), answer(['Kafka'])])).toBeNull();
+    expect(parseReply(round, [answer(['Some']), answer([], '  ')])).toBeNull();
+    expect(parseReply(round, [answer([]), answer([])])).toBeNull();
   });
 
   it('refuses answers that don’t fit the round', () => {
@@ -237,6 +252,11 @@ describe('parseReply', () => {
     expect(parseReply(round, [answer(['Some'], 'x'.repeat(10_001)), answer([])])).toBeNull();
     expect(parseReply(round, [{ picks: ['Some'], other: '' }, answer([])])).toBeNull();
     expect(parseReply(round, [{ picks: 'Some', other: '', note: '' }, answer([])])).toBeNull();
+    // Skipping is all or nothing: a question skipped has nothing picked or typed.
+    expect(parseReply(round, [{ ...answer(['Some']), skipped: true }, skip()])).toBeNull();
+    expect(parseReply(round, [{ ...answer([], 'Go'), skipped: true }, skip()])).toBeNull();
+    expect(parseReply(round, [{ picks: [], other: '', note: '' }, skip()])).toBeNull();
+    expect(parseReply(round, [{ ...skip(), skipped: 'yes' }, skip()])).toBeNull();
   });
 });
 
@@ -248,6 +268,7 @@ describe('parseReply for a number question', () => {
 
   it('takes a number within its range, as Claude Code would, and refuses any other', () => {
     expect(parseReply(found.round, [answer([], ' 3.5 ')])).toEqual([answer([], ' 3.5 ')]);
+    expect(parseReply(found.round, [skip()])).toEqual([skip()]);
     for (const other of ['41', '-1', 'three', '1e3', '3.', '.5']) {
       expect(parseReply(found.round, [answer([], other)])).toBeNull();
     }
@@ -284,6 +305,15 @@ describe('hookReply', () => {
     expect(previewed.hookSpecificOutput.updatedInput).toMatchObject({
       answers: { [GRAPHQL]: 'No' },
       annotations: { [GRAPHQL]: { preview: '```\nNo GraphQL\n```' } },
+    });
+  });
+
+  it('tells Claude the user skipped a question, with any note they added', () => {
+    const reply = hookReply(heard(), [skip('  Ask me after the call  '), answer(['Kafka'])]);
+    expect(reply.hookSpecificOutput.updatedInput).toEqual({
+      ...input,
+      answers: { [GRAPHQL]: 'The user skipped this question.', [TOOLS]: 'Kafka' },
+      annotations: { [GRAPHQL]: { notes: 'Ask me after the call' } },
     });
   });
 });

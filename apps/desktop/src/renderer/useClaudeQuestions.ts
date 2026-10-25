@@ -13,6 +13,8 @@ export interface Choice {
   note: string;
   /** Whether the box for a note is showing. */
   noting: boolean;
+  /** Whether the user skipped the question. What they chose before stays, for if they answer it after all. */
+  skipped: boolean;
 }
 
 export interface ClaudeQuestions {

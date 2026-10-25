@@ -5,10 +5,11 @@ import {
   dayFrom,
   type JobView,
   payLabel,
+  shortDate,
 } from '@factwright/core';
 import { FitBadge, StatusPill, VisuallyHidden } from '@factwright/ui';
 import { ArrowDown, ArrowUp, Check, ChevronRight } from 'lucide-react';
-import type { KeyboardEvent, MouseEvent } from 'react';
+import { type KeyboardEvent, type MouseEvent, useEffect, useRef, useState } from 'react';
 import styles from './JobList.module.css';
 import type { JobRow, ListSort, SortKey } from './rows.ts';
 
@@ -57,7 +58,45 @@ const COLUMNS: readonly { by: SortKey; label: string; ways: readonly [string, st
   { by: 'fit', label: 'Fit', ways: ['best fit first', 'lowest fit first'] },
   { by: 'pay', label: 'Pay', ways: ['highest pay first', 'lowest pay first'] },
   { by: 'next', label: 'Next step', ways: ['most pressing first', 'least pressing first'] },
+  { by: 'added', label: 'Added', ways: ['newest first', 'oldest first'] },
 ];
+
+/** Which ways the list can scroll sideways from where it is, for the fades along its edges. */
+interface Sideways {
+  /** Columns are scrolled out of sight to the left, under the jobs' names. */
+  back: boolean;
+  /** More columns are out of sight to the right. */
+  more: boolean;
+}
+
+/**
+ * Follows how far the list is scrolled sideways, and whether it can scroll at all, as its width
+ * and rows change.
+ */
+function useSideways() {
+  const scroller = useRef<HTMLDivElement>(null);
+  const [sideways, setSideways] = useState<Sideways>({ back: false, more: false });
+  useEffect(() => {
+    const box = scroller.current;
+    if (!box) return;
+    const measure = () => {
+      const back = box.scrollLeft > 0;
+      // A pixel's leeway, as the browser rounds where it scrolled to.
+      const more = box.scrollLeft + box.clientWidth < box.scrollWidth - 1;
+      setSideways((was) => (was.back === back && was.more === more ? was : { back, more }));
+    };
+    measure();
+    box.addEventListener('scroll', measure, { passive: true });
+    const resized = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(measure);
+    resized?.observe(box);
+    if (box.firstElementChild) resized?.observe(box.firstElementChild);
+    return () => {
+      box.removeEventListener('scroll', measure);
+      resized?.disconnect();
+    };
+  }, []);
+  return { scroller, sideways };
+}
 
 /** Moves between rows with the arrow keys, and to the first or last with Home and End. */
 function moveFocus(event: KeyboardEvent<HTMLUListElement>) {
@@ -103,10 +142,12 @@ const againAfter = ({ job, progress }: JobRow) =>
   );
 
 /**
- * The jobs, one row each: company and role, status, fit, pay and the next step. Jobs in
- * interviews show their calls so far, and jobs to review say which search found them last, and
- * when it found them again. Each row can be picked, to move several at once, and To review ends
- * with the jobs set aside.
+ * The jobs, one row each: company and role, status, fit, pay, the next step, and the day each was
+ * found or saved. Jobs in interviews show their calls so far, and jobs to review say which search
+ * found them last, and when it found them again. Each row can be picked, to move several at once,
+ * and To review ends with the jobs set aside. Every column keeps its heading: when the list is too
+ * narrow for them all, it scrolls sideways, with the jobs' names pinned, and a fade at the edge
+ * says there's more.
  */
 export function JobList({
   rows,
@@ -139,6 +180,7 @@ export function JobList({
 }) {
   const pickedHere = picks ? rows.filter((row) => picks.picked.has(row.job.id)).length : 0;
   const allPicked = rows.length > 0 && pickedHere === rows.length;
+  const { scroller, sideways } = useSideways();
   const item = (row: JobRow) => {
     const { job, progress, next } = row;
     const pay = payLabel(job.pay);
@@ -206,88 +248,104 @@ export function JobList({
           <span className={`${styles.next} ${next ? (NEXT_TONE[next.level] ?? '') : ''}`}>
             {next?.text}
           </span>
+          <span className={styles.added}>
+            {job.firstSeen ? (
+              <>
+                <VisuallyHidden>Added </VisuallyHidden>
+                {shortDate(job.firstSeen, today)}
+              </>
+            ) : (
+              <span aria-hidden="true">—</span>
+            )}
+          </span>
         </button>
       </li>
     );
   };
   return (
-    <div className={`${styles.table} ${picks ? styles.pickable : ''}`}>
-      <div>
-        {rows.length > 0 && (
-          <div className={styles.headRow}>
-            {picks && (
-              <span className={styles.pick}>
-                <input
-                  type="checkbox"
-                  data-select-all
-                  aria-label={`Select every job in ${picks.label}`}
-                  checked={allPicked}
-                  ref={(box) => {
-                    if (box) box.indeterminate = pickedHere > 0 && !allPicked;
-                  }}
-                  onChange={() => picks.onPickAll(!allPicked)}
-                />
-              </span>
-            )}
-            <div className={styles.head}>
-              {COLUMNS.map(({ by, label, ways }) => {
-                const sorted = sort?.by === by ? sort : null;
-                return (
-                  <span key={by} className={styles[by]}>
-                    {onSort ? (
-                      <button
-                        type="button"
-                        className={`${styles.sort} ${sorted ? styles.sorted : ''}`}
-                        aria-label={
-                          sorted
-                            ? `${label}, sorted ${ways[sorted.reversed ? 1 : 0]}`
-                            : `Sort by ${label.toLowerCase()}`
-                        }
-                        onClick={() => onSort(by)}
-                      >
-                        {label}
-                        {sorted &&
-                          (sorted.reversed ? (
-                            <ArrowUp size={13} aria-hidden="true" />
-                          ) : (
-                            <ArrowDown size={13} aria-hidden="true" />
-                          ))}
-                      </button>
-                    ) : (
-                      <span aria-hidden="true">{label}</span>
-                    )}
-                  </span>
-                );
-              })}
+    <div
+      className={`${styles.table} ${picks ? styles.pickable : ''}`}
+      data-scrolled={sideways.back || undefined}
+      data-more={sideways.more || undefined}
+    >
+      <div ref={scroller} className={styles.scroller}>
+        <div className={styles.content}>
+          {rows.length > 0 && (
+            <div className={styles.headRow}>
+              {picks && (
+                <span className={styles.pick}>
+                  <input
+                    type="checkbox"
+                    data-select-all
+                    aria-label={`Select every job in ${picks.label}`}
+                    checked={allPicked}
+                    ref={(box) => {
+                      if (box) box.indeterminate = pickedHere > 0 && !allPicked;
+                    }}
+                    onChange={() => picks.onPickAll(!allPicked)}
+                  />
+                </span>
+              )}
+              <div className={styles.head}>
+                {COLUMNS.map(({ by, label, ways }) => {
+                  const sorted = sort?.by === by ? sort : null;
+                  return (
+                    <span key={by} className={styles[by]}>
+                      {onSort ? (
+                        <button
+                          type="button"
+                          className={`${styles.sort} ${sorted ? styles.sorted : ''}`}
+                          aria-label={
+                            sorted
+                              ? `${label}, sorted ${ways[sorted.reversed ? 1 : 0]}`
+                              : `Sort by ${label.toLowerCase()}`
+                          }
+                          onClick={() => onSort(by)}
+                        >
+                          {label}
+                          {sorted &&
+                            (sorted.reversed ? (
+                              <ArrowUp size={13} aria-hidden="true" />
+                            ) : (
+                              <ArrowDown size={13} aria-hidden="true" />
+                            ))}
+                        </button>
+                      ) : (
+                        <span aria-hidden="true">{label}</span>
+                      )}
+                    </span>
+                  );
+                })}
+              </div>
             </div>
-          </div>
-        )}
-        {rows.length > 0 && (
-          <ul className={styles.rows} aria-label="Jobs" onKeyDown={moveFocus}>
-            {rows.map(item)}
-          </ul>
-        )}
-        {later && later.rows.length > 0 && (
-          <div className={`${styles.later} ${rows.length > 0 ? '' : styles.laterOnly}`}>
-            <button
-              type="button"
-              className={styles.laterToggle}
-              aria-expanded={later.open}
-              onClick={later.onToggle}
-            >
-              <ChevronRight className={styles.chevron} size={15} aria-hidden="true" />
-              {/* The spaces keep them apart when read aloud; flex layout doesn't show them. */}
-              <span className={styles.laterName}>Later</span>{' '}
-              <span className={styles.laterCount}>{later.rows.length}</span>{' '}
-              <span className={styles.laterHint}>Set aside. Each comes back on its day.</span>
-            </button>
-            {later.open && (
-              <ul className={styles.rows} aria-label="Set aside for later" onKeyDown={moveFocus}>
-                {later.rows.map(item)}
-              </ul>
-            )}
-          </div>
-        )}
+          )}
+          {rows.length > 0 && (
+            <ul className={styles.rows} aria-label="Jobs" onKeyDown={moveFocus}>
+              {rows.map(item)}
+            </ul>
+          )}
+          {later && later.rows.length > 0 && (
+            <div className={`${styles.later} ${rows.length > 0 ? '' : styles.laterOnly}`}>
+              <button
+                type="button"
+                className={styles.laterToggle}
+                aria-expanded={later.open}
+                onClick={later.onToggle}
+              >
+                <ChevronRight className={styles.chevron} size={15} aria-hidden="true" />
+                {/* The spaces keep them apart when read aloud; flex layout doesn't show them. */}
+                <span className={styles.laterName}>Later</span>{' '}
+                <span className={styles.laterCount}>{later.rows.length}</span>{' '}
+                <span className={styles.laterHint}>Set aside. Each comes back on its day.</span>
+              </button>
+              {later.open && (
+                <ul className={styles.rows} aria-label="Set aside for later" onKeyDown={moveFocus}>
+                  {later.rows.map(item)}
+                </ul>
+              )}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
