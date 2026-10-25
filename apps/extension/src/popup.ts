@@ -1,9 +1,10 @@
 import 'virtual:theme.css';
 import './ui.css';
-import { type AskedJob, JOB_LIMITS, JOB_STATUS_LABELS, readStatus } from '@factwright/core';
-import { canReachSync } from './account.ts';
-import { framedSystem } from './application-sites.ts';
+import { type AskedJob, JOB_LIMITS, readStatus, SENT_STATUSES } from '@factwright/core';
+import { allowSync, canReachSync } from './account.ts';
+import { framedSystem, isAllowedPage } from './application-sites.ts';
 import {
+  allowComputer,
   canReachComputer,
   canSendNow,
   type Destination,
@@ -12,8 +13,14 @@ import {
 } from './computer.ts';
 import { type Child, h, heading, show } from './dom.ts';
 import { ext, type Tab } from './ext.ts';
-import { findForm, looksLikeApplication } from './fill.ts';
-import { askForJob, askToSave } from './messages.ts';
+import { findForm, isCopyOnly, looksLikeApplication } from './fill.ts';
+import { fillWays, type NoWay } from './fill-way.ts';
+import { fillAndNote } from './in-place.ts';
+import type { NoteSays } from './job-site-messages.ts';
+import { statusWords } from './job-words.ts';
+import { counted, type KeptFill, keptFill } from './kept-fill.ts';
+import { askForJob, askToSave, type Message } from './messages.ts';
+import { type Note, notesOn } from './notes.ts';
 import type { PageJob } from './page/read-job.ts';
 import { openPanel } from './panel-open.ts';
 import { isWebPage, readTab, type Unread } from './read-tab.ts';
@@ -24,12 +31,14 @@ import { isJobAddress, looksLikeJob, toSave } from './tab-job.ts';
 
 /**
  * The popup under the toolbar button: it reads the job on the page you're on and looks it up in
- * your job hunt. A job you saved shows as it's on file, with Fill for the page's application form.
- * Any other shows what was read, its title, company, pay, place and posting, to save in one click,
- * or to check and change first, in Edit details. On an application form's page, that click saves
- * the job and fills the form. It saves through sync, or straight to Factwright on this computer.
- * Nothing is saved until you click, and the look-up tells Factwright on this computer only the
- * page's address, the company and the job's title.
+ * your job hunt. A job you saved shows as it's on file, with Fill for the page's application form,
+ * and Mark as applied where the extension doesn't notice you submit it. Any other shows what was
+ * read, its title, company, pay, place and posting, to save in one click, or to check and change
+ * first, in Edit details. On an application form's page, that click saves the job and fills the
+ * form. Fill fills the form in its page, and a note there says how it went: Details, there or here,
+ * opens the panel. It saves through sync, or straight to Factwright on this computer. Nothing is
+ * saved until you click, and the look-up tells Factwright on this computer only the page's address,
+ * the company and the job's title.
  */
 
 const app = document.getElementById('app') as HTMLElement;
@@ -39,6 +48,21 @@ let savingTo: Destination = null;
 
 /** The tab's application form, to fill, when the page has one. */
 let fillable: Tab | null = null;
+
+/** Whether the form is LinkedIn's or Indeed's, which the panel gives answers to copy for. */
+let copyOnly = false;
+
+/**
+ * Whether the extension's script notices you submit the form, as on a job site you allowed, so
+ * Mark as applied isn't needed here.
+ */
+let watched = false;
+
+/** The form Fill filled in this tab, as kept for the panel, which Details opens. */
+let filledHere: KeptFill | null = null;
+
+/** Why there's no way to fill now, which Fill asks the browser for first, or null. */
+let noWay: NoWay | null = null;
 
 /**
  * Whether Factwright on this computer answered the look-up, which the form's fill then asks too,
@@ -54,13 +78,65 @@ let fillsOnComputer = false;
 let notAJob = false;
 
 /**
- * Opens the panel beside the page, which fills the form there. It's opened straight from the
- * click, as each browser asks, and the popup closes once it's open.
+ * Opens the panel beside the page, straight from the click, as each browser asks, and closes once
+ * it's open: it shows the form Fill filled, or fills it, or for LinkedIn's and Indeed's forms,
+ * gives each answer to copy.
  */
-function fillIn(tab: Tab): void {
+function details(tab: Tab): void {
   void openPanel(tab).then(
     () => window.close(),
     () => window.close(),
+  );
+}
+
+/**
+ * Fills the page's application form in its page, and a note there says how it went: the
+ * background fills it, as the popup closes. For LinkedIn's and Indeed's, which don't allow filling,
+ * the panel opens with each answer to copy. Where the browser doesn't let the extension reach
+ * Factwright on this computer, or the sync server it fills from, it asks first.
+ */
+function fillIn(tab: Tab): void {
+  if (copyOnly) {
+    details(tab);
+    return;
+  }
+  if (tab.id === undefined) return;
+  const target = { id: tab.id, windowId: tab.windowId, url: tab.url, title: tab.title };
+  if (noWay) {
+    allowFirst(noWay, target);
+    return;
+  }
+  void ext.runtime.sendMessage({ type: 'fill', tab: target } satisfies Message);
+  window.close();
+}
+
+/**
+ * Asks the browser to let the extension reach Factwright on this computer, or the sync server,
+ * straight from the click, before anything is waited on, as Firefox wants, then fills the form
+ * from here: the background, which started before then, can't reach Factwright yet in Chrome.
+ */
+function allowFirst(way: NoWay, tab: Tab & { id: number }): void {
+  message(
+    way.why === 'sync'
+      ? `The browser doesn’t let the extension reach ${serverName(way.server)}, which it fills forms from.`
+      : 'Filling a form needs Factwright on this computer, which the browser asks you to let Factwright reach.',
+    h(
+      'div',
+      { class: 'actions' },
+      button(
+        'Allow it',
+        () => {
+          const asked = way.why === 'sync' ? allowSync(way.server) : allowComputer();
+          void asked.then(async (allowed) => {
+            if (!allowed) return;
+            show(app, heading(), h('p', { class: 'muted' }, 'Filling the form…'));
+            await fillAndNote(tab);
+            window.close();
+          });
+        },
+        true,
+      ),
+    ),
   );
 }
 
@@ -239,11 +315,9 @@ const saveHere = (to: Exclude<Destination, null>, job: JobToSave) =>
   fillable && fillsOnComputer ? saveOnComputer(job) : saveTo(to, job);
 
 /**
- * Saves a job, then, on an application form's page, fills the form: the panel opens beside the
- * page, as Chrome lets it straight after the click that saved the job, and fills the form with the
- * job on file. Firefox opens its sidebar only straight from a click, so there, as once the click is
- * a while ago, the popup says the job's saved, with Fill to click. Saving only a posting for a job
- * on file, `fill` is false, and the popup says how it went, with Fill to click.
+ * Saves a job, then, on an application form's page, fills the form in its page, with the job on
+ * file, in the same click. Saving only a posting for a job on file, `fill` is false, and the popup
+ * says how it went, with Fill to click.
  */
 async function saveIt(
   to: Exclude<Destination, null>,
@@ -256,14 +330,10 @@ async function saveIt(
   const filling = fill ? fillable : null;
   saving();
   const result = await saveHere(to, job);
+  // Saved, the form fills in its page, in the same click.
   if (result.ok && filling) {
-    try {
-      await openPanel(filling);
-      window.close();
-      return;
-    } catch {
-      // The browser opens it only from a click of its own.
-    }
+    fillIn(filling);
+    return;
   }
   done(to, page, job, unread, result, keepPosting);
 }
@@ -291,6 +361,7 @@ function summary(
   show(
     app,
     heading(),
+    ...appliedLine(),
     h(
       'div',
       { class: 'card job' },
@@ -319,21 +390,6 @@ function summary(
   save.focus();
 }
 
-/** A day, as "Oct 20". */
-const day = (on: string) =>
-  new Date(`${on}T12:00:00Z`).toLocaleDateString('en-US', {
-    month: 'short',
-    day: 'numeric',
-    timeZone: 'UTC',
-  });
-
-/** A job's status, in the jobs page's words, with the day you applied. */
-function statusWords(job: AskedJob): string {
-  const status = readStatus(job.status) ?? 'new';
-  const words = JOB_STATUS_LABELS[status];
-  return status === 'applied' && job.appliedOn ? `${words} ${day(job.appliedOn)}` : words;
-}
-
 /**
  * A job you saved, as it's on file: its title, company and status, with Fill for the page's
  * application form, and no save, but for this page's posting, which a job saved without one, as by
@@ -354,7 +410,16 @@ function saved(
   const main =
     how === 'joins'
       ? button(saveWords(), () => void saveIt(to, shown, unread, read, true), true)
-      : filling && button('Fill this application', () => fillIn(filling), true);
+      : filling && button(fillWords(), () => fillIn(filling), true);
+  // Where the extension doesn't notice you submit the application, for a job you haven't sent.
+  const sent =
+    readStatus(job.status) !== null && SENT_STATUSES.includes(readStatus(job.status) ?? 'new');
+  const applied =
+    how !== 'joins' &&
+    !watched &&
+    !sent &&
+    !job.appliedOn &&
+    linkButton('Mark as applied', () => void markApplied(to, job, page));
   const another =
     how === 'role' && linkButton('It’s another job: save it', () => summary(to, page, unread));
   // Saving it again adds a posting it doesn't have yet, and keeps one it has.
@@ -367,6 +432,7 @@ function saved(
   show(
     app,
     heading(),
+    ...appliedLine(),
     h('p', { class: 'small muted' }, 'In your job hunt'),
     h(
       'div',
@@ -386,10 +452,101 @@ function saved(
         { class: 'small muted' },
         'You saved a job at this company with a title like this one.',
       ),
-    (main || another || posting) && h('div', { class: 'actions' }, main, another, posting),
+    ...filledLine(),
+    (main || another || posting || applied) &&
+      h('div', { class: 'actions' }, main, another, posting, applied),
     settingsLink(),
   );
   if (main) main.focus();
+}
+
+/** The words on the button that fills the page's form: again, once Fill filled it. */
+const fillWords = () =>
+  copyOnly ? 'Show answers to copy' : filledHere ? 'Fill again' : 'Fill this application';
+
+/** How many there are of something, in words: "1 field", "14 fields". */
+const many = (count: number, one: string) => `${count} ${count === 1 ? one : `${one}s`}`;
+
+/**
+ * What Fill did on this page, as kept for the panel: how many fields it filled, and need you,
+ * with Details, which opens the panel.
+ */
+function filledLine(): Child[] {
+  const kept = filledHere;
+  const tab = fillable;
+  if (!kept || !tab) return [];
+  const { filled: took, need } = counted(kept.form, kept.plan.replies, new Map(kept.filled));
+  return [
+    h(
+      'p',
+      { class: 'small' },
+      `Factwright filled ${many(took, 'field')} here${need > 0 ? ` · ${need} need you` : ''}. `,
+      linkButton('Details', () => details(tab)),
+    ),
+  ];
+}
+
+/** A job marked applied on this page a moment ago, as its note says, with Undo. */
+let appliedNote: Note | null = null;
+
+/**
+ * What the popup says of a job it, or the page's note, marked applied a moment ago: with Undo,
+ * which takes that back, until it has.
+ */
+function appliedLine(): Child[] {
+  const note = appliedNote;
+  if (note?.says.is !== 'applied') return [];
+  const { says } = note;
+  const undo =
+    says.undo === 'can' &&
+    linkButton('Undo', () => {
+      void ext.runtime
+        .sendMessage({ type: 'undo', tabId: note.tabId, token: note.token } satisfies Message)
+        .then((now) => {
+          if (now) appliedNote = { ...note, says: now as NoteSays };
+          void start();
+        });
+    });
+  return [
+    h(
+      'p',
+      { class: says.undo === 'can' ? 'ok small' : 'small', role: 'status' },
+      says.says ?? `Marked applied: ${says.job}.`,
+      undo && ' ',
+      undo,
+    ),
+  ];
+}
+
+/**
+ * Marks a job applied, as you sent its application somewhere the extension doesn't notice you
+ * submit it, with what the form Fill filled holds now, where it's still on the page: a note on the
+ * page says so, with Undo, and so does the popup.
+ */
+async function markApplied(to: Exclude<Destination, null>, job: AskedJob, page: PageJob) {
+  const tab = (await ext.tabs.query({ active: true, currentWindow: true }))[0];
+  if (tab?.id === undefined) return;
+  show(app, heading(), h('p', { class: 'muted' }, 'Marking it applied…'));
+  const via = fillsOnComputer || to.to === 'computer' ? 'computer' : 'sync';
+  const said = (await ext.runtime
+    .sendMessage({ type: 'applied', tabId: tab.id, job, via, url: page.url } satisfies Message)
+    .catch(() => null)) as { token: string | null; says: NoteSays } | null;
+  if (!said) {
+    message('The extension didn’t answer. Try again.');
+    return;
+  }
+  appliedNote = {
+    token: said.token ?? '',
+    tabId: tab.id,
+    frameId: 0,
+    says: said.says,
+    at: Date.now(),
+  };
+  if (said.says.is === 'problem') {
+    message(said.says.says);
+    return;
+  }
+  await start();
 }
 
 function form(
@@ -569,7 +726,7 @@ function done(
         h(
           'div',
           { class: 'actions' },
-          filling && button('Fill this application', () => fillIn(filling), true),
+          filling && button(fillWords(), () => fillIn(filling), true),
           says.retry && button('Save its posting', () => void again(), !filling),
         ),
     );
@@ -591,6 +748,9 @@ function done(
 
 /** How long the popup waits to hear whether the job's saved, before it offers to save it. */
 const LOOK_FOR_MS = 4000;
+
+/** How long the popup offers Undo for a job marked applied on the page. */
+const APPLIED_FOR_MS = 10 * 60 * 1000;
 
 /**
  * Looks the page's job up in your job hunt: in Factwright on this computer, where the extension
@@ -634,10 +794,25 @@ async function start(): Promise<void> {
   // Filling a form reads the page's fields too, which LinkedIn's link-only setting leaves alone.
   if (tab.id !== undefined && unread !== 'linkedin-link-only') {
     // The form may be in a frame, as a company's careers page shows an applicant system's form,
-    // which the panel fills, or offers to reach, as one on a job site you haven't turned on.
+    // which Fill fills, or the panel offers to reach, as one on a job site you haven't turned on.
     const found = await findForm(tab.id);
-    const framed = found && looksLikeApplication(found.form) ? null : await framedSystem(tab.id);
-    fillable = (found && looksLikeApplication(found.form)) || framed ? tab : null;
+    const form = found && looksLikeApplication(found.form) ? found.form : null;
+    const framed = form ? null : await framedSystem(tab.id);
+    fillable = form || framed ? tab : null;
+    copyOnly = isCopyOnly(form?.url ?? tab.url ?? '') || Boolean(framed);
+    // The script on a job site you allowed notices you submit its form.
+    watched = form !== null && (await isAllowedPage(form.url));
+    const ways = fillable ? await fillWays() : [];
+    noWay = Array.isArray(ways) ? null : ways;
+    filledHere = await keptFill(tab.id);
+    // A job marked applied on this page a moment ago, whose note offers Undo.
+    appliedNote ??=
+      (await notesOn(tab.id)).find(
+        (note) =>
+          note.says.is === 'applied' &&
+          note.says.undo === 'can' &&
+          Date.now() - note.at < APPLIED_FOR_MS,
+      ) ?? null;
   }
   // A page with an application form is a job's, whatever else it shows.
   notAJob = !fillable && !looksLikeJob(page, unread);

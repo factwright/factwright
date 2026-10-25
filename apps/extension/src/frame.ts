@@ -2,20 +2,22 @@ import 'virtual:theme.css';
 import './frame.css';
 import { h, show } from './dom.ts';
 import { ext } from './ext.ts';
-import { BUTTON_CARD, MENU_ROWS } from './frame-size.ts';
+import { MENU_ROWS } from './frame-size.ts';
 import type {
   DraftShows,
-  FilledHere,
   FromFrame,
   MenuAnswer,
+  NoteSays,
   SaveOffer,
 } from './job-site-messages.ts';
 
 /**
  * The extension's own frame on the job sites you allowed, which its script there puts on the page
- * (src/content.ts): the Fill button, or a field's menu, by what its address says after its #. The
- * page can't read what it shows, so a menu's answers stay out of the page until you pick one. It
- * takes only your own clicks and keys, never a page's, and asks the background for everything.
+ * (src/content.ts): the Fill button, a field's menu, or a note of what Factwright did on the page,
+ * by what its address says after its #. The note goes on a page you clicked the extension's button
+ * on too (src/notes.ts). The page can't read what the frame shows, so a menu's answers stay out of
+ * the page until you pick one. It takes only your own clicks and keys, never a page's, and asks the
+ * background for everything.
  */
 
 const app = document.getElementById('app') as HTMLElement;
@@ -56,16 +58,13 @@ const takes = (() => {
 
 const logo = () => h('img', { src: 'icons/32.png', alt: '', width: 16, height: 16 });
 
-/** The Fill button: it fills the form as clicking Fill does, and says how it went where it fills it here. */
+/**
+ * The Fill button: it fills the form in its page, as clicking Fill does, and a note in its place
+ * says how it went.
+ */
 function fillButton(): void {
-  let says = '';
   let busy = false;
   const render = () => {
-    // The script makes the frame big enough for what it says, for a while, then a button again.
-    if (says && innerWidth >= BUTTON_CARD.width - 8) {
-      show(app, h('div', { class: 'said', role: 'status' }, logo(), h('p', {}, says)));
-      return;
-    }
     show(
       app,
       h(
@@ -105,14 +104,112 @@ function fillButton(): void {
     if (!takes(event) || busy) return;
     busy = true;
     render();
-    void ask({ type: 'job-site', do: 'fill', token }).then((said) => {
+    void ask({ type: 'job-site', do: 'fill', token }).then(() => {
       busy = false;
-      const done = said as FilledHere | null;
-      says = done && done.did !== 'panel' ? done.says : '';
       render();
     });
   };
-  addEventListener('resize', render);
+  render();
+}
+
+/** How many there are of something, in words: "1 field", "14 fields". */
+const many = (count: number, one: string, more = `${one}s`) =>
+  `${count} ${count === 1 ? one : more}`;
+
+/** What a note says, in words. */
+function noteWords(says: NoteSays): string {
+  if (says.is === 'filled') {
+    const filled =
+      says.filled === 0
+        ? 'Factwright filled nothing'
+        : `Factwright filled ${many(says.filled, 'field')}`;
+    return says.need > 0 ? `${filled} · ${says.need} need you` : filled;
+  }
+  if (says.is === 'applied') return says.says ?? `Marked applied: ${says.job}`;
+  return says.says;
+}
+
+/**
+ * A note of what Factwright did on the page: how Fill went, with Details, which opens the panel,
+ * that it marked a job applied as you submitted its application, with Undo, or what stopped it,
+ * each with Close.
+ */
+async function note(): Promise<void> {
+  let says = (await ask({ type: 'job-site', do: 'note', token })) as NoteSays | null;
+  if (!says) return;
+  /** What it says in place of Details, once the browser didn't open the panel from it. */
+  let instead = '';
+  const render = () => {
+    if (!says) return;
+    const now = says;
+    const details =
+      now.is === 'filled' &&
+      !instead &&
+      h(
+        'button',
+        {
+          type: 'button',
+          class: 'link',
+          on: {
+            click: (event) => {
+              if (!takes(event)) return;
+              void ask({ type: 'job-site', do: 'details', token }).then((said) => {
+                if ((said as { opened?: boolean } | null)?.opened) return;
+                instead = 'For details, click Factwright’s button.';
+                render();
+              });
+            },
+          },
+        },
+        'Details',
+      );
+    const undo =
+      now.is === 'applied' &&
+      now.undo === 'can' &&
+      h(
+        'button',
+        {
+          type: 'button',
+          class: 'link',
+          on: {
+            click: (event) => {
+              if (!takes(event)) return;
+              void ask({ type: 'job-site', do: 'undo', token }).then((said) => {
+                if (said) says = said as NoteSays;
+                render();
+              });
+            },
+          },
+        },
+        'Undo',
+      );
+    show(
+      app,
+      h(
+        'div',
+        { class: `note${now.is === 'problem' ? ' bad' : ''}`, role: 'status' },
+        logo(),
+        h('p', { title: noteWords(now) }, noteWords(now), instead && ` · ${instead}`),
+        details,
+        undo,
+        h(
+          'button',
+          {
+            type: 'button',
+            class: 'close',
+            'aria-label': 'Close',
+            title: 'Close',
+            on: {
+              click: (event) => {
+                if (takes(event)) void ask({ type: 'job-site', do: 'unnote', token });
+              },
+            },
+          },
+          '×',
+        ),
+      ),
+    );
+  };
   render();
 }
 
@@ -348,3 +445,4 @@ function menuOf(shows: Shows, start: (event: Event) => void): HTMLElement {
 
 if (mode === 'button') fillButton();
 else if (mode === 'menu') void menu();
+else if (mode === 'note') void note();

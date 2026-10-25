@@ -51,6 +51,8 @@ import {
 } from './fill.ts';
 import { type FillWay, fillWays, firstAnswer } from './fill-way.ts';
 import { isToPanel } from './job-site-messages.ts';
+import { statusWords } from './job-words.ts';
+import { keepFill, keptFill } from './kept-fill.ts';
 import { askToSave } from './messages.ts';
 import type { FieldFilled, FieldValue, PageAdder, PageField, PageForm } from './page/form.ts';
 import { isWebPage, readFormJob, readFormPage } from './read-tab.ts';
@@ -71,12 +73,15 @@ import {
 import { toSave } from './tab-job.ts';
 
 /**
- * The side panel beside the page, where filling an application form is checked. It reads the
- * form in the tab you clicked Fill on, asks Factwright on this computer, or your job hunt through
- * sync (src/fill-way.ts), for an answer to each field, fills them, and lists every field with its
- * answer and where the answer came from. What's left for you is outlined in orange on the page.
- * Once you've submitted the form on the site, Mark as applied records what you sent. Factwright
- * never submits anything.
+ * The side panel beside the page, where filling an application form is checked. It opens only as
+ * you ask: from the note Fill puts on the page, Details, or the popup. It shows the form Fill
+ * filled in the tab, as it was kept, without filling it again over what you've typed since, or
+ * else reads the form, asks Factwright on this computer, or your job hunt through sync
+ * (src/fill-way.ts), for an answer to each field, and fills them. At the top, the job; then the
+ * fields that need you; then those it filled, folded away, each with where its answer came from.
+ * What's left for you is outlined in orange on the page. Fill again and Mark as applied are at the
+ * bottom: once you've submitted the form on the site, Mark as applied records what you sent.
+ * Factwright never submits anything.
  */
 
 const app = document.getElementById('app') as HTMLElement;
@@ -203,8 +208,6 @@ let lookNow: (() => void) | null = null;
 let following: ReturnType<typeof setTimeout> | null = null;
 /** How many times filling has started, so an earlier start that's still going stops there. */
 let starts = 0;
-/** When filling last started, so a Fill button clicked before then doesn't start it again. */
-let startedAt = 0;
 
 const button = (text: string, click: () => void, primary = false, disabled = false) =>
   h(
@@ -226,14 +229,6 @@ function message(text: string, ...more: Child[]): void {
   stopFollowing();
   show(app, heading('Fill this application'), h('p', {}, text), ...more);
 }
-
-/** A date as the panel says it: "Oct 12". */
-const day = (on: string) =>
-  new Date(`${on}T12:00:00Z`).toLocaleDateString('en-US', {
-    month: 'short',
-    day: 'numeric',
-    timeZone: 'UTC',
-  });
 
 /** Why a field is left for you, in words. */
 const LEFT: Record<LeftFor, string> = {
@@ -333,22 +328,42 @@ function copy(text: string, target: HTMLButtonElement): void {
   );
 }
 
-/** One field, as the panel lists it: its question, its answer, where it came from, and what to do. */
+/**
+ * Whether a field needs you: its answer didn't take, or it's needed and left for you. A field you
+ * may leave blank, with nothing on file for it, doesn't.
+ */
+function needsYou(state: Filling, at: number): boolean {
+  const field = state.form.fields[at];
+  const reply = state.plan.replies[at];
+  if (!field || !reply) return false;
+  const result = state.filled.get(field.key);
+  return (result !== undefined && !result.ok) || (reply.source === 'you' && field.required);
+}
+
+/** Why a field holds what it did already, which Factwright left as it was, in words. */
+const keptFor = (field: PageField) =>
+  field.control === 'file'
+    ? 'The file you attached, which Factwright kept'
+    : 'It had an answer already, which Factwright left as it was';
+
+/**
+ * One field, as the panel lists it: its question, its answer, and where it came from in small
+ * type, with Go to and Copy, which show as you point at it.
+ */
 function fieldRow(state: Filling, at: number): HTMLElement {
   const field = state.form.fields[at];
   const reply = state.plan.replies[at];
   if (!field || !reply) return h('li', {});
   const result = state.filled.get(field.key);
   // A choice shows the option the page picked, which may be another name for Factwright's answer,
-  // and a field that held an answer already, as a site may fill in from your resume, that one.
+  // and a field that held an answer already, as a file you attached, that one.
   const picked =
     result?.ok &&
     result.shown &&
     (result.kept || field.control === 'choice' || field.control === 'choices');
   const text = picked ? result.shown : replyText(reply);
-  // Orange, as the app marks what needs you: what didn't take, and what's needed and left for
-  // you. A field you may leave blank, with nothing on file for it, isn't.
-  const yours = (result !== undefined && !result.ok) || (reply.source === 'you' && field.required);
+  // Orange, as the app marks what needs you.
+  const yours = needsYou(state, at);
   const note = result && !result.ok && result.why ? NOT_FILLED[result.why] : '';
   const copyButton = text
     ? h(
@@ -382,7 +397,7 @@ function fieldRow(state: Filling, at: number): HTMLElement {
         'div',
         { class: 'meta' },
         result?.ok && h('span', { class: 'ok', 'aria-label': 'Filled' }, '✓ '),
-        result?.kept ? 'It had an answer already, which Factwright left as it was' : source(reply),
+        result?.kept ? keptFor(field) : source(reply),
       ),
       h(
         'div',
@@ -398,27 +413,74 @@ function fieldRow(state: Filling, at: number): HTMLElement {
   );
 }
 
-/** The line that says which job the form is for, or offers to save it first. */
+/** The job the form is for, at the top: its title, company and status, or the offer to save it. */
 function jobLine(state: Filling): Child[] {
   const { job } = state.plan;
   if (!job) {
     return [
       h(
-        'p',
-        { class: 'note' },
-        'This job isn’t in your job hunt yet. Save it first, so Factwright uploads its resume and keeps what you send.',
-      ),
-      h(
         'div',
-        { class: 'actions' },
-        button('Save this job first', () => void saveFirst(state)),
+        { class: 'card job' },
+        h('p', { class: 'job-title' }, state.shows.role || state.form.title),
+        h(
+          'p',
+          { class: 'small' },
+          'Not in your job hunt yet. Save it, so Factwright uploads its resume and keeps what you send.',
+        ),
+        h(
+          'div',
+          { class: 'actions' },
+          button('Save this job', () => void saveFirst(state), false, state.busy),
+        ),
       ),
     ];
   }
   return [
-    h('p', { class: 'small' }, [job.role, job.company].filter(Boolean).join(' at ')),
-    job.appliedOn &&
-      h('p', { class: 'note', role: 'status' }, `You applied on ${day(job.appliedOn)}.`),
+    h(
+      'div',
+      { class: 'card job' },
+      h('p', { class: 'job-title' }, job.role),
+      h('p', { class: 'small' }, [job.company, statusWords(job)].filter(Boolean).join(' · ')),
+    ),
+  ];
+}
+
+/**
+ * The form's fields, in groups: those that need you, open; those Fill filled, folded away; and
+ * those you may leave blank, which nothing on file answers, folded away. LinkedIn's and Indeed's,
+ * which Factwright only gives answers to copy for, have their answers open.
+ */
+function fieldGroups(state: Filling): Child[] {
+  const all = state.form.fields.map((_, at) => at);
+  const rows = (ats: number[], label: string) =>
+    h('ol', { class: 'fields', 'aria-label': label }, ...ats.map((at) => fieldRow(state, at)));
+  const folded = (title: string, ats: number[]) =>
+    ats.length > 0 &&
+    h(
+      'details',
+      { class: 'group' },
+      h('summary', {}, `${title} · ${ats.length}`),
+      rows(ats, title),
+    );
+  if (state.copyOnly) {
+    const answered = all.filter((at) => state.plan.replies[at]?.source !== 'you');
+    const rest = all.filter((at) => !answered.includes(at));
+    return [
+      answered.length > 0 && h('h2', {}, `Answers to copy · ${answered.length}`),
+      answered.length > 0 && rows(answered, 'Answers to copy'),
+      folded('No answer on file', rest),
+    ];
+  }
+  const needs = all.filter((at) => needsYou(state, at));
+  const filled = all.filter(
+    (at) => !needs.includes(at) && state.filled.get(state.form.fields[at]?.key ?? '')?.ok,
+  );
+  const blank = all.filter((at) => !needs.includes(at) && !filled.includes(at));
+  return [
+    needs.length > 0 && h('h2', {}, `Needs you · ${needs.length}`),
+    needs.length > 0 && rows(needs, 'Needs you'),
+    folded('Filled', filled),
+    folded('Left blank', blank),
   ];
 }
 
@@ -722,21 +784,22 @@ function render(state: Filling): void {
     h('p', { class: 'muted small', role: 'status' }, state.status || summary(state)),
     ...partsLine(state),
     ...draftLine(state),
-    h(
-      'ol',
-      { class: 'fields', 'aria-label': 'The form’s fields' },
-      ...state.form.fields.map((_, at) => fieldRow(state, at)),
-    ),
+    ...fieldGroups(state),
     state.moved &&
       h('p', { class: 'note' }, 'Did you submit it? Mark as applied keeps what you sent.'),
     h(
       'div',
-      { class: 'actions' },
-      button('Mark as applied', () => void markApplied(state), state.moved, state.busy),
+      { class: 'actions bottom' },
       // Not once the application went on to another page: that one has its own offer to fill it.
       !state.copyOnly &&
         !state.next &&
-        button('Fill again', () => void begin({ earlier: state.earlier }), false, state.busy),
+        button(
+          'Fill again',
+          () => void begin({ earlier: state.earlier }),
+          !state.moved,
+          state.busy,
+        ),
+      button('Mark as applied', () => void markApplied(state), state.moved, state.busy),
     ),
     h(
       'p',
@@ -1200,6 +1263,18 @@ async function fill(state: Filling, onlyEmpty = false): Promise<boolean> {
   }
   state.status = '';
   render(state);
+  // Kept, as a fill in its page is, for the popup to say, and the panel to show as it opens again.
+  void keepFill({
+    tabId: state.tabId,
+    place: state.place,
+    via: state.way.via,
+    instead: state.instead,
+    form: state.form,
+    plan: state.plan,
+    shows: state.shows,
+    filled: [...state.filled],
+    at: Date.now(),
+  });
   return true;
 }
 
@@ -1230,6 +1305,11 @@ interface Start {
   earlier?: Earlier;
   /** Whether it fills only the fields that are empty, as once parts were added to the form. */
   onlyEmpty?: boolean;
+  /**
+   * Whether it shows the form Fill filled in its page, as kept, where the tab still shows it, as
+   * the panel opens, rather than filling it again over what you've typed since.
+   */
+  shown?: boolean;
 }
 
 /**
@@ -1242,7 +1322,6 @@ async function begin(how: Start = {}): Promise<void> {
   stopFollowing();
   filling = null;
   const start = ++starts;
-  startedAt = Date.now();
   const later = () => start !== starts;
   show(app, heading('Fill this application'), h('p', { class: 'muted' }, 'Reading the form…'));
   const [tab] = await ext.tabs.query({ active: true, currentWindow: true });
@@ -1293,6 +1372,10 @@ async function begin(how: Start = {}): Promise<void> {
     );
     return;
   }
+  // Filled in its page a moment ago, as the note's Details or the popup opens the panel: as it
+  // was, without filling it again.
+  if (how.shown && (await showKept(tab.id, ways, before, later))) return;
+  if (later()) return;
   const found = await findForm(tab.id);
   if (later()) return;
   if (!found) {
@@ -1380,6 +1463,58 @@ async function begin(how: Start = {}): Promise<void> {
 }
 
 /**
+ * Shows the form Fill filled in a tab's page, as kept, where the tab still shows it, and follows
+ * it from there as a fill the panel made itself: what you type, the page it goes on to, and Mark as
+ * applied. Says whether it did.
+ */
+async function showKept(
+  tabId: number,
+  ways: FillWay[],
+  before: Filling | null,
+  later: () => boolean,
+): Promise<boolean> {
+  const kept = await keptFill(tabId);
+  if (!kept || later()) return false;
+  const way = ways.find((each) => each.via === kept.via);
+  const read = way ? await formValues(kept.place, []) : null;
+  if (!way || !read || !onSamePage(kept.form, read) || read.step !== kept.form.step) return false;
+  const site = await siteChoice(kept.form.url);
+  const offerComputer = way.via === 'sync' && !(await canReachComputer());
+  if (later()) return true;
+  const earlier = before && before.tabId === tabId ? carried(before) : NO_EARLIER;
+  const state: Filling = {
+    tabId,
+    place: kept.place,
+    way,
+    instead: kept.instead,
+    offerComputer,
+    form: kept.form,
+    plan: kept.plan,
+    shows: kept.shows,
+    filled: new Map(kept.filled),
+    copyOnly: false,
+    values: null,
+    moved: false,
+    elsewhere: false,
+    busy: false,
+    status: '',
+    applied: null,
+    drafting: null,
+    left: null,
+    site,
+    earlier: kept.form.step
+      ? forApplication(earlier, kept.plan.job?.id ?? null, kept.form.url)
+      : NO_EARLIER,
+    next: null,
+    missed: 0,
+  };
+  filling = state;
+  render(state);
+  keepLooking(state);
+  return true;
+}
+
+/**
  * The offer to turn on the job application sites, for an application a tab's page shows in a frame
  * from one of them, which the panel can reach only once they're on. The browser is asked on the
  * click itself, before anything is waited on, as Firefox wants.
@@ -1412,9 +1547,9 @@ ext.tabs.onActivated.addListener(({ tabId }) => {
   render(filling);
 });
 
-// The Fill button on a job site you allowed, clicked while the panel shows: the panel beside that
-// tab fills its form, unless it started filling since, as it does when the click is what opened
-// it. A panel in another window, beside another tab, carries on with its own form.
+// A tab's form filled in its page while the panel shows, as by the Fill button, the popup or the
+// shortcut: the panel beside that tab shows what was filled. A panel in another window, beside
+// another tab, carries on with its own form.
 ext.runtime.onMessage.addListener((message, sender) => {
   if (sender.id !== ext.runtime.id || sender.tab || !isToPanel(message)) return undefined;
   // You left a field of an application that runs over several, or its page changed, as the script
@@ -1423,11 +1558,12 @@ ext.runtime.onMessage.addListener((message, sender) => {
     if (filling?.tabId === message.tabId) lookNow?.();
     return undefined;
   }
-  if (message.at <= startedAt) return undefined;
   void ext.tabs.query({ active: true, currentWindow: true }).then(([tab]) => {
-    if (tab?.id === message.tabId && message.at > startedAt) void begin();
+    if (tab?.id === message.tabId) void begin({ shown: true });
   });
   return undefined;
 });
 
-void begin();
+// Opened, as you asked from the note's Details or the popup: the form Fill filled, as it was, or
+// else it reads the form and fills it.
+void begin({ shown: true });

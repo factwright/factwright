@@ -335,6 +335,17 @@ export async function allowedFrames(tabId: number): Promise<JobFrame[]> {
   );
 }
 
+/**
+ * Whether the extension's script runs in a frame of a tab, as it said hello from there, on a site
+ * you still allow: where a note goes through it.
+ */
+export async function jobFrameAt(tabId: number, frameId: number): Promise<boolean> {
+  await framesQueue;
+  const frames = (await framesKept())[tabId] ?? [];
+  const sites = await allowedSites();
+  return frames.some((frame) => frame.frameId === frameId && onAnySite(frame.url, sites));
+}
+
 /** A frame of a tab, by its number, and the page it shows. */
 export interface FrameAt {
   frameId: number;
@@ -388,6 +399,18 @@ export async function runInFrames(tabId: number): Promise<void> {
 /** The frames' addresses on a tab's own page, as its elements say them, at most this many. */
 const MOST_FRAMED = 50;
 
+/**
+ * An applicant system's pages that show a job's posting, or its list of jobs, and no form, as a
+ * frame on a company's careers page shows them before you click Apply: iCIMS's posting, its
+ * search and its list, Lever's posting and Ashby's, and Ashby's board. Each one's application is at
+ * an address of its own.
+ */
+const POSTINGS = [
+  /^https:\/\/[a-z0-9-]+\.icims\.com\/jobs\/(\d+\/[^/?#]+\/job|search|intro)\/?(?:[?#]|$)/i,
+  /^https:\/\/jobs(\.eu)?\.lever\.co\/[^/?#]+\/[0-9a-f-]{36}\/?(?:[?#]|$)/i,
+  /^https:\/\/jobs\.ashbyhq\.com\/[^/?#]+(\/[0-9a-f-]{36})?\/?(?:[?#]|$)/i,
+];
+
 /** The addresses of the frames on a page, as its elements say them, read in the page. */
 function framedAddresses(most: number): string[] {
   return [...document.querySelectorAll('iframe[src], frame[src]')]
@@ -399,7 +422,8 @@ function framedAddresses(most: number): string[] {
 /**
  * The applicant system whose form a tab's page shows in a frame, on a job application site you
  * haven't allowed, by the frame's address on the page: the panel offers to turn the sites on to
- * fill it. Null where there's none, or the browser doesn't let the extension read the page.
+ * fill it. Not one whose frame shows a posting, with no form yet. Null where there's none, or the
+ * browser doesn't let the extension read the page.
  */
 export async function framedSystem(tabId: number): Promise<string | null> {
   let addresses: string[] = [];
@@ -418,6 +442,7 @@ export async function framedSystem(tabId: number): Promise<string | null> {
     if (typeof address !== 'string' || isCopyOnlySite(address) || onAnySite(address, sites)) {
       continue;
     }
+    if (POSTINGS.some((posting) => posting.test(address))) continue;
     const system = APPLICANT_SYSTEMS.find((each) => onAnySite(address, each.sites));
     if (system) return system.name;
   }

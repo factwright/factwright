@@ -1,9 +1,13 @@
 import { LIGHT } from '@factwright/ui/tokens';
 import { browserName, canReachSync, clientFor, forgetAccount } from './account.ts';
 import { registerScripts } from './application-sites.ts';
+import { markFromPopup, undoApplied } from './applied.ts';
 import { canReachComputer, canSendNow, destination, saveOnComputer } from './computer.ts';
 import { ext, type Tab } from './ext.ts';
-import { isLookUp, isSave } from './messages.ts';
+import { isCopyOnly } from './fill.ts';
+import { fillAndNote } from './in-place.ts';
+import { isApplied, isFill, isLookUp, isSave, isUndo } from './messages.ts';
+import { noteFor } from './notes.ts';
 import { forgetTab, onJobSiteMessage, stopWhereNotAllowed } from './on-job-sites.ts';
 import { openPanel } from './panel-open.ts';
 import { isWebPage, readTab } from './read-tab.ts';
@@ -14,12 +18,13 @@ import { needsChecking, toSave } from './tab-job.ts';
 
 /**
  * The extension's background: it saves jobs, for the popup, the page's right-click menu and the
- * keyboard shortcut, looks up for the popup whether a page's job is saved through sync, and opens
- * the setup page on install. It saves through sync, or straight to Factwright on this computer, as
- * setup set it up. The sign-in, the keys and the settings stay in the extension's own storage, and
- * what it reads of sync's jobs stays in memory only, for a few minutes. On the job sites you
- * allowed, it registers the extension's script, and answers it and the extension's frame there
- * (src/on-job-sites.ts).
+ * keyboard shortcut, looks up for the popup whether a page's job is saved through sync, fills a
+ * tab's form in its page, for the popup, the menu and the shortcut, with a note on the page
+ * (src/in-place.ts), marks a job applied for the popup, and opens the setup page on install. It
+ * saves through sync, or straight to Factwright on this computer, as setup set it up. The sign-in,
+ * the keys and the settings stay in the extension's own storage, and what it reads of sync's jobs
+ * stays in memory only, for a few minutes. On the job sites you allowed, it registers the
+ * extension's script, and answers it and the extension's frame there (src/on-job-sites.ts).
  */
 
 const MENU = 'save-job';
@@ -282,19 +287,33 @@ ext.storage.onChanged.addListener((changes, area) => {
 });
 ext.tabs.onRemoved.addListener(forgetTab);
 
+/**
+ * Fill, from the page's right-click menu or the shortcut: the form is filled in its page, with a
+ * note there. LinkedIn's and Indeed's, which their sites don't allow filling, have the panel open
+ * beside the page instead, with each answer to copy: straight from the click, as each browser asks.
+ */
+function fillTab(tab: Tab, pageUrl = tab.url ?? ''): void {
+  if (isCopyOnly(pageUrl)) {
+    void openPanel(tab);
+    return;
+  }
+  if (tab.id !== undefined) void fillAndNote({ ...tab, id: tab.id });
+}
+
 ext.contextMenus.onClicked.addListener((click, tab) => {
   if (click.menuItemId === MENU && tab) void saveTab(tab);
-  // The panel opens straight from the click, as each browser asks, and fills the tab in front.
-  if (click.menuItemId === FILL && tab) void openPanel(tab);
+  if (click.menuItemId === FILL && tab) fillTab(tab, click.pageUrl);
 });
 
 ext.commands.onCommand.addListener((command, tab) => {
   if (command === 'fill-form') {
     if (tab) {
-      void openPanel(tab);
+      fillTab(tab);
     } else {
-      // Firefox gives no tab: its sidebar opens beside the one in front.
-      void ext.sidebarAction?.open();
+      // Firefox gives no tab: the one in front.
+      void ext.tabs.query({ active: true, currentWindow: true }).then(([active]) => {
+        if (active) fillTab(active);
+      });
     }
     return;
   }
@@ -320,6 +339,23 @@ ext.runtime.onMessage.addListener((message, sender, sendResponse) => {
     (sender.url ?? '').startsWith(ext.runtime.getURL(''));
   if (ours && isLookUp(message)) {
     lookUp(message.page).then(sendResponse, () => sendResponse(null));
+    return true;
+  }
+  // The popup's Fill, which closes as the form fills in its page.
+  if (ours && isFill(message)) {
+    fillAndNote(message.tab).then(sendResponse, () => sendResponse(null));
+    return true;
+  }
+  if (ours && isApplied(message)) {
+    markFromPopup(message.tabId, message.job, message.via, message.url).then(sendResponse, () =>
+      sendResponse(null),
+    );
+    return true;
+  }
+  if (ours && isUndo(message)) {
+    void noteFor(message.tabId, message.token)
+      .then((note) => (note ? undoApplied(note) : null))
+      .then(sendResponse, () => sendResponse(null));
     return true;
   }
   if (!ours || !isSave(message)) return undefined;

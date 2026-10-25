@@ -407,6 +407,58 @@ body.panel {
   flex: none;
 }
 
+/*
+ * In the panel, Go to and Copy show on the row you point at, or that has the keyboard's focus,
+ * and stay out of the way of the rest.
+ */
+body.panel .field .row-actions {
+  opacity: 0;
+  transition: opacity 120ms ease-out;
+}
+
+body.panel .field:hover .row-actions,
+body.panel .field:focus-within .row-actions {
+  opacity: 1;
+}
+
+@media (hover: none) {
+  body.panel .field .row-actions {
+    opacity: 1;
+  }
+}
+
+/* Where each answer came from, in small type. */
+body.panel .field .meta {
+  font-size: var(--fw-text-xs);
+}
+
+/* The panel's groups of fields: Needs you open, and those folded away, as Filled. */
+body.panel h2 {
+  font-size: var(--fw-text-sm);
+  margin: var(--fw-space-4) 0 var(--fw-space-1);
+}
+
+body.panel details.group {
+  margin: var(--fw-space-3) 0;
+}
+
+body.panel details.group summary {
+  cursor: pointer;
+  font-weight: 600;
+  font-size: var(--fw-text-sm);
+  color: var(--fw-muted);
+}
+
+body.panel details.group[open] summary {
+  color: var(--fw-text);
+}
+
+/* Fill again and Mark as applied, at the bottom, under the fields. */
+body.panel .actions.bottom {
+  border-top: 1px solid var(--fw-border);
+  padding-top: var(--fw-space-3);
+}
+
 button.small-button {
   padding: 2px var(--fw-space-2);
   font-size: var(--fw-text-sm);

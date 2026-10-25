@@ -770,9 +770,42 @@ describe('each message, checked', () => {
     ).toBe(true);
     expect(isToScript({ type: 'job-site', do: 'write', answer: { key: 'k' } })).toBe(false);
     expect(isToScript({ type: 'job-site', do: 'hello' })).toBe(false);
-    expect(isToPanel({ type: 'panel', do: 'fill', tabId: TAB, at: 1 })).toBe(true);
+    expect(isToScript({ type: 'job-site', do: 'note', token: TOKEN })).toBe(true);
+    expect(isToScript({ type: 'job-site', do: 'note', token: 'guess' })).toBe(false);
+    expect(isFromFrame({ type: 'job-site', do: 'undo', token: TOKEN })).toBe(true);
+    expect(isFromFrame({ type: 'job-site', do: 'details' })).toBe(false);
+    expect(isToPanel({ type: 'panel', do: 'filled', tabId: TAB })).toBe(true);
     expect(isToPanel({ type: 'panel', do: 'look', tabId: TAB })).toBe(true);
     expect(isToPanel({ type: 'panel', do: 'look' })).toBe(false);
-    expect(isToPanel({ type: 'panel', do: 'fill', tabId: TAB })).toBe(false);
+    // The panel fills a form only as you ask it, never as another part of the extension says.
+    expect(isToPanel({ type: 'panel', do: 'fill', tabId: TAB, at: 1 })).toBe(false);
+  });
+
+  it('takes a submit only with what a form is, its fields’ values and whether it sends', () => {
+    const submitting = {
+      type: 'job-site',
+      do: 'submitting',
+      doc: DOC,
+      form: FORM,
+      job,
+      values: [{ ref: 3, key: FORM.fields[3]?.key, value: 'Gear that lasts.' }],
+      final: true,
+    };
+    expect(isFromScript(submitting)).toBe(true);
+    expect(isFromScript({ ...submitting, final: 'yes' })).toBe(false);
+    expect(isFromScript({ ...submitting, values: [{ ref: 3, value: 'x' }] })).toBe(false);
+    expect(
+      isFromScript({
+        type: 'job-site',
+        do: 'outcome',
+        doc: DOC,
+        submitted: true,
+        form: false,
+        errors: false,
+      }),
+    ).toBe(true);
+    expect(isFromScript({ type: 'job-site', do: 'outcome', doc: DOC, submitted: true })).toBe(
+      false,
+    );
   });
 });

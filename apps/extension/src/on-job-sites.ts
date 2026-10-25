@@ -6,6 +6,7 @@ import {
 } from '@factwright/core';
 import { isCopyOnlySite } from './applicant-systems.ts';
 import { forgetFrame, isAllowedPage, keepFrame, keptFrame } from './application-sites.ts';
+import { forgetApplying, left, outcome, submitted, undoApplied, waitingAt } from './applied.ts';
 import { ext, type Sender, type Tab } from './ext.ts';
 import {
   answerSource,
@@ -14,21 +15,18 @@ import {
   draftsSoFar,
   type FillPlan,
   type FormPlace,
-  filledSummary,
-  fillInPasses,
   isPlace,
   newAnswers,
   picksOf,
   placeNames,
   planFill,
-  readForm,
 } from './fill.ts';
 import { type FillWay, fillWays, firstAnswer, type NoWay } from './fill-way.ts';
 import { MENU_ROWS } from './frame-size.ts';
+import { fillAndNote } from './in-place.ts';
 import {
   type DraftShows,
   type FieldMenu,
-  type FilledHere,
   type FromFrame,
   type FromScript,
   isFromFrame,
@@ -39,9 +37,10 @@ import {
   type ToScript,
   type Written,
 } from './job-site-messages.ts';
-import type { FieldAnswer, FieldFilled, PageField, PageForm } from './page/form.ts';
+import { forgetFill } from './kept-fill.ts';
+import { forgetNotes, hideNote, noteFor } from './notes.ts';
+import type { FieldAnswer, PageField, PageForm } from './page/form.ts';
 import { openPanel } from './panel-open.ts';
-import { readFormJob } from './read-tab.ts';
 import { serverName } from './server.ts';
 
 /**
@@ -414,6 +413,8 @@ export async function answerScript(
   if (message.do === 'bye') {
     if (scripts.get(key)?.doc === message.doc) forgetPage(place);
     await forgetFrame(place.tabId, { frameId: place.frameId, doc: message.doc });
+    // A page you submitted, going away as it loads the next.
+    await left(place, message.doc);
     return {};
   }
   const around = message.do === 'hello' ? message.around : [];
@@ -424,7 +425,28 @@ export async function answerScript(
   if (message.do === 'hello') {
     scripts.set(key, { ...place, url, doc: message.doc });
     await keepFrame(place.tabId, { frameId: place.frameId, url, doc: message.doc });
-    return { allowed: true };
+    // The page after one you submitted, in the same frame, says how it went.
+    return { allowed: true, ...((await waitingAt(place)) && { watch: true }) };
+  }
+  if (message.do === 'submitting') {
+    // Only the form on the page the script is on, with Factwright's answers for it.
+    if (pageOf(message.form.url) !== pageOf(url)) return {};
+    const page = await answer(place, message.form, message.job);
+    if (typeof page === 'string') return {};
+    await submitted({
+      place,
+      doc: message.doc,
+      form: message.form,
+      plan: page.plan,
+      way: page.way,
+      values: message.values,
+      final: message.final,
+    });
+    return {};
+  }
+  if (message.do === 'outcome') {
+    await outcome({ place, ...message });
+    return {};
   }
   if (message.do === 'look') {
     // You left a field of an application that runs over several, or it went on to another page:
@@ -594,65 +616,23 @@ async function buttonFor(tabId: number, token: string): Promise<ScriptAt | null>
   return kept ? { tabId, ...kept } : null;
 }
 
-/** Has the panel fill the form in a tab, if it's open, as it does when the click opens it. */
-const tellPanel = (tabId: number, at: number) =>
-  ext.runtime.sendMessage({ type: 'panel', do: 'fill', tabId, at } satisfies ToPanel).catch(() => {
-    // The panel isn't open yet: it fills the form as it opens.
-  });
-
 /**
- * What the Fill button does, as clicking Fill does: Chrome's side panel opens and fills the form,
- * or fills it again if it was open (`opening`, which the click itself started). Firefox opens its
- * sidebar only from a click of its own, so where it's open, it fills this tab, and where it isn't,
- * the form is filled here, as the sidebar would fill it.
+ * What a note's frame asks, answered, for a note on a page in its own tab: what it says, Details,
+ * which opens the panel (`opening`, which the click itself started), Undo, for a job it marked
+ * applied, or Close.
  */
-async function fillButton(
+async function answerNote(
+  message: Extract<FromFrame, { do: 'note' | 'details' | 'undo' | 'unnote' }>,
   tab: Tab & { id: number },
-  place: FormPlace,
   opening: Promise<boolean> | null,
-): Promise<FilledHere> {
-  const at = Date.now();
-  if (opening) {
-    if (!(await opening)) return fillHere(tab, place);
-    void tellPanel(tab.id, at);
-    return { did: 'panel' };
-  }
-  const open = await (ext.sidebarAction?.isOpen({ windowId: tab.windowId }) ?? false);
-  if (!open) return fillHere(tab, place);
-  void tellPanel(tab.id, at);
-  return { did: 'panel' };
-}
-
-/** Fills the form in a tab's frame as the panel would, without it, and says how it went. */
-async function fillHere(tab: Tab & { id: number }, place: FormPlace): Promise<FilledHere> {
-  const problem = (says: string) => ({ did: 'problem', says }) as const;
-  const ways = await fillWays();
-  if (!Array.isArray(ways)) {
-    return problem(
-      ways.why === 'sync'
-        ? `Filling needs your OK to reach ${serverName(ways.server)}: click Factwright’s button, then Fill this application.`
-        : 'Filling needs your OK to reach Factwright on this computer: click Factwright’s button, then Fill this application.',
-    );
-  }
-  const form = await readForm(place);
-  if (!form) return problem('Factwright can’t read this page.');
-  if (form.fields.length === 0) {
-    return problem('There’s no form here. Open the application itself, then click Fill again.');
-  }
-  const shows = await readFormJob(tab, place.frameId);
-  const { way, answer: plan } = await firstAnswer(ways, (each) => planFill(form, shows, each));
-  if (!plan.ok || plan.did !== 'fill') {
-    return problem(plan.ok ? 'Factwright didn’t answer. Try again.' : plan.message);
-  }
-  const filled = new Map<string, FieldFilled>();
-  const done = await fillInPasses({ place, way, form, plan, shows, filled, stale: () => false });
-  if (done === 'elsewhere') return problem('This tab has moved on from the form.');
-  if (done !== true) return problem('Factwright can’t reach this page anymore.');
-  const unsaved = plan.job ? '' : ' Save the job first to upload its resume.';
-  return {
-    did: 'filled',
-    says: `${filledSummary(form, filled)}${unsaved} To check each answer, click Factwright’s button, then Fill this application.`,
-  };
+): Promise<unknown> {
+  const note = await noteFor(tab.id, message.token);
+  if (!note) return null;
+  if (message.do === 'note') return note.says;
+  if (message.do === 'details') return { opened: (await opening) === true };
+  if (message.do === 'undo') return undoApplied(note);
+  await hideNote(note);
+  return {};
 }
 
 /** What the frame asks, answered, for the script in its own tab that shows it. */
@@ -663,6 +643,14 @@ export async function answerFrame(
 ): Promise<unknown> {
   const { tab } = from;
   const tabId = tab.id;
+  if (
+    message.do === 'note' ||
+    message.do === 'details' ||
+    message.do === 'undo' ||
+    message.do === 'unnote'
+  ) {
+    return answerNote(message, tab, opening);
+  }
   if (message.do === 'fill' || message.do === 'hide-button') {
     const script = await buttonFor(tabId, message.token);
     if (!script || !(await isAllowedPage(script.url))) return null;
@@ -671,11 +659,8 @@ export async function answerFrame(
       await tellScript(place, { type: 'job-site', do: 'hide-button' });
       return {};
     }
-    const done = await fillButton(tab, place, opening);
-    // Filled here, the button says how it went, in room the script makes for it.
-    if (done.did !== 'panel')
-      await tellScript(place, { type: 'job-site', do: 'button', size: 'card' });
-    return done;
+    // Filled in its page, with a note there that says how it went.
+    return fillAndNote(tab, place);
   }
   const found = menuFor(tabId, message.token);
   if (!found || !(await isAllowedPage(found.page.url))) return null;
@@ -749,9 +734,10 @@ export function onJobSiteMessage(
   if (isFromFrame(message)) {
     const from = frameSender(sender);
     if (!from) return undefined;
-    // Chrome opens its side panel only straight from the click, before anything is waited on.
+    // A browser opens its panel only straight from the click, before anything is waited on: Chrome
+    // from a click in the note, and Firefox only from one of its own, as on its button.
     const opening =
-      message.do === 'fill' && ext.sidePanel
+      message.do === 'details'
         ? openPanel(from.tab).then(
             () => true,
             () => false,
@@ -763,11 +749,14 @@ export function onJobSiteMessage(
   return undefined;
 }
 
-/** Forgets a tab's forms, in each of its frames, once it closes. */
+/** Forgets a tab's forms, in each of its frames, its fill, notes and applications, once it closes. */
 export function forgetTab(tabId: number): void {
   for (const [key, page] of pages) if (page.place.tabId === tabId) pages.delete(key);
   for (const [key, script] of scripts) if (script.tabId === tabId) scripts.delete(key);
   void forgetFrame(tabId);
+  void forgetFill(tabId);
+  void forgetNotes(tabId);
+  void forgetApplying(tabId);
 }
 
 /**

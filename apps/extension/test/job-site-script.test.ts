@@ -27,11 +27,13 @@ const extension = vi.hoisted(() => {
     shown: 1,
     /** The form the script asked about last. */
     form: null as PageForm | null,
+    /** Whether the background waits to hear how a submit on the page before this one went. */
+    watch: false,
   };
   const answer = (message: Record<string, unknown>): unknown => {
     switch (message.do) {
       case 'hello':
-        return { allowed: state.allowed };
+        return { allowed: state.allowed, ...(state.watch && { watch: true }) };
       case 'form':
         state.form = message.form as PageForm;
         return {
@@ -121,6 +123,7 @@ beforeEach(() => {
   });
   roots.clear();
   extension.allowed = true;
+  extension.watch = false;
   extension.shown = 1;
   extension.sent.length = 0;
   extension.menus = {
@@ -493,6 +496,76 @@ describe('the script on a job site you allowed', () => {
     // The form this file starts with, on one page: its Fill button shows, and the panel isn't told.
     await vi.waitFor(() => expect(frames()).toHaveLength(1));
     expect(sentOf('look')).toEqual([]);
+  });
+
+  it('says what the form held as you submit it, and whether its button sends the application', async () => {
+    document.body.insertAdjacentHTML(
+      'beforeend',
+      '<button id="add" type="button">Add another</button><button id="next" type="button">Save and Continue</button><button id="send" type="button">Submit application</button>',
+    );
+    script = startScript(() => true, 0);
+    await vi.waitFor(() => expect(frames()).toHaveLength(1));
+    input('note').value = 'Gear that lasts.';
+    // A button that adds a part, or uploads, says nothing.
+    document.getElementById('add')?.click();
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(sentOf('submitting')).toEqual([]);
+    document.getElementById('next')?.click();
+    await vi.waitFor(() => expect(sentOf('submitting')).toHaveLength(1));
+    expect(sentOf('submitting')[0]).toMatchObject({ final: false });
+    document.getElementById('send')?.click();
+    await vi.waitFor(() => expect(sentOf('submitting')).toHaveLength(2));
+    const [, sent] = sentOf('submitting') as [
+      unknown,
+      { final: boolean; values: { value: string }[] },
+    ];
+    expect(sent.final).toBe(true);
+    expect(sent.values.map((each) => each.value)).toContain('Gear that lasts.');
+    // A click the page made itself isn't yours.
+    script.stop();
+    script = startScript(() => false, 0);
+    document.getElementById('send')?.click();
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(sentOf('submitting')).toHaveLength(2);
+  });
+
+  it('says how a submit went once the page moves on: the form gone, or the words that it went in', async () => {
+    document.body.insertAdjacentHTML('beforeend', '<button id="send">Submit</button>');
+    script = startScript(() => true, 0);
+    await vi.waitFor(() => expect(frames()).toHaveLength(1));
+    document.getElementById('send')?.click();
+    await vi.waitFor(() => expect(sentOf('submitting')).toHaveLength(1));
+    // The page swaps its form for what it says once the application's in.
+    document.body.innerHTML = '<main><h1>Thank you for applying!</h1></main>';
+    await vi.waitFor(() =>
+      expect(sentOf('outcome').at(-1)).toMatchObject({ submitted: true, form: false }),
+    );
+  });
+
+  it('says how a submit went on the page after it, as the background asks', async () => {
+    extension.watch = true;
+    document.body.innerHTML = '<main><p>Your application was submitted successfully.</p></main>';
+    script = startScript(() => true, 0);
+    await vi.waitFor(() =>
+      expect(sentOf('outcome')).toEqual([
+        expect.objectContaining({ submitted: true, form: false, errors: false }),
+      ]),
+    );
+  });
+
+  it('puts a note in the Fill button’s place, as the background says, and takes it away', async () => {
+    script = startScript(() => true, 0);
+    await vi.waitFor(() => expect(frames()).toHaveLength(1));
+    const token = '0f3c9a8e-4b1d-4c2e-9f6a-1a2b3c4d5e6f';
+    await tell({ type: 'job-site', do: 'note', token });
+    await vi.waitFor(() => expect(frames()).toHaveLength(2));
+    const shown = frames().filter(({ host }) => host.style.getPropertyValue('display') !== 'none');
+    expect(shown.map(({ frame }) => frame.src)).toEqual([
+      `chrome-extension://factwright/frame.html#note:${token}`,
+    ]);
+    await tell({ type: 'job-site', do: 'unnote', token });
+    await vi.waitFor(() => expect(frames()).toHaveLength(1));
+    expect(frames()[0]?.host.style.getPropertyValue('display')).toBe('block');
   });
 
   it('stops when the background says so, taking its frames away', async () => {

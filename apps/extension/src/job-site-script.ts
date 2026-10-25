@@ -1,6 +1,6 @@
 import { looksLikeApplication } from './application-form.ts';
 import { ext } from './ext.ts';
-import { BUTTON, BUTTON_CARD, MENU_WIDTH, menuHeight } from './frame-size.ts';
+import { BUTTON, MENU_WIDTH, menuHeight, NOTE } from './frame-size.ts';
 import {
   type FieldMenu,
   type FromScript,
@@ -11,7 +11,16 @@ import {
 } from './job-site-messages.ts';
 import { type FieldAnswer, type FormAnswer, formPage, type PageForm } from './page/form.ts';
 import { readJobPage } from './page/read-job.ts';
-import { type Area, type Box, EDGE, overlaps, placeButton, placeMenu, type Size } from './place.ts';
+import {
+  type Area,
+  type Box,
+  CORNER,
+  EDGE,
+  overlaps,
+  placeButton,
+  placeMenu,
+  type Size,
+} from './place.ts';
 
 /**
  * The extension's script on the job sites you allowed (src/application-sites.ts), and only there.
@@ -45,8 +54,31 @@ const AROUND = 3;
 const SETTLE_MS = 400;
 const SETTLE_MAX_MS = 2000;
 
-/** How long the Fill button says how filling went, before it's a button again. */
-const CARD_MS = 15_000;
+/**
+ * How long after you submit the form the script watches what the page shows, to say how it went:
+ * longer than a page takes to send an application and say so.
+ */
+const OUTCOME_MS = 60_000;
+
+/**
+ * Words on a button that sends an application, as its form's last page's does: "Submit", "Submit
+ * application", "Send application", "Apply", "Apply now", "Finish".
+ */
+const SENDS = /^(submit|send|apply|finish)( (my|your|the|this))?( (job )?application)?( now)?$/i;
+
+/** Words on a button that goes on to another page of an application, as "Save and Continue". */
+const GOES_ON = /^(save (and|&) )?(continue|next)\b|^next( step| page)?$|^proceed\b/i;
+
+/** What may be a button, as a page makes one of its own, as SuccessFactors' Apply is a span. */
+const BUTTONS =
+  'button, input[type="submit"], input[type="button"], input[type="image"], [role="button"]';
+
+/**
+ * What marks the step an application that runs over several pages is on, as the page's form
+ * function knows it (page/form.ts), to tell whether it's the last.
+ */
+const STEP_NOW =
+  '[data-automation-id="progressBarActiveStep"], [aria-current="step"], li.iCIMS_Steps_Current';
 
 /** How long it waits before asking Factwright for answers again, once it couldn't. */
 const AGAIN_MS = 30_000;
@@ -165,9 +197,19 @@ export function startScript(
   let failedAt = 0;
   /** The menu that's open, for one field, by its token. */
   let menu: (Frame & { at: number; token: string; size: Size }) | null = null;
-  let button: (Frame & { card: boolean }) | null = null;
+  let button: Frame | null = null;
   let buttonHidden = false;
-  let cardTimer: ReturnType<typeof setTimeout> | null = null;
+  /**
+   * The note in the Fill button's place, once Factwright's done something on the page, by the
+   * token its frame names, and the page it went on, as it goes once the page goes on; or one to
+   * show once the page has settled.
+   */
+  let note: (Frame & { token: string; on: string }) | null = null;
+  let noteWanted: string | null = null;
+  /** When you last submitted the form here, or the page you submitted came here, to say how it went. */
+  let submittedAt = 0;
+  /** What it last said of how a submit went, so it says each change once. */
+  let lastOutcome = '';
   /** The field whose new answer the background will offer to keep, in the next menu. */
   let pendingSave: number | null = null;
   /** The fields you've typed in or picked an answer in, by their keys. */
@@ -260,9 +302,95 @@ export function startScript(
       if (readAt !== pageUrl()) typed.clear();
       closeMenu();
     }
+    // A note of what was done on the page before goes as it goes on.
+    if (note && note.on !== pageUrl()) hideNote();
     readAt = pageUrl();
     if (!looksLikeApplication(form) || buttonHidden) removeButton();
     else if (ready) showButton();
+    if (submittedAt && Date.now() - submittedAt < OUTCOME_MS) sayOutcome();
+  }
+
+  // --- What you submit ------------------------------------------------------------------------
+
+  /** A button's words: its own, or a box's that's a button, or what names it. */
+  const wordsOf = (element: Element): string =>
+    (
+      element.textContent?.trim() ||
+      (element as HTMLInputElement).value ||
+      element.getAttribute('aria-label') ||
+      ''
+    )
+      .replace(/\s+/g, ' ')
+      .trim();
+
+  /** Whether the page is its application's last, as its steps show, or it shows none. */
+  const lastStep = (): boolean => {
+    const now = document.querySelector(STEP_NOW);
+    const item = now?.closest('li') ?? now;
+    if (!item) return true;
+    for (let next = item.nextElementSibling; next; next = next.nextElementSibling) {
+      if (next.matches('li, [role="listitem"]')) return false;
+    }
+    return true;
+  };
+
+  /**
+   * You submitted the form, or pressed a page's own button that goes on to the next: what its
+   * fields hold now goes to the background, read as the page has it, before its own code sends
+   * it, with whether the button sends the application, as the last page's does. A button that does
+   * neither, as Add or Upload, says nothing.
+   */
+  function submitting(words: string): void {
+    const asked = form;
+    if (stopped || !asked || !looksLikeApplication(asked)) return;
+    const sends = SENDS.test(words);
+    if (!sends && !GOES_ON.test(words)) return;
+    const final = sends && (!asked.step || lastStep());
+    submittedAt = Date.now();
+    lastOutcome = '';
+    const fields = asked.fields.map(({ ref, key }) => ({ ref, key }));
+    void formPage({ do: 'values', fields }, document, location.href).then((read) => {
+      if (read.did !== 'values') return;
+      const job = readJobPage(document, location.href, '');
+      void send({
+        type: 'job-site',
+        do: 'submitting',
+        doc,
+        form: { ...asked, title: asked.title.slice(0, 1000) },
+        job: { company: job.company.slice(0, 500), role: job.title.slice(0, 500) },
+        values: read.values.map((each) => ({ ...each, value: each.value.slice(0, 10_000) })),
+        final,
+      });
+    });
+  }
+
+  /** Whether the page shows what's wrong with an answer, as a form does that wants another. */
+  const errorsShow = (): boolean =>
+    [...document.querySelectorAll('[aria-invalid="true"], [role="alert"]')].some(
+      (each) =>
+        (each as HTMLElement).checkVisibility?.({ visibilityProperty: true }) !== false &&
+        (each.matches('[aria-invalid="true"]') ||
+          (/\S/.test(each.textContent ?? '') &&
+            !/success|uploaded|saved|thank/i.test(each.textContent ?? ''))),
+    );
+
+  /**
+   * Says how a submit went, as the page shows it now: whether it says the application went in,
+   * whether it shows an application form still, or another page of it, and whether it shows
+   * what's wrong with an answer. Each change once, until it's gone in, or the form's gone.
+   */
+  function sayOutcome(): void {
+    if (!form) return;
+    const now = {
+      submitted: form.submitted,
+      form: looksLikeApplication(form),
+      errors: errorsShow(),
+    };
+    const said = JSON.stringify(now);
+    if (said === lastOutcome) return;
+    lastOutcome = said;
+    void send({ type: 'job-site', do: 'outcome', doc, ...now });
+    if (now.submitted || !now.form) submittedAt = 0;
   }
 
   /** The field an element is one of, or inside, by its place, or -1. */
@@ -824,44 +952,63 @@ export function startScript(
 
   // --- The Fill button ------------------------------------------------------------------------
 
+  /**
+   * Places the Fill button in a corner that covers none of the page's own controls, or the note in
+   * its place, there, or in the bottom right corner, over the page, as where every corner has one.
+   */
   function placeTheButton(): void {
-    if (!button) return;
-    // A page that took it away, as one that builds itself again, gets it back.
-    if (!button.host.isConnected) document.documentElement.append(button.host);
-    const size = button.card ? BUTTON_CARD : BUTTON;
+    // A page that took them away, as one that builds itself again, gets them back.
+    for (const each of [button, note]) {
+      if (each && !each.host.isConnected) document.documentElement.append(each.host);
+    }
     const room = area();
     const covered = [...controlBoxes(), ...(menu ? [boxOf(menu.host)] : [])];
-    put(button, size, room ? placeButton(size, covered, room) : null);
+    if (note) {
+      const width = Math.min(NOTE.width, (room?.width ?? innerWidth) - 2 * CORNER);
+      const size = { width, height: NOTE.height };
+      const corner = room && {
+        left: (room.left ?? 0) + room.width - CORNER - width,
+        top: (room.top ?? 0) + room.height - CORNER - NOTE.height,
+      };
+      put(note, size, room ? (placeButton(size, covered, room) ?? corner) : null);
+      if (button) put(button, BUTTON, null);
+      return;
+    }
+    if (button) put(button, BUTTON, room ? placeButton(BUTTON, covered, room) : null);
   }
 
   function showButton(): void {
-    if (!button) {
-      button = {
-        ...makeFrame(`${ext.runtime.getURL('frame.html')}#button:${doc}`, 'Factwright'),
-        card: false,
-      };
-    }
+    button ??= makeFrame(`${ext.runtime.getURL('frame.html')}#button:${doc}`, 'Factwright');
     placeTheButton();
   }
 
   function removeButton(): void {
-    if (cardTimer) clearTimeout(cardTimer);
-    cardTimer = null;
     button?.host.remove();
     button = null;
   }
 
-  /** The button says how filling went, for a while, then it's a button again. */
-  function showCard(): void {
-    if (!button) return;
-    button.card = true;
+  /** Puts a note in the Fill button's place, by the token its frame names, once the page's settled. */
+  function showNote(token: string): void {
+    if (!ready) {
+      noteWanted = token;
+      return;
+    }
+    noteWanted = null;
+    note?.host.remove();
+    note = {
+      ...makeFrame(`${ext.runtime.getURL('frame.html')}#note:${token}`, 'Factwright'),
+      token,
+      on: pageUrl(),
+    };
     placeTheButton();
-    if (cardTimer) clearTimeout(cardTimer);
-    cardTimer = setTimeout(() => {
-      if (!button) return;
-      button.card = false;
-      placeTheButton();
-    }, CARD_MS);
+  }
+
+  /** Takes the note away, or the one with this token, and puts the Fill button back. */
+  function hideNote(token?: string): void {
+    if (!note || (token && note.token !== token)) return;
+    note.host.remove();
+    note = null;
+    placeTheButton();
   }
 
   // --- Listening ------------------------------------------------------------------------------
@@ -883,6 +1030,30 @@ export function startScript(
     const at = now ? fieldOf(now) : -1;
     if (!now || at < 0 || menu?.at === at || !(target instanceof Node)) return;
     if (now === target || now.contains(target)) void arrived(now);
+  };
+  /**
+   * A click on one of the form's buttons, as you press its Submit or its Save and Continue, or on
+   * something the page made as one: a click the page made itself isn't yours.
+   */
+  const onClick = (event: Event) => {
+    if (!yourOwn(event)) return;
+    const path = event.composedPath?.() ?? [];
+    const clicked = [targetOf(event), ...path].find(
+      (each): each is Element => each instanceof Element && each.matches(BUTTONS),
+    );
+    if (clicked && !mine.has(clicked)) submitting(wordsOf(clicked));
+  };
+  /**
+   * A form sent as you pressed Enter in one of its boxes, by the button that sends it, or else its
+   * first: one its button's click already said, a moment ago, isn't said again.
+   */
+  const onSubmit = (event: Event) => {
+    if (!yourOwn(event) || Date.now() - submittedAt < 1000) return;
+    const sent = event.target as HTMLFormElement | null;
+    const by =
+      (event as SubmitEvent).submitter ??
+      sent?.querySelector?.('button[type="submit"], button:not([type]), input[type="submit"]');
+    submitting(by ? wordsOf(by) : 'Submit');
   };
   const onFocusIn = (event: FocusEvent) => {
     const target = targetOf(event);
@@ -1005,7 +1176,16 @@ export function startScript(
     const ancestors = (location as { ancestorOrigins?: DOMStringList }).ancestorOrigins;
     const opener = framed && document.referrer ? [document.referrer.slice(0, MOST_URL)] : [];
     const around = (ancestors ? Array.from(ancestors) : opener).slice(0, MOST_AROUND);
-    return ask<{ allowed: boolean }>({ type: 'job-site', do: 'hello', doc, around });
+    // On the page after one you submitted, the background asks how it went.
+    return ask<{ allowed: boolean; watch?: boolean }>({
+      type: 'job-site',
+      do: 'hello',
+      doc,
+      around,
+    }).then((said) => {
+      if (said?.watch) submittedAt = Date.now();
+      return said;
+    });
   };
   /** The page is going: the background forgets it, unless the browser keeps it to come back to. */
   const onHide = () => {
@@ -1061,8 +1241,10 @@ export function startScript(
       const at = menu?.at;
       closeMenu();
       if (message.refocus && at !== undefined) refocus(at);
-    } else if (message.do === 'button') {
-      if (message.size === 'card') showCard();
+    } else if (message.do === 'note') {
+      showNote(message.token);
+    } else if (message.do === 'unnote') {
+      hideNote(message.token);
     } else if (message.do === 'hide-button') {
       buttonHidden = true;
       removeButton();
@@ -1080,9 +1262,12 @@ export function startScript(
     if (settle) clearTimeout(settle);
     if (restyled) clearTimeout(restyled);
     removeButton();
+    hideNote();
     menu?.host.remove();
     menu = null;
     removeEventListener('pointerdown', onPointer, true);
+    removeEventListener('click', onClick, true);
+    removeEventListener('submit', onSubmit, true);
     removeEventListener('keydown', onKey, true);
     removeEventListener('focusin', onFocusIn, true);
     removeEventListener('focusout', onFocusOut, true);
@@ -1103,6 +1288,8 @@ export function startScript(
 
   const script: Script = { stop };
   addEventListener('pointerdown', onPointer, true);
+  addEventListener('click', onClick, true);
+  addEventListener('submit', onSubmit, true);
   addEventListener('keydown', onKey, true);
   addEventListener('focusin', onFocusIn, true);
   addEventListener('focusout', onFocusOut, true);
@@ -1136,6 +1323,7 @@ export function startScript(
     ready = true;
     keepFollowing();
     await look();
+    if (noteWanted) showNote(noteWanted);
   });
   return script;
 }

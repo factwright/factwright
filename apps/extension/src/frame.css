@@ -74,23 +74,69 @@ body.frame main {
   line-height: 1;
 }
 
-/* What the button says once it's filled the form, where the panel didn't open. */
-.said {
+/*
+ * A note of what Factwright did on the page, in the Fill button's place: a line or two of words,
+ * Details or Undo, and Close.
+ */
+.note {
   height: 100%;
   box-sizing: border-box;
   border: 1px solid var(--fw-border);
   border-radius: var(--fw-radius-lg);
   background: var(--fw-surface);
-  padding: 10px 12px;
+  padding: 0 4px 0 12px;
   display: flex;
+  align-items: center;
   gap: 8px;
   overflow: hidden;
 }
 
-.said p {
+.note img {
+  flex: none;
+}
+
+.note p {
+  flex: 1;
+  min-width: 0;
   margin: 0;
-  line-height: 1.4;
   font-size: 12px;
+  line-height: 16px;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+
+.note.bad {
+  border-color: var(--fw-need);
+}
+
+.note .link {
+  flex: none;
+  border: 0;
+  background: transparent;
+  padding: 4px 6px;
+  border-radius: var(--fw-radius-md);
+  color: var(--fw-accent-text);
+  font-weight: 600;
+}
+
+.note .link:hover,
+.note .close:hover {
+  background: var(--fw-hover);
+}
+
+.note .close {
+  flex: none;
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: var(--fw-radius-md);
+  background: transparent;
+  color: var(--fw-muted);
+  font-size: 16px;
+  line-height: 1;
 }
 
 /*
