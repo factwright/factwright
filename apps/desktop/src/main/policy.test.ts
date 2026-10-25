@@ -193,6 +193,36 @@ describe('parseRunTask', () => {
     }
   });
 
+  it('takes a quick resume, as a first one or a new version, and nothing else quick', () => {
+    const jobId = 'acme--staff-engineer';
+    expect(parseRunTask({ skill: 'focused-resume', jobId, quick: true })).toEqual({
+      skill: 'focused-resume',
+      jobId,
+      quick: true,
+    });
+    expect(parseRunTask({ skill: 'focused-resume', jobId, again: true, quick: true })).toEqual({
+      skill: 'focused-resume',
+      jobId,
+      again: true,
+      quick: true,
+    });
+    for (const value of [
+      { skill: 'cover-letter', jobId, quick: true },
+      { skill: 'cover-letter', jobId, again: true, quick: true },
+      { skill: 'revise-resume', jobId, changes: true, quick: true },
+      { skill: 'focused-resume', jobId, quick: 'yes' },
+      { skill: 'focused-resume', jobId, quick: false },
+      { skill: 'focused-resume', jobId, again: true, quick: false },
+      { skill: 'focused-resume', jobId, again: true, changes: true, quick: true },
+      { skill: 'focused-resume', jobId: 'Acme Robotics', quick: true },
+      { skill: 'focused-resume', quick: true },
+      { skill: 'focused-resume', jobId, quick: true, callId: 'call-1' },
+      { skill: 'focused-resume', jobId, quick: true, mode: 'resumes' },
+    ]) {
+      expect(parseRunTask(value)).toBeNull();
+    }
+  });
+
   it('takes a known skill and a job ID', () => {
     expect(parseRunTask({ skill: 'fit-check', jobId: 'acme-robotics--staff-engineer-2' })).toEqual({
       skill: 'fit-check',
@@ -432,6 +462,20 @@ describe('runPrompt', () => {
     expect(
       runPrompt({ skill: 'revise-resume', jobId: 'acme--staff-engineer', changes: true }),
     ).toBe('/factwright:revise-resume job acme--staff-engineer changes');
+  });
+
+  it('says a resume is quick, last, as a first one or a new version', () => {
+    expect(runPrompt({ skill: 'focused-resume', jobId: 'acme--staff-engineer', quick: true })).toBe(
+      '/factwright:focused-resume job acme--staff-engineer quick',
+    );
+    expect(
+      runPrompt({
+        skill: 'focused-resume',
+        jobId: 'acme--staff-engineer',
+        again: true,
+        quick: true,
+      }),
+    ).toBe('/factwright:focused-resume job acme--staff-engineer new version quick');
   });
 
   it('names the skill and the job by its ID alone', () => {

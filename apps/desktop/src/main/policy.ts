@@ -176,11 +176,19 @@ export function parseRunTask(value: unknown): RunTask | null {
       JOB_ID.test(jobId);
     return valid ? { skill, jobId, form } : null;
   }
-  const { skill, jobId, mode, askId, source, sources, callId, practice, ...rest } = value as Record<
-    string,
-    unknown
-  >;
+  const { skill, jobId, mode, askId, source, sources, callId, practice, quick, ...rest } =
+    value as Record<string, unknown>;
   if (Object.keys(rest).length > 0) return null;
+  // A quick resume, which asks nothing.
+  if (quick !== undefined) {
+    const others = [mode, askId, source, sources, callId, practice].every(
+      (field) => field === undefined,
+    );
+    const valid = others && quick === true && skill === 'focused-resume';
+    return valid && typeof jobId === 'string' && JOB_ID.test(jobId)
+      ? { skill, jobId, quick }
+      : null;
+  }
   // Prep for one of a job's calls, or practice for it, or thank-you notes after it.
   if (callId !== undefined || practice !== undefined) {
     const others = [mode, askId, source, sources].every((field) => field === undefined);
@@ -241,11 +249,18 @@ export function parseRunTask(value: unknown): RunTask | null {
  * A revision from the window: a job by its ID, a resume's file by its name, and the IDs of the
  * findings to fix, each once, with a choice for the template when one's given.
  */
-/** A new version of a job's resume, letter or Projects page, or changes to its resume or letter. */
+/**
+ * A new version of a job's resume, letter or Projects page, a quick one of its resume, or changes
+ * to its resume or letter.
+ */
 function parseVersionTask(fields: Record<string, unknown>): RunTask | null {
-  const { skill, jobId, again, changes, ...rest } = fields;
+  const { skill, jobId, again, changes, quick, ...rest } = fields;
   if (Object.keys(rest).length > 0) return null;
   if (typeof jobId !== 'string' || !JOB_ID.test(jobId)) return null;
+  if (quick !== undefined) {
+    const valid = quick === true && again === true && changes === undefined;
+    return valid && skill === 'focused-resume' ? { skill, jobId, again, quick } : null;
+  }
   if (again === true && changes === undefined) {
     return (VERSION_SKILLS as readonly unknown[]).includes(skill)
       ? { skill: skill as VersionSkill, jobId, again }
@@ -322,7 +337,12 @@ export function runPrompt(task: RunTask): string {
     return `/factwright:${task.skill} job ${task.jobId} findings ${task.findings.join(' ')}${template}`;
   }
   // Which one, by a word of the app's own: the run reads the user's changes with
-  // requested_changes, and a new version's job_details says the app kept the one before.
+  // requested_changes, and a new version's job_details says the app kept the one before. A
+  // quick resume, which asks nothing, says so last.
+  if ('quick' in task) {
+    const version = 'again' in task && task.again ? ' new version' : '';
+    return `/factwright:${task.skill} job ${task.jobId}${version} quick`;
+  }
   if ('again' in task) return `/factwright:${task.skill} job ${task.jobId} new version`;
   if ('changes' in task) return `/factwright:${task.skill} job ${task.jobId} changes`;
   if ('askId' in task) return `/factwright:ask job ${task.jobId} question ${task.askId}`;

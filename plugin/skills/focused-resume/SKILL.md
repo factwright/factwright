@@ -1,6 +1,6 @@
 ---
 name: focused-resume
-description: Build a resume focused on one job. Use when the user shares a job posting (plus maybe a company link, notes, "pdf"/"word", "startup"/"big company") and wants a tailored resume. Maps the job to their fact bank, asks them about experience the bank lacks and about unverified facts it would use, saves their answers to the fact bank, then builds and fact-checks the PDF or Word file. Also use whenever the user gives feedback on a resume, now or in a later session: it fixes the resume and saves the feedback as a nudge.
+description: Build a resume focused on one job. Use when the user shares a job posting (plus maybe a company link, notes, "pdf"/"word", "startup"/"big company") and wants a tailored resume. Maps the job to their fact bank, asks them about experience the bank lacks and about unverified facts it would use, saves their answers to the fact bank, then builds and fact-checks the PDF or Word file. With quick, it asks nothing, uses verified facts only, and ends with what could make the resume stronger. Also use whenever the user gives feedback on a resume, now or in a later session: it fixes the resume and saves the feedback as a nudge.
 argument-hint: "[posting link or text, plus pdf/word and startup/big-company]"
 ---
 
@@ -12,6 +12,7 @@ The user's input is whatever came with the command or in their next message:
 - **format:** `pdf` (default) | `word`/`docx` | `both`
 - **style:** a style in `guide/styles/README.md`, such as `startup`, `big-company` or `public-sector` (inferred if missing)
 - **track:** `leader` | `builder` | `ic`, as `guide/styles/README.md` defines them (inferred if missing)
+- **quick:** the command ends with `quick`, as in `job <id> quick` or `job <id> new version quick`: the user wants a resume without being asked anything. See **Quick resume**, below.
 
 If there's no posting, ask for it in one line and stop. Don't ask about anything that has a default. State your inferred picks in one line and keep going.
 
@@ -24,8 +25,17 @@ Before starting, read:
 
 If there's no fact bank yet, say so, suggest `/factwright:add-facts` ("interview me" starts one), and stop.
 
+## Quick resume
+When the command ends with `quick`, the user asked for a resume they don't have to answer anything for. Every step below holds, with these changes:
+- **Ask nothing.** No AskUserQuestion round, and no question in plain text. Skip step 5. Where another step would ask, use the default or what's on file, and say what you picked in your reply. When the folder already has a resume and the command doesn't say `new version`, build the new one beside it, under its own `output_name` with a short tag (`_Quick`), and say so.
+- **Verified facts only.** Every line traces to a verified claim. Leave out every claim tagged `unconfirmed`, and save nothing to the fact bank: no `save_fact`, `save_gap`, `verify_fact` or `correct_fact`.
+- **What could make it stronger.** End `notes.md` with a `## What could make it stronger` section, and end your reply with the same list, short, then a line saying that Tailor a resume asks about these and saves the answers:
+  - the unverified facts the job would use that you left out, each by its title in quotes
+  - the gaps that matter: must-haves first, then nice-to-haves, that the facts show only in part or not at all, and that `facts/gaps.md` doesn't settle
+  - the numbers missing from claims the resume leans on
+
 ## 1. Set up the application folder
-- For a job from the app (`job <id>`), call `job_details` with the id: it gives everything on file, with what each file holds. Otherwise call `find_job` with what you have (the link alone is fine), then `job_details` if it's on file. If the job's folder already has a resume (a PDF or Word file), tell the user in one line and ask whether to build a new one before going on. When the command says `new version`, the user asked the app for a new one, and the app kept the current resume as an earlier version: build the new one without asking, keeping `resume.json`'s `output_name`, so it takes the current one's place.
+- For a job from the app (`job <id>`), call `job_details` with the id: it gives everything on file, with what each file holds. Otherwise call `find_job` with what you have (the link alone is fine), then `job_details` if it's on file. If the job's folder already has a resume (a PDF or Word file), tell the user in one line and ask whether to build a new one before going on, unless the command says `quick`. When the command says `new version`, the user asked the app for a new one, and the app kept the current resume as an earlier version: build the new one without asking, keeping `resume.json`'s `output_name`, so it takes the current one's place.
 - Read what's on file that bears on tailoring, before anything else: the fit check (what fits, what's missing that the resume should cover honestly or leave alone, and what's worth asking the user), `unmask.md`, the user's notes and calls (what a recruiter said the team cares about), what they sent on the application, and your answers to their questions about the job. A requirement the user's notes say matters most leads the resume.
 - If a fit check (or unmask) already made a folder for this job, reuse it: keep its `posting.md`, `job.md` and `fit-check.md`, and add to them. Otherwise use `applications/<YYYY-MM-DD>-<company>-<role>/`, lowercase with hyphens.
 - Save the posting word for word as `posting.md`, if the folder doesn't have one yet:
@@ -56,9 +66,11 @@ Append `## Requirements` to job.md:
 - Use `facts/skills.md` for tech.
 - Respect status and ownership tags.
 - Check `facts/gaps.md` before treating anything as unknown. "Doesn't have" means it's settled: don't ask again.
-- A claim tagged `unconfirmed` is unverified: map it, mark it `unverified` in the table, and offer it in step 5 before the resume uses it.
+- A claim tagged `unconfirmed` is unverified: map it, mark it `unverified` in the table, and offer it in step 5 before the resume uses it. A quick resume leaves it out: mark it `left out` instead.
 
 ## 5. Ask the user (this is how the fact bank grows)
+A quick resume skips this step: it asks nothing.
+
 A fact the user gives you now can win this job and every one after it, so ask before drafting, as the standing rules say. Even when coverage looks strong, look for a must-have that's only partly proven, or a claim the job leans on that has no number.
 
 Ask in **one round** of AskUserQuestion, up to 4 questions, most valuable first:
@@ -153,7 +165,7 @@ Call `build_resume` with the folder's name (and `format: "both"` when the user w
 Start **one** subagent with this prompt (fill in the folder):
 
 > Adversarially fact-check the resume at `applications/<folder>/resume.json`. The sources of truth are `facts/` (read all of it), `guide/rules.md`, and `applications/<folder>/posting.md` plus `job.md` (older folders keep the posting inside job.md). Check every summary sentence, stat, card, bullet, and skill:
-> - Is it supported by a facts claim? A claim tagged `unconfirmed` counts only if it's one of these, which the user gave or said to use in this run: <the facts saved, and the unverified ones they said to use>. Anything resting on another unverified claim is a problem.
+> - Is it supported by a facts claim? A claim tagged `unconfirmed` counts only if it's one of these, which the user gave or said to use in this run: <the facts saved, and the unverified ones they said to use, or "none" for a quick resume>. Anything resting on another unverified claim is a problem.
 > - For a claim whose Source is an `answer`, does it stay within what the user said in the **Answer** lines under it? Wording that says more than they did is a problem.
 > - Is the verb within that claim's status tag (built/shipped/live/beta)?
 > - Is the ownership within its tag (solo/led-and-built/took-over/led-team)?
@@ -174,8 +186,10 @@ Apply the fixes and build again. Skip this step only if the user asks for speed.
   - the questions asked and where each answer was saved
   - the lines that rest on today's answers, and on unverified facts the user said to use once
   - anything the user should double-check before sending
+  - for a quick resume, **What could make it stronger**, last, as above
 - The app shows the resume in the job's panel, ready to open, and the facts you saved at the top of the Fact bank, to verify.
 - Reply in 7 lines or fewer: the file, the style, track and template, the 2–3 biggest tailoring choices, how you placed projects in a line ("Projects: a Selected Work section with Trailhead and pg-queue, a line each"), the facts you saved and the lines that rest on them, and anything to check. When the posting or `apply.md` asks for a cover letter, add that `/factwright:cover-letter` writes one to match. When it asks for a portfolio or work samples, or the company is a startup or run by its founders, and the user has projects worth showing, add that `/factwright:projects-page` makes a one-page Projects page to go with it.
+- A quick resume's reply ends with **What could make it stronger**, after those lines.
 
 ## 10. Feedback (now or in a later session)
 When the user reacts to the resume:

@@ -5,7 +5,7 @@ import type { FactwrightApi } from '../../shared/api.ts';
 import type { RunTask } from '../../shared/runs.ts';
 import type { DocVersion } from '../../shared/versions.ts';
 import { OpenXRay } from '../xray/OpenXRay.tsx';
-import { ClaudeButton } from './ClaudeButton.tsx';
+import { ClaudeButton, isRunning } from './ClaudeButton.tsx';
 import { CoverLetterPart } from './CoverLetterSection.tsx';
 import { FileRow } from './JobFiles.tsx';
 import panel from './JobPanel.module.css';
@@ -24,8 +24,26 @@ const named = (files: readonly JobFile[]) => new Set(files.map((file) => stem(fi
 const count = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
 
 /**
+ * Tailor a resume, and Quick resume beside it, which asks the user nothing and uses verified facts
+ * only. While either runs, one button says Claude is on it.
+ */
+function FirstResume({ run, jobId }: { run: RunControls | undefined; jobId: string }) {
+  const tailored: RunTask = { skill: 'focused-resume', jobId };
+  const tailor = <ClaudeButton run={run} task={tailored} label="Tailor a resume" adds />;
+  if (isRunning(run, tailored)) return tailor;
+  const quick: RunTask = { skill: 'focused-resume', jobId, quick: true };
+  return (
+    <>
+      {tailor}
+      <ClaudeButton run={run} task={quick} label="Quick resume" adds />
+    </>
+  );
+}
+
+/**
  * What the user sends with an application: the job's resume, to preview, X-ray and attach, and its
- * cover letter, each with a New version, or the button that makes the first one. A Projects page
+ * cover letter, each with a New version, or the button that makes the first one. The resume has a
+ * quick one beside each, which asks the user nothing. A Projects page
  * shows too, for a posting that asks for samples of the user's work. A resume's X-ray can send
  * what it found for revision, with Claude's panel.
  */
@@ -69,7 +87,6 @@ export function ResumesSection({
     setProblem(result.ok ? null : result.message);
   };
 
-  const resume: RunTask = { skill: 'focused-resume', jobId: job.id };
   const letter = job.letters.length > 0 || job.docKinds.includes('letter');
   const page = job.projectPages.length > 0 || job.docKinds.includes('projects');
   const empty = job.files.length === 0 && !letter && !page;
@@ -91,10 +108,7 @@ export function ResumesSection({
       empty={empty}
     >
       {job.files.length === 0 ? (
-        <Placeholder
-          title="Resume"
-          action={<ClaudeButton run={run} task={resume} label="Tailor a resume" adds />}
-        >
+        <Placeholder title="Resume" action={<FirstResume run={run} jobId={job.id} />}>
           A resume for this job, every line traced to a fact.
         </Placeholder>
       ) : (

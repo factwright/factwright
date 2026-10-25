@@ -325,9 +325,12 @@ async function work(text) {
       show('\n');
     }
   }
+  // As Claude would for a quick resume: ask nothing, and use verified facts only.
+  const quickly = /^\/factwright:focused-resume job \S+(?: new version)? quick$/.test(text);
+  if (quickly) show('A quick resume, from verified facts only: no questions.\n');
   // As Claude would while tailoring a resume: ask about what the posting wants that the facts
   // don't show, then save the user's answers to the fact bank.
-  const tailoring = text.match(/^\/factwright:focused-resume job (\S+)/);
+  const tailoring = !quickly && text.match(/^\/factwright:focused-resume job (\S+)/);
   if (tailoring) {
     const [, job] = tailoring;
     await askUser({ [GRAPHQL]: 'Yes, in production', [KAFKA]: 'No' });

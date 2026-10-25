@@ -110,6 +110,11 @@ export function UpNext({
     label = claude.label;
     main = <ClaudeButton run={run} task={claude.task} label={label} primary />;
     if (action?.kind === 'outreach') more = also('Mark no reply', () => onMove('ghosted'));
+    // Beside Tailor a resume, one that asks nothing. While either runs, one says Claude is on it.
+    if (action?.kind === 'resume' && !isRunning(run, claude.task)) {
+      const quick: RunTask = { skill: 'focused-resume', jobId: job.id, quick: true };
+      more = <ClaudeButton run={run} task={quick} label="Quick resume" />;
+    }
   } else if (action?.kind === 'apply') {
     label = 'Mark as applied';
     main = button(label, () => onMove('applied'));
