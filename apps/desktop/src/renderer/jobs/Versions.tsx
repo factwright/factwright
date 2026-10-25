@@ -52,7 +52,9 @@ function aboutVersion(version: DocVersion): string {
 
 /**
  * New version for a job's resume, cover letter or Projects page: the app keeps the current one as
- * an earlier version, then Claude makes another. Nothing shows for one the user applied with.
+ * an earlier version, then Claude makes another. A resume has Quick version beside it, which asks
+ * the user nothing and uses verified facts only. While either runs, one button says Claude is on
+ * it. Nothing shows for one the user applied with.
  */
 export function NewVersionButton({
   job,
@@ -69,12 +71,27 @@ export function NewVersionButton({
 }) {
   if (keptAsSent(job, kind)) return null;
   const task: RunTask = { skill: SKILLS[kind], jobId: job.id, again: true };
-  const start = async () => {
+  const start = async (next: RunTask) => {
     const kept = await api.keepVersion(job.id, kind);
     onProblem(kept.ok ? null : kept.message);
-    if (kept.ok) run?.start(task);
+    if (kept.ok) run?.start(next);
   };
-  return <ClaudeButton run={run} task={task} label="New version" onStart={() => void start()} />;
+  const again = (
+    <ClaudeButton run={run} task={task} label="New version" onStart={() => void start(task)} />
+  );
+  if (kind !== 'resume' || isRunning(run, task)) return again;
+  const quick: RunTask = { skill: 'focused-resume', jobId: job.id, again: true, quick: true };
+  return (
+    <>
+      {again}
+      <ClaudeButton
+        run={run}
+        task={quick}
+        label="Quick version"
+        onStart={() => void start(quick)}
+      />
+    </>
+  );
 }
 
 /**

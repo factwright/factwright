@@ -247,6 +247,7 @@ const PREP_ANSWER = 'No, so help me handle the gap';
 
 /** The rest of a run's command after the job, as the app types it: the call, or the question. */
 function taskTail(task: RunTask): string {
+  if ('quick' in task) return `${'again' in task && task.again ? ' new version' : ''} quick`;
   if ('askId' in task) return ` question ${task.askId}`;
   if (!('callId' in task)) return '';
   return ` call ${task.callId}${'practice' in task && task.practice ? ' practice' : ''}`;

@@ -128,7 +128,10 @@ export function runOutcome(
   switch (task.skill) {
     case 'focused-resume':
       return gained(now.files, was.files)
-        ? { text: `Your tailored resume for ${company} is ready.`, place: at('files') }
+        ? {
+            text: `Your ${'quick' in task ? 'quick' : 'tailored'} resume for ${company} is ready.`,
+            place: at('files'),
+          }
         : null;
     case REVISE_SKILL:
       return gained(now.files, was.files)

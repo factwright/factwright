@@ -972,6 +972,34 @@ test('reads and changes the fact bank: a fact’s words, verifying one, and a ne
   await expect(window.getByRole('heading', { name: 'Jobs' })).toBeVisible();
 });
 
+test('makes a quick resume, typing only the job and the app’s own word, and asks nothing', async () => {
+  const { window } = opened;
+  await window
+    .getByRole('navigation', { name: 'Main' })
+    .getByRole('button', { name: /^Jobs/ })
+    .click();
+  await pickView(/^All/);
+  await window.getByRole('button', { name: /^Tidewater Analytics/ }).click();
+  await jobPanel()
+    .getByRole('region', { name: 'Resumes and cover letters' })
+    .getByRole('button', { name: 'Quick resume' })
+    .click();
+  const panel = claudePanel();
+  await expect(panel).toContainText('Quick resume · Tidewater Analytics');
+  await expect(panel.getByRole('status').first()).toHaveText('Done');
+  // No questions: no dialog, and the stand-in says it asked nothing.
+  await expect(window.getByRole('dialog')).toHaveCount(0);
+  expect(await terminalLines(window)).toMatch(
+    /\/factwright:focused-resume job tidewater-analytics--\S+ quick/,
+  );
+  expect(await terminalLines(window)).toContain('from verified facts only: no questions.');
+  // Its question anyway, as when the skill's words slip, is turned away, saying why.
+  expect(await terminalLines(window)).toContain(
+    'Not asked: A quick resume asks the user nothing, so this wasn’t asked.',
+  );
+  await closeRun();
+});
+
 test('saves what the user answers while Claude tailors a resume, unverified, and nothing planted', async () => {
   const { window } = opened;
   const facts = join(dataDir, 'workspace', 'facts');

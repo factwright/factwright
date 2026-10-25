@@ -2,6 +2,8 @@ import { join, resolve, sep } from 'node:path';
 import { CALL_KINDS, callInviteName, type Job, type JobFile } from '@factwright/core';
 import { describe, expect, it } from 'vitest';
 import {
+  asksNothing,
+  asksNothingAfter,
   contentSecurityPolicy,
   copyProblem,
   isSafeExternalUrl,
@@ -10,6 +12,7 @@ import {
   parseRunTask,
   parseTerminalSize,
   previewablePdf,
+  QUICK_ASKS_NOTHING,
   readableWord,
   resolveInside,
   runPrompt,
@@ -247,6 +250,36 @@ describe('parseRunTask', () => {
       { skill: 'revise-resume', jobId, changes: 'Shorter, please' },
       { skill: 'cover-letter', jobId: 'Acme Robotics', changes: true },
       { skill: 'cover-letter', jobId, changes: true, findings: ['check-dates'] },
+    ]) {
+      expect(parseRunTask(value)).toBeNull();
+    }
+  });
+
+  it('takes a quick resume, as a first one or a new version, and nothing else quick', () => {
+    const jobId = 'acme--staff-engineer';
+    expect(parseRunTask({ skill: 'focused-resume', jobId, quick: true })).toEqual({
+      skill: 'focused-resume',
+      jobId,
+      quick: true,
+    });
+    expect(parseRunTask({ skill: 'focused-resume', jobId, again: true, quick: true })).toEqual({
+      skill: 'focused-resume',
+      jobId,
+      again: true,
+      quick: true,
+    });
+    for (const value of [
+      { skill: 'cover-letter', jobId, quick: true },
+      { skill: 'cover-letter', jobId, again: true, quick: true },
+      { skill: 'revise-resume', jobId, changes: true, quick: true },
+      { skill: 'focused-resume', jobId, quick: 'yes' },
+      { skill: 'focused-resume', jobId, quick: false },
+      { skill: 'focused-resume', jobId, again: true, quick: false },
+      { skill: 'focused-resume', jobId, again: true, changes: true, quick: true },
+      { skill: 'focused-resume', jobId: 'Acme Robotics', quick: true },
+      { skill: 'focused-resume', quick: true },
+      { skill: 'focused-resume', jobId, quick: true, callId: 'call-1' },
+      { skill: 'focused-resume', jobId, quick: true, mode: 'resumes' },
     ]) {
       expect(parseRunTask(value)).toBeNull();
     }
@@ -493,6 +526,20 @@ describe('runPrompt', () => {
     ).toBe('/factwright:revise-resume job acme--staff-engineer changes');
   });
 
+  it('says a resume is quick, last, as a first one or a new version', () => {
+    expect(runPrompt({ skill: 'focused-resume', jobId: 'acme--staff-engineer', quick: true })).toBe(
+      '/factwright:focused-resume job acme--staff-engineer quick',
+    );
+    expect(
+      runPrompt({
+        skill: 'focused-resume',
+        jobId: 'acme--staff-engineer',
+        again: true,
+        quick: true,
+      }),
+    ).toBe('/factwright:focused-resume job acme--staff-engineer new version quick');
+  });
+
   it('names the skill and the job by its ID alone', () => {
     expect(runPrompt({ skill: 'focused-resume', jobId: 'acme--staff-engineer' })).toBe(
       '/factwright:focused-resume job acme--staff-engineer',
@@ -600,5 +647,65 @@ describe('runPrompt', () => {
     expect(runPrompt({ skill: 'add-facts', mode: 'new' })).toBe(
       '/factwright:add-facts read the new files, notes and projects',
     );
+  });
+});
+
+describe('asksNothing', () => {
+  const jobId = 'acme--staff-engineer';
+
+  it('knows a quick resume by its prompt, as the app types it or the user does', () => {
+    expect(asksNothing(runPrompt({ skill: 'focused-resume', jobId, quick: true }))).toBe(
+      QUICK_ASKS_NOTHING,
+    );
+    expect(
+      asksNothing(runPrompt({ skill: 'focused-resume', jobId, again: true, quick: true })),
+    ).toBe(QUICK_ASKS_NOTHING);
+    for (const typed of [
+      '/factwright:focused-resume https://jobs.example.com/staff pdf startup quick',
+      '/focused-resume job acme--staff-engineer quick',
+      `  /factwright:focused-resume job ${jobId} quick\n`,
+    ]) {
+      expect(asksNothing(typed)).toBe(QUICK_ASKS_NOTHING);
+    }
+    expect(QUICK_ASKS_NOTHING).toMatch(/^A quick resume asks the user nothing/);
+    expect(QUICK_ASKS_NOTHING).toContain('What could make it stronger');
+  });
+
+  it('lets every other task ask', () => {
+    for (const prompt of [
+      runPrompt({ skill: 'focused-resume', jobId }),
+      runPrompt({ skill: 'focused-resume', jobId, again: true }),
+      '/factwright:cover-letter job acme--staff-engineer quick',
+      '/factwright:focused-resume job acme--staff-engineer quick, then ask me about the gaps',
+      'Ask me about what the quick resume left out',
+      'quick',
+      '',
+      undefined,
+      42,
+    ]) {
+      expect(asksNothing(prompt)).toBeNull();
+    }
+  });
+
+  it('holds from a quick resume’s prompt until the next prompt, whoever sends it', () => {
+    const sent = (prompt: unknown) => ({ hook_event_name: 'UserPromptSubmit', prompt });
+    const quick = `/factwright:focused-resume job ${jobId} quick`;
+    let reason = asksNothingAfter(null, sent(quick));
+    expect(reason).toBe(QUICK_ASKS_NOTHING);
+    // Its run's other hooks leave it as it is.
+    for (const event of [
+      { hook_event_name: 'PreToolUse', tool_name: 'Read', tool_input: {} },
+      { hook_event_name: 'Stop' },
+      null,
+      'UserPromptSubmit',
+    ]) {
+      reason = asksNothingAfter(reason, event);
+    }
+    expect(reason).toBe(QUICK_ASKS_NOTHING);
+    // The user's own words next start a task that may ask, and so does a prompt without any.
+    expect(asksNothingAfter(reason, sent('Now ask me about the gaps'))).toBeNull();
+    expect(asksNothingAfter(reason, sent(undefined))).toBeNull();
+    expect(asksNothingAfter(reason, { hook_event_name: 'UserPromptSubmit' })).toBeNull();
+    expect(asksNothingAfter(null, sent(`/factwright:focused-resume job ${jobId}`))).toBeNull();
   });
 });

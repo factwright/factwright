@@ -403,7 +403,7 @@ describe('JobPanel', () => {
       within(area('Resumes and cover letters'))
         .getAllByRole('button')
         .map((button) => button.textContent),
-    ).toEqual(['Tailor a resume', 'Write a cover letter']);
+    ).toEqual(['Tailor a resume', 'Quick resume', 'Write a cover letter']);
     expect(within(area('Application questions')).getByRole('button')).toBeTruthy();
     expect(within(area('Questions for Claude')).getByRole('button')).toBeTruthy();
     // Empty areas have nothing to close.
