@@ -64,6 +64,27 @@
   white-space: nowrap;
 }
 
+/*
+ * A name with a step after it keeps a few letters, and with even less room, what's left is cut
+ * at the tab's edge.
+ */
+.name:has(+ .step) {
+  min-width: 2.5em;
+}
+
+.tab:has(.step) {
+  overflow: hidden;
+}
+
+/* How far a run at work has come on its to-do list, such as 3/7, after its name. */
+.step {
+  flex: none;
+  color: var(--fw-muted);
+  font-size: var(--fw-text-sm);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
 .dot {
   flex: none;
   box-sizing: border-box;

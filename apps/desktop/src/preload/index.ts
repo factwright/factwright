@@ -26,6 +26,7 @@ const api: FactwrightApi = {
   resizeClaude: (runId, size) => ipcRenderer.send('claude:resize', runId, size),
   onClaudeOutput: (listener) => subscribe('claude:output', listener),
   onClaudeStep: (listener) => subscribe('claude:step', listener),
+  onClaudeProgress: (listener) => subscribe('claude:progress', listener),
   onClaudeTurnEnd: (listener) => subscribe('claude:turn-end', listener),
   onRunChanges: (listener) => subscribe('claude:changes', listener),
   viewChange: (runId, path) => ipcRenderer.invoke('claude:change', runId, path),

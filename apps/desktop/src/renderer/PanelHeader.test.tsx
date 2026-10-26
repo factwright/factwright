@@ -3,13 +3,18 @@ import { cleanup, render, screen } from '@testing-library/react';
 import axe from 'axe-core';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { RunPhase } from '../shared/api.ts';
-import { PanelHeader } from './PanelHeader.tsx';
+import { PanelHeader, type Scene } from './PanelHeader.tsx';
 
 afterEach(cleanup);
 
 function renderHeader(
   phase: RunPhase,
-  { problem, workShown = false, failed = false }: Partial<Record<string, unknown>> = {},
+  {
+    problem,
+    workShown = false,
+    failed = false,
+    scene = null,
+  }: Partial<Record<string, unknown>> = {},
 ) {
   const actions = { onStop: vi.fn(), onShowWork: vi.fn(), onClose: vi.fn() };
   const result = render(
@@ -19,6 +24,7 @@ function renderHeader(
       plan="Max plan"
       problem={problem as string | undefined}
       text="Reading your fact bank…"
+      scene={scene as Scene | null}
       elapsed="1:24"
       workShown={workShown as boolean}
       failed={failed as boolean}
@@ -27,6 +33,10 @@ function renderHeader(
   );
   return { ...result, ...actions };
 }
+
+/** The picture of the step the bar draws, by its kind, or null for none. */
+const picture = (container: HTMLElement) =>
+  container.querySelector('[data-scene]')?.getAttribute('data-scene') ?? null;
 
 describe('PanelHeader', () => {
   it('says whose Claude it is, what it’s doing, and for how long', () => {
@@ -115,8 +125,41 @@ describe('PanelHeader', () => {
     expect(onClose).toHaveBeenCalledOnce();
   });
 
+  it('draws the step Claude is on while it works, hidden from screen readers, beside its words', () => {
+    const { container } = renderHeader('working', { scene: { kind: 'reading', lanes: 0 } });
+    expect(picture(container)).toBe('reading');
+    expect(container.querySelector('[data-scene]')?.getAttribute('aria-hidden')).toBe('true');
+    expect(screen.getByText('Reading your fact bank…')).toBeTruthy();
+    cleanup();
+    const starting = renderHeader('starting', { scene: { kind: 'thinking', lanes: 0 } });
+    expect(picture(starting.container)).toBe('thinking');
+  });
+
+  it.each([['needs-answer'], ['done'], ['stopped'], ['in-line']] as const)(
+    'draws no step once the run is %s',
+    (phase) => {
+      const { container } = renderHeader(phase, { scene: { kind: 'writing', lanes: 0 } });
+      expect(picture(container)).toBeNull();
+    },
+  );
+
+  it('draws no step for a run that couldn’t start, only why', () => {
+    const { container } = renderHeader('starting', {
+      problem: 'Claude Code couldn’t start.',
+      scene: { kind: 'thinking', lanes: 0 },
+    });
+    expect(picture(container)).toBeNull();
+    expect(screen.getByText('Claude Code couldn’t start.')).toBeTruthy();
+  });
+
   it('finds no accessibility problems', async () => {
     const { container } = renderHeader('needs-answer');
+    const results = await axe.run(container, { rules: { 'color-contrast': { enabled: false } } });
+    expect(results.violations.map((violation) => violation.id)).toEqual([]);
+  });
+
+  it('finds no accessibility problems in the working strip', async () => {
+    const { container } = renderHeader('working', { scene: { kind: 'helpers', lanes: 4 } });
     const results = await axe.run(container, { rules: { 'color-contrast': { enabled: false } } });
     expect(results.violations.map((violation) => violation.id)).toEqual([]);
   });

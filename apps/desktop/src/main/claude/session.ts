@@ -2,7 +2,7 @@ import { randomBytes } from 'node:crypto';
 import { mkdir, rm, writeFile } from 'node:fs/promises';
 import { delimiter, dirname, join } from 'node:path';
 import { type IPty, spawn } from 'node-pty';
-import type { RunStep, TurnEnd } from '../../shared/activity.ts';
+import type { RunProgress, RunStep, TurnEnd } from '../../shared/activity.ts';
 import type { RunSignal, TerminalSize } from '../../shared/api.ts';
 import type { Effort } from '../../shared/effort.ts';
 import type { FiledFacts } from '../../shared/facts.ts';
@@ -17,7 +17,7 @@ import { asksNothing, asksNothingAfter, permitsNothing } from '../policy.ts';
 import { RunActivity, turnEnd } from './activity.ts';
 import { claudeCommand } from './command.ts';
 import { findClaude, nodeFindDeps } from './find.ts';
-import { buildLaunchArgs, launchEnv } from './launch.ts';
+import { buildLaunchArgs, runEnv } from './launch.ts';
 import { keepBefore, type TaskChanges } from './run-changes.ts';
 import type { PermissionAsker, QuestionAsker, RunServer } from './run-server.ts';
 import { FIRST_RUN_SCREENS, ScreenWatch, TRUST_QUESTION } from './screen.ts';
@@ -109,7 +109,7 @@ export async function prepareLaunch(options: LaunchOptions): Promise<Launch | nu
     args: command.verbatim ? command.args.join(' ') : command.args,
     cwd: workspace,
     // The token reaches Claude Code's hooks and tool calls through its environment, never a file.
-    env: { ...launchEnv(process.env, path), [RUN_TOKEN_VARIABLE]: token },
+    env: { ...runEnv(process.env, path), [RUN_TOKEN_VARIABLE]: token },
     token,
     files: [settings, mcpConfig],
     levels,
@@ -181,6 +181,8 @@ export interface RunEvents {
   past: () => void;
   /** What Claude does, a tool call at a time, as it starts and once it's done. */
   step?: (step: RunStep) => void;
+  /** Where its task stands, as that changes: Claude's to-do list, and its helpers at work. */
+  progress?: (progress: RunProgress) => void;
   /** How each turn ends: what Claude said last, or the error that ended it. */
   turnEnd?: (end: TurnEnd) => void;
   /** It filed facts from the user's answers, which wait for the user to verify them. */
@@ -232,13 +234,15 @@ export async function openRun(
   });
   if (!launch) return 'not-ready';
 
-  const signals = new RunSignals(events.signal);
+  const activity = events.step && new RunActivity(events.step, launch.cwd, events.progress);
+  // A turn that ends in an error doesn't say which helpers are still at work, so the app's own
+  // list of them does.
+  const signals = new RunSignals(events.signal, () => activity?.hasHelpersAtWork() ?? false);
   const kept = deps.changes;
   const tellChanges = (view: RunChangesView | null | undefined) => {
     if (view) events.changes?.(view);
   };
   tellChanges(kept?.begin());
-  const activity = events.step && new RunActivity(events.step, launch.cwd);
   const trust = new ScreenWatch(TRUST_QUESTION);
   const firstRun = new ScreenWatch(FIRST_RUN_SCREENS);
   let heard = false;

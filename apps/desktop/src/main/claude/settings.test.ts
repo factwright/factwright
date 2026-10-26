@@ -200,12 +200,14 @@ describe('sessionSettings', () => {
     expect(scoped('profile').permissions.deny).not.toContain('Edit(./about-me/read.md)');
   });
 
-  it('hears when Claude starts, uses tools, needs the user, and stops', () => {
+  it('hears when Claude starts, uses tools, starts helpers, needs the user, and stops', () => {
     expect(Object.keys(settings.hooks)).toEqual([
       'UserPromptSubmit',
       'PreToolUse',
       'PostToolUse',
       'PostToolUseFailure',
+      'SubagentStart',
+      'SubagentStop',
       'PermissionRequest',
       'Notification',
       'Stop',

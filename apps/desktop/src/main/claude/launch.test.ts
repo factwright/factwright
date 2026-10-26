@@ -6,6 +6,7 @@ import {
   launchEnv,
   PERMISSION_MODES,
   type PermissionMode,
+  runEnv,
   useClaudeFolder,
 } from './launch.ts';
 
@@ -103,6 +104,23 @@ describe('buildLaunchArgs', () => {
 
   it.each(['-p', '--dangerously-skip-permissions'])('refuses %j as a prompt', (prompt) => {
     expect(() => buildLaunchArgs({ ...OPTIONS, prompt })).toThrow('cannot start with "-"');
+  });
+});
+
+describe('runEnv', () => {
+  it('asks Claude Code for its to-do list, which its newest models leave out', () => {
+    expect(runEnv({ HOME: '/Users/someone' }, '/usr/bin')).toEqual({
+      HOME: '/Users/someone',
+      PATH: '/usr/bin',
+      CLAUDE_CODE_ENABLE_TODO_TOOLS: '1',
+    });
+  });
+
+  it('keeps the user’s own choice about it', () => {
+    expect(runEnv({ CLAUDE_CODE_ENABLE_TODO_TOOLS: '0' }, '/usr/bin')).toEqual({
+      PATH: '/usr/bin',
+      CLAUDE_CODE_ENABLE_TODO_TOOLS: '0',
+    });
   });
 });
 

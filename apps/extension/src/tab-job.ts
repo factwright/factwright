@@ -299,6 +299,23 @@ export function looksLikeJob(page: PageJob, unread: Unread): boolean {
   return signs >= (page.posting.trim() ? 2 : 1);
 }
 
+/** The fewest words of a page's own, beside an application form, that are a posting. */
+const POSTING_WORDS = 200;
+
+/**
+ * Whether what a page with an application form shows as its posting is one, to save with the job:
+ * its job data, a job site's own posting, or text you selected always is. Its main text, without
+ * the form, is where it has many words of its own, as a careers page shows the posting above its
+ * form, or beside one in a frame. A page that's only its form has a few around it, such as its
+ * title, a note on cookies and which fields are required, and one page of an application that
+ * runs over several (`step`), as Workday's are, never shows a posting, though it may show a
+ * long note the law asks for.
+ */
+export function postingBesideForm(page: PageJob, step: string): boolean {
+  if (page.source !== 'main') return true;
+  return !step && page.posting.split(/\s+/).filter(Boolean).length >= POSTING_WORDS;
+}
+
 /**
  * What a save without the popup would need checked first, or null when it looks like one job, with
  * its title, company and posting: a page that isn't one job's own, that doesn't look like a job's

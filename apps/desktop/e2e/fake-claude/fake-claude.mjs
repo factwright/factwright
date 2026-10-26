@@ -130,6 +130,135 @@ async function writeAsClaude(path, text) {
 }
 
 /**
+ * A call to one of Claude Code's own tools, as its hooks tell it: its start to the hook every
+ * call has, then, unless it's left going, PostToolUse with what it gave back.
+ */
+async function claudeCall(step, answer, { going = false } = {}) {
+  if (activityUrl) {
+    await post(activityUrl, { hook_event_name: 'PreToolUse', session_id: 'fake', ...step }).catch(
+      () => {},
+    );
+  }
+  if (!going) await hook('PostToolUse', { ...step, tool_response: answer });
+}
+
+/** The next line the user types, while a turn waits for one, or null while none does. */
+let lineWaiter = null;
+const nextLine = () =>
+  new Promise((resolve) => {
+    lineWaiter = resolve;
+  });
+
+/**
+ * As Claude does with a task in several steps and helpers: a to-do list with the Task tools, then
+ * two helpers in the background, each on a step of its own, and a turn that ends while they work,
+ * as Claude Code's does, or that ends in an error, whose StopFailure says nothing of them. They're
+ * back, Claude Code wakes Claude with their report, and Claude finishes, once the user types
+ * another line.
+ */
+async function planWithHelpers({ failing = false } = {}) {
+  const items = [
+    ['Read the posting', 'Reading the posting'],
+    ['Filter the listings', 'Filtering the listings'],
+    ['Write the report', 'Writing the report'],
+  ];
+  for (const [at, [subject, activeForm]] of items.entries()) {
+    const id = String(at + 1);
+    await claudeCall(
+      {
+        tool_name: 'TaskCreate',
+        tool_use_id: `toolu_create_${id}`,
+        tool_input: { subject, description: subject, activeForm },
+      },
+      { task: { id, subject } },
+    );
+  }
+  const update = (taskId, status) =>
+    claudeCall(
+      {
+        tool_name: 'TaskUpdate',
+        tool_use_id: `toolu_update_${taskId}_${status}`,
+        tool_input: { taskId, status },
+      },
+      { success: true, taskId, updatedFields: ['status'] },
+    );
+  await update('1', 'completed');
+  await update('2', 'in_progress');
+  const helpers = [
+    ['agent-fake-1', 'Filter listings 1–50'],
+    ['agent-fake-2', 'Filter listings 51–100'],
+  ];
+  const listings = join(process.cwd(), 'searches', 'listings.md');
+  const reading = (agent) => ({
+    agent_id: agent,
+    agent_type: 'general-purpose',
+    tool_name: 'Read',
+    tool_use_id: `toolu_read_${agent}`,
+    tool_input: { file_path: listings },
+  });
+  for (const [agent, description] of helpers) {
+    const launch = {
+      tool_name: 'Agent',
+      tool_use_id: `toolu_${agent}`,
+      tool_input: {
+        description,
+        prompt: 'Filter these listings.',
+        subagent_type: 'general-purpose',
+      },
+    };
+    await claudeCall(launch, null, { going: true });
+    await hook('SubagentStart', { agent_id: agent, agent_type: 'general-purpose' });
+    await hook('PostToolUse', {
+      ...launch,
+      tool_response: { isAsync: true, status: 'async_launched', agentId: agent, description },
+    });
+    await claudeCall(reading(agent), null, { going: true });
+  }
+  if (failing) {
+    await hook('StopFailure', {
+      error: 'server_error',
+      error_details: 'Internal server error',
+      last_assistant_message: 'API Error: 500 Internal server error',
+    });
+  } else {
+    await hook('Stop', {
+      last_assistant_message: 'Two helpers are filtering the listings.',
+      background_tasks: helpers.map(([id, description]) => ({
+        id,
+        type: 'subagent',
+        status: 'running',
+        description,
+        agent_type: 'general-purpose',
+      })),
+      session_crons: [],
+    });
+  }
+  // Said once the app has heard the turn end, so a test that reads it sees where that left the run.
+  show(
+    failing
+      ? 'API Error: 500 Internal server error\n> '
+      : 'Two helpers are filtering the listings.\n> ',
+  );
+  await nextLine();
+  for (const [agent] of helpers) {
+    await hook('PostToolUse', { ...reading(agent), tool_response: { type: 'text' } });
+    await hook('SubagentStop', { agent_id: agent, agent_type: 'general-purpose' });
+  }
+  await hook('UserPromptSubmit', {
+    prompt: '<task-notification>Both helpers are done.</task-notification>',
+  });
+  await update('2', 'completed');
+  await update('3', 'in_progress');
+  await update('3', 'completed');
+  show('The report is written.\n> ');
+  await hook('Stop', {
+    last_assistant_message: 'The report is written.',
+    background_tasks: [],
+    session_crons: [],
+  });
+}
+
+/**
  * Calls one of Factwright's tools as Claude Code does with the run's settings: without asking
  * when they allow it, and otherwise after the user's OK. Gives back its text, or what came of
  * asking.
@@ -627,6 +756,10 @@ async function work(text) {
     );
     show('\n');
   }
+  if (text === 'plan it with helpers' || text === 'plan it with helpers, then fail') {
+    await planWithHelpers({ failing: text.endsWith(', then fail') });
+    return;
+  }
   // A turn the user interrupts runs no Stop hook: Claude Code says it's waiting for them, later.
   if (text.endsWith(', then interrupt')) {
     show('Interrupted · What should Claude do instead?\n> ');
@@ -715,6 +848,13 @@ process.stdin.on('data', async (chunk) => {
   }
   const line = typed.trim();
   typed = '';
+  // A turn waiting on the user's next line takes it.
+  if (line && lineWaiter) {
+    const take = lineWaiter;
+    lineWaiter = null;
+    take(line);
+    return;
+  }
   // One prompt at a time, as Claude Code takes them, even if the next is typed while it works.
   if (line) working = working.then(() => work(line));
 });

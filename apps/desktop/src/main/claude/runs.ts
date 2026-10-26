@@ -1,4 +1,4 @@
-import type { RunStep, TurnEnd } from '../../shared/activity.ts';
+import type { RunProgress, RunStep, TurnEnd } from '../../shared/activity.ts';
 import type {
   LineWait,
   RunPhase,
@@ -48,6 +48,7 @@ export interface ClaudeRunsDeps {
   /** Hears each run showing a screen of Claude Code's own, which waits on the user. */
   onScreen?: (run: RunHeard, screen: RunScreen) => void;
   onStep?: (runId: string, step: RunStep) => void;
+  onProgress?: (runId: string, progress: RunProgress) => void;
   onTurnEnd?: (runId: string, end: TurnEnd) => void;
   onFiled?: (runId: string, filed: FiledFacts) => void;
   onChanges?: (runId: string, changes: RunChangesView) => void;
@@ -512,6 +513,9 @@ export class ClaudeRuns {
       },
       step: (step) => {
         if (live()) this.deps.onStep?.(entry.id, step);
+      },
+      progress: (progress) => {
+        if (live()) this.deps.onProgress?.(entry.id, progress);
       },
       turnEnd: (end) => {
         if (live()) this.deps.onTurnEnd?.(entry.id, end);

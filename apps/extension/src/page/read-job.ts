@@ -91,6 +91,35 @@ export function readJobPage(
   ]);
   /** A page's own parts around its content, left out of its main text. */
   const AROUND = new Set(['NAV', 'HEADER', 'FOOTER', 'ASIDE', 'FORM']);
+  /**
+   * What a form asks you to fill in, as the form's own function counts its fields (page/form.ts):
+   * boxes, lists and boxes to tick, and what a site builds them of, as a list that's a button. A
+   * site's search box, a slider, and a box that can't be changed, as one to copy a link from,
+   * aren't.
+   */
+  const FIELDS = [
+    'input:not([type="hidden"]):not([type="submit"]):not([type="button"]):not([type="reset"]):not([type="image"]):not([type="search"]):not([type="range"]):not([readonly]):not([disabled])',
+    'select:not([disabled])',
+    'textarea:not([readonly]):not([disabled])',
+    '[contenteditable="true"]',
+    '[role="textbox"]',
+    '[role="combobox"]',
+    '[role="radiogroup"]',
+    '[role="radio"]',
+    '[role="checkbox"]',
+    '[role="switch"]',
+    'button[aria-haspopup="listbox"]',
+    '[role="button"][aria-haspopup="listbox"]',
+  ].join(', ');
+  /** The fewest questions an application form asks: fewer are a box or two on a page. */
+  const FORM_QUESTIONS = 3;
+  /**
+   * What marks the page of an application that runs over several, as the form's own function
+   * finds it (page/form.ts): Workday's progress bar, iCIMS's and Taleo's steps, or any marked as
+   * the current step.
+   */
+  const STEP_NOW =
+    '[data-automation-id="progressBarActiveStep"], [aria-current="step"], li.iCIMS_Steps_Current, .datatrain-focus .datatrain-wagon';
   /** Elements that start a new line or paragraph. */
   const BLOCKS = new Set([
     'P',
@@ -337,9 +366,14 @@ export function readJobPage(
 
   /**
    * An element's text as lines and paragraphs, with list items as "- " lines, leaving out the
-   * elements named in `skip`. It reads the page as it is: nothing in it is copied or changed.
+   * elements named in `skip`, and the elements in `leaveOut`. It reads the page as it is: nothing
+   * in it is copied or changed.
    */
-  function textOf(root: Node, skip: ReadonlySet<string> = new Set()): string {
+  function textOf(
+    root: Node,
+    skip: ReadonlySet<string> = new Set(),
+    leaveOut: ReadonlySet<Element> = new Set(),
+  ): string {
     const parts: string[] = [];
     const visit = (node: Node) => {
       if (node.nodeType === 3) {
@@ -349,7 +383,7 @@ export function readJobPage(
       if (node.nodeType !== 1) return;
       const element = node as Element;
       const tag = element.tagName.toUpperCase();
-      if (SKIPPED.has(tag) || skip.has(tag) || hidden(element)) return;
+      if (SKIPPED.has(tag) || skip.has(tag) || leaveOut.has(element) || hidden(element)) return;
       if (tag === 'BR') {
         parts.push('\n');
         return;
@@ -383,6 +417,49 @@ export function readJobPage(
         .replace(/^(- .*)\n\n(?=- )/gm, '$1\n')
         .trim()
     );
+  }
+
+  /**
+   * The questions a form asks inside an element, each with its fields: radio buttons and boxes to
+   * tick that share a name ask one. What the element's text leaves out doesn't count: a field the
+   * page hides, or inside an element it hides, as a closed dialog's, or inside the elements `skip`
+   * names, as a form element. Nor does a field inside another, as a list's own box, part of it.
+   */
+  function questionsIn(root: Element, skip: ReadonlySet<string>): Element[][] {
+    const fields = Array.from(root.querySelectorAll(FIELDS));
+    const isField = new Set(fields);
+    const asked = new Map<string, Element[]>();
+    for (const [at, field] of fields.entries()) {
+      let left = hidden(field);
+      for (let up = field.parentElement; up && up !== root && !left; up = up.parentElement) {
+        left = isField.has(up) || skip.has(up.tagName.toUpperCase()) || hidden(up);
+      }
+      if (left) continue;
+      const name = field.getAttribute('name');
+      const key =
+        /^(radio|checkbox)$/i.test(field.getAttribute('type') ?? '') && name
+          ? `name ${name}`
+          : `field ${at}`;
+      const same = asked.get(key);
+      if (same) same.push(field);
+      else asked.set(key, [field]);
+    }
+    return Array.from(asked.values());
+  }
+
+  /**
+   * An application form built without a form element, as a site's components can be, inside an
+   * element: the smallest element that holds all its questions, which may be the element itself.
+   * Null where it asks none, or only a box or two, as a menu's box to tick or a newsletter's.
+   */
+  function applicationIn(root: Element, skip: ReadonlySet<string>): Element | null {
+    const questions = questionsIn(root, skip);
+    if (questions.length < FORM_QUESTIONS) return null;
+    let around: Element = questions[0]?.[0]?.parentElement ?? root;
+    for (const field of questions.flat()) {
+      while (around !== root && !around.contains(field)) around = around.parentElement ?? root;
+    }
+    return around;
   }
 
   /** Markup, such as a posting's description in the page's job data, as text. */
@@ -799,16 +876,27 @@ export function readJobPage(
 
   const selection = oneLine(selected).length >= MIN_SELECTION ? selected.trim() : '';
   const described = data?.description ? textOfMarkup(String(data.description)) : '';
-  const onSite = post ? postText : first(known?.posting ?? [], (element) => textOf(element));
-  // The page's main text, without its navigation, headers, footers and forms. Never LinkedIn's,
-  // where anything but the job's own posting, such as messages, isn't the job's.
+  // Where the job site shows its posting, unless what's there is its application form, as Ashby's
+  // is on its application's tab.
+  const onSite = post
+    ? postText
+    : first(known?.posting ?? [], (element) =>
+        questionsIn(element, new Set()).length >= FORM_QUESTIONS ? '' : textOf(element),
+      );
+  // The page's main text, without its navigation, headers, footers and forms, and without an
+  // application form built without a form element, or none where that's all there is. None on a
+  // page of an application that runs over several, which never shows the posting. Never
+  // LinkedIn's, where anything but the job's own posting, such as messages, isn't the job's.
   const main = () => {
-    if (linkedIn) return '';
+    if (linkedIn || doc.querySelector(STEP_NOW)) return '';
     const root =
       doc.querySelector('main, [role="main"], article') ??
       doc.querySelector('#content') ??
       doc.body;
-    return root ? textOf(root, AROUND) : '';
+    if (!root) return '';
+    const form = applicationIn(root, AROUND);
+    if (form === root) return '';
+    return textOf(root, AROUND, form ? new Set([form]) : new Set());
   };
 
   let posting = '';
