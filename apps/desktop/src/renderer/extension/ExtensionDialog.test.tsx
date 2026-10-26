@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen, within } from '@testing-library/react';
+import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import axe from 'axe-core';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
@@ -58,9 +58,10 @@ describe('ExtensionDialog', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Set up Google Chrome' }));
     expect(api.setUpSaveHelper).toHaveBeenCalledWith(['chrome']);
     expect(await row('Google Chrome').findByText('Ready', {}, { timeout: 2000 })).toBeTruthy();
-    // The button that was clicked is gone: what happened is said, and focus goes there.
+    // The button that was clicked is gone: what happened is said, and focus goes there, once the
+    // dialog's effect has run, which a busy computer can leave until after the words show.
     expect(said().textContent).toBe('Google Chrome is ready.');
-    expect(document.activeElement).toBe(said());
+    await waitFor(() => expect(document.activeElement).toBe(said()));
     // A browser that's ready can be set up again, as when its file has gone.
     expect(screen.getByRole('button', { name: 'Set up Google Chrome again' })).toBeTruthy();
   });
