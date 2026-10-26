@@ -506,15 +506,10 @@ export async function answerScript(
  */
 async function startDrafts(page: OnPage): Promise<void> {
   if (page.drafting?.is === 'drafting' || page.drafting?.is === 'waiting') return;
-  // A job you saved since the page's answers were asked for is found now.
-  if (!page.plan.job) {
-    const planned = await planFill(page.form, page.shows, page.way);
-    if (planned.ok && planned.did === 'fill') page.plan = planned;
-  }
-  const { job } = page.plan;
   const fields = draftable(page.form, page.plan.replies, new Map());
   if (fields.length === 0) return;
   const now = Date.now();
+  // Drafting from now, so a second click meanwhile starts nothing more.
   const drafting: Drafting = {
     keys: new Set(fields.map((field) => field.key)),
     is: 'drafting',
@@ -523,6 +518,13 @@ async function startDrafts(page: OnPage): Promise<void> {
     asking: null,
   };
   page.drafting = drafting;
+  // A job you saved since the page's answers were asked for is found now.
+  if (!page.plan.job) {
+    const planned = await planFill(page.form, page.shows, page.way);
+    if (page.drafting !== drafting) return;
+    if (planned.ok && planned.did === 'fill') page.plan = planned;
+  }
+  const { job } = page.plan;
   if (!job) {
     drafting.is = 'failed';
     drafting.says = 'Save this job first, from Factwright’s button. Then try again.';

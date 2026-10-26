@@ -15,8 +15,7 @@ import { keptState } from './kept-state.ts';
  * you clicked the extension's button on, its menu item or its shortcut, the background puts it in
  * the window's bottom right corner itself, for a couple of minutes. What it says is kept here, by a
  * token its frame names, in the browser's memory while it runs, as the background may start again
- * meanwhile: one that names a job read through sync, in the background's own memory alone
- * (kept-state.ts).
+ * meanwhile: one through sync, in the background's own memory alone (kept-state.ts).
  */
 
 /** A note on a page, by the token its frame names. */
@@ -27,7 +26,7 @@ export interface Note {
   says: NoteSays;
   /** When it went on the page. */
   at: number;
-  /** The way the job it names came, as a job marked applied: through sync, it's kept in memory. */
+  /** The way what it says came, once there was one: through sync, it's kept in memory alone. */
   via?: 'computer' | 'sync';
   /** For a job marked applied: the way it was, and what Undo puts back through sync. */
   applied?: { job: AskedJob; via: 'computer' | 'sync'; undo?: SentUndo };
@@ -141,8 +140,8 @@ export function removeNote(token?: string): void {
 /**
  * Shows a note on a page: through the script there, on a job site you allowed, or else put there
  * by the background, which the browser lets it do on a page you clicked its button on. Says its
- * token, which names it, as the popup's Undo does, though the page didn't take it. A note that
- * names a job says the way it came (`via`).
+ * token, which names it, as the popup's Undo does, though the page didn't take it. A note says the
+ * way what it says came (`via`), once there was one.
  */
 export async function showNote(
   place: FormPlace,

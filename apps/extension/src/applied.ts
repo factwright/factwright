@@ -30,8 +30,11 @@ interface Applying {
   url: string;
   /** What you sent on its pages so far, for its own questions. */
   sent: SentAnswer[];
-  /** A submit waiting for the page to say how it went. */
-  pending: { at: number; final: boolean; onePage: boolean; doc: string } | null;
+  /**
+   * A submit waiting for the page to say how it went, and whether the page has shown what's wrong
+   * with an answer since (`wrong`), so only its saying the application went in counts now.
+   */
+  pending: { at: number; final: boolean; onePage: boolean; doc: string; wrong?: boolean } | null;
   /** Whether it's been marked applied. */
   marked: boolean;
   /** When it last changed. */
@@ -179,7 +182,8 @@ export interface Outcome {
 /**
  * How a submit went, as the page says, with nothing wrong showing: it went in, for the submit that
  * sends the application, or with no form left, or that submit's page moved on, with no form. Then
- * the job is marked Applied, once. What's wrong with an answer means it didn't go in.
+ * the job is marked Applied, once. Once the page has shown what's wrong with an answer, only its
+ * saying the application went in counts: the page moving on may be you leaving it.
  */
 export async function outcome(said: Outcome): Promise<void> {
   await kept(said.place);
@@ -188,14 +192,20 @@ export async function outcome(said: Outcome): Promise<void> {
   const pending = applying?.pending;
   if (!applying || !pending || Date.now() - pending.at > OUTCOME_MS) return;
   const saysSo = said.submitted && (pending.final || !said.form);
-  const movedOn = !said.form && pending.final;
+  const movedOn = !said.form && pending.final && !pending.wrong;
   if (!said.errors && (saysSo || movedOn)) {
     await mark(said.place);
     return;
   }
-  // It wants another answer, or it's another page of the application, loaded anew, as its Save
-  // and Continue does: the next submit is the one to hear about.
-  if (said.errors || (said.doc !== pending.doc && said.form)) {
+  if (said.errors && !pending.wrong) {
+    await changeApplying(said.place, (now) =>
+      now?.pending ? { ...now, pending: { ...now.pending, wrong: true } } : now,
+    );
+    return;
+  }
+  // Another page of the application, loaded anew, as its Save and Continue does: its next submit
+  // is the one to hear about.
+  if (said.doc !== pending.doc && said.form) {
     await changeApplying(said.place, (now) => (now ? { ...now, pending: null } : null));
   }
 }
@@ -209,7 +219,7 @@ export async function left(place: FormPlace, doc: string): Promise<void> {
   await kept(place);
   const pending = (await allApplying())[keyOf(place)]?.pending;
   if (!pending || pending.doc !== doc || !pending.final || !pending.onePage) return;
-  if (Date.now() - pending.at > LEFT_WITHIN_MS) return;
+  if (pending.wrong || Date.now() - pending.at > LEFT_WITHIN_MS) return;
   setTimeout(() => {
     void allApplying().then(async (all) => {
       const now = all[keyOf(place)]?.pending;
@@ -243,10 +253,14 @@ async function mark(place: FormPlace): Promise<void> {
   if (!sending) return;
   const { job } = sending;
   if (!job) {
-    await showNote(place, {
-      is: 'problem',
-      says: 'You applied? This job isn’t in your job hunt, so Factwright didn’t mark it. Save it from Factwright’s button.',
-    });
+    await showNote(
+      place,
+      {
+        is: 'problem',
+        says: 'You applied? This job isn’t in your job hunt, so Factwright didn’t mark it. Save it from Factwright’s button.',
+      },
+      { via: sending.via },
+    );
     return;
   }
   await markApplied(place, job, sending.via, sending.url, sending.sent);

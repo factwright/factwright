@@ -64,6 +64,16 @@ const OUTCOME_MS = 60_000;
 const ENTER_MS = 1000;
 
 /**
+ * A one-line box Enter sends its form from, as a browser does: never a box of several lines, a
+ * list or a check box, where Enter does something else.
+ */
+const sendsOnEnter = (target: EventTarget | null): boolean =>
+  target instanceof HTMLInputElement &&
+  /^(text|email|tel|url|search|password|number|date|month|week|time|datetime-local)$/.test(
+    target.type,
+  );
+
+/**
  * Words on a button that sends an application, as its form's last page's does: "Submit", "Submit
  * application", "Send application", "Apply", "Apply now", "Finish", or iCIMS's "Submit Profile",
  * on the first of its pages.
@@ -404,16 +414,18 @@ export function startScript(
   };
 
   /**
-   * Whether a button is the application form's own: in the <form> its fields are in, or in none,
-   * after the first of them, as the foot of Workday's and SmartRecruiters' pages is. A posting's
-   * Apply above its form, or another form's button, as a search box's or a newsletter's, isn't. A
-   * page of an application with nothing to fill, as Workday's Review, has its buttons.
+   * Whether a button is the application form's own: in the <form> its fields are in, or, where
+   * they're in none, in none either, after the first of them, as the foot of Workday's and
+   * SmartRecruiters' pages is. A posting's Apply above its form, a similar job's below it, or
+   * another form's button, as a search box's or a newsletter's, isn't. A page of an application
+   * with nothing to fill, as Workday's Review, has its buttons.
    */
   const ownButton = (button: Element): boolean => {
     const first = elements.flat()[0];
     if (!first) return true;
+    const form = applicationForm();
     const own = formOf(button);
-    return own ? own === applicationForm() : follows(first, button);
+    return form ? own === form : own === null && follows(first, button);
   };
 
   /** Whether the page is its application's last, as its steps show, or it shows none. */
@@ -465,15 +477,23 @@ export function startScript(
     });
   }
 
-  /** Whether the page shows what's wrong with an answer, as a form does that wants another. */
+  /**
+   * Whether the page shows what's wrong with an answer, as a form does that wants another: a field
+   * it says is wrong, or an alert you can see. Not one for screen readers alone, a pixel in size,
+   * as Workday's that a page has loaded.
+   */
   const errorsShow = (): boolean =>
-    [...document.querySelectorAll('[aria-invalid="true"], [role="alert"]')].some(
-      (each) =>
-        (each as HTMLElement).checkVisibility?.({ visibilityProperty: true }) !== false &&
-        (each.matches('[aria-invalid="true"]') ||
-          (/\S/.test(each.textContent ?? '') &&
-            !/success|uploaded|saved|thank/i.test(each.textContent ?? ''))),
-    );
+    [...document.querySelectorAll('[aria-invalid="true"], [role="alert"]')].some((each) => {
+      if ((each as HTMLElement).checkVisibility?.({ visibilityProperty: true }) === false) {
+        return false;
+      }
+      if (each.matches('[aria-invalid="true"]')) return true;
+      const { width, height } = each.getBoundingClientRect();
+      const words = each.textContent ?? '';
+      return (
+        width > 1 && height > 1 && /\S/.test(words) && !/success|uploaded|saved|thank/i.test(words)
+      );
+    });
 
   /**
    * Says how a submit went, as the page shows it now: whether it says the application went in,
@@ -491,9 +511,9 @@ export function startScript(
       form.step === submittedFrom.step &&
       (shows || !submittedFrom.form);
     // Words that it went in count once they're new since you submitted, or the page went on: not
-    // ones it had all along, as "once your application has been submitted, we'll be in touch", nor
-    // ones on a page that came after it with a form, as an application's next page.
-    const says = submittedFrom ? !still || !submittedFrom.said : !shows;
+    // ones it had all along, as "once your application has been submitted, we'll be in touch". On
+    // the page after it, the background weighs them by the submit, as the last page's or not.
+    const says = submittedFrom ? !still || !submittedFrom.said : true;
     const now = {
       submitted: form.submitted && says,
       form: shows || still,
@@ -1204,7 +1224,9 @@ export function startScript(
   const onKey = (event: KeyboardEvent) => {
     if (!yourOwn(event)) return;
     if (event.key === 'Tab') lastTab = Date.now();
-    if (event.key === 'Enter') lastEnter = { at: Date.now(), target: targetOf(event) };
+    if (event.key === 'Enter' && sendsOnEnter(targetOf(event))) {
+      lastEnter = { at: Date.now(), target: targetOf(event) };
+    }
     if (!menu) return;
     if (event.key === 'Escape') {
       closeMenu();

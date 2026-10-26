@@ -176,9 +176,13 @@ async function waitForPage(place: FormPlace, quiet: number, ignore: string[]): P
   await inPage(place, { do: 'wait', ms: READING_MS, quiet, ignore });
 }
 
-/** The words about reading a resume a page shows before Fill puts anything in: there all along. */
+/**
+ * The words about reading a resume a page shows before Fill puts anything in, once it's waited a
+ * moment for one it's reading already, as one you gave it yourself: words it still shows then are
+ * there all along.
+ */
 async function readingAlready(place: FormPlace): Promise<string[]> {
-  const said = await inPage(place, { do: 'wait', ms: 0, quiet: 0 });
+  const said = await inPage(place, { do: 'wait', ms: ALREADY_MS, quiet: 0 });
   return said?.did === 'wait' ? said.seen : [];
 }
 
@@ -432,6 +436,12 @@ const SETTLE_MS = 700;
  */
 const READING_MS = 15_000;
 const START_READING_MS = 1200;
+
+/**
+ * How long, before filling, it waits for a page to finish reading a resume it's reading already,
+ * as one you gave it yourself: words about reading one that stay longer are there all along.
+ */
+const ALREADY_MS = 5000;
 
 /**
  * How long after filling the form's choices are checked again: a page reading a resume you gave

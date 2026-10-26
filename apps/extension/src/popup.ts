@@ -517,8 +517,18 @@ function appliedLine(): Child[] {
     linkButton('Undo', () => {
       void ext.runtime
         .sendMessage({ type: 'undo', tabId: note.tabId, token: note.token } satisfies Message)
+        .catch(() => null)
         .then((now) => {
-          if (now) appliedNote = { ...note, says: now as NoteSays };
+          // The background doesn't know the note now, as one through sync once the browser
+          // stopped it meanwhile.
+          appliedNote = {
+            ...note,
+            says: (now as NoteSays | null) ?? {
+              ...says,
+              undo: 'cannot',
+              says: 'Undo can’t reach this anymore. Change the job’s status in Factwright.',
+            },
+          };
           void start();
         });
     });

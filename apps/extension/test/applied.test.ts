@@ -216,7 +216,7 @@ describe('applied, as you submit', () => {
     expect(browser.asks).toEqual([]);
   });
 
-  it('forgets a submit the page wanted another answer for, so leaving it marks nothing', async () => {
+  it('takes the page moving on, once it showed what’s wrong with an answer, as you leaving it', async () => {
     await submitted({
       place: PLACE,
       doc: D1,
@@ -228,7 +228,24 @@ describe('applied, as you submit', () => {
     });
     await outcome({ place: PLACE, doc: D1, submitted: false, form: true, errors: true });
     await outcome({ place: PLACE, doc: D2, submitted: false, form: false, errors: false });
+    await left(PLACE, D1);
     expect(browser.asks).toEqual([]);
+  });
+
+  it('marks it once the page says it went in, after it showed what was wrong a moment', async () => {
+    await submitted({
+      place: PLACE,
+      doc: D1,
+      form: page('', [WHY]),
+      plan: plan([{ kind: 'question', source: 'you', left: 'new' }]),
+      way: onComputer,
+      values: [],
+      final: true,
+    });
+    // As a page that says "Submitting…" in an alert, then that it went in.
+    await outcome({ place: PLACE, doc: D1, submitted: false, form: true, errors: true });
+    await outcome({ place: PLACE, doc: D1, submitted: true, form: false, errors: false });
+    expect(browser.asks.map((ask) => ask.ask)).toEqual(['sent']);
   });
 
   it('marks a form on one page you sent once the page moves on, with no form left', async () => {

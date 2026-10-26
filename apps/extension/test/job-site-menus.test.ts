@@ -506,6 +506,24 @@ describe('the script and the frame, as the background answers them', () => {
     expect(browser.asks.filter((ask) => ask.ask === 'draft')).toHaveLength(1);
   });
 
+  it('starts your Claude once for two quick clicks on Draft with Claude', async () => {
+    await answerScript({ type: 'job-site', do: 'form', form: FORM, job }, fromScript);
+    const why = FORM.fields[3] as PageField;
+    const menu = { type: 'job-site', do: 'menu', ref: 3, key: why.key, token: TOKEN } as const;
+    await answerScript({ ...menu, answers: true, save: false }, fromScript);
+    // Saved since the page's answers were asked for, so the first click looks it up again.
+    browser.job = {
+      id: 'acme--engineer',
+      company: 'Acme',
+      role: 'Engineer',
+      status: 'new',
+      appliedOn: null,
+    };
+    const draft = { type: 'job-site', do: 'draft', token: TOKEN } as const;
+    await Promise.all([answerFrame(draft, fromFrame), answerFrame(draft, fromFrame)]);
+    expect(browser.asks.filter((ask) => ask.ask === 'draft')).toHaveLength(1);
+  });
+
   it('has your Claude draft the form’s open questions from a menu, then offers each draft', async () => {
     browser.job = {
       id: 'acme--engineer',

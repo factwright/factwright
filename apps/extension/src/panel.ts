@@ -1455,8 +1455,11 @@ async function begin(how: Start = {}): Promise<void> {
   };
   filling = state;
   render(state);
-  // A form it couldn't fill isn't one you submitted: it only looks once it's filled.
-  if (state.copyOnly || (await fill(state, how.onlyEmpty))) keepLooking(state);
+  // A form it couldn't fill isn't one you submitted: it only looks once it's filled. Opened as you
+  // asked, from the note's Details or the popup, with no fill kept for the page, as one through
+  // sync once the browser stopped the background, it fills only the fields that are empty, so
+  // nothing you typed since goes.
+  if (state.copyOnly || (await fill(state, how.onlyEmpty || how.shown))) keepLooking(state);
 }
 
 /**

@@ -568,19 +568,37 @@ describe('the script on a job site you allowed', () => {
       'beforeend',
       `<form id="search"><input name="q" type="search"><button id="find">Submit</button></form>
       <form id="news"><label for="news-email">Your email</label><input id="news-email" type="email"><button id="join">Submit</button></form>
-      <div id="send" role="button">Submit application</div>`,
+      <div id="similar" role="button">Apply</div>`,
     );
     script = startScript(() => true, 0);
     await vi.waitFor(() => expect(frames()).toHaveLength(1));
-    // A posting's Apply above the form, a search box's, and a newsletter's, below it, aren't its.
+    // A posting's Apply above the form, a search box's, a newsletter's and a similar job's below
+    // it, aren't its.
     document.getElementById('apply')?.click();
     document.getElementById('find')?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     document.getElementById('join')?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    document.getElementById('similar')?.click();
     await new Promise((resolve) => setTimeout(resolve, 50));
     expect(sentOf('submitting')).toEqual([]);
-    // One in no form, after its fields, as a page's own foot has, is.
+  });
+
+  it('hears a page’s own button after its fields, where it keeps them in no form', async () => {
+    document.body.innerHTML = `
+      <div role="button" id="apply">Apply</div>
+      <main>
+        <label for="name">Full name</label><input id="name" type="text">
+        <label for="email">Email</label><input id="email" type="email">
+        <label for="phone">Phone</label><input id="phone" type="tel">
+      </main>
+      <footer><div role="button" id="send">Submit application</div></footer>`;
+    script = startScript(() => true, 0);
+    await vi.waitFor(() => expect(frames()).toHaveLength(1));
+    document.getElementById('apply')?.click();
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(sentOf('submitting')).toEqual([]);
     document.getElementById('send')?.click();
     await vi.waitFor(() => expect(sentOf('submitting')).toHaveLength(1));
+    expect(sentOf('submitting')[0]).toMatchObject({ final: true });
   });
 
   it('hears the form sent as you press Enter in one of its boxes, never one the page sends itself', async () => {
@@ -592,7 +610,12 @@ describe('the script on a job site you allowed', () => {
     form.requestSubmit();
     await new Promise((resolve) => setTimeout(resolve, 50));
     expect(sentOf('submitting')).toEqual([]);
-    // Enter, in its box.
+    // Enter for a new line in its box of several, then the page's code sends it: not yours either.
+    input('note').dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    form.requestSubmit();
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(sentOf('submitting')).toEqual([]);
+    // Enter, in one of its one-line boxes.
     input('name').dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
     form.requestSubmit();
     await vi.waitFor(() => expect(sentOf('submitting')).toHaveLength(1));

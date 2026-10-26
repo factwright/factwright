@@ -8,7 +8,7 @@ import {
   readForm,
   topOf,
 } from './fill.ts';
-import { fillWays, firstAnswer } from './fill-way.ts';
+import { type FillWay, fillWays, firstAnswer } from './fill-way.ts';
 import type { FilledHere, ToPanel } from './job-site-messages.ts';
 import { counted, keepFill } from './kept-fill.ts';
 import { showNote } from './notes.ts';
@@ -24,8 +24,11 @@ import { serverName } from './server.ts';
  * the popup. LinkedIn's and Indeed's forms are never filled: the panel gives their answers to copy.
  */
 
-/** What filling a form in its page came to, and the frame it's in, for its note. */
-export type FilledPlace = FilledHere & { place: FormPlace };
+/**
+ * What filling a form in its page came to, the frame it's in, for its note, and the way its
+ * answers came, once there was one: through sync, the note is kept in memory alone.
+ */
+export type FilledPlace = FilledHere & { place: FormPlace; via?: FillWay['via'] };
 
 /**
  * Fills the form in a tab, in its page: the one in the frame given, as the Fill button's, or the
@@ -71,7 +74,10 @@ export async function fillInPlace(tab: Tab & { id: number }, at?: FormPlace): Pr
     instead,
   } = await firstAnswer(ways, (each) => planFill(form, shows, each));
   if (!plan.ok || plan.did !== 'fill') {
-    return problem(plan.ok ? 'Factwright didn’t answer. Try again.' : plan.message, found.place);
+    return {
+      ...problem(plan.ok ? 'Factwright didn’t answer. Try again.' : plan.message, found.place),
+      via: way.via,
+    };
   }
   const filled = new Map<string, FieldFilled>();
   const done = await fillInPasses({
@@ -83,8 +89,12 @@ export async function fillInPlace(tab: Tab & { id: number }, at?: FormPlace): Pr
     filled,
     stale: () => false,
   });
-  if (done === 'elsewhere') return problem('This tab has moved on from the form.', found.place);
-  if (done !== true) return problem('Factwright can’t reach this page anymore.', found.place);
+  if (done === 'elsewhere') {
+    return { ...problem('This tab has moved on from the form.', found.place), via: way.via };
+  }
+  if (done !== true) {
+    return { ...problem('Factwright can’t reach this page anymore.', found.place), via: way.via };
+  }
   await keepFill({
     tabId: tab.id,
     place: found.place,
@@ -103,17 +113,25 @@ export async function fillInPlace(tab: Tab & { id: number }, at?: FormPlace): Pr
       // No panel's open.
     });
   const { filled: took, need } = counted(form, plan.replies, filled);
-  return { did: 'filled', filled: took, need, job: plan.job !== null, place: found.place };
+  return {
+    did: 'filled',
+    filled: took,
+    need,
+    job: plan.job !== null,
+    place: found.place,
+    via: way.via,
+  };
 }
 
 /** Fills the form in a tab in its page, and puts the note that says how it went on the page. */
 export async function fillAndNote(tab: Tab & { id: number }, at?: FormPlace): Promise<FilledHere> {
-  const { place, ...done } = await fillInPlace(tab, at);
+  const { place, via, ...done } = await fillInPlace(tab, at);
   await showNote(
     place,
     done.did === 'filled'
       ? { is: 'filled', filled: done.filled, need: done.need, job: done.job }
       : { is: 'problem', says: done.says },
+    { via },
   );
   return done;
 }
