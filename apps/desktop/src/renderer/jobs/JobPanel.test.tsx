@@ -8,7 +8,7 @@ import type { FactwrightApi } from '../../shared/api.ts';
 import { JobPanel } from './JobPanel.tsx';
 import { type RunControls, runControlsFor } from './RunActions.tsx';
 import { jobRows } from './rows.ts';
-import { sampleDocs, sampleJobs } from './sample-jobs.ts';
+import { KEELSON, sampleDocs, sampleJobs, sampleSaved } from './sample-jobs.ts';
 
 const TODAY = localDate();
 
@@ -80,19 +80,19 @@ describe('sorting a job before applying', () => {
       .getAllByRole('button')
       .map((button) => button.textContent);
 
-  it('leads a new job with a fit check, then where it goes, each one click', async () => {
+  it('leads a new job with Analyze job, then where it goes, each one click', async () => {
     const run = controls();
     const { api, container } = panel(byCompany('Copperleaf Energy'), {}, { run });
     const next = screen.getByRole('region', { name: 'Up next' });
-    expect(within(next).getByText('Run a fit check')).toBeTruthy();
+    expect(within(next).getByText('Analyze job')).toBeTruthy();
     expect(sortButtons()).toEqual(['To review', 'To apply', 'Later', 'Pass']);
     await userEvent.click(screen.getByRole('button', { name: 'To apply' }));
     expect(api.updateJob).toHaveBeenCalledWith('copperleaf-energy--principal-engineer', {
       status: 'apply',
     });
-    await userEvent.click(within(next).getByRole('button', { name: 'Run a fit check' }));
+    await userEvent.click(within(next).getByRole('button', { name: 'Analyze job' }));
     expect(run.start).toHaveBeenCalledWith({
-      skill: 'fit-check',
+      skill: 'analyze-job',
       jobId: 'copperleaf-energy--principal-engineer',
     });
     const results = await axe.run(container, { rules: { 'color-contrast': { enabled: false } } });
@@ -155,7 +155,7 @@ describe('sorting a job before applying', () => {
     } as unknown as FactwrightApi;
     // The job's fit check waits in line, so it has no button here to take focus.
     const run = runControlsFor(
-      [{ id: 'run-1', task: { skill: 'fit-check', jobId: job.id }, phase: 'in-line' }],
+      [{ id: 'run-1', task: { skill: 'analyze-job', jobId: job.id }, phase: 'in-line' }],
       vi.fn(),
       vi.fn(),
     );
@@ -485,7 +485,9 @@ describe('JobPanel', () => {
     panel(byCompany('Orchard Health'), {}, { onMerge });
     // Up top, and in its history.
     expect(screen.getAllByText(/Found again in LinkedIn/).map((each) => each.textContent)).toEqual([
-      expect.stringMatching(/^Remote, US · Found again in LinkedIn \w{3} \d+ · Posting$/),
+      expect.stringMatching(
+        /^Remote, US · Found again in LinkedIn \w{3} \d+ · Posting · Edit details$/,
+      ),
       expect.stringMatching(/^Found again in LinkedIn \w{3} \d+: Long shot$/),
     ]);
     // For a job found twice the app didn't tell was the same.
@@ -493,11 +495,110 @@ describe('JobPanel', () => {
     expect(onMerge).toHaveBeenCalled();
   });
 
+  it('changes the job’s details in boxes, saving only what changed, and the user’s own win', async () => {
+    const saved = sampleSaved()[0] as Job;
+    const { api } = panel(saved);
+    expect(screen.getByRole('heading', { name: 'Staff Software Engineer' })).toBeTruthy();
+    const edit = screen.getByRole('button', { name: 'Edit details' });
+    await userEvent.click(edit);
+    expect(edit.getAttribute('aria-expanded')).toBe('true');
+    const form = screen.getByRole('form', { name: 'Edit details' });
+    const box = (name: string) => within(form).getByRole('textbox', { name }) as HTMLInputElement;
+    expect(box('Company').value).toBe('Larkspur Benefits blog');
+    expect(document.activeElement).toBe(box('Company'));
+    await userEvent.clear(box('Company'));
+    await userEvent.type(box('Company'), 'Larkspur Benefits');
+    await userEvent.type(box('Place'), 'Remote (US)');
+    await userEvent.click(within(form).getByRole('button', { name: 'Save' }));
+    expect(api.updateJob).toHaveBeenCalledWith(saved.id, {
+      company: 'Larkspur Benefits',
+      location: 'Remote (US)',
+    });
+    expect(screen.queryByRole('form', { name: 'Edit details' })).toBeNull();
+    cleanup();
+    // A detail of the user's own says so, and emptying it goes back to what the posting says.
+    const own = { ...saved, company: 'Larkspur Benefits' };
+    const second = panel({ ...own, own: { ...own.own, company: 'Larkspur Benefits' } });
+    await userEvent.click(screen.getByRole('button', { name: 'Edit details' }));
+    expect(screen.getByText('Yours')).toBeTruthy();
+    const company = screen.getByRole('textbox', { name: /^Company/ }) as HTMLInputElement;
+    await userEvent.clear(company);
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }));
+    expect(second.api.updateJob).toHaveBeenCalledWith(saved.id, { company: null });
+    // Escape closes the boxes, never the panel, and Save with nothing changed saves nothing.
+    await userEvent.click(screen.getByRole('button', { name: 'Edit details' }));
+    await userEvent.keyboard('{Escape}');
+    expect(screen.queryByRole('form', { name: 'Edit details' })).toBeNull();
+    expect(second.onClose).not.toHaveBeenCalled();
+    await userEvent.click(screen.getByRole('button', { name: 'Edit details' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }));
+    expect(second.api.updateJob).toHaveBeenCalledTimes(1);
+  });
+
+  it('saves only the boxes the user changed, though the job changed while they were open', async () => {
+    const saved = sampleSaved()[0] as Job;
+    const { api, rerender } = panel(saved);
+    await userEvent.click(screen.getByRole('button', { name: 'Edit details' }));
+    // Meanwhile a run of Claude's own puts the company and place right from the posting.
+    const analyzed = { ...saved, company: 'Larkspur Benefits', location: 'Remote (US)' };
+    const row = jobRows([analyzed], TODAY)[0] ?? null;
+    rerender(<JobPanel row={row} api={api} today={TODAY} onClose={vi.fn()} />);
+    const form = screen.getByRole('form', { name: 'Edit details' });
+    await userEvent.type(within(form).getByRole('textbox', { name: 'Pay' }), '$150k');
+    await userEvent.click(within(form).getByRole('button', { name: 'Save' }));
+    expect(api.updateJob).toHaveBeenCalledWith(saved.id, { pay: '$150k' });
+  });
+
+  it('says the pay is the user’s own when they set it', () => {
+    const [analyzed] = sampleSaved().filter((job) => job.company === 'Keelson AI');
+    if (!analyzed) throw new Error('No Keelson sample');
+    panel({ ...analyzed, pay: { text: '$190k–$220k', min: 190_000, max: 220_000, source: 'own' } });
+    expect(screen.getByText(', as you set it')).toBeTruthy();
+  });
+
+  it('says a job might be the same as another, with Merge and Not the same', async () => {
+    const [noted, other] = sampleSaved().filter((job) => job.company === 'Keelson AI');
+    if (!noted || !other) throw new Error('No Keelson samples');
+    expect(noted.id).toBe(KEELSON);
+    const onMerge = vi.fn();
+    const notSameJob = vi.fn(async () => ({ ok: true as const }));
+    const { container } = panel(
+      noted,
+      { notSameJob },
+      { onMerge, lookUp: (id) => (id === other.id ? other : null) },
+    );
+    const note = screen.getByRole('note');
+    expect(note.textContent).toContain(
+      'Might be the same as Keelson AI, Staff AI Platform Engineer',
+    );
+    expect(note.textContent).toContain('The same team and level.');
+    expect(note.textContent).toContain('That job: New · Found in LinkedIn');
+    await userEvent.click(within(note).getByRole('button', { name: 'Merge…' }));
+    expect(onMerge).toHaveBeenCalledWith(other.id);
+    await userEvent.click(within(note).getByRole('button', { name: 'Not the same' }));
+    expect(notSameJob).toHaveBeenCalledWith(noted.id, other.id);
+    expect((await axe.run(container)).violations).toEqual([]);
+    cleanup();
+    // Once the user said they aren't, or the other's gone, there's no note.
+    panel(
+      {
+        ...noted,
+        maybeSame: [{ ...(noted.maybeSame[0] as Job['maybeSame'][number]), notSame: true }],
+      },
+      {},
+      { lookUp: () => other },
+    );
+    expect(screen.queryByText(/Might be the same as/)).toBeNull();
+    cleanup();
+    panel(noted, {}, { lookUp: () => null });
+    expect(screen.queryByText(/Might be the same as/)).toBeNull();
+  });
+
   it('says what goes in each area before there’s anything, with the button that makes it', async () => {
     const run = controls();
     const { container } = panel(byCompany('Bluewave Staffing'), {}, { run });
     const area = (name: string) => screen.getByRole('region', { name });
-    expect(within(area('Fit')).getByText(/A fit check scores this job/)).toBeTruthy();
+    expect(within(area('Fit')).getByText(/Analyze job reads the posting/)).toBeTruthy();
     expect(within(area('Fit')).getByText('not listed')).toBeTruthy();
     expect(
       within(area('Resumes and cover letters'))

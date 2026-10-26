@@ -9,7 +9,7 @@ const TIERS: readonly { tier: TierFilter; label: string; tone: Tone }[] = [
     tier,
     ...FIT_TIER_DISPLAY[tier],
   })),
-  { tier: 'none', label: 'Not scored', tone: 'gray' },
+  { tier: 'none', label: 'Not checked yet', tone: 'gray' },
 ];
 
 /**

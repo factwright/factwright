@@ -151,6 +151,11 @@ export interface RunView {
   startedAt: number | null;
   /** Why it didn't start, if it didn't. */
   problem: StartProblem | null;
+  /**
+   * For a run analyzing several jobs, the ones it has finished so far, by their IDs, so its tab
+   * says how far it's got. None for any other run.
+   */
+  analyzed: string[];
 }
 
 /** Claude's runs, in the order they were asked for, and how many may run at once. */
@@ -216,6 +221,15 @@ export interface JobChanges {
    * Claude's suggestion, or else their target pay.
    */
   payAsk?: string | null;
+  /**
+   * The job's details as the user sets them in its panel: its company, role, pay and where it's
+   * worked. Each wins over what the posting and Claude's work say, which never change it. Null
+   * goes back to what they say.
+   */
+  company?: string | null;
+  role?: string | null;
+  pay?: string | null;
+  location?: string | null;
 }
 
 /** A job the user adds by hand. */
@@ -371,6 +385,12 @@ export interface FactwrightApi {
   runsAtOnce(): Promise<number>;
   setRunsAtOnce(count: number): Promise<number>;
   /**
+   * Whether Claude analyzes newly saved jobs on its own while it's free, several in a run, and
+   * turning that on or off. It's on until the user turns it off.
+   */
+  analyzesNewJobs(): Promise<boolean>;
+  setAnalyzesNewJobs(on: boolean): Promise<boolean>;
+  /**
    * Keeps what one job search looks for, on top of what the user wants in Profile, for that
    * search alone, and answers with the ID its task names it by.
    */
@@ -467,6 +487,11 @@ export interface FactwrightApi {
    * and links move to the job kept, and it leaves the list.
    */
   mergeJobs(keepId: string, otherId: string): Promise<EditResult>;
+  /**
+   * Says a job your Claude noted might be the same as another isn't, so the note goes, and Claude
+   * never merges the two.
+   */
+  notSameJob(jobId: string, otherId: string): Promise<EditResult>;
   addJob(job: NewJob): Promise<AddJobResult>;
   addCall(jobId: string, call: NewCall): Promise<EditResult>;
   updateCall(callId: string, changes: CallChanges): Promise<EditResult>;

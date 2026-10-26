@@ -142,6 +142,8 @@ export interface JobsPageProps {
   onGetStarted?: (() => void) | undefined;
   /** Whether Claude is on a task for a job now, or has one in line for it, if either. */
   claudeOn?: (jobId: string) => TaskState | null;
+  /** Has Claude analyze the jobs picked, in one run, once Claude Code is ready. */
+  onAnalyze?: ((jobIds: string[]) => void) | undefined;
 }
 
 /**
@@ -449,6 +451,13 @@ export function JobsPage(props: JobsPageProps) {
               backToList.current = fromBar;
               setMoved(null);
             }}
+            onAnalyze={
+              props.onAnalyze &&
+              ((jobIds) => {
+                props.onAnalyze?.(jobIds);
+                picks.clear();
+              })
+            }
           />
         </>
       )}

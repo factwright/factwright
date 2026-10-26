@@ -10,8 +10,10 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { SyncClient, SyncError } from '@factwright/sync';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { tidyName, userAgent } from './device.ts';
+import type { SyncEngine, SyncReport } from './engine.ts';
 import {
   conflictCopyPath,
   listSyncFiles,
@@ -21,6 +23,7 @@ import {
   writeSyncFile,
 } from './files.ts';
 import { rowHash } from './rows.ts';
+import { SyncRunner } from './runner.ts';
 import { Secrets } from './secrets.ts';
 import { SyncState } from './state.ts';
 
@@ -180,5 +183,71 @@ describe('rowHash', () => {
     expect(rowHash('calls', { id: 'c', notes: null })).not.toBe(
       rowHash('calls', { id: 'c', notes: '' }),
     );
+  });
+});
+
+describe('SyncState', () => {
+  it('keeps this computer’s own ID as sync starts over, and forgets the rest', () => {
+    const state = new SyncState(join(folder, 'sync.db'));
+    try {
+      const device = state.device();
+      expect(state.device()).toBe(device);
+      state.setCursor(42);
+      state.setMeta('email', 'sam@example.com');
+      state.clear();
+      expect(state.device()).toBe(device);
+      expect(state.cursor()).toBe(0);
+      expect(state.meta('email')).toBeNull();
+    } finally {
+      state.close();
+    }
+  });
+});
+
+describe('SyncRunner', () => {
+  it('syncs now when asked, after any round going, and says whether it got through', async () => {
+    const report: SyncReport = {
+      pulled: 0,
+      pushed: 1,
+      conflicts: 0,
+      unreadable: 0,
+      skipped: [],
+      full: false,
+    };
+    let fails = false;
+    const syncOnce = vi.fn(async () => {
+      if (fails) throw new SyncError('offline', 'Can’t reach the server.');
+      return report;
+    });
+    const state = new SyncState(join(folder, 'sync.db'));
+    const runner = new SyncRunner({
+      engine: { syncOnce } as unknown as SyncEngine,
+      client: new SyncClient({ server: 'https://sync.example', token: () => null }),
+      state,
+      onReport: () => {},
+      onActivity: () => {},
+      onSignedOut: () => {},
+      onSubscriptionNeeded: () => {},
+    });
+    try {
+      // Asked twice at once, the second waits for the first round, then has a round of its own.
+      expect(await Promise.all([runner.now(), runner.now()])).toEqual([true, true]);
+      expect(syncOnce).toHaveBeenCalledTimes(2);
+      expect(runner.working()).toBe(true);
+      fails = true;
+      expect(await runner.now()).toBe(false);
+      expect(runner.working()).toBe(false);
+      // An account out of space doesn't get through either.
+      fails = false;
+      report.full = true;
+      expect(await runner.now()).toBe(false);
+      expect(runner.working()).toBe(false);
+      report.full = false;
+      expect(await runner.now()).toBe(true);
+      expect(runner.working()).toBe(true);
+    } finally {
+      await runner.stop();
+      state.close();
+    }
   });
 });

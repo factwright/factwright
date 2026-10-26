@@ -1,10 +1,12 @@
 import type { RunPhase, RunView } from '../../shared/api.ts';
 import {
+  ANALYZE_SKILL,
   type RunRequestAnswer,
   type RunSkill,
   type RunTask,
   taskCall,
   taskJob,
+  taskJobs,
 } from '../../shared/runs.ts';
 
 /** What each skill does for a job, as its panel offers it, in the approved order. */
@@ -24,7 +26,11 @@ export const RUN_ACTIONS: readonly { skill: RunSkill; label: string; why: string
     label: 'Projects page',
     why: 'Your projects in depth, on one page, for jobs where they help',
   },
-  { skill: 'fit-check', label: 'Fit check', why: 'Score the job against your fact bank' },
+  {
+    skill: 'analyze-job',
+    label: 'Analyze job',
+    why: 'Its posting and details, a duplicate, the fit and the pay to ask for',
+  },
   {
     skill: 'salary-check',
     label: 'Salary check',
@@ -86,7 +92,7 @@ export function runControlsFor(
     stateOf: (task) => coming.find((run) => isSameRun(run.task, task))?.state ?? null,
     tasksOn: (jobId) =>
       coming
-        .filter((run) => taskJob(run.task) === jobId)
+        .filter((run) => taskJobs(run.task).includes(jobId))
         .map(({ task, state }) => ({ task, state })),
     start,
     // The run going now, or waiting, for the task, or else the last one there was for it.
@@ -112,13 +118,21 @@ const practices = (task: RunTask | null) => Boolean(task && 'practice' in task &
 
 /**
  * Whether a run is this one: the same skill, on the same job and call, and practice for a call
- * only as practice. A quick resume is its job's tailored resume, made another way.
+ * only as practice. A quick resume is its job's tailored resume, made another way, and a run
+ * analyzing several jobs analyzes each of them.
  */
 export const isSameRun = (task: RunTask | null, run: RunTask) =>
   task?.skill === run.skill &&
-  taskJob(task) === taskJob(run) &&
+  (taskJob(task) === taskJob(run) || analyzesIt(task, run) || analyzesIt(run, task)) &&
   taskCall(task) === taskCall(run) &&
   practices(task) === practices(run);
+
+/** Whether a run analyzing several jobs analyzes the one job another task is on. */
+const analyzesIt = (several: RunTask | null, one: RunTask | null) =>
+  several?.skill === ANALYZE_SKILL &&
+  'jobIds' in several &&
+  taskJob(one) !== null &&
+  taskJobs(several).includes(taskJob(one) as string);
 
 /**
  * Where a task stands for its button: running now, or waiting in line for its turn, or until

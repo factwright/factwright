@@ -29,6 +29,7 @@ import {
   SKIPPED_ANSWER,
 } from '../shared/rounds.ts';
 import {
+  ANALYZE_SKILL,
   AT_ONCE,
   lanesOf,
   type RunTask,
@@ -39,6 +40,7 @@ import {
 import { sampleProfile } from './about/sample-profile.ts';
 import { sampleSaveHelper } from './extension/sample-helper.ts';
 import { sampleFacts } from './facts/sample-facts.ts';
+import { SAVED_TODAY } from './jobs/sample-jobs.ts';
 import { sampleTracker } from './jobs/sample-tracker.ts';
 import { sampleProfiles } from './profiles/sample-profiles.ts';
 import { sampleChanges } from './sample-changes.ts';
@@ -484,7 +486,7 @@ function sampleSteps(task: RunTask): Omit<RunStep, 'id' | 'state'>[] {
         { tool: 'Write', detail: `${folder}/cover-letter.json` },
         { tool: 'mcp__factwright__build_cover_letter', detail: null },
       ];
-    case 'fit-check':
+    case 'analyze-job':
       return [
         { tool: 'mcp__factwright__read_posting', detail: 'jobs.example' },
         ...reading,
@@ -525,6 +527,7 @@ export function sampleApi(): FactwrightApi {
   let reminding = query.get('reminders') !== 'off';
   let models: ModelChoices = DEFAULT_MODELS;
   let effort: EffortChoices = DEFAULT_EFFORT;
+  let analyzesNew = true;
   // ?end=question has a run stop to ask in its own words, and ?end=rate_limit end in that error.
   const ending = query.get('end');
   const dark = () => window.matchMedia('(prefers-color-scheme: dark)').matches;
@@ -758,6 +761,7 @@ export function sampleApi(): FactwrightApi {
       screen: null,
       startedAt: null,
       problem: null,
+      analyzed: [],
     });
     const sample: Sample = {
       id,
@@ -788,10 +792,11 @@ export function sampleApi(): FactwrightApi {
   };
   // ?runs=side opens on runs side by side: three at work, one done that stopped on a question,
   // and a cover letter in line for its job's resume. ?runs=asking has three runs waiting on the
-  // user at once: two rounds of questions and a permission prompt. ?runs=strips has a run on each
-  // kind of step the working strip draws, held there: reading, searching, writing, checking
-  // facts with a helper, building a PDF, a job search at step 3 of 7 with four helpers, and
-  // thinking.
+  // user at once: two rounds of questions and a permission prompt. ?runs=analyze, with
+  // ?jobs=saved, has one run analyzing the six jobs saved from the browser, two of them done.
+  // ?runs=strips has a run on each kind of step the working strip draws, held there: reading,
+  // searching, writing, checking facts with a helper, building a PDF, a job search at step 3 of 7
+  // with four helpers, and thinking.
   const scene = query.get('runs');
   const sideBySide = (tasks: RunTask[], start: (sample: Sample, at: number) => void) => {
     const now = Date.now();
@@ -819,7 +824,7 @@ export function sampleApi(): FactwrightApi {
       [
         { skill: 'focused-resume', jobId: 'tidewater-analytics--senior-backend-engineer' },
         { skill: 'cover-letter', jobId: 'acme-robotics--staff-engineer-developer-tools' },
-        { skill: 'fit-check', jobId: 'copperleaf-energy--principal-engineer' },
+        { skill: 'analyze-job', jobId: 'copperleaf-energy--principal-engineer' },
         { skill: 'focused-resume', jobId: 'quarry-labs--senior-software-engineer' },
       ],
       (sample, index) => {
@@ -843,6 +848,36 @@ export function sampleApi(): FactwrightApi {
     );
     add({ skill: 'cover-letter', jobId: 'tidewater-analytics--senior-backend-engineer' });
     pump();
+  } else if (scene === 'analyze') {
+    // ?runs=analyze: the jobs saved today and yesterday, analyzed in one run, two of six done,
+    // beside a tailored resume.
+    const jobIds = SAVED_TODAY.map(([id]) => id);
+    const done = jobIds.slice(0, 2);
+    sideBySide(
+      [
+        { skill: ANALYZE_SKILL, jobIds },
+        { skill: 'focused-resume', jobId: 'tidewater-analytics--senior-backend-engineer' },
+      ],
+      (sample, index) => {
+        if (index > 0) {
+          step(sample, {
+            tool: 'Read',
+            detail: 'facts/platform-engineering.md',
+            id: 'r',
+            state: 'running',
+          });
+          return;
+        }
+        for (const id of done) tracker.madeBy({ skill: ANALYZE_SKILL, jobId: id });
+        set(sample.id, { analyzed: done });
+        step(sample, {
+          tool: 'mcp__factwright__job_details',
+          detail: null,
+          id: 'details-northbeam',
+          state: 'running',
+        });
+      },
+    );
   } else if (scene === 'strips') {
     const at = (tool: string, detail: string | null, helper?: string): RunStep => ({
       id: `${tool}-${detail}-${helper}`,
@@ -1028,6 +1063,11 @@ export function sampleApi(): FactwrightApi {
       tellRuns();
       pump();
       return chosen;
+    },
+    analyzesNewJobs: async () => analyzesNew,
+    setAnalyzesNewJobs: async (on) => {
+      analyzesNew = on;
+      return on;
     },
     // A focus kept in memory until the page reloads, by an ID like the app's.
     saveSearchFocus: async () => ({

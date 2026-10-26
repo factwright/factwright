@@ -38,6 +38,9 @@ export async function openApp(dataDir: string, env: Record<string, string> = {})
       // Quiet mode: the window stays hidden and never takes the keyboard, with no Dock icon or
       // notifications, so whoever is at the computer can keep using it while the tests run.
       FACTWRIGHT_QUIET: 'on',
+      // Claude analyzes no new jobs on its own, so every run is one a test started, unless a test
+      // turns it on.
+      FACTWRIGHT_ANALYZE_NEW: 'off',
       ...env,
     },
     timeout: 30_000,

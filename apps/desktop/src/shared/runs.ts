@@ -8,7 +8,7 @@ export const RUN_SKILLS = [
   'focused-resume',
   'cover-letter',
   'projects-page',
-  'fit-check',
+  'analyze-job',
   'salary-check',
   'who-to-message',
   'interview-prep',
@@ -17,6 +17,28 @@ export const RUN_SKILLS = [
 ] as const;
 
 export type RunSkill = (typeof RUN_SKILLS)[number];
+
+/**
+ * The skill that analyzes a job, as the user's Analyze job button starts it, or several at once:
+ * it fills in a missing posting, puts the job's details right from it, merges the job with one
+ * it was found twice as, checks the fit and suggests the pay to ask for.
+ */
+export const ANALYZE_SKILL = 'analyze-job';
+
+/** As many jobs as one run analyzes, with a helper for each, so its tab says how far it's got. */
+export const MOST_TO_ANALYZE = 20;
+
+/**
+ * As many newly saved jobs as one run that starts on its own takes, while Claude is free. The
+ * rest wait for the next.
+ */
+export const ANALYZE_ON_ITS_OWN = 8;
+
+/**
+ * What a task was called in a file an earlier version saved, such as the models chosen for each
+ * task, and what it's called now: Analyze job was a fit check before it did more.
+ */
+export const EARLIER_SKILLS: Readonly<Record<string, RunSkill>> = { 'fit-check': ANALYZE_SKILL };
 
 /** The skills that make what the user sends, of which a job keeps versions. */
 export const VERSION_SKILLS = ['focused-resume', 'cover-letter', 'projects-page'] as const;
@@ -120,6 +142,12 @@ export const TEMPLATE_SOURCE = /^\d{4}-\d{2}-\d{2}-\d{1,3}\.(?:pdf|png|jpg|webp)
 export type RunTask =
   | { skill: RunSkill; jobId: string }
   /**
+   * Analyzing several jobs in one run, with a helper for each, as the user picked them, or as
+   * Claude takes the jobs saved since it was last free, on its own (`auto`). One that starts on
+   * its own steps aside for any task the user starts that would otherwise wait for it.
+   */
+  | { skill: typeof ANALYZE_SKILL; jobIds: string[]; auto?: true }
+  /**
    * A quick resume, which asks the user nothing: it uses verified facts only, and ends with what
    * could make it stronger. As a new version too, once the app has kept the one before.
    */
@@ -190,9 +218,21 @@ export function scopeOf(task: RunTask | null | undefined): RunScope {
   return task?.skill === TEMPLATE_SKILL ? 'template' : 'hunt';
 }
 
-/** The job a task runs on, or null for one on the whole job hunt. */
+/** The job a task runs on, or null for one on the whole job hunt, or on several jobs. */
 export const taskJob = (task: RunTask | null): string | null =>
   task && 'jobId' in task ? task.jobId : null;
+
+/** Every job a task runs on: its one job, the jobs it analyzes, or none for the job hunt. */
+export const taskJobs = (task: RunTask | null): readonly string[] =>
+  task && 'jobIds' in task ? task.jobIds : task && 'jobId' in task ? [task.jobId] : [];
+
+/** Whether a task started on its own, as Claude analyzing new jobs while it's free. */
+export const startedOnItsOwn = (task: RunTask | null): boolean =>
+  Boolean(task && 'auto' in task && task.auto);
+
+/** A task as the user's, as when they start again one that Claude started on its own. */
+export const usersTask = (task: RunTask): RunTask =>
+  'jobIds' in task ? { skill: task.skill, jobIds: task.jobIds } : task;
 
 /** How many of Claude's runs may go at once: three, unless the user picks from one to five. */
 export const AT_ONCE = { least: 1, most: 5, usual: 3 } as const;
@@ -206,13 +246,14 @@ export const atOnceFrom = (value: unknown): number | null =>
 /**
  * What a task works on, which no two tasks going at once share: its job, by the job's ID; the
  * user's facts and Profile, which getting started, adding facts and filling in their work history
- * all change; the job searches; or the templates. A task on several jobs at once would work on
- * each of them. Nothing for Claude with no task, waiting for what the user types.
+ * all change; the job searches; or the templates. A task on several jobs at once, as analyzing
+ * the jobs the user picked, works on each of them. Nothing for Claude with no task, waiting for
+ * what the user types.
  */
 export function lanesOf(task: RunTask | null): string[] {
   if (!task) return [];
-  const job = taskJob(task);
-  if (job) return [`job:${job}`];
+  const jobs = taskJobs(task);
+  if (jobs.length > 0) return jobs.map((job) => `job:${job}`);
   const profile = [GET_STARTED_SKILL, FACTS_SKILL, HISTORY_SKILL] as string[];
   return [profile.includes(task.skill) ? 'profile' : task.skill];
 }

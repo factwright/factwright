@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { LIMITS } from '../../shared/limits.ts';
 import {
+  changesDetails,
   parseCallChanges,
   parseDate,
   parseJobChanges,
@@ -51,6 +52,27 @@ describe('parseJobChanges', () => {
     expect(parseJobChanges({ payAsk: null })).toEqual({ payAsk: null });
     expect(parseJobChanges({ payAsk: 185000 })).toBeNull();
     expect(parseJobChanges({ payAsk: 'x'.repeat(201) })).toBeNull();
+  });
+
+  it('takes the details the user sets, trimmed, or null to go back to what the posting says', () => {
+    expect(
+      parseJobChanges({ company: ' Acme ', role: 'Staff', pay: '$1', location: ' Remote ' }),
+    ).toEqual({ company: 'Acme', role: 'Staff', pay: '$1', location: 'Remote' });
+    expect(parseJobChanges({ company: '', location: null })).toEqual({
+      company: null,
+      location: null,
+    });
+    for (const bad of [
+      { company: 'c'.repeat(LIMITS.company + 1) },
+      { role: 'r'.repeat(LIMITS.role + 1) },
+      { location: 'l'.repeat(LIMITS.location + 1) },
+      { pay: 150000 },
+    ]) {
+      expect(parseJobChanges(bad)).toBeNull();
+    }
+    // They're for one job at a time.
+    expect(changesDetails({ location: null })).toBe(true);
+    expect(changesDetails({ status: 'apply' })).toBe(false);
   });
 
   it('takes the day a job set aside comes back, and why the user passed', () => {

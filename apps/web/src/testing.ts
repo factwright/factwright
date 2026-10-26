@@ -1,4 +1,4 @@
-import type { Job } from '@factwright/core';
+import { type Job, NO_OWN_DETAILS } from '@factwright/core';
 import type { Legal } from '@factwright/sync';
 import { vi } from 'vitest';
 import type { Vault } from './vault.ts';
@@ -45,6 +45,8 @@ export function job(base: Partial<Job> & Pick<Job, 'id' | 'company'>): Job {
     archived: false,
     kind: null,
     payAsk: null,
+    own: NO_OWN_DETAILS,
+    maybeSame: [],
     manual: false,
     calls: [],
     callDocs: [],

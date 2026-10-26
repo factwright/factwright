@@ -39,6 +39,7 @@ import { registerAboutIpc } from './about/ipc.ts';
 import type { TemplatePreviews } from './about/previews.ts';
 import type { PrivateAnswers } from './about/private.ts';
 import type { AboutStore } from './about/store.ts';
+import type { AnalyzeNew } from './claude/analyze-new.ts';
 import { saveAtOnce } from './claude/at-once.ts';
 import type { Desk } from './claude/desk.ts';
 import { loadEffort, saveEffort } from './claude/effort.ts';
@@ -56,6 +57,7 @@ import type { SaveHelper } from './extension/save-helper.ts';
 import { hasFocus, parseFocus, saveFocus } from './jobs/focus.ts';
 import { getFormQuestions } from './jobs/form-feed.ts';
 import {
+  changesDetails,
   parseCallChanges,
   parseDate,
   parseJobChanges,
@@ -186,6 +188,10 @@ export interface IpcDeps {
   tellRunDone: (note: unknown) => void;
   /** The app's requests to the window to start a run, which the window answers. */
   runRequests: RunRequests;
+  /** Claude analyzing new jobs on its own, which the user can turn off. */
+  analyzeNew: Pick<AnalyzeNew, 'isOn' | 'setOn'>;
+  /** Hears each status of Claude Code the window asks for, such as whether it's ready. */
+  onClaudeStatus?: (status: ClaudeStatus) => void;
   /** Stands in for Greenhouse's job API, as the tests' copy has it, or undefined to ask it. */
   formFeed?: FetchDeps['fetch'] | undefined;
 }
@@ -243,6 +249,8 @@ export function registerIpc({
   saveHelper,
   tellRunDone,
   runRequests,
+  analyzeNew,
+  onClaudeStatus,
   formFeed,
 }: IpcDeps): void {
   const fromApp = (event: IpcMainEvent | IpcMainInvokeEvent) =>
@@ -274,6 +282,7 @@ export function registerIpc({
       markFirstRun(status);
       setup.checkIfNeeded(status.version);
     }
+    onClaudeStatus?.(status);
     return status;
   });
 
@@ -317,6 +326,11 @@ export function registerIpc({
     // A focus for a search, by the ID the app kept it under.
     const focus = task && 'sources' in task ? task.sources?.focus : undefined;
     if (focus !== undefined) return hasFocus(workspace, focus) ? task : null;
+    // Jobs to analyze, every one of them on file. Only the app starts Claude on them on its own.
+    if (task && 'jobIds' in task) {
+      const known = new Set(jobs.list().jobs.map((each) => each.id));
+      return task.jobIds.every((id) => known.has(id)) && !task.auto ? task : null;
+    }
     if (!task || !('jobId' in task)) return task;
     const job = jobs.list().jobs.find((each) => each.id === task.jobId);
     if (!job) return null;
@@ -336,6 +350,13 @@ export function registerIpc({
     return claude.start(run);
   });
   answer('claude:runs', () => claude.view());
+
+  // Whether Claude analyzes new jobs on its own while it's free.
+  answer('claude:analyzes-new', () => analyzeNew.isOn());
+  answer('claude:set-analyzes-new', async (value) => {
+    if (typeof value !== 'boolean') throw new Error('Refused a setting that isn’t on or off.');
+    return analyzeNew.setOn(value);
+  });
 
   // How many runs may go at once, which the line follows from the next one to start.
   answer('claude:at-once', () => claude.view().atOnce);
@@ -539,15 +560,21 @@ export function registerIpc({
     return isId(jobId) && valid ? jobs.updateJob(jobId, valid) : REFUSED;
   });
 
-  // Several jobs at once take a new status, not a new date for the one they have.
+  // Several jobs at once take a new status, not a new date for the one they have, nor one job's
+  // details.
   answer('jobs:update-many', (jobIds, changes) => {
     const valid = parseJobChanges(changes);
     const redates = valid?.statusOn !== undefined && valid.status === undefined;
-    return isIds(jobIds) && valid && !redates ? jobs.updateJobs(jobIds, valid) : REFUSED;
+    const one = valid !== null && changesDetails(valid);
+    return isIds(jobIds) && valid && !redates && !one ? jobs.updateJobs(jobIds, valid) : REFUSED;
   });
 
   answer('jobs:merge', (keepId, otherId) =>
     isId(keepId) && isId(otherId) && keepId !== otherId ? jobs.mergeJobs(keepId, otherId) : REFUSED,
+  );
+
+  answer('jobs:not-same', (jobId, otherId) =>
+    isId(jobId) && isId(otherId) && jobId !== otherId ? jobs.notSame(jobId, otherId) : REFUSED,
   );
 
   answer('jobs:add', (job) => {

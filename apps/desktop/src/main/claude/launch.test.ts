@@ -39,7 +39,7 @@ describe('buildLaunchArgs', () => {
   it('never names the tools to keep, so restricted mode keeps WebFetch and the shell off', () => {
     // Without --tools, --restricted gives Claude Code's own page fetching (WebFetch), Bash,
     // PowerShell and the other tools that run code a deny rule of its own, which no setting lifts.
-    for (const options of [OPTIONS, { ...OPTIONS, prompt: '/factwright:fit-check job acme' }]) {
+    for (const options of [OPTIONS, { ...OPTIONS, prompt: '/factwright:analyze-job job acme' }]) {
       const args = buildLaunchArgs(options);
       expect(args[0]).toBe('--restricted');
       expect(args.filter((arg) => /^--(?:tools|allowed-?tools|allowedTools)\b/i.test(arg))).toEqual(

@@ -1,6 +1,7 @@
 import { access, mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import {
+  folderJobId,
   JOB_EXTRAS,
   localDate,
   normalizeUrl,
@@ -190,6 +191,55 @@ export interface SavePostingDeps extends ReadDeps {
   workspace: string;
   /** Hears the posting's path just before it's saved, so the app can note it's new. */
   keep?: ((path: string) => void) | undefined;
+  /** A job on file, by its ID: the job kept, for one merged into another. Null for none. */
+  job?: ((jobId: string) => JobLinks | null) | undefined;
+  /** Every job on file, with its links. */
+  jobs?: (() => readonly JobLinks[]) | undefined;
+}
+
+/** A job on file, by its ID, with its links. */
+interface JobLinks {
+  id: string;
+  links: readonly { url: string }[];
+}
+
+/**
+ * Why a job's folder is another job's, or null when nothing says so. Two jobs with the same
+ * company and title make the same folder name, as two runs analyzing them at once both can, so the
+ * second must never take the first's folder for its own: the folder's job.md names the job it's
+ * for, and before that's written, its posting came from the other job's link. A link no job on
+ * file has, such as a role's own that its board's listing led to, says nothing.
+ */
+async function anotherJobsFolder(
+  folder: string,
+  url: string,
+  jobId: string,
+  deps: SavePostingDeps,
+): Promise<string | null> {
+  const job = deps.job?.(jobId);
+  if (!job) return null;
+  const dir = join(deps.workspace, WORKSPACE_PATHS.jobs, folder);
+  const notes = await readFile(join(dir, 'job.md'), 'utf8').catch(() => null);
+  const named = notes === null ? null : folderJobId(notes);
+  if (named) {
+    return (deps.job?.(named)?.id ?? named) === job.id
+      ? null
+      : `${folder} is another job’s folder: its job.md is for ${named}.`;
+  }
+  const posting = await readFile(join(dir, 'posting.md'), 'utf8').catch(() => null);
+  const source = posting === null ? null : readSavedPosting('posting.md', posting).source;
+  if (!source || !URL.canParse(source)) return null;
+  const from = normalizeUrl(source);
+  const ours = [url, ...job.links.map((link) => link.url)].map(normalizeUrl);
+  if (ours.includes(from)) return null;
+  const theirs = deps
+    .jobs?.()
+    .find(
+      (other) => other.id !== job.id && other.links.some((link) => normalizeUrl(link.url) === from),
+    );
+  return theirs
+    ? `${folder} is another job’s folder: its posting came from ${source}, the link of ${theirs.id}.`
+    : null;
 }
 
 /** A job's ID as the extension and Add job make them: lowercase letters, digits and hyphens. */
@@ -238,7 +288,8 @@ export async function savedFromBrowser(
  * or read_posting read from the link in this run, or reads a posting on Greenhouse, Lever, Ashby
  * or Gem from its public feed. It never reaches another
  * site, so it needs no OK from the user. A posting already saved there is kept, since it's the
- * one the user saw. Says, in words for Claude, what happened.
+ * one the user saw, unless the folder is another job's, which it says. Says, in words for Claude,
+ * what happened.
  */
 export async function savePosting(
   url: string,
@@ -259,8 +310,18 @@ export async function savePosting(
   }
   const dir = join(deps.workspace, WORKSPACE_PATHS.jobs, folder);
   const file = join(dir, 'posting.md');
-  const kept = `Kept the posting already saved in ${saved}.`;
-  if (await exists(file)) return kept;
+  // Another job's folder is left to it, and in this job's own, a posting there already is kept.
+  const theirs = async () =>
+    jobId ? await anotherJobsFolder(folder, parsed.href, jobId, deps) : null;
+  const notSaved = (why: string) =>
+    `Not saved: ${why} Use a folder of this job’s own, ${folder}-2 or the next number that’s free, and save the posting there.`;
+  const kept = async () => {
+    const why = await theirs();
+    return why ? notSaved(why) : `Kept the posting already saved in ${saved}.`;
+  };
+  if (await exists(file)) return kept();
+  const why = await theirs();
+  if (why) return notSaved(why);
 
   // The posting as the user saw it, saved from their browser, comes first, and needs no reading:
   // a LinkedIn job's posting gets to its folder this way, as Factwright's tools never read LinkedIn.
@@ -303,7 +364,7 @@ export async function savePosting(
     // Never over a file that turned up meanwhile, nor through a link in its place.
     await writeFile(file, body, { flag: 'wx' });
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'EEXIST') return kept;
+    if ((error as NodeJS.ErrnoException).code === 'EEXIST') return kept();
     throw error;
   }
   return `Saved ${saved} (${posting.text.length} characters, via ${posting.via}).`;

@@ -48,6 +48,7 @@ const view = (phase: RunPhase, changed: Partial<RunView> = {}): RunView => ({
   screen: null,
   startedAt: Date.now() - 84_000,
   problem: null,
+  analyzed: [],
   ...changed,
 });
 

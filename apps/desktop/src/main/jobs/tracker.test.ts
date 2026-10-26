@@ -286,6 +286,90 @@ describe('updateJob', () => {
   });
 });
 
+describe('the details the user sets', () => {
+  it('keeps each one the user sets, trimmed, and empties it back to what Claude found', () => {
+    expect(row()?.own).toEqual({ company: null, role: null, pay: null, location: null });
+    tracker.updateJob(
+      'acme--staff',
+      { company: ' Acme ', role: 'Staff Engineer, Tools', pay: '$185k–$215k', location: 'Remote' },
+      AT,
+    );
+    expect(row()?.own).toEqual({
+      company: 'Acme',
+      role: 'Staff Engineer, Tools',
+      pay: '$185k–$215k',
+      location: 'Remote',
+    });
+    // Each by itself, and null or empty goes back to what the posting says.
+    tracker.updateJob('acme--staff', { pay: null, location: '' }, AT);
+    expect(row()?.own).toEqual({
+      company: 'Acme',
+      role: 'Staff Engineer, Tools',
+      pay: null,
+      location: null,
+    });
+    // Claude's work naming the job anew never changes them.
+    tracker.saveCollected(
+      [collected('acme--staff', { company: 'Acme Corp', role: 'Engineer' })],
+      NOW,
+    );
+    expect(row()).toMatchObject({
+      company: 'Acme Corp',
+      own: { company: 'Acme', role: 'Staff Engineer, Tools' },
+    });
+    expect(tracker.syncRow('jobs', 'acme--staff')).toMatchObject({
+      own_company: 'Acme',
+      own_role: 'Staff Engineer, Tools',
+      own_pay: null,
+    });
+    // The jobs it knows go by them too.
+    expect(tracker.knownJobs()[0]?.own).toEqual({ company: 'Acme', role: 'Staff Engineer, Tools' });
+  });
+});
+
+describe('jobs that might be the same', () => {
+  const other = 'acme--staff-2';
+  beforeEach(() => {
+    tracker.saveCollected([collected(other)], NOW);
+  });
+
+  it('notes another job that might be this one, once, with the newest why', () => {
+    expect(tracker.noteMaybeSame('acme--staff', other, ' Same team ', AT)).toEqual({
+      ok: true,
+      noted: true,
+    });
+    tracker.noteMaybeSame('acme--staff', other, 'w'.repeat(500), {
+      today: '2026-10-11',
+      now: NOW,
+    });
+    expect(row()?.maybeSame).toEqual([
+      { id: other, why: 'w'.repeat(200), on: '2026-10-11', notSame: false },
+    ]);
+    expect(tracker.noteMaybeSame('acme--staff', 'acme--staff', null, AT)).toMatchObject({
+      ok: false,
+    });
+    expect(tracker.noteMaybeSame('acme--staff', 'missing', null, AT)).toMatchObject({ ok: false });
+  });
+
+  it('keeps the user’s word that two aren’t the same, either way round', () => {
+    tracker.noteMaybeSame('acme--staff', other, 'Same team', AT);
+    tracker.noteMaybeSame(other, 'acme--staff', 'Same team', AT);
+    expect(tracker.notSame('acme--staff', other, AT)).toEqual({ ok: true });
+    expect(row()?.maybeSame).toEqual([{ id: other, why: 'Same team', on: TODAY, notSame: true }]);
+    expect(row(other)?.maybeSame).toEqual([
+      { id: 'acme--staff', why: 'Same team', on: TODAY, notSame: true },
+    ]);
+    const [job, twin] = [row(), row(other)];
+    expect(job && twin && tracker.saidNotSame(twin, job)).toBe(true);
+    // Never noted again.
+    expect(tracker.noteMaybeSame(other, 'acme--staff', 'Really', AT)).toEqual({
+      ok: true,
+      noted: false,
+    });
+    expect(row(other)?.maybeSame[0]?.why).toBe('Same team');
+  });
+});
+
 describe('updateJobs', () => {
   beforeEach(() => {
     tracker.saveCollected(
@@ -614,6 +698,29 @@ describe('mergeJobs', () => {
     expect(row(other)).toMatchObject({ status: 'applied', appliedOn: TODAY });
   });
 
+  it('keeps a decision the user made over New from a later save, whatever the day', () => {
+    // Passed on, with why and a day to come back, and set aside, before the job was saved again.
+    tracker.updateJob(
+      'acme--staff',
+      { status: 'passed', passReason: 'pay', archived: true },
+      { today: '2026-10-08', now: '2026-10-08T18:00:00.000Z' },
+    );
+    tracker.updateJob(other, { status: 'new' }, LATER);
+    tracker.mergeJobs(other, 'acme--staff', LATER);
+    expect(row(other)).toMatchObject({
+      status: 'passed',
+      statusOn: '2026-10-08',
+      passReason: 'pay',
+      archived: true,
+    });
+    // Two of the user's: the later.
+    const third = 'acme--staff-3';
+    tracker.saveCollected([collected(third)], NOW);
+    tracker.updateJob(third, { status: 'apply' }, LATER);
+    tracker.mergeJobs(other, third, LATER);
+    expect(row(other)).toMatchObject({ status: 'apply', statusOn: '2026-10-14' });
+  });
+
   it('keeps the pay to ask for the job kept has, or else the other’s', () => {
     tracker.updateJob(other, { payAsk: '$180,000' }, AT);
     tracker.mergeJobs('acme--staff', other, AT);
@@ -664,6 +771,20 @@ describe('mergeJobs', () => {
     tracker.mergeJobs(other, 'acme--staff-3', AT);
     tracker.mergeJobs('acme--staff', other, AT);
     expect(row('acme--staff-3')?.mergedInto).toBe('acme--staff');
+  });
+
+  it('keeps the details the user set on either, the job kept’s first, and both jobs’ notes', () => {
+    tracker.updateJob('acme--staff', { role: 'Staff Engineer, Platform' }, AT);
+    tracker.updateJob(other, { role: 'Staff SWE', location: 'Remote (US)' }, AT);
+    tracker.noteMaybeSame('acme--staff', other, 'Same team', AT);
+    tracker.saveCollected([collected('acme--lead', { role: 'Lead' })], NOW);
+    tracker.noteMaybeSame(other, 'acme--lead', 'Same level', AT);
+    tracker.mergeJobs('acme--staff', other, AT);
+    expect(row()).toMatchObject({
+      own: { company: null, role: 'Staff Engineer, Platform', pay: null, location: 'Remote (US)' },
+      // The note about the two merged goes, and the other's note stays with the job kept.
+      maybeSame: [{ id: 'acme--lead', why: 'Same level', on: TODAY, notSame: false }],
+    });
   });
 
   it('finds the job kept when a save from the browser names the merged one', () => {
@@ -963,12 +1084,26 @@ describe('the database file', () => {
       new Map([
         [
           'jobs',
-          ['sent', 'asks', 'back_on', 'pass_reason', 'kind', 'merged_into', 'folder', 'pay_ask'],
+          [
+            'sent',
+            'asks',
+            'back_on',
+            'pass_reason',
+            'kind',
+            'merged_into',
+            'folder',
+            'pay_ask',
+            'own_company',
+            'own_role',
+            'own_pay',
+            'own_location',
+            'maybe_same',
+          ],
         ],
         ['calls', ['minutes', 'mode', 'place', 'people', 'debrief']],
       ]),
     );
-    expect(second.gainedTables()).toEqual(['notes']);
+    expect(second.gainedTables()).toEqual(['claims', 'notes']);
     second.close();
   });
 
@@ -983,7 +1118,20 @@ describe('the database file', () => {
     expect(second.rows()[0]).toMatchObject({ status: 'applied', kind: null });
     expect(second.gainedColumns()).toEqual(
       new Map([
-        ['jobs', ['kind', 'merged_into', 'folder', 'pay_ask']],
+        [
+          'jobs',
+          [
+            'kind',
+            'merged_into',
+            'folder',
+            'pay_ask',
+            'own_company',
+            'own_role',
+            'own_pay',
+            'own_location',
+            'maybe_same',
+          ],
+        ],
         ['calls', ['minutes', 'mode', 'place', 'people', 'debrief']],
       ]),
     );
@@ -1011,11 +1159,26 @@ describe('the database file', () => {
     ).toEqual(['Screen went well']);
     expect(second.gainedColumns()).toEqual(
       new Map([
-        ['jobs', ['back_on', 'pass_reason', 'kind', 'merged_into', 'folder', 'pay_ask']],
+        [
+          'jobs',
+          [
+            'back_on',
+            'pass_reason',
+            'kind',
+            'merged_into',
+            'folder',
+            'pay_ask',
+            'own_company',
+            'own_role',
+            'own_pay',
+            'own_location',
+            'maybe_same',
+          ],
+        ],
         ['calls', ['minutes', 'mode', 'place', 'people', 'debrief']],
       ]),
     );
-    expect(second.gainedTables()).toEqual(['notes']);
+    expect(second.gainedTables()).toEqual(['claims', 'notes']);
     second.close();
     // A tracker that's up to date, or new, made nothing.
     const third = new Tracker(file);
@@ -1041,7 +1204,22 @@ describe('the database file', () => {
     expect(second.rows()[0]).toMatchObject({ status: 'passed', passReason: null, backOn: null });
     expect(second.gainedColumns()).toEqual(
       new Map([
-        ['jobs', ['back_on', 'pass_reason', 'kind', 'merged_into', 'folder', 'pay_ask']],
+        [
+          'jobs',
+          [
+            'back_on',
+            'pass_reason',
+            'kind',
+            'merged_into',
+            'folder',
+            'pay_ask',
+            'own_company',
+            'own_role',
+            'own_pay',
+            'own_location',
+            'maybe_same',
+          ],
+        ],
         ['calls', ['minutes', 'mode', 'place', 'people', 'debrief']],
       ]),
     );

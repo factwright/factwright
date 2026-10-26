@@ -31,6 +31,7 @@ import type { EditResult, FactwrightApi, JobChanges } from '../../shared/api.ts'
 import { ApplicationSection } from './ApplicationSection.tsx';
 import { AskSection } from './AskSection.tsx';
 import { focusNext, PassedBox, SetAsideBox } from './Decide.tsx';
+import { EditDetails, MaybeSameNotes } from './EditDetails.tsx';
 import { FitArea } from './FitArea.tsx';
 import { CallsSection, type InviteMe } from './JobCalls.tsx';
 import { SavedSection } from './JobFiles.tsx';
@@ -116,8 +117,10 @@ export interface JobPanelProps {
   me?: InviteMe;
   /** Reminders before calls, and the switch to turn them off. */
   reminders?: ReminderSwitch | undefined;
-  /** Opens Merge with…, for a job found twice. */
-  onMerge?: (() => void) | undefined;
+  /** Opens Merge with…, for a job found twice, with the other job picked when Claude noted one. */
+  onMerge?: ((otherId?: string) => void) | undefined;
+  /** Another job, by its ID, while it's on the list, as one Claude noted might be this one. */
+  lookUp?: ((jobId: string) => Job | null) | undefined;
 }
 
 /**
@@ -142,8 +145,17 @@ export function JobPanel({
   me,
   reminders,
   onMerge,
+  lookUp = () => null,
 }: JobPanelProps) {
   const [problem, setProblem] = useState<{ jobId: string; message: string } | null>(null);
+  // The job whose details are open to change, in boxes under its name. Once they close, the
+  // keyboard's focus goes back to Edit details.
+  const [editing, setEditing] = useState<string | null>(null);
+  const editButton = useRef<HTMLButtonElement>(null);
+  const stopEditing = () => {
+    setEditing(null);
+    requestAnimationFrame(() => editButton.current?.focus());
+  };
   const panel = useRef<HTMLElement>(null);
   const panelId = useId();
   const jobId = row?.job.id;
@@ -219,6 +231,7 @@ export function JobPanel({
   const upTop = (
     <div ref={top} className={styles.top}>
       <UpNext row={row} api={api} run={run} sorting={sorting} onMove={(to) => void move(to)} />
+      <MaybeSameNotes job={job} lookUp={lookUp} api={api} onMerge={onMerge} />
       {status === 'later' && !progress.backFromLater && (
         <SetAsideBox
           job={job}
@@ -336,18 +349,26 @@ export function JobPanel({
               />
             </div>
           </div>
-          {(meta || job.link) && (
-            <p className={styles.where}>
-              {meta}
-              {meta && job.link && ' · '}
-              {job.link && (
-                <a className={styles.link} href={job.link} target="_blank" rel="noreferrer">
-                  Posting
-                  <ArrowUpRight size={13} aria-hidden="true" />
-                </a>
-              )}
-            </p>
-          )}
+          <p className={styles.where}>
+            {meta}
+            {meta && job.link && ' · '}
+            {job.link && (
+              <a className={styles.link} href={job.link} target="_blank" rel="noreferrer">
+                Posting
+                <ArrowUpRight size={13} aria-hidden="true" />
+              </a>
+            )}
+            {(meta || job.link) && ' · '}
+            <button
+              ref={editButton}
+              type="button"
+              className={styles.editDetails}
+              aria-expanded={editing === job.id}
+              onClick={() => setEditing(editing === job.id ? null : job.id)}
+            >
+              Edit details
+            </button>
+          </p>
           <div className={styles.badges}>
             <StatusSelect
               status={progress.status}
@@ -378,6 +399,9 @@ export function JobPanel({
           )}
         </header>
 
+        {editing === job.id && (
+          <EditDetails key={job.id} job={job} api={api} onClose={stopEditing} />
+        )}
         {upTop}
         <FitArea
           job={job}
@@ -403,7 +427,7 @@ export function JobPanel({
             {yourProgress}
           </section>
         </div>
-        <ArchiveFooter job={job} api={api} onMerge={onMerge} />
+        <ArchiveFooter job={job} api={api} onMerge={onMerge && (() => onMerge())} />
       </div>
     </aside>
   );

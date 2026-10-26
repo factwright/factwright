@@ -2,7 +2,7 @@ import { appendFileSync, existsSync, realpathSync, statSync, writeFileSync } fro
 import { readFile } from 'node:fs/promises';
 import { dirname, join, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { INBOX_FOLDER } from '@factwright/core';
+import { INBOX_FOLDER, localDate } from '@factwright/core';
 import {
   app,
   autoUpdater as macInstaller,
@@ -17,10 +17,11 @@ import type { WaitingAsk, WaitingRound } from '../shared/api.ts';
 import type { PermissionAnswer } from '../shared/permission-asks.ts';
 import { PRIVATE_FILE } from '../shared/private.ts';
 import type { RoundReply } from '../shared/rounds.ts';
-import type { RunTask } from '../shared/runs.ts';
+import { type RunTask, startedOnItsOwn } from '../shared/runs.ts';
 import { TemplatePreviews } from './about/previews.ts';
 import { PrivateAnswers } from './about/private.ts';
 import { AboutStore } from './about/store.ts';
+import { AnalyzeNew } from './claude/analyze-new.ts';
 import { loadAtOnce } from './claude/at-once.ts';
 import { Desk, fromRun } from './claude/desk.ts';
 import { useClaudeFolder } from './claude/launch.ts';
@@ -63,6 +64,7 @@ import { ElectronResumePrinter } from './resume/printer.ts';
 import { TemplateLibrary } from './resume/templates.ts';
 import { applyDevPolicy, denyPermissions, hardenContents } from './security.ts';
 import { SyncAccount } from './sync/account.ts';
+import { Claims } from './sync/claims.ts';
 import { NO_KEYCHAIN } from './sync/secrets.ts';
 import { factwrightTools } from './tools/index.ts';
 import { UpdateWatcher } from './updates.ts';
@@ -270,6 +272,10 @@ function start(home: string, profile: ProfileFolder, stopped: ProfileFolder | nu
           if (page) opener.open(jobId, page);
         }),
     });
+    // Claude analyzing new jobs on its own, and the claims on jobs that keep two computers from
+    // both analyzing one, once everything they need is open, further down.
+    let analyzeNew: AnalyzeNew | null = null;
+    let claims: Claims | null = null;
     const sync = new SyncAccount({
       dataDir,
       server: syncServer,
@@ -284,6 +290,8 @@ function start(home: string, profile: ProfileFolder, stopped: ProfileFolder | nu
       openUrl: (url) => shell.openExternal(url),
       onStatus: (status) => {
         window.send('sync:status', status);
+        // A round that got through may let jobs that waited for sync be claimed now.
+        if (status.state === 'on' && status.activity === 'idle') analyzeNew?.look();
         // Which account this profile syncs with, and on which server, so no other profile here
         // signs in to it.
         if (status.state === 'off') profiles.noteSync(null);
@@ -300,6 +308,10 @@ function start(home: string, profile: ProfileFolder, stopped: ProfileFolder | nu
       onApplied: () => {
         window.send('jobs:changed', jobs.read());
         reminders.check({ synced: true });
+        // Another computer may have claimed a job a run of Claude's own here is on, and a job
+        // saved on another device may be one for Claude to analyze on its own.
+        claims?.synced();
+        analyzeNew?.look();
       },
     });
     const jobs = new JobsService({
@@ -310,6 +322,8 @@ function start(home: string, profile: ProfileFolder, stopped: ProfileFolder | nu
         window.send('jobs:changed', list);
         sync.requestSync();
         reminders.check();
+        // A job saved may be one for Claude to analyze on its own.
+        analyzeNew?.look();
       },
     });
     jobs.read();
@@ -326,7 +340,17 @@ function start(home: string, profile: ProfileFolder, stopped: ProfileFolder | nu
     const printer = new ElectronResumePrinter();
     const previews = new TemplatePreviews(printer, templates);
     const server = new RunServer({
-      tools: factwrightTools({ jobs, about, facts: about.facts, workspace, printer, templates }),
+      tools: factwrightTools({
+        jobs,
+        about,
+        facts: about.facts,
+        workspace,
+        printer,
+        templates,
+        // Analyze job merges a job only while no other task is on it, here or on another
+        // computer whose claim holds it.
+        busy: (jobId) => claude.holds(jobId) || (claims?.elsewhere(jobId) ?? false),
+      }),
       version: app.getVersion(),
     });
     await server.start();
@@ -381,16 +405,24 @@ function start(home: string, profile: ProfileFolder, stopped: ProfileFolder | nu
         ),
       prepare: taskPreparer({ dataDir, revisions, versions }),
       atOnce,
-      onView: (view) => window.send('claude:runs', view),
+      onView: (view) => {
+        window.send('claude:runs', view);
+        // Each run with work going holds its jobs' claims, and a run that ended lets go.
+        claims?.heard(view);
+        // A run that ended, or a slot that freed, may let Claude analyze new jobs on its own.
+        analyzeNew?.look();
+      },
+      onOwnEnded: (run, end, analyzed) => analyzeNew?.ended(run, end, analyzed),
       onOutput: (runId, data) => window.send('claude:output', { runId, data }),
       onSignal: (run, signal) => {
-        notifyIfAway(window, signal);
+        // A run Claude started on its own stays quiet: its tab and the jobs show how it went.
+        if (!startedOnItsOwn(run.task)) notifyIfAway(window, signal);
         const drafting = draftsFor(run.task);
         if (drafting) formDrafts.heard(signal, drafting);
       },
       // Claude Code's first-run screens and its question about trust wait on the user too.
       onScreen: (run) => {
-        notifyIfAway(window, 'needs-answer');
+        if (!startedOnItsOwn(run.task)) notifyIfAway(window, 'needs-answer');
         const drafting = draftsFor(run.task);
         if (drafting) formDrafts.waitsOnYou(drafting);
       },
@@ -508,7 +540,11 @@ function start(home: string, profile: ProfileFolder, stopped: ProfileFolder | nu
           server,
           signal,
         }),
-      onChange: (check) => window.send('setup:checked', check),
+      onChange: (check) => {
+        window.send('setup:checked', check);
+        // Claude past its first screens may analyze new jobs on its own now.
+        analyzeNew?.look();
+      },
       busy: () => claude.busy(),
       // The end-to-end tests set a shorter wait, to see the check finish.
       ...(process.env.FACTWRIGHT_SETUP_WAIT_MS && {
@@ -516,6 +552,33 @@ function start(home: string, profile: ProfileFolder, stopped: ProfileFolder | nu
       }),
     });
     await setup.load();
+    // Claude analyzing new jobs on its own while it's free, once Claude Code is ready and past its
+    // first screens, with the window open to show its run. The tests turn it off, or wait less.
+    let claudeReady = false;
+    claims = new Claims({
+      tracker,
+      sync: sync.claimSync(),
+      stepAside: (runId) => claude.stepAside(runId),
+    });
+    claims.heard(claude.view());
+    const analyzing = new AnalyzeNew({
+      dataDir,
+      jobs: () => jobs.list().jobs,
+      runs: claude,
+      ready: () =>
+        claudeReady &&
+        develop('FACTWRIGHT_ANALYZE_NEW') !== 'off' &&
+        window.current() !== null &&
+        (claude.view().setUp || setup.current()?.result === 'passed'),
+      today: () => localDate(new Date()),
+      claims,
+      ...(develop('FACTWRIGHT_ANALYZE_WAIT_MS') && {
+        quietMs: Number(develop('FACTWRIGHT_ANALYZE_WAIT_MS')),
+      }),
+    });
+    await analyzing.load();
+    analyzeNew = analyzing;
+    analyzing.look();
     // A copy installed from Factwright's own release keeps itself up to date. One being
     // developed, or built anywhere else, such as from a fork, has no update settings and doesn't,
     // and the end-to-end tests turn it off.
@@ -529,7 +592,11 @@ function start(home: string, profile: ProfileFolder, stopped: ProfileFolder | nu
             // Only work going waits, in any run: Claude Code that's done closes first, then it
             // installs.
             busy: () => claude.working(),
-            closeClaude: () => claude.closeIdle(),
+            // No run of Claude's own starts once the restart begins.
+            closeClaude: () => {
+              analyzing.stop();
+              return claude.closeIdle();
+            },
             onStatus: (status) => window.send('updates:changed', status),
             // Updates are the app's, not a profile's, so their log is in the app's own folder.
             log: (message) => logUpdate(home, message),
@@ -567,6 +634,11 @@ function start(home: string, profile: ProfileFolder, stopped: ProfileFolder | nu
       saveHelper,
       tellRunDone: (note) => notifyRunDone(window, note, () => window.send('claude:open-result')),
       runRequests,
+      analyzeNew: analyzing,
+      onClaudeStatus: (status) => {
+        claudeReady = status.state === 'ready';
+        analyzing.look();
+      },
       formFeed: formFeedFile
         ? async () => JSON.parse(await readFile(formFeedFile, 'utf8')) as unknown
         : undefined,
@@ -596,6 +668,8 @@ function start(home: string, profile: ProfileFolder, stopped: ProfileFolder | nu
       profiles.started();
       updates?.stop();
       reminders.stop();
+      analyzing.stop();
+      claims?.stop();
       claude.closeAll();
       setup.stop();
       server.stop();

@@ -131,8 +131,18 @@ export function parseJobChanges(value: unknown): JobChanges | null {
     archived: flag,
     kind: orNull(kindId),
     payAsk: textUpTo(LIMITS.pay),
+    company: textUpTo(LIMITS.company),
+    role: textUpTo(LIMITS.role),
+    pay: textUpTo(LIMITS.pay),
+    location: textUpTo(LIMITS.location),
   });
 }
+
+/** Whether changes set any of a job's own details, which are for one job at a time. */
+export const changesDetails = (changes: JobChanges): boolean =>
+  [changes.company, changes.role, changes.pay, changes.location].some(
+    (value) => value !== undefined,
+  );
 
 export function parseNewJob(value: unknown): NewJob | null {
   const fields = readFields<Required<NewJob>>(value, {

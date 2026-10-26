@@ -15,12 +15,16 @@ import type { FiledFacts } from '../shared/facts.ts';
 import { hasKinds, kindsOf } from '../shared/kinds.ts';
 import type { ProfileEntry } from '../shared/profiles.ts';
 import {
+  ANALYZE_SKILL,
   GET_STARTED_SKILL,
   lanesOf,
+  MOST_TO_ANALYZE,
   type RunRequest,
   type RunTask,
   SEARCH_SKILL,
+  startedOnItsOwn,
   TEMPLATE_SKILL,
+  usersTask,
 } from '../shared/runs.ts';
 import styles from './App.module.css';
 import { GetStarted } from './about/GetStarted.tsx';
@@ -189,6 +193,8 @@ export function App({ api }: { api: FactwrightApi }) {
     | 'merge'
     | null
   >(null);
+  // The job Claude noted might be the one open, when Merge with… opens from its note.
+  const [mergeWith, setMergeWith] = useState<string | null>(null);
   // Once the user accepts an offer, the company and the other jobs still in play, to withdraw from.
   const [withdraw, setWithdraw] = useState<{ company: string; rows: JobRow[] } | null>(null);
   // A profile to switch to, once the user says what they're writing can go unsaved.
@@ -376,6 +382,17 @@ export function App({ api }: { api: FactwrightApi }) {
     () => runControlsFor(claude.runs, startRun, showRun),
     [claude.runs, startRun, showRun],
   );
+  // The jobs picked in the list, analyzed in one run, or in a run for each as many as one takes.
+  const analyzePicked = (jobIds: string[]) => {
+    for (let at = 0; at < jobIds.length; at += MOST_TO_ANALYZE) {
+      startRun({ skill: ANALYZE_SKILL, jobIds: jobIds.slice(at, at + MOST_TO_ANALYZE) });
+    }
+  };
+  // Another job, by its ID, for the job open, such as one Claude noted might be the same.
+  const lookUp = useCallback(
+    (jobId: string) => rows.find((row) => row.job.id === jobId)?.job ?? null,
+    [rows],
+  );
   // Whether Claude is on a task for a job, or has one in line for it, for the jobs list.
   const claudeOn = useCallback(
     (jobId: string): TaskState | null => {
@@ -473,12 +490,14 @@ export function App({ api }: { api: FactwrightApi }) {
   }, []);
   // Each run as its tab and bar show it: its name, what it's done and made, and what it waits on
   // the user for.
-  const titleOf = (run: RunView) => runTitle(run.task, listed);
+  const titleOf = (run: RunView) => runTitle(run.task, listed, run.analyzed);
   const panelRuns = claude.runs.map((view): PanelRun => {
     const activity = activityOf(view.id);
     const before = befores[view.id];
     const outcome =
-      view.phase === 'done' && before ? runOutcome(before, rows, activity.steps) : null;
+      view.phase === 'done' && before
+        ? runOutcome(before, rows, activity.steps, view.analyzed)
+        : null;
     const result: RunResult | null = outcome && {
       text: outcome.text,
       open: outcome.place && {
@@ -501,9 +520,9 @@ export function App({ api }: { api: FactwrightApi }) {
       stoppedShort: settled.has(view.id) && !outcome && makesSomething(view.task),
       onRetry: task
         ? () => {
-            // The task starts again in a run of its own, in place of this one.
+            // The task starts again in a run of its own, in place of this one, as the user's.
             closeRun(view.id);
-            startRun(task);
+            startRun(usersTask(task));
           }
         : undefined,
       filed: filedFor(view.id),
@@ -520,10 +539,12 @@ export function App({ api }: { api: FactwrightApi }) {
   });
   // Work going, which restarting the app would stop: a run that's starting, working or waiting on
   // the user, as for a reply to a question Claude asked in its own words, or a task in line.
-  // Updates and switching profiles wait for it. Claude Code that's done closes as the app restarts.
+  // Updates and switching profiles wait for it. Claude Code that's done closes as the app restarts,
+  // and a run Claude started on its own steps aside.
   const workGoing = panelRuns.some(
     ({ view, state }) =>
-      view.phase === 'in-line' || BUSY.includes(view.phase) || state === 'waiting',
+      !startedOnItsOwn(view.task) &&
+      (view.phase === 'in-line' || BUSY.includes(view.phase) || state === 'waiting'),
   );
   // Opens what the task made from the notification that says so, too: the last one told of, as
   // it stands now.
@@ -543,7 +564,8 @@ export function App({ api }: { api: FactwrightApi }) {
     if (answer === 'started') startClaude(asked, { background: true });
   };
   useEffect(() => api.onRunRequest((request) => runRequested.current(request)), [api]);
-  // A notification says what each task made, or that Claude is done, once, if the user is away.
+  // A notification says what each task made, or that Claude is done, once, if the user is away. A
+  // run Claude started on its own stays quiet: its tab and the jobs show how it went.
   const told = useRef(new Set<string>());
   useEffect(() => {
     for (const { view, activity, result, title } of panelRuns) {
@@ -551,7 +573,7 @@ export function App({ api }: { api: FactwrightApi }) {
         told.current.delete(view.id);
         continue;
       }
-      if (told.current.has(view.id)) continue;
+      if (told.current.has(view.id) || startedOnItsOwn(view.task)) continue;
       const error = activity.end?.error;
       const said = activity.end?.said ?? null;
       const note = error
@@ -767,6 +789,7 @@ export function App({ api }: { api: FactwrightApi }) {
                 // A search waits in line behind another, so Find jobs is never busy.
                 canFindJobs={ready}
                 claudeOn={claudeOn}
+                onAnalyze={ready ? analyzePicked : undefined}
                 onFindJobs={() => setDialog('find-jobs')}
                 onOpenJourney={() => setDialog('journey')}
                 onGetStarted={gettingStarted ? () => setPicked('profile') : undefined}
@@ -808,7 +831,11 @@ export function App({ api }: { api: FactwrightApi }) {
                 related={related}
                 me={me}
                 reminders={reminders ?? undefined}
-                onMerge={() => setDialog('merge')}
+                onMerge={(otherId) => {
+                  setMergeWith(otherId ?? null);
+                  setDialog('merge');
+                }}
+                lookUp={lookUp}
               />
             )}
           </div>
@@ -863,7 +890,13 @@ export function App({ api }: { api: FactwrightApi }) {
         <SyncDialog api={api} status={sync} approvals={approvals} onClose={() => setDialog(null)} />
       )}
       {dialog === 'merge' && selected && (
-        <MergeDialog job={selected.job} rows={rows} api={api} onClose={() => setDialog(null)} />
+        <MergeDialog
+          job={selected.job}
+          rows={rows}
+          api={api}
+          suggested={mergeWith}
+          onClose={() => setDialog(null)}
+        />
       )}
       {withdraw && (
         <WithdrawDialog

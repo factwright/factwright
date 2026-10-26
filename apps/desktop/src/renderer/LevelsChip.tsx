@@ -8,7 +8,7 @@ import { levelName, summarize, taskLevels } from './levels.ts';
 import { planName } from './plan.ts';
 
 /** The tasks Sonnet suits with Pro's levels, which use less, in plain words. */
-const ROUTINE = 'fit checks, salary checks, job searches and who to message';
+const ROUTINE = 'analyzing jobs, salary checks, job searches and who to message';
 
 /**
  * What the tooltip says: what's best overall, what's best on the user's plan, even when that's

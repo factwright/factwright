@@ -164,6 +164,52 @@ describe('tracker rows', () => {
     expect(trackedChange({ id: 's1', status: 'teleported', at: '2026-10-10' })).toBeNull();
   });
 
+  it('read the details the user set, leaving out a blank or one past what the field takes', () => {
+    expect(trackedRow(STORED_JOB).own).toEqual({
+      company: null,
+      role: null,
+      pay: null,
+      location: null,
+    });
+    expect(
+      trackedRow({
+        ...STORED_JOB,
+        own_company: 'Acme',
+        own_role: '  ',
+        own_pay: 'x'.repeat(201),
+        own_location: 42,
+      }).own,
+    ).toEqual({ company: 'Acme', role: null, pay: null, location: null });
+  });
+
+  it('read the jobs your Claude found might be the same, once each, the user’s no standing', () => {
+    const noted = trackedRow({
+      ...STORED_JOB,
+      maybe_same: JSON.stringify([
+        { id: 'acme--staff-2', why: 'Same team, another link', on: '2026-10-25', notSame: true },
+        { id: 'acme--staff-2', why: 'Noted again', on: '2026-10-26' },
+        { id: 'acme--platform', why: 'w'.repeat(500), on: '2026-10-25' },
+        { id: 'Not an ID!', on: '2026-10-25' },
+        { id: 'acme--lead', on: 'someday' },
+        'junk',
+      ]),
+    });
+    expect(noted.maybeSame).toEqual([
+      { id: 'acme--staff-2', why: 'Noted again', on: '2026-10-26', notSame: true },
+      { id: 'acme--platform', why: null, on: '2026-10-25', notSame: false },
+    ]);
+    expect(trackedRow(STORED_JOB).maybeSame).toEqual([]);
+  });
+
+  it('know a job by the company and role the user gave it, too', () => {
+    const [plain, renamed] = knownJobsOf([
+      trackedRow(STORED_JOB),
+      trackedRow({ ...STORED_JOB, id: 'b', own_company: 'Acme', own_pay: '$1' }),
+    ]);
+    expect(plain).not.toHaveProperty('own');
+    expect(renamed?.own).toEqual({ company: 'Acme', role: null });
+  });
+
   it('read the kind of job the user put a job under, leaving out one that isn’t an id', () => {
     expect(trackedRow({ ...STORED_JOB, kind: 'project-manager' }).kind).toBe('project-manager');
     expect(trackedRow(STORED_JOB).kind).toBeNull();
@@ -371,6 +417,54 @@ describe('jobList', () => {
     const typed = trackedRow({ ...STORED_JOB, manual: 1, pay_text: '$150k–$180k' });
     const [job] = jobList([typed], new Map(), NOTHING_KEPT);
     expect(job).toMatchObject({ source: 'Added by hand', pay: { min: 150000, max: 180000 } });
+  });
+
+  it('shows the details the user set over what the posting and Claude found', () => {
+    const fromClaude = {
+      ...found,
+      companyKey: 'acme-robotics',
+      location: 'Hybrid, Austin',
+      pay: { text: '$150k', min: 150_000, max: 150_000, source: 'listed' },
+    } as CollectedJob;
+    const row = trackedRow({
+      ...STORED_JOB,
+      own_company: ' Acme Robotics Labs ',
+      own_role: 'Staff Software Engineer, Tools',
+      own_pay: '$185k–$215k',
+      own_location: 'Remote (US)',
+    });
+    const [job] = jobList([row], new Map([['acme--staff', fromClaude]]), NOTHING_KEPT);
+    expect(job).toMatchObject({
+      company: 'Acme Robotics Labs',
+      companyKey: 'acme-robotics-labs',
+      role: 'Staff Software Engineer, Tools',
+      pay: { text: '$185k–$215k', min: 185_000, max: 215_000, source: 'own' },
+      location: 'Remote (US)',
+      own: {
+        company: 'Acme Robotics Labs',
+        role: 'Staff Software Engineer, Tools',
+        pay: '$185k–$215k',
+        location: 'Remote (US)',
+      },
+    });
+    // Only the ones the user set: the rest are what Claude found.
+    const some = trackedRow({ ...STORED_JOB, own_location: 'Remote (US)' });
+    const [mixed] = jobList([some], new Map([['acme--staff', fromClaude]]), NOTHING_KEPT);
+    expect(mixed).toMatchObject({
+      company: 'Acme Robotics',
+      pay: { text: '$150k' },
+      location: 'Remote (US)',
+    });
+    // A job with no files yet, as one saved from the browser.
+    const [saved] = jobList([row], new Map(), NOTHING_KEPT);
+    expect(saved).toMatchObject({ company: 'Acme Robotics Labs', location: 'Remote (US)' });
+    // Each of them keeps a job listed once its files are gone, as anything the user tracks does.
+    const bare = { ...STORED_JOB, status: null, applied_on: null, notes: null, questions: '[]' };
+    expect(
+      jobList([trackedRow({ ...bare, sent: '[]', asks: '[]', own_role: 'Staff' })], new Map(), {
+        ...NOTHING_KEPT,
+      }),
+    ).toHaveLength(1);
   });
 });
 

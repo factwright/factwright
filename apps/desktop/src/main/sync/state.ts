@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
 
 /** What this device last synced of one record. */
@@ -30,6 +31,9 @@ type Row = {
 };
 
 const toSynced = (row: Row): Synced => ({ ...row, deleted: row.deleted === 1 });
+
+/** Where sync's notes keep this computer's own ID, which starting over never forgets. */
+const DEVICE = 'device';
 
 /**
  * Sync's notes on this computer: what it last synced of each record, and how far it has pulled
@@ -116,8 +120,24 @@ export class SyncState {
     this.setMeta('cursor', String(cursor));
   }
 
-  /** Forgets everything, as when sync is turned off here: the next time, it starts over. */
+  /**
+   * This computer's own ID, which its claims on jobs name it by, made the first time it's asked
+   * for. It stays as sync starts over, so the claims it made are still known as its own.
+   */
+  device(): string {
+    const known = this.meta(DEVICE);
+    if (known) return known;
+    const made = randomUUID();
+    this.setMeta(DEVICE, made);
+    return made;
+  }
+
+  /**
+   * Forgets everything, as when sync is turned off here: the next time, it starts over. Only this
+   * computer's own ID stays.
+   */
   clear(): void {
-    this.db.exec('DELETE FROM synced; DELETE FROM meta;');
+    this.db.prepare('DELETE FROM synced').run();
+    this.db.prepare('DELETE FROM meta WHERE key <> ?').run(DEVICE);
   }
 }

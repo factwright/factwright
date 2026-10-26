@@ -1183,10 +1183,10 @@ test('suits Claude’s levels to a Pro plan, once Claude Code signs in on one', 
   await expect(levels).toHaveAccessibleName('Claude’s levels: Opus · High. Lighter for 4 tasks.');
   await levels.hover();
   await expect(window.getByRole('tooltip')).toContainText('Best on your Pro plan');
-  // A fit check is one of the routine tasks, which start on Sonnet with Pro's levels.
+  // Analyze job is one of the routine tasks, which start on Sonnet with Pro's levels.
   await pickView(/^All/);
   await window.getByRole('button', { name: /^Acme Robotics/ }).click();
-  await jobPanel().getByRole('button', { name: 'Check again' }).click();
+  await jobPanel().getByRole('button', { name: 'Analyze again' }).click();
   await expect(claudePanel().getByRole('status')).toHaveText('Done');
   expect(await terminalText(window)).toContain('sonnet · high effort');
   await closeRun();

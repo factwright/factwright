@@ -639,3 +639,28 @@ export function savedJobFor<T extends JobIdentity>(
   const [only, ...more] = roles;
   return only && more.length === 0 ? { job: only.job, how: 'role' } : null;
 }
+
+/**
+ * Whether two jobs on file are surely one job found twice, as your Claude's Analyze job merges
+ * them: the same posting by an applicant system's own ID for it, at any company; the same address,
+ * at the same company with the same title, as a careers page or a board's address can be many
+ * jobs'; or the same role at the same company, its title the same however it's written, where one
+ * of the two has no posting of its own, only a board's address, a Hacker News post or the
+ * company's site. Null for anything less sure, which the user decides with Merge.
+ */
+export function sameJob(a: JobIdentity, b: JobIdentity): 'posting' | 'role' | null {
+  const named = (job: JobIdentity) => ({
+    company: job.company,
+    companyKey: job.companyKey || companyKey(job.company),
+  });
+  const postings = (job: JobIdentity) => job.links.flatMap((link) => postingKey(link.url) ?? []);
+  const theirPostings = postings(b);
+  if (postings(a).some((key) => theirPostings.includes(key))) return 'posting';
+  const like = jobLikeness({ ...a, ...named(a) }, { ...b, ...named(b) });
+  if (like !== 'posting' && like !== 'role') return null;
+  const company = companyMatch(named(a), named(b));
+  const title = titleFit(readTitle(a.role), readTitle(b.role));
+  if (company !== 'same' || title !== 'same') return null;
+  if (like === 'posting') return 'posting';
+  return !hasOwnPosting(a) || !hasOwnPosting(b) ? 'role' : null;
+}

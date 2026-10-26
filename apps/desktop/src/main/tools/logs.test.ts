@@ -31,9 +31,9 @@ describe('the job hunt’s logs', () => {
     const first = withRow(null, 'fit-checks', FIT);
     expect(first).toBe(
       [
-        '| Date | Company | Role | Verdict | Score | Link | Pay | Note |',
-        '|---|---|---|---|---|---|---|---|',
-        '| 2026-10-25 | Acme Robotics | Staff Engineer | Strong | 84 | https://jobs.lever.co/acme/1 | $180k–$210k | Platform work \\| remote |',
+        '| Date | Company | Role | Verdict | Score | Link | Pay | Note | Job |',
+        '|---|---|---|---|---|---|---|---|---|',
+        '| 2026-10-25 | Acme Robotics | Staff Engineer | Strong | 84 | https://jobs.lever.co/acme/1 | $180k–$210k | Platform work \\| remote |  |',
         '',
       ].join('\n'),
     );
@@ -60,6 +60,37 @@ describe('the job hunt’s logs', () => {
       confidence: 'medium',
     });
     expect(text.split('\n')[3]).toBe('| 2026-10-25 | Acme | Staff | $200k |');
+  });
+
+  it('gives a fit check log from before it named jobs a Job column, once a row names one', () => {
+    const older = [
+      '| Date | Company | Role | Verdict | Score | Link | Pay | Note |',
+      '|---|---|---|---|---|---|---|---|',
+      '| 2026-10-01 | Initech | PM | Good | 70 | | | |',
+      '',
+    ].join('\n');
+    // A row with no job leaves the table as it is.
+    expect(withRow(older, 'fit-checks', FIT).split('\n')[0]).toBe(
+      '| Date | Company | Role | Verdict | Score | Link | Pay | Note |',
+    );
+    const text = withRow(older, 'fit-checks', { ...FIT, job: 'acme-robotics--staff-engineer' });
+    expect(text.split('\n').slice(0, 2)).toEqual([
+      '| Date | Company | Role | Verdict | Score | Link | Pay | Note | Job |',
+      '|---|---|---|---|---|---|---|---|---|',
+    ]);
+    expect(markdownTable(text).map((row) => [row.company, row.job])).toEqual([
+      ['Initech', ''],
+      ['Acme Robotics', 'acme-robotics--staff-engineer'],
+    ]);
+  });
+
+  it('takes a fit check’s job by its id, and nothing else', () => {
+    expect(logRow('fit-checks', { ...FIT, job: '`Acme--Staff`' }, '2026-10-25').job).toBe(
+      'acme--staff',
+    );
+    expect(() => logRow('fit-checks', { ...FIT, job: 'acme; rm -rf' }, '2026-10-25')).toThrow(
+      /by its id/,
+    );
   });
 
   it('adds a table to a log that has none, keeping what’s there, and its line endings', () => {

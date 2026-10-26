@@ -88,8 +88,8 @@ describe('UpNext', () => {
     cleanup();
     const fresh = controls();
     shown(job, fresh);
-    await userEvent.click(button('Run a fit check'));
-    expect(fresh.start).toHaveBeenCalledWith({ skill: 'fit-check', jobId: job.id });
+    await userEvent.click(button('Analyze job'));
+    expect(fresh.start).toHaveBeenCalledWith({ skill: 'analyze-job', jobId: job.id });
   });
 
   it('sorts a new job, with the move the step suggests first', async () => {

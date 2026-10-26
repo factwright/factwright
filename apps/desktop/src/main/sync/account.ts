@@ -36,6 +36,7 @@ import type {
 } from '../../shared/sync.ts';
 import type { Tracker } from '../jobs/tracker.ts';
 import { Approvals } from './approvals.ts';
+import { type ClaimsSync, claimNotes } from './claims.ts';
 import { computerName, userAgent } from './device.ts';
 import { SyncEngine } from './engine.ts';
 import { LoopbackFlow } from './loopback.ts';
@@ -191,6 +192,8 @@ export class SyncAccount {
   private readonly secrets: Secrets;
   private readonly state: SyncState;
   private current: SyncStatus = { state: 'off' };
+  /** Whether where sync stands is known yet, once it has picked up where it left off. */
+  private known = false;
   private client: SyncClient | null = null;
   private keys: AccountKeys | null = null;
   private accountKey: Bytes | null = null;
@@ -276,6 +279,7 @@ export class SyncAccount {
 
   private set(status: SyncStatus): void {
     if (this.closed) return;
+    this.known = true;
     this.current = this.named(status);
     this.deps.onStatus(this.current);
   }
@@ -1129,6 +1133,21 @@ export class SyncAccount {
   /** Syncs now, such as after an edit. */
   requestSync(): void {
     this.runner?.request();
+  }
+
+  /**
+   * What claims on jobs need of sync here. Sync counts as set up once it's turned on, signed in or
+   * not, paused or not, as another computer may share the job hunt, and before it's known whether
+   * it is, as the app opens.
+   */
+  claimSync(): ClaimsSync {
+    return {
+      ...claimNotes(this.state),
+      on: () => !this.known || !['off', 'unavailable', 'no-server'].includes(this.current.state),
+      working: () => this.runner?.working() ?? false,
+      now: () => this.runner?.now() ?? Promise.resolve(false),
+      request: () => this.requestSync(),
+    };
   }
 
   /** A link code for adding a phone or computer, good for 10 minutes and one use. */

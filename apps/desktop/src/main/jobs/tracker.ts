@@ -13,10 +13,13 @@ import {
   jobIdFor,
   type KnownJob,
   knownJobsOf,
+  MAYBE_SAME_WHY,
+  type MaybeSame,
   mergedTargets,
   type Note,
   newJobRows,
   normalizeUrl,
+  type OwnDetails,
   questionKey,
   readStatus,
   SETTLED_STATUSES,
@@ -56,12 +59,27 @@ export interface EditContext {
 }
 
 /**
- * The tables that sync, in the order a new device fills them: jobs before their history, calls
- * and notes.
+ * The tables that sync, in the order a device sends and fills them: computers' claims on jobs
+ * first, so a job never reaches another computer ahead of its claim, then jobs before their
+ * history, calls and notes.
  */
-export const SYNC_TABLES = ['jobs', 'status_log', 'calls', 'notes'] as const;
+export const SYNC_TABLES = ['claims', 'jobs', 'status_log', 'calls', 'notes'] as const;
 
 export type SyncTable = (typeof SYNC_TABLES)[number];
+
+/**
+ * A computer's claim on a job, while sync is on, so no two computers analyze it at once. It holds
+ * while that computer renews it, and lapses on its own once it stops, as when it sleeps or quits.
+ */
+export interface Claim {
+  job: string;
+  /** The computer that made it, by the ID its sync made for it. */
+  device: string;
+  /** When it lapses unless renewed, as an ISO time. */
+  until: string;
+  /** Whether it's for a run of Claude's own, which steps aside for a task the user starts. */
+  own: boolean;
+}
 
 /** A row as sync carries it between devices: its table, its ID and its columns as stored. */
 export interface SyncRow {
@@ -150,6 +168,23 @@ const MIGRATIONS = [
   // The pay the user asks for at a job, in their own words, such as "$185,000". Empty goes by
   // their Claude's suggestion in the job's job.md, or else their target pay.
   `ALTER TABLE jobs ADD COLUMN pay_ask TEXT;`,
+  // A job's company, role, pay and place as the user set them in its panel, each empty for one
+  // they left to the posting and Claude's work, and the other jobs their Claude noted might be
+  // the same one, as a JSON list, with the user's word when they said one isn't.
+  `ALTER TABLE jobs ADD COLUMN own_company TEXT;
+  ALTER TABLE jobs ADD COLUMN own_role TEXT;
+  ALTER TABLE jobs ADD COLUMN own_pay TEXT;
+  ALTER TABLE jobs ADD COLUMN own_location TEXT;
+  ALTER TABLE jobs ADD COLUMN maybe_same TEXT NOT NULL DEFAULT '[]';`,
+  // Each job's claim, while sync is on, by its ID: the computer whose run is on the job, by an ID
+  // its sync made, when the claim lapses unless that computer renews it, and whether it's for a
+  // run of Claude's own.
+  `CREATE TABLE IF NOT EXISTS claims (
+    id TEXT PRIMARY KEY,
+    device TEXT NOT NULL,
+    until TEXT NOT NULL,
+    own INTEGER NOT NULL DEFAULT 0
+  );`,
 ];
 
 /** Latest first. Entries on the same day go by when they were added (SQLite's rowid). */
@@ -157,6 +192,16 @@ const LATEST_FIRST = 'ORDER BY at DESC, rowid DESC';
 
 const text = (value: unknown) => (typeof value === 'string' ? value : null);
 const required = (value: unknown) => (typeof value === 'string' ? value : '');
+
+/** A claim as its row has it, or null for a row another device left in a shape it can't be. */
+export const readClaim = (row: Record<string, unknown>): Claim | null =>
+  typeof row.id === 'string' &&
+  typeof row.device === 'string' &&
+  row.device !== '' &&
+  typeof row.until === 'string' &&
+  !Number.isNaN(Date.parse(row.until))
+    ? { job: row.id, device: row.device, until: row.until, own: row.own === 1 }
+    : null;
 
 const failed = (message: string): { ok: false; message: string } => ({ ok: false, message });
 const NOT_FOUND = failed('That job isn’t in your tracker anymore. Reload and try again.');
@@ -171,6 +216,20 @@ const MAX_SAME = 50;
  * [old, new], since the job kept had one by the same ID, so their answers move with them.
  */
 export type MergeResult = { ok: true; asks: [string, string][] } | { ok: false; message: string };
+
+/**
+ * What noting that a job might be the same as another did: noted, or not, as the user said the two
+ * aren't the same.
+ */
+export type NotedResult = { ok: true; noted: boolean } | { ok: false; message: string };
+
+/** The columns that hold the details the user set, by the field JobChanges gives each in. */
+const OWN_COLUMNS = {
+  company: 'own_company',
+  role: 'own_role',
+  pay: 'own_pay',
+  location: 'own_location',
+} as const;
 
 /**
  * What adding a job saved on this computer did: the job's ID, and whether the job hunt had it
@@ -471,6 +530,11 @@ export class Tracker {
     if (changes.archived !== undefined) set('archived', changes.archived ? 1 : 0);
     if (changes.kind !== undefined) set('kind', changes.kind);
     if (changes.payAsk !== undefined) set('pay_ask', changes.payAsk);
+    // The details the user sets: an empty one goes back to what Claude found.
+    for (const [field, column] of Object.entries(OWN_COLUMNS) as [keyof OwnDetails, string][]) {
+      const value = changes[field];
+      if (value !== undefined) set(column, value?.trim() || null);
+    }
 
     const status = changes.status;
     const statusChanged = status !== undefined && status !== job.status;
@@ -710,9 +774,10 @@ export class Tracker {
    * Merges another job into one, for a job the skills' work found twice: the other's changes of
    * status, calls and notes move to the job kept, with its links, the application's questions,
    * what the user sent for them and the questions they asked Claude, each kept once. The job kept
-   * takes the later of the two decisions the user made, such as passing on it, with its day, a
-   * reason or a day to come back, and whether it's archived; on the same day, a decision over New
-   * or To review. It keeps the earlier applied date, and takes from the other what it lacks: a
+   * takes the user's decision, such as passing on it, with its day, a reason or a day to come
+   * back, and whether it's archived: one the user made over New or To review, which the app sets,
+   * whatever the day, as a later save of the job has, and of two of the same kind, the later. It
+   * keeps the earlier applied date, and takes from the other what it lacks: a
    * next step, a kind of job, typed pay, the pay to ask for, the notes kept before notes were
    * dated. The other job's row stays, pointing at the one kept, so whatever it went by finds that
    * one.
@@ -727,8 +792,7 @@ export class Tracker {
     const kept = decided(keep);
     const theirs = decided(other);
     const latest =
-      !theirs ||
-      (kept && (kept.on > theirs.on || (kept.on === theirs.on && (kept.mine || !theirs.mine))))
+      !theirs || (kept && (kept.mine === theirs.mine ? kept.on >= theirs.on : kept.mine))
         ? keep
         : other;
     const earliest = (a: string | null, b: string | null) =>
@@ -754,12 +818,23 @@ export class Tracker {
     const notes = [keep.earlierNotes, other.earlierNotes].filter(Boolean).join('\n\n') || null;
     const nextFrom = keep.nextAction || keep.nextOn ? keep : other;
     const archived = kept || theirs ? latest.archived : keep.archived && other.archived;
+    // The notes that another job might be this one, from both, once each, apart from the two
+    // merged now. The user's word that one isn't the same stands.
+    const maybeSame: MaybeSame[] = [];
+    for (const each of [...keep.maybeSame, ...other.maybeSame]) {
+      if (each.id === keep.id || each.id === other.id) continue;
+      const at = maybeSame.findIndex((noted) => noted.id === each.id);
+      const was = maybeSame[at];
+      if (!was) maybeSame.push(each);
+      else if (each.notSame) maybeSame[at] = { ...was, notSame: true };
+    }
     this.transaction(() => {
       this.db
         .prepare(
           `UPDATE jobs SET links = ?, status = ?, status_on = ?, back_on = ?, pass_reason = ?,
              applied_on = ?, next_action = ?, next_on = ?, notes = ?, questions = ?, sent = ?,
              asks = ?, kind = ?, pay_text = ?, pay_ask = ?, first_seen = ?, archived = ?,
+             own_company = ?, own_role = ?, own_pay = ?, own_location = ?, maybe_same = ?,
              updated_at = ?
            WHERE id = ?`,
         )
@@ -781,6 +856,11 @@ export class Tracker {
           keep.payAsk ?? other.payAsk,
           earliest(keep.firstSeen, other.firstSeen),
           archived ? 1 : 0,
+          keep.own.company ?? other.own.company,
+          keep.own.role ?? other.own.role,
+          keep.own.pay ?? other.own.pay,
+          keep.own.location ?? other.own.location,
+          JSON.stringify(maybeSame),
           context.now,
           keep.id,
         );
@@ -793,6 +873,102 @@ export class Tracker {
         .run(keep.id, context.now, other.id, other.id);
     });
     return { ok: true, asks: renamed };
+  }
+
+  /**
+   * Notes that another job might be this one, as your Claude found without being sure enough to
+   * merge them, with why in a line, for the user to merge them or not. Noting it again keeps the
+   * newest why. A pair the user said isn't the same isn't noted, either way round.
+   */
+  noteMaybeSame(
+    jobId: string,
+    otherId: string,
+    why: string | null,
+    context: EditContext,
+  ): NotedResult {
+    const job = this.row(jobId);
+    const other = this.row(otherId);
+    if (!job || !other || job.mergedInto || other.mergedInto) return NOT_FOUND;
+    if (job.id === other.id) return failed('A job is always the same as itself.');
+    if (this.saidNotSame(job, other)) return { ok: true, noted: false };
+    const note: MaybeSame = {
+      id: other.id,
+      why: why?.trim().slice(0, MAYBE_SAME_WHY) || null,
+      on: context.today,
+      notSame: false,
+    };
+    const rest = job.maybeSame.filter((each) => each.id !== other.id);
+    this.setMaybeSame(job.id, [...rest, note], context.now);
+    return { ok: true, noted: true };
+  }
+
+  /**
+   * Keeps the user's word that two jobs aren't the same, so a note that one might be the other
+   * goes, and isn't made again, either way round.
+   */
+  notSame(jobId: string, otherId: string, context: EditContext): EditResult {
+    const job = this.row(jobId);
+    const other = this.row(otherId);
+    if (!job || !other) return NOT_FOUND;
+    if (job.id === other.id) return DONE;
+    const known = job.maybeSame.find((each) => each.id === other.id);
+    const rest = job.maybeSame.filter((each) => each.id !== other.id);
+    const said: MaybeSame = known
+      ? { ...known, notSame: true }
+      : { id: other.id, why: null, on: context.today, notSame: true };
+    this.transaction(() => {
+      this.setMaybeSame(job.id, [...rest, said], context.now);
+      // A note the other way round goes too.
+      const back = other.maybeSame.find((each) => each.id === job.id);
+      if (back && !back.notSame) {
+        const others = other.maybeSame.filter((each) => each.id !== job.id);
+        this.setMaybeSame(other.id, [...others, { ...back, notSame: true }], context.now);
+      }
+    });
+    return DONE;
+  }
+
+  /** Whether the user said two jobs aren't the same, either way round. */
+  saidNotSame(job: TrackedRow, other: TrackedRow): boolean {
+    const said = (from: TrackedRow, to: string) =>
+      from.maybeSame.some((each) => each.id === to && each.notSame);
+    return said(job, other.id) || said(other, job.id);
+  }
+
+  /** Every claim on a job this computer knows of: its own, and other computers' through sync. */
+  claims(): Claim[] {
+    return this.db
+      .prepare('SELECT * FROM claims ORDER BY id')
+      .all()
+      .flatMap((row) => readClaim(row) ?? []);
+  }
+
+  /** A job's claim, by the job's ID, or null for none. */
+  claim(jobId: string): Claim | null {
+    const row = this.db.prepare('SELECT * FROM claims WHERE id = ?').get(jobId);
+    return row ? readClaim(row) : null;
+  }
+
+  /** Sets a job's claim, which sync takes to the account's other devices. */
+  setClaim(claim: Claim): void {
+    this.db
+      .prepare(
+        `INSERT INTO claims (id, device, until, own) VALUES (?, ?, ?, ?)
+         ON CONFLICT (id) DO UPDATE SET device = excluded.device, until = excluded.until,
+           own = excluded.own`,
+      )
+      .run(claim.job, claim.device, claim.until, claim.own ? 1 : 0);
+  }
+
+  /** Takes a job's claim away. */
+  dropClaim(jobId: string): void {
+    this.db.prepare('DELETE FROM claims WHERE id = ?').run(jobId);
+  }
+
+  private setMaybeSame(jobId: string, list: readonly MaybeSame[], now: string): void {
+    this.db
+      .prepare('UPDATE jobs SET maybe_same = ?, updated_at = ? WHERE id = ?')
+      .run(JSON.stringify(list), now, jobId);
   }
 
   /**

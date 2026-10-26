@@ -404,6 +404,32 @@ describe('two computers on one account', () => {
     expect(await pc.sync()).toMatchObject({ pulled: 0, pushed: 0 });
   });
 
+  it('keep the details the user set, and their word that two jobs aren’t the same, both ways', async () => {
+    mac.tracker.saveCollected([job('acme--staff'), job('acme--staff-2')], AT.now);
+    mac.tracker.noteMaybeSame('acme--staff', 'acme--staff-2', 'Same team', AT);
+    await mac.sync();
+    await pc.sync();
+    // The PC is on a version from before them, as 0.17 is, and changes the job meanwhile.
+    pc.goBackTo(10);
+    const later: EditContext = { today: '2026-10-13', now: '2026-10-13T09:00:00.000Z' };
+    mac.tracker.updateJob('acme--staff', { company: 'Acme', location: 'Remote (US)' }, later);
+    mac.tracker.notSame('acme--staff', 'acme--staff-2', later);
+    pc.tracker.updateJob('acme--staff', { status: 'apply' }, later);
+    await mac.sync();
+    await pc.sync();
+    await mac.sync();
+    expect(mac.tracker.rows()[0]).toMatchObject({
+      status: 'apply',
+      own: { company: 'Acme', role: null, pay: null, location: 'Remote (US)' },
+      maybeSame: [{ id: 'acme--staff-2', why: 'Same team', notSame: true }],
+    });
+    pc.update();
+    expect(pc.tracker.rows()[0]).toMatchObject({
+      own: { company: 'Acme', location: 'Remote (US)' },
+      maybeSame: [{ id: 'acme--staff-2', notSame: true }],
+    });
+  });
+
   it('keep a job’s folder through a computer from before folders, which gets it once it updates', async () => {
     const folder = '2026-10-07-acme-robotics-staff-engineer';
     mac.tracker.saveCollected([job('acme--staff')], AT.now);

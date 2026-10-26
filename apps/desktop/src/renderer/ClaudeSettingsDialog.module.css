@@ -62,3 +62,38 @@
 .problem {
   color: var(--fw-bad);
 }
+
+/* Analyzing new jobs on their own: a box to tick, with what it does under its name. */
+.check {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--fw-space-3);
+  margin-top: var(--fw-space-4);
+  cursor: pointer;
+}
+
+.check input {
+  flex: 0 0 auto;
+  width: 16px;
+  height: 16px;
+  margin: 3px 0 0;
+  accent-color: var(--fw-accent);
+}
+
+.checkText {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.checkName {
+  font-size: var(--fw-text-md);
+  font-weight: 550;
+}
+
+.checkAbout {
+  color: var(--fw-muted);
+  font-size: var(--fw-text-sm);
+  line-height: 1.45;
+}

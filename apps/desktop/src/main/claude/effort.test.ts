@@ -92,9 +92,14 @@ describe('how hard Claude thinks', () => {
 
   it('takes only levels and tasks it knows', () => {
     expect(parseEffort({ main: null, tasks: {} })).toEqual(DEFAULT_EFFORT);
-    expect(parseEffort({ main: 'xhigh', tasks: { 'fit-check': 'low' } })).toEqual({
+    expect(parseEffort({ main: 'xhigh', tasks: { 'analyze-job': 'low' } })).toEqual({
       main: 'xhigh',
-      tasks: { 'fit-check': 'low' },
+      tasks: { 'analyze-job': 'low' },
+    });
+    // A fit check's level, saved before it was Analyze job, is Analyze job's.
+    expect(parseEffort({ main: null, tasks: { 'fit-check': 'low' } })).toEqual({
+      main: null,
+      tasks: { 'analyze-job': 'low' },
     });
     for (const value of [
       null,
@@ -113,7 +118,7 @@ describe('how hard Claude thinks', () => {
   it('starts over only for a task that needs more than the open run gives', () => {
     expect(needsMore('medium', 'high')).toBe(true);
     expect(needsMore('high', 'max')).toBe(true);
-    // A salary check after a fit check runs in the same run, at high.
+    // A salary check after Analyze job runs in the same run, at high.
     expect(needsMore('high', 'medium')).toBe(false);
     expect(needsMore('high', 'high')).toBe(false);
   });

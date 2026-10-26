@@ -34,6 +34,16 @@ export interface ToolCall {
   keep?: ((path: string) => void) | undefined;
   /** Hears each page a tool read, by its address, for the task's card. */
   read?: ((url: string) => void) | undefined;
+  /**
+   * The jobs the run analyzes, by their IDs, for an Analyze job run, which holds them for itself
+   * while it runs, and may merge another job into one of them. Empty for any other run.
+   */
+  jobs?: readonly string[] | undefined;
+  /**
+   * Hears each job the run finished analyzing, by its ID, as a fit check's row in the log names
+   * it, so a run on several jobs says how far it's got.
+   */
+  analyzed?: ((jobId: string) => void) | undefined;
 }
 
 /** A run's tool calls, before it has saved or been told anything. */

@@ -32,9 +32,9 @@ When the input ends with `form`, these drafts are for the questions on the job's
 - `resume.json`: the resume they're sending. Answers must match it.
 - `past_answers`, with the job's id to leave it out: what the user actually sent on other applications, in their own words. Reuse the substance where a question comes up again ("why healthcare?"), never another company's specifics, and match how they sound. Claude's suggestions in other jobs' `answers.md` come second.
 - No folder yet? Make one, so the answers have a home:
-  - `applications/<YYYY-MM-DD>-<company>-<role>/`, lowercase with hyphens.
+  - `applications/<YYYY-MM-DD>-<company>-<role>/`, lowercase with hyphens. One by that name that's there already is another job's: add `-2` to the name, or the next number that's free.
   - `posting.md`: when `job_details` names a posting saved from the user's browser, `save_posting` with the job's link and its id copies it in, with no reading, LinkedIn's included. Otherwise read the link with `read_posting` (on Greenhouse, Lever, Ashby or Gem) or `read_page` (anywhere else), then `save_posting` with the link and the folder's name. For pasted text, save it as `posting.md` with a `- **Source:** pasted by the user <YYYY-MM-DD>` line on top.
-  - `job.md`: `# <Company>: <Role>`, then `- **Date:**`, `- **Company:**`, `- **Role:**` and `- **Links:**`, then `## Job description` with one line: "Saved word for word in posting.md."
+  - `job.md`: `# <Company>: <Role>`, then `- **Job ID:** <the job's id>` when the job is on file, `- **Date:**`, `- **Company:**`, `- **Role:**` and `- **Links:**`, then `## Job description` with one line: "Saved word for word in posting.md."
 
 ## 2. Draft
 - **Sound like the user typed it.** Laid back and plain: first person, contractions, everyday words. "Yep" is fine. Never over the top. Their voice nudges win over this, and what they actually sent shows their voice best.

@@ -23,6 +23,7 @@ import { buildCoverLetter } from './letter.ts';
 import { addLogRow, LOG_COLUMNS, LOG_NAMES, logRow } from './logs.ts';
 import { findJob, findJobs, type JobQuery, jobDetails } from './lookup.ts';
 import { huntCall, type McpTool, type ToolCall } from './mcp.ts';
+import { mergeJob } from './merge.ts';
 import { type FetchDeps, ReadCache, readLink, savePosting } from './posting.ts';
 import { buildProjectsPage } from './projects.ts';
 import { buildResume } from './resume.ts';
@@ -49,6 +50,8 @@ export interface ToolDeps {
   cache?: ReadCache;
   /** How long a fact tool waits for an answer whose hook is on its way. Tests wait less. */
   answerWaitMs?: number;
+  /** Whether one of Claude's tasks is going, or waits in line, on a job, by its ID. */
+  busy?: (jobId: string) => boolean;
 }
 
 const SEARCH_FOLDER = {
@@ -74,6 +77,7 @@ export const LOCAL_TOOLS = [
   'past_answers',
   'save_answer',
   'log_check',
+  'merge_job',
   'save_call_prep',
   'save_thank_you',
   'list_templates',
@@ -269,6 +273,7 @@ export function factwrightTools(deps: ToolDeps): McpTool[] {
               today(),
               kinds(),
               jobs.filter((other) => other.id !== job.id && sameCompany(other, job)),
+              (other) => deps.jobs.job(other),
             ),
           ),
         );
@@ -543,7 +548,7 @@ export function factwrightTools(deps: ToolDeps): McpTool[] {
     {
       name: 'save_posting',
       description:
-        'Saves a job posting word for word as posting.md in the job’s folder, so it survives the link going dead: the posting the user saved from their browser for that link, which job_details names, LinkedIn’s included; what read_page or read_posting read from that link in this run; or a posting on Greenhouse, Lever, Ashby or Gem read from its feed. It reaches no other site. Use it for every posting with a link. A posting already saved in the folder is kept. If it says the page needs a sign-in, ask the user to paste the posting.',
+        'Saves a job posting word for word as posting.md in the job’s folder, so it survives the link going dead: the posting the user saved from their browser for that link, which job_details names, LinkedIn’s included; what read_page or read_posting read from that link in this run; or a posting on Greenhouse, Lever, Ashby or Gem read from its feed. It reaches no other site. Use it for every posting with a link. A posting already saved in the folder is kept, unless the folder is another job’s, which it says. If it says the page needs a sign-in, ask the user to paste the posting.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -568,7 +573,13 @@ export function factwrightTools(deps: ToolDeps): McpTool[] {
         savePosting(
           textInput(input, 'url', true) ?? '',
           textInput(input, 'folder', true) ?? '',
-          { ...reading, workspace: deps.workspace, ...(call?.keep && { keep: call.keep }) },
+          {
+            ...reading,
+            workspace: deps.workspace,
+            job: (id) => deps.jobs.job(id),
+            jobs: () => deps.jobs.list().jobs,
+            ...(call?.keep && { keep: call.keep }),
+          },
           textInput(input, 'job', false) ?? undefined,
         ),
     },
@@ -696,7 +707,7 @@ export function factwrightTools(deps: ToolDeps): McpTool[] {
     {
       name: 'log_check',
       description:
-        'Adds one row to one of the job hunt’s logs: fit-checks (searches/fit-checks.md), salary-checks (searches/salary-checks.md) or unmask-checks (searches/unmask-checks.md). The app writes it, one row at a time, as other runs may be adding to the same log at once, so never edit those files yourself. Give the log and the row by its columns: fit-checks takes date, company, role, verdict, score, link, pay and note; salary-checks takes date, company, role, estimate, confidence and link; unmask-checks takes date, listing, employer, role, apply and link. The date is today’s unless you give one.',
+        'Adds one row to one of the job hunt’s logs: fit-checks (searches/fit-checks.md), salary-checks (searches/salary-checks.md) or unmask-checks (searches/unmask-checks.md). The app writes it, one row at a time, as other runs may be adding to the same log at once, so never edit those files yourself. Give the log and the row by its columns: fit-checks takes date, company, role, verdict, score, link, pay, note and job, the job’s id, so the score stays with that job; salary-checks takes date, company, role, estimate, confidence and link; unmask-checks takes date, listing, employer, role, apply and link. The date is today’s unless you give one.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -721,8 +732,49 @@ export function factwrightTools(deps: ToolDeps): McpTool[] {
       run: async (input, call) => {
         const log = LOG_NAMES.find((name) => name === input.log);
         if (!log) throw new Error(`Give the log: ${LOG_NAMES.join(', ')}.`);
-        return addLogRow(deps.workspace, log, logRow(log, input.row, today()), call?.keep);
+        const row = logRow(log, input.row, today());
+        // The job a fit check is for, as it is now, for one merged since.
+        const job = row.job ? deps.jobs.job(row.job) : null;
+        if (row.job && !job) throw new Error(`Nothing on file for ${row.job}.`);
+        if (job) row.job = job.id;
+        const added = addLogRow(deps.workspace, log, row, call?.keep);
+        if (job && log === 'fit-checks') call?.analyzed?.(job.id);
+        return added;
       },
+    },
+    {
+      name: 'merge_job',
+      description:
+        'For a job found twice: merges the other job into the one you’re analyzing, or notes on it that the two might be one, for the user to merge with a click. Give the job you’re on and the other, each by its id from find_job, and why you think they’re one, in a line. The app merges them when it’s sure: the same posting, or the same role at the same company where one of the two has no posting of its own. Anything less sure gets the note. It never merges two the user said aren’t the same. It says what it did, and which job to go on with.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          job: {
+            type: 'string',
+            description: 'The job you’re analyzing, by its id, which is kept.',
+          },
+          other: {
+            type: 'string',
+            description: 'The other job, by its id from find_job, which goes into it.',
+          },
+          why: {
+            type: 'string',
+            description: 'Why they look like one job, in a line, such as “Same title and team”.',
+          },
+        },
+        required: ['job', 'other'],
+        additionalProperties: false,
+      },
+      // It changes the tracker on this computer, as Merge with… does, or notes on the job.
+      annotations: { readOnlyHint: false, openWorldHint: false },
+      run: async (input, call) =>
+        mergeJob(
+          textInput(input, 'job', true) ?? '',
+          textInput(input, 'other', true) ?? '',
+          textInput(input, 'why', false) ?? null,
+          { jobs: deps.jobs, ...(deps.busy && { busy: deps.busy }) },
+          call,
+        ),
     },
     {
       name: 'save_fact',

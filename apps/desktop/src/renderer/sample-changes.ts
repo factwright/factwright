@@ -28,7 +28,7 @@ function namesOf(jobId: string): { company: string; role: string } {
   return { company: words(company), role: words(role) };
 }
 
-/** The job's notes before the task, as a fit check left them, and after it. */
+/** The job's notes before the task, as Analyze job left them, and after it. */
 function jobText(jobId: string): { before: string; after: string } {
   const { company, role } = namesOf(jobId);
   const before = [
@@ -152,7 +152,7 @@ function sampleFiles(task: RunTask | null): SampleFile[] {
         { path: `${folder}/cover-letter.json`, before: null, after: '{}\n', text: true },
         pdf(`AlexRiveraCoverLetter10252026_${company}`),
       ];
-    case 'fit-check':
+    case 'analyze-job':
       return [
         { path: `${folder}/job.md`, ...job, text: true },
         {
@@ -170,7 +170,7 @@ function sampleFiles(task: RunTask | null): SampleFile[] {
 /** The pages a task like it would read. */
 function samplePages(task: RunTask | null): string[] {
   const jobId = task ? taskJob(task) : null;
-  if (!jobId || (task?.skill !== 'focused-resume' && task?.skill !== 'fit-check')) return [];
+  if (!jobId || (task?.skill !== 'focused-resume' && task?.skill !== 'analyze-job')) return [];
   const site = `https://www.${(jobId.split('--')[0] ?? jobId).replaceAll('-', '')}.com`;
   return [`${site}/about`, `${site}/blog/platform-team`];
 }

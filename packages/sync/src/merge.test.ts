@@ -51,6 +51,15 @@ describe('mergeRows', () => {
     expect(merged.on_date).toBe('2026-10-22');
   });
 
+  it('keeps a row the server took first whole, never one column from each', () => {
+    // A computer took over a claim that had lapsed, as its owner came back and renewed it.
+    const claim = { device: 'mac', until: '2026-10-26T10:10:00.000Z', own: 1 };
+    const mine = { device: 'pc', until: '2026-10-26T10:22:00.000Z', own: 1 };
+    const theirs = { ...claim, until: '2026-10-26T10:20:00.000Z' };
+    expect(mergeRows(claim, mine, theirs, { whole: true }, 'Mac')).toEqual(theirs);
+    expect(mergeRows(null, mine, theirs, { whole: true }, 'Mac')).toEqual(theirs);
+  });
+
   it('keeps both notes when both changed them', () => {
     const mine = { ...base, notes: 'Recruiter: Sam. Salary band shared.' };
     const theirs = { ...base, notes: 'Referred by Priya' };

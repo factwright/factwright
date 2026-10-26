@@ -131,6 +131,34 @@ afterEach(() => {
   rmSync(root, { recursive: true, force: true });
 });
 
+describe('log_check', () => {
+  it('names the job a fit check is for, and tells the run it finished that job', async () => {
+    const analyzed = vi.fn();
+    const call = { ...newCall('hunt'), analyzed };
+    const row = { company: 'Acme Robotics', role: 'Staff Engineer', verdict: 'Strong', score: 82 };
+    await tool('log_check').run(
+      { log: 'fit-checks', row: { ...row, job: 'acme-robotics--staff-engineer' } },
+      call,
+    );
+    expect(analyzed).toHaveBeenCalledWith('acme-robotics--staff-engineer');
+    const log = readFileSync(join(root, 'searches', 'fit-checks.md'), 'utf8');
+    expect(log).toContain('| Strong | 82 |  |  |  | acme-robotics--staff-engineer |');
+    // A job that isn't on file is a mistake to fix, not a row to write.
+    await expect(
+      tool('log_check').run({ log: 'fit-checks', row: { ...row, job: 'gone--job' } }, call),
+    ).rejects.toThrow('Nothing on file for gone--job.');
+    // A salary check counts nothing.
+    await tool('log_check').run(
+      {
+        log: 'salary-checks',
+        row: { company: 'Acme Robotics', role: 'Staff Engineer', estimate: '$200k' },
+      },
+      call,
+    );
+    expect(analyzed).toHaveBeenCalledOnce();
+  });
+});
+
 it('gives revision_findings only to the run started for the revision', async () => {
   const findings = tool('revision_findings');
   expect(await findings.run({}, newCall('hunt'))).toMatch(
@@ -430,6 +458,34 @@ describe('a call’s prep sheet and thank-you notes', () => {
 });
 
 describe('job_details', () => {
+  it('gives the details the user set, and the jobs Claude noted might be the same', async () => {
+    const id = 'acme-robotics--staff-engineer';
+    jobs.updateJob(id, { company: 'Acme', location: 'Remote (US)' });
+    const twin = jobs.addJob({
+      company: 'Acme',
+      role: 'Staff Engineer II',
+      link: 'https://x.example/2',
+    });
+    const third = jobs.addJob({ company: 'Acme', role: 'Platform Lead' });
+    if (!twin.ok || !third.ok) throw new Error('not added');
+    jobs.noteMaybeSame(id, twin.jobId, 'Same team');
+    jobs.noteMaybeSame(id, third.jobId, null);
+    jobs.notSame(id, third.jobId);
+    const answer = await tool('job_details').run({ job: id });
+    expect(answer).toContain('## Acme, Staff Engineer');
+    expect(answer).toContain(
+      '- The user’s own details: company “Acme”, place “Remote (US)”. They win over the posting: use them as they are, and never change them. job.md keeps what the posting says, which the app shows again if the user empties theirs.',
+    );
+    expect(answer).toContain(
+      [
+        '- Might be the same job, as noted for the user to merge or not:',
+        `    Acme, Staff Engineer II (job ${twin.jobId}), noted 2026-10-11: Same team`,
+        '- The user said it isn’t the same job as:',
+        `    Acme, Platform Lead (job ${third.jobId})`,
+      ].join('\n'),
+    );
+  });
+
   it('gives everything on file, including the user’s notes, calls and folder', async () => {
     const id = 'acme-robotics--staff-engineer';
     jobs.updateJob(id, {
@@ -1319,6 +1375,44 @@ describe('save_posting', () => {
     );
     expect(fetch).not.toHaveBeenCalled();
     expect(readFileSync(file, 'utf8')).toContain('pasted by the user');
+  });
+
+  it('leaves another job’s folder to it, though it has the same company and title', async () => {
+    const job = 'acme-robotics--staff-engineer';
+    const notes = join(root, 'applications', FOLDER, 'job.md');
+    const posting = join(root, 'applications', FOLDER, 'posting.md');
+    const heading = `# Acme Robotics: Staff Engineer\n\n- **Apply:** Ashby ${ASHBY}\n`;
+    const theirs = 'https://boards.example.com/acme/other';
+    const leftAlone = (why: string) =>
+      `Not saved: ${FOLDER} is another job’s folder: ${why}. Use a folder of this job’s own, ${FOLDER}-2 or the next number that’s free, and save the posting there.`;
+    const kept = `Kept the posting already saved in applications/${FOLDER}/posting.md.`;
+    // Its twin is on file too, saved from another posting.
+    const twin = jobs.addJob({ company: 'Acme Robotics', role: 'Staff Engineer', link: theirs });
+    if (!twin.ok) throw new Error(twin.message);
+    // Another run, analyzing the twin, saved its posting here first.
+    writeFileSync(posting, `# Job posting\n\n- **Source:** ${theirs}\n\n---\n\nTheirs.\n`);
+    expect(await tool('save_posting').run({ url: ASHBY, folder: FOLDER, job })).toBe(
+      leftAlone(`its posting came from ${theirs}, the link of ${twin.jobId}`),
+    );
+    // Once the twin's job.md is written, that names the job it's for.
+    rmSync(posting);
+    writeFileSync(notes, `${heading}- **Job ID:** acme-robotics--staff-engineer-2\n`);
+    expect(await tool('save_posting').run({ url: ASHBY, folder: FOLDER, job })).toBe(
+      leftAlone('its job.md is for acme-robotics--staff-engineer-2'),
+    );
+    expect(fetch).not.toHaveBeenCalled();
+    // The job's own folder keeps its posting, from any of its links, and so does a call that
+    // doesn't name the job, as before.
+    writeFileSync(posting, `# Job posting\n\n- **Source:** ${theirs}\n`);
+    writeFileSync(notes, `${heading}- **Job ID:** ${job}\n`);
+    expect(await tool('save_posting').run({ url: ASHBY, folder: FOLDER, job })).toBe(kept);
+    writeFileSync(notes, heading);
+    expect(await tool('save_posting').run({ url: theirs, folder: FOLDER, job })).toBe(kept);
+    expect(await tool('save_posting').run({ url: ASHBY, folder: FOLDER })).toBe(kept);
+    // A folder from before Job ID lines, whose posting came from a link no job has, such as the
+    // role's own that its board's listing led to, is the job's own still.
+    writeFileSync(posting, '# Job posting\n\n- **Source:** https://jobs.ashbyhq.com/acme/role\n');
+    expect(await tool('save_posting').run({ url: ASHBY, folder: FOLDER, job })).toBe(kept);
   });
 
   it('refuses unsafe fetches, and folders outside the job folders', async () => {

@@ -173,7 +173,6 @@ const SKILLS: Readonly<
     how: 'write a cover letter',
     helpers: { one: 'checking the facts', many: 'checking the facts', kind: 'checking' },
   },
-  'fit-check': { how: 'check a job’s fit' },
   'focused-resume': {
     how: 'tailor a resume',
     helpers: { one: 'checking the facts', many: 'checking the facts', kind: 'checking' },
