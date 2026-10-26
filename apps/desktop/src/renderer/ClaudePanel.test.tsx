@@ -527,12 +527,53 @@ describe('the working strip', () => {
       steps: [{ ...step('Read', 'facts/a.md', 'running', 'b'), helper: 'agent-1' }],
       helpers: [helper('agent-1', 'Fact-check the resume')],
     });
-    expect(sceneOf(checking, 'focused-resume')).toEqual({ kind: 'checking', lanes: 0 });
+    expect(sceneOf(checking, 'focused-resume')).toEqual({ kind: 'checking', lanes: 1 });
     expect(workingLines(checking, 'focused-resume').lead).toBe('A helper is checking the facts…');
-    expect(sceneOf(checking, 'salary-check')).toEqual({ kind: 'reading', lanes: 0 });
+    expect(sceneOf(checking, 'salary-check')).toEqual({ kind: 'reading', lanes: 1 });
     expect(workingLines(checking, 'salary-check').lead).toBe(
       'A helper is on “Fact-check the resume”…',
     );
+  });
+
+  it('says a helper Claude waits for is at work, not that Claude is still starting it', () => {
+    // A helper Claude waits for keeps the call that started it going until it's done.
+    const waiting = activity({
+      steps: [
+        step('Agent', 'Fact-check the resume', 'running', 'a'),
+        { ...step('Read', 'facts/a.md', 'running', 'b'), helper: 'agent-1' },
+      ],
+      helpers: [helper('agent-1', 'Fact-check the resume')],
+    });
+    expect(workingLines(waiting, 'focused-resume').lead).toBe('A helper is checking the facts…');
+    expect(sceneOf(waiting, 'focused-resume')).toEqual({ kind: 'checking', lanes: 1 });
+    // Once it's done, the call says it started one.
+    const back = activity({ steps: [step('Agent', 'Fact-check the resume', 'done', 'a')] });
+    expect(workingLines(back, 'focused-resume')).toMatchObject({
+      lead: 'Thinking…',
+      did: 'Started a helper for “Fact-check the resume”',
+    });
+  });
+
+  it('draws drifting dots beside its words when Claude has gone quiet', () => {
+    const quiet = activity({
+      steps: [step('mcp__factwright__build_resume', null, 'running')],
+      lastAt: Date.now() - QUIET_AFTER_MS - 1000,
+    });
+    const { container } = panel([run('working', { activity: quiet })]);
+    expect(container.querySelector('[data-scene]')?.getAttribute('data-scene')).toBe('thinking');
+    expect(bar().textContent).toContain('No word from Claude for a few minutes.');
+  });
+
+  it('keeps each part of its second line apart, for a screen reader too', () => {
+    const working = activity({
+      steps: [
+        step('Read', 'applications/acme--staff/posting.md', 'done', 'a'),
+        step('Read', 'facts/platform.md', 'running', 'b'),
+      ],
+      todos: list(3, 7),
+    });
+    panel([run('working', { activity: working })]);
+    expect(bar().textContent).toContain('Reading your fact bank… Read the posting');
   });
 
   it('draws the step Claude itself is on, or drifting dots while it thinks', () => {
@@ -542,7 +583,7 @@ describe('the working strip', () => {
     expect(workingLines(activity({}), null)).toEqual({ lead: 'Thinking…', also: [], did: null });
     // Claude both on a step and with a helper: the step first, its helper under it.
     const both = activity({ ...building, helpers: [helper('agent-1')] });
-    expect(sceneOf(both, null).kind).toBe('building');
+    expect(sceneOf(both, null)).toEqual({ kind: 'building', lanes: 1 });
     expect(workingLines(both, null)).toMatchObject({
       lead: 'Building the resume…',
       also: ['A helper is at work'],

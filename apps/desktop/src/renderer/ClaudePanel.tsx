@@ -2,6 +2,7 @@ import { Button, IconButton, Input, Markdown, Notice, VisuallyHidden } from '@fa
 import { ArrowDown, BookCheck, Check, X } from 'lucide-react';
 import { type FormEvent, type ReactNode, useEffect, useId, useState } from 'react';
 import {
+  HELPER_TOOLS,
   helperKind,
   helpersWords,
   type RunStep,
@@ -93,8 +94,9 @@ function useNow(ticking: boolean): number {
 /**
  * What the run's own Claude is doing, in a line: the step it's on, with how the working strip
  * draws it, after the last one it finished, or no step while it thinks between steps, or waits
- * on its helpers. Its helpers' steps are theirs. Steps with nothing worth showing, such as
- * ticking off its to-do list, leave the line as it was.
+ * on its helpers. Its helpers' steps are theirs, and so is a call that starts one, which goes on
+ * for as long as a helper Claude waits for works: the helpers at work say it. Steps with nothing
+ * worth showing, such as ticking off its to-do list, leave the line as it was.
  */
 export function doingLine(steps: readonly RunStep[]): {
   did: string | null;
@@ -106,6 +108,7 @@ export function doingLine(steps: readonly RunStep[]): {
   let kind: StepKind | null = null;
   for (const step of steps) {
     if (step.helper) continue;
+    if (step.state === 'running' && HELPER_TOOLS.includes(step.tool)) continue;
     const words = stepWords(step);
     if (!words) continue;
     if (step.state === 'done') did = words.did;
@@ -138,12 +141,13 @@ function helperStepKind(steps: readonly RunStep[], helper: string): StepKind | n
  */
 export function sceneOf(activity: RunActivity, skill: string | null): Scene {
   const { helpers, steps } = activity;
-  if (helpers.length > 1) return { kind: 'helpers', lanes: helpers.length };
+  const lanes = helpers.length;
+  if (lanes > 1) return { kind: 'helpers', lanes };
   const own = doingLine(steps);
-  if (own.doing) return { kind: own.kind ?? 'thinking', lanes: 0 };
+  if (own.doing) return { kind: own.kind ?? 'thinking', lanes };
   const [helper] = helpers;
-  if (!helper) return { kind: 'thinking', lanes: 0 };
-  return { kind: helperKind(skill) ?? helperStepKind(steps, helper.id) ?? 'thinking', lanes: 0 };
+  if (!helper) return { kind: 'thinking', lanes };
+  return { kind: helperKind(skill) ?? helperStepKind(steps, helper.id) ?? 'thinking', lanes };
 }
 
 /**
@@ -454,13 +458,14 @@ function RunBar({
 
   let text: ReactNode;
   let action: ReactNode = null;
-  // While Claude starts and works, the bar is a working strip, with a picture of its step.
+  // While Claude starts and works, the bar is a working strip, with a picture of its step, or of
+  // Claude thinking while it starts, or has said nothing for a while.
   const scene: Scene | null =
-    shown === 'starting'
-      ? { kind: 'thinking', lanes: 0 }
-      : shown === 'working'
-        ? sceneOf(activity, view.task?.skill ?? null)
-        : null;
+    aside || (shown !== 'starting' && shown !== 'working')
+      ? null
+      : shown === 'starting' || quiet
+        ? { kind: 'thinking', lanes: 0 }
+        : sceneOf(activity, view.task?.skill ?? null);
   if (shown === 'in-line') {
     text = lineWords(view.waits, claude.atOnce, view.task !== null && 'jobId' in view.task);
   } else if (aside) {
@@ -480,21 +485,22 @@ function RunBar({
         : 'Claude Code is asking for your OK.'
       : 'Claude Code is asking you something in its work below.';
   } else if (shown === 'starting') {
-    text = 'Your Claude is starting…';
+    text = <span>Your Claude is starting…</span>;
   } else if (shown === 'ready') {
     text = 'Your Claude is ready. Type what you’d like in its work below.';
   } else if (shown === 'working') {
     const { lead, also, did } = workingLines(activity, view.task?.skill ?? null);
     text = quiet ? (
-      'No word from Claude for a few minutes. Show its work to see where it is.'
+      <span>No word from Claude for a few minutes. Show its work to see where it is.</span>
     ) : (
       <>
         <span className={styles.doing}>{lead}</span>
         {(also.length > 0 || did) && (
           <span className={styles.also}>
+            {/* Each part ends with a space, so a screen reader doesn't run them together. */}
             {also.map((each) => (
               <span key={each} className={styles.alsoPart}>
-                {each}
+                {each}{' '}
               </span>
             ))}
             {did && (

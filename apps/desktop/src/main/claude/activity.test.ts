@@ -344,13 +344,58 @@ describe('RunActivity’s to-do list and helpers', () => {
         { id: 'main-1', type: 'subagent', agent_type: 'main-session', status: 'running' },
       ],
     });
+    // Claude Code says what Claude asked of the one the app knew only by its calls.
     expect(now().helpers).toEqual([
-      { id: 'agent-x', what: null },
+      { id: 'agent-x', what: 'Read listings' },
       { id: 'agent-z', what: 'Read the board' },
     ]);
     // A Stop from a Claude Code that doesn't say leaves them be.
     activity.hear({ hook_event_name: 'Stop' });
     expect(now().helpers).toHaveLength(2);
+  });
+
+  it('brings a helper back that Claude sends back to work, as Claude Code says', () => {
+    const { activity, now } = run();
+    ran(
+      activity,
+      'Agent',
+      { description: 'Read the posting' },
+      { status: 'async_launched', agentId: 'agent-a1' },
+    );
+    activity.hear({ hook_event_name: 'SubagentStop', agent_id: 'agent-a1', agent_type: 'x' });
+    expect(now().helpers).toEqual([]);
+    // Claude sends it a message, and it starts again.
+    activity.hear({ hook_event_name: 'SubagentStart', agent_id: 'agent-a1', agent_type: 'x' });
+    expect(now().helpers).toEqual([{ id: 'agent-a1', what: null }]);
+    activity.hear({ hook_event_name: 'SubagentStop', agent_id: 'agent-a1', agent_type: 'x' });
+    // And one Claude Code says is at work as a turn ends is, whatever the app took it for.
+    activity.hear({
+      hook_event_name: 'Stop',
+      background_tasks: [
+        { id: 'agent-a1', type: 'subagent', status: 'running', description: 'Read it again' },
+      ],
+    });
+    expect(now().helpers).toEqual([{ id: 'agent-a1', what: 'Read it again' }]);
+  });
+
+  it('starts a new list once every item on the last one is done, as Claude Code does', () => {
+    const { activity, now } = run();
+    const create = (id: string, subject: string) =>
+      ran(activity, 'TaskCreate', { subject, description: '…' }, { task: { id, subject } });
+    const update = (taskId: string, status: string) =>
+      ran(activity, 'TaskUpdate', { taskId, status }, { success: true });
+    create('1', 'Read the posting');
+    create('2', 'Write the resume');
+    update('1', 'completed');
+    update('2', 'completed');
+    // A follow-up's list goes on from Claude Code's last ID.
+    create('3', 'Shorten the summary');
+    create('4', 'Build it again');
+    update('3', 'in_progress');
+    expect(now().todos).toEqual([
+      { text: 'Shorten the summary', doing: null, state: 'in_progress' },
+      { text: 'Build it again', doing: null, state: 'pending' },
+    ]);
   });
 });
 

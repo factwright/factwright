@@ -141,9 +141,9 @@ const TOOL_KINDS: Readonly<Record<string, StepKind>> = {
 };
 
 /**
- * Factwright's skills, by name: what each one is how to do, as reading it says, and what a run's
- * helpers do for it, one and several, where its helpers always do the same, such as checking a
- * resume's facts against the fact bank, with how the working strip draws one helper at that.
+ * Factwright's skills, by name. For each: what it teaches Claude to do, for "Reading how to tailor
+ * a resume". For a skill whose helpers always do the same job, such as checking a resume's facts:
+ * that job, for one helper and for several, and the picture of one helper at it.
  */
 const SKILLS: Readonly<
   Record<string, { how: string; helpers?: { one: string; many: string; kind?: StepKind } }>
@@ -191,9 +191,6 @@ const skillName = (name: string) => name.replace(/^factwright:/, '');
 
 /** The tool that starts a helper: Agent, or Task, as Claude Code named it before. */
 export const HELPER_TOOLS = ['Agent', 'Task'];
-
-/** The tools Claude keeps its to-do list with: TodoWrite, or the Task tools that replaced it. */
-export const TODO_TOOLS = ['TodoWrite', 'TaskCreate', 'TaskUpdate', 'TaskList', 'TaskGet'];
 
 /** A job's files, by name, as reading them and writing them. */
 const JOB_FILES: Readonly<Record<string, readonly [StepWords, StepWords]>> = {

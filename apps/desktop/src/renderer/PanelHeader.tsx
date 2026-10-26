@@ -105,7 +105,9 @@ export function PanelHeader({
           }
           onClick={() => onShowWork(!workShown)}
         >
-          {workShown ? 'Hide Claude’s work' : 'Show Claude’s work'}
+          <span className={styles.workLabel}>
+            {workShown ? 'Hide Claude’s work' : 'Show Claude’s work'}
+          </span>
         </Button>
       )}
       {stoppable ? (

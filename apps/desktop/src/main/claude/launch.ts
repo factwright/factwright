@@ -27,8 +27,9 @@ export interface LaunchOptions {
 }
 
 /**
- * What every run asks of Claude Code through its environment: the to-do list Claude keeps, which
- * Claude Code leaves out on its newest models, so the working strip can say "Step 3 of 7".
+ * What every run asks of Claude Code through its environment, unless the user set it themselves:
+ * the to-do list Claude keeps, which Claude Code leaves out on its newest models, so the working
+ * strip can say "Step 3 of 7".
  */
 export const RUN_VARIABLES: Readonly<Record<string, string>> = {
   CLAUDE_CODE_ENABLE_TODO_TOOLS: '1',
@@ -151,3 +152,9 @@ export function launchEnv(base: NodeJS.ProcessEnv, path: string): NodeJS.Process
     ...(profileFolder && { CLAUDE_CONFIG_DIR: profileFolder }),
   };
 }
+
+/** A run's environment: launchEnv's, with what every run asks of Claude Code, unless set. */
+export const runEnv = (base: NodeJS.ProcessEnv, path: string): NodeJS.ProcessEnv => ({
+  ...RUN_VARIABLES,
+  ...launchEnv(base, path),
+});

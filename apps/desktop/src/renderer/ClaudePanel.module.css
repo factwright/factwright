@@ -54,9 +54,14 @@
   }
 }
 
+/* In a narrow bar, it takes no more than a third, so what Claude is doing keeps room. */
 .title {
+  flex: none;
+  max-width: 32cqw;
+  overflow: hidden;
   font-size: var(--fw-text-md);
   font-weight: 600;
+  text-overflow: ellipsis;
 }
 
 .hint {
@@ -101,9 +106,8 @@
   font-size: 12.5px;
 }
 
-.alsoPart,
-.did {
-  margin-right: 12px;
+.alsoPart {
+  margin-right: 8px;
 }
 
 .didMark {
@@ -130,6 +134,18 @@
 @container (max-width: 1100px) {
   .plan {
     display: none;
+  }
+}
+
+/* Narrower still, Show Claude's work is its arrow alone, and its words are for screen readers. */
+@container (max-width: 760px) {
+  .workLabel {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
   }
 }
 

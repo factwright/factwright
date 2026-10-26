@@ -177,14 +177,15 @@ test('shows where a run is in its working strip: its step on Claude’s to-do li
   const typing = claudePanel().locator('[data-shown] .xterm-helper-textarea');
   await typing.pressSequentially('plan it with helpers');
   await typing.press('Enter');
+  // Its turn is over, but with its helpers at work, the run isn't done.
   await expect
     .poll(() => terminalText(window))
     .toContain('Two helpers are filtering the listings.');
+  await expect(status).toHaveText('Working');
   await expect(claudePanel()).toContainText('Step 2 of 3: Filtering the listings');
   await expect(claudePanel()).toContainText('2 helpers going through the jobs');
-  await expect(claudePanel().locator('[data-scene="helpers"]')).toBeVisible();
-  // Its turn is over, but with its helpers at work, the run isn't done.
-  await expect(status).toHaveText('Working');
+  // Its picture, which a narrow bar leaves out for the words.
+  await expect(claudePanel().locator('[data-scene]')).toHaveAttribute('data-scene', 'helpers');
   // They're back, Claude finishes the list, and the run is done, with no strip.
   await typing.pressSequentially('go on');
   await typing.press('Enter');

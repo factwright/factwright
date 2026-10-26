@@ -17,7 +17,7 @@ import { asksNothing, asksNothingAfter } from '../policy.ts';
 import { RunActivity, turnEnd } from './activity.ts';
 import { claudeCommand } from './command.ts';
 import { findClaude, nodeFindDeps } from './find.ts';
-import { buildLaunchArgs, launchEnv, RUN_VARIABLES } from './launch.ts';
+import { buildLaunchArgs, runEnv } from './launch.ts';
 import { keepBefore, type TaskChanges } from './run-changes.ts';
 import type { PermissionAsker, QuestionAsker, RunServer } from './run-server.ts';
 import { FIRST_RUN_SCREENS, ScreenWatch, TRUST_QUESTION } from './screen.ts';
@@ -109,7 +109,7 @@ export async function prepareLaunch(options: LaunchOptions): Promise<Launch | nu
     args: command.verbatim ? command.args.join(' ') : command.args,
     cwd: workspace,
     // The token reaches Claude Code's hooks and tool calls through its environment, never a file.
-    env: { ...launchEnv(process.env, path), ...RUN_VARIABLES, [RUN_TOKEN_VARIABLE]: token },
+    env: { ...runEnv(process.env, path), [RUN_TOKEN_VARIABLE]: token },
     token,
     files: [settings, mcpConfig],
     levels,

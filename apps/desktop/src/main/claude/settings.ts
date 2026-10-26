@@ -137,10 +137,11 @@ function allowed(scope: RunScope): string[] {
  *   than through Factwright's fact tools
  * - hooks that tell the app, over HTTP on this computer, where the run stands, what the user
  *   answers Claude's questions, which Claude calls the tools that file the answers, when each of
- *   Claude's helpers starts and ends, and when the session ends, which the self-test listens for. The ones for Claude's questions and Claude
- *   Code's permission prompts wait while the user answers them in the app's dialogs. Another
- *   hears each tool call as it starts, on a path of its own, so the window can say what Claude
- *   is doing, and the app keeps each file as it was before Claude changes it.
+ *   Claude's helpers starts and ends, and when the session ends, which the self-test listens
+ *   for. The ones for Claude's questions and Claude Code's permission prompts wait while the
+ *   user answers them in the app's dialogs. Another hears each tool call as it starts, on a path
+ *   of its own, so the window can say what Claude is doing, and the app keeps each file as it
+ *   was before Claude changes it.
  */
 export function sessionSettings({
   hookUrl,

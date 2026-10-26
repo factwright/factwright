@@ -17,7 +17,10 @@ const MAX_SAID = 4000;
 /** The most of an item's words on Claude's to-do list that the window gets. */
 const MAX_TODO_WORDS = 200;
 
-/** The most items of Claude's to-do list that the window gets, and of its helpers at work. */
+/**
+ * The most items of Claude's to-do list that the window gets, the first, and of its helpers at
+ * work, the latest.
+ */
 const MAX_ITEMS = 50;
 
 const TODO_STATES: readonly string[] = ['pending', 'in_progress', 'completed'];
@@ -169,7 +172,10 @@ export class RunActivity {
   private readonly workspace: string;
   private todos: Todo[] = [];
   private helpers: Helper[] = [];
-  /** The helpers that are done, by Claude Code's ID, so a late hook of theirs brings none back. */
+  /**
+   * The helpers that are done, by Claude Code's ID: a call of theirs heard after brings none back.
+   * Claude Code says so when Claude sends one back to work, with another start.
+   */
   private readonly finished = new Set<string>();
   /** Where the task stood when the window last heard, so it hears only of a change. */
   private told = JSON.stringify({ todos: [], helpers: [] });
@@ -219,7 +225,10 @@ export class RunActivity {
       if (HELPER_TOOLS.includes(failed.tool)) this.drop((each) => each.call === failed.id);
     } else {
       const agent = typeof fields.agent_id === 'string' && fields.agent_id ? fields.agent_id : null;
-      if (fields.hook_event_name === 'SubagentStart' && agent) this.heardFrom(agent);
+      if (fields.hook_event_name === 'SubagentStart' && agent) {
+        this.finished.delete(agent);
+        this.heardFrom(agent);
+      }
       if (fields.hook_event_name === 'SubagentStop' && agent) {
         this.finished.add(agent);
         this.drop((each) => each.agent === agent);
@@ -253,9 +262,9 @@ export class RunActivity {
   }
 
   /**
-   * A helper heard from, by Claude Code's ID for it: as it starts, or by a call of its own. One
-   * the app hasn't placed is taken for the oldest start Claude Code hasn't said the ID of, until
-   * it does, or else as one at work.
+   * Claude Code names a helper, by its ID, as the helper starts or makes a call. A name the app
+   * doesn't know yet goes to the oldest helper Claude started without one, until the call that
+   * started it says whose it is. With none such, it's a helper of its own.
    */
   private heardFrom(agent: string): void {
     if (this.finished.has(agent) || this.helpers.some((each) => each.agent === agent)) return;
@@ -292,16 +301,18 @@ export class RunActivity {
   }
 
   /**
-   * The helpers Claude Code says are still at work as a turn ends, which is the whole of them: no
-   * call of the run's own Claude goes on past its turn, so the rest are done. One the app missed
-   * the start of is at work too. A helper the app takes for done that isn't comes back with its
-   * next call.
+   * The helpers Claude Code says are still at work as a turn ends, which is all of them: no call
+   * of the run's own Claude goes on past its turn, so the rest are done. Its word wins, for one
+   * the app missed the start of, or took for done, and it says what Claude asked of each. A helper
+   * the app lets go here that's still at work comes back with its next call.
    */
   private stillAtWork(atWork: ReadonlyMap<string, string | null>): void {
     this.helpers = this.helpers.filter((each) => each.agent !== null && atWork.has(each.agent));
     for (const [agent, what] of atWork) {
-      if (this.finished.has(agent) || this.helpers.some((each) => each.agent === agent)) continue;
-      this.helpers = [...this.helpers, { call: null, agent, what }].slice(-MAX_ITEMS);
+      this.finished.delete(agent);
+      const known = this.helpers.find((each) => each.agent === agent);
+      if (known) known.what ??= what;
+      else this.helpers = [...this.helpers, { call: null, agent, what }].slice(-MAX_ITEMS);
     }
   }
 
@@ -330,9 +341,10 @@ export class RunActivity {
       const id = textIn(task?.id, MAX_WORDS);
       const item = todoItem(input.subject ?? task?.subject, input.activeForm, 'pending');
       if (!id || !item) return;
-      this.todos = [...this.todos.filter((todo) => todo.id !== id), { ...item, id }].slice(
-        -MAX_ITEMS,
-      );
+      // Claude Code clears a list once every item on it is done, so a new item then starts a new
+      // list, as for a follow-up.
+      const kept = this.todos.every((todo) => todo.state === 'completed') ? [] : this.todos;
+      this.todos = [...kept.filter((todo) => todo.id !== id), { ...item, id }].slice(0, MAX_ITEMS);
       return;
     }
     if (tool === 'TaskUpdate') {

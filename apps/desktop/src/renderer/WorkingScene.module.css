@@ -11,6 +11,13 @@
   display: block;
 }
 
+/* In a narrow bar, the words about what Claude is doing matter more than the picture. */
+@container (max-width: 720px) {
+  .scene {
+    display: none;
+  }
+}
+
 /* Lines of text, and what's drawn on paper. */
 .faint {
   fill: var(--fw-accent);

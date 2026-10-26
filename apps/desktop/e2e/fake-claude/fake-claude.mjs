@@ -212,7 +212,6 @@ async function planWithHelpers() {
     });
     await claudeCall(reading(agent), null, { going: true });
   }
-  show('Two helpers are filtering the listings.\n> ');
   await hook('Stop', {
     last_assistant_message: 'Two helpers are filtering the listings.',
     background_tasks: helpers.map(([id, description]) => ({
@@ -224,6 +223,8 @@ async function planWithHelpers() {
     })),
     session_crons: [],
   });
+  // Said once the app has heard the turn end, so a test that reads it sees where that left the run.
+  show('Two helpers are filtering the listings.\n> ');
   await nextLine();
   for (const [agent] of helpers) {
     await hook('PostToolUse', { ...reading(agent), tool_response: { type: 'text' } });
