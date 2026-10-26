@@ -10,7 +10,6 @@ import {
   type StepWords,
   stepKind,
   stepWords,
-  todoAt,
   todoWords,
 } from '../shared/activity.ts';
 import type { FactwrightApi, RunPhase, RunView } from '../shared/api.ts';
@@ -160,7 +159,7 @@ export function workingLines(
   skill: string | null,
 ): { lead: string; also: string[]; did: string | null } {
   const { did, doing } = doingLine(activity.steps);
-  const step = todoWords(activity.todos);
+  const step = todoWords(activity.todo);
   const helpers = helpersWords(activity.helpers, skill);
   if (step) {
     const now = doing ?? helpers ?? 'Thinking…';
@@ -284,7 +283,7 @@ export function ClaudePanel({
           id: each.id,
           title,
           state,
-          step: todoAt(activity.todos),
+          step: activity.todo,
         }))
       : null;
   // A task in line has no work to show yet.

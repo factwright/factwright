@@ -37,7 +37,7 @@ const terminalOf = (runId = 'run-1') =>
 /** Whether the run's terminal was last drawn outlined, as waiting on the user. */
 const outlined = (runId = 'run-1') => terminalOf(runId)?.attention === true;
 
-const NOTHING: RunActivity = { steps: [], lastAt: null, end: null, todos: [], helpers: [] };
+const NOTHING: RunActivity = { steps: [], lastAt: null, end: null, todo: null, helpers: [] };
 
 /** A run as the app says it stands: a tailored resume, a minute and a half in. */
 const view = (phase: RunPhase, changed: Partial<RunView> = {}): RunView => ({
@@ -467,17 +467,12 @@ describe('doingLine', () => {
 
 describe('the working strip', () => {
   const helper = (id: string, what: string | null = null) => ({ id, what });
-  const list = (on: number, of: number) =>
-    Array.from({ length: of }, (_, at) => ({
-      text: `Do part ${at + 1}`,
-      doing: `Doing part ${at + 1}`,
-      state:
-        at < on - 1
-          ? ('completed' as const)
-          : at === on - 1
-            ? ('in_progress' as const)
-            : ('pending' as const),
-    }));
+  /** Claude on step `at` of a to-do list of `of`. */
+  const onStep = (at: number, of: number) => ({
+    at,
+    of,
+    item: { text: `Do part ${at}`, doing: `Doing part ${at}`, state: 'in_progress' as const },
+  });
   const activity = (changed: Partial<RunActivity>): RunActivity => ({
     ...NOTHING,
     lastAt: Date.now(),
@@ -490,7 +485,7 @@ describe('the working strip', () => {
         step('Read', 'applications/acme--staff/posting.md', 'done', 'a'),
         step('Read', 'facts/platform.md', 'running', 'b'),
       ],
-      todos: list(3, 7),
+      todo: onStep(3, 7),
     });
     expect(workingLines(working, 'focused-resume')).toEqual({
       lead: 'Step 3 of 7: Doing part 3',
@@ -516,7 +511,7 @@ describe('the working strip', () => {
     });
     expect(sceneOf(helping, 'analyze-job')).toEqual({ kind: 'helpers', lanes: 4 });
     // With a to-do list, under the step it's on.
-    expect(workingLines({ ...helping, todos: list(2, 3) }, 'job-search')).toMatchObject({
+    expect(workingLines({ ...helping, todo: onStep(2, 3) }, 'job-search')).toMatchObject({
       lead: 'Step 2 of 3: Doing part 2',
       also: ['4 helpers going through the jobs'],
     });
@@ -570,7 +565,7 @@ describe('the working strip', () => {
         step('Read', 'applications/acme--staff/posting.md', 'done', 'a'),
         step('Read', 'facts/platform.md', 'running', 'b'),
       ],
-      todos: list(3, 7),
+      todo: onStep(3, 7),
     });
     panel([run('working', { activity: working })]);
     expect(bar().textContent).toContain('Reading your fact bank… Read the posting');
@@ -594,14 +589,14 @@ describe('the working strip', () => {
     const { container } = panel([run('starting')]);
     expect(container.querySelector('[data-scene]')?.getAttribute('data-scene')).toBe('thinking');
     cleanup();
-    const done = panel([run('done', { activity: activity({ todos: list(2, 3) }) })]);
+    const done = panel([run('done', { activity: activity({ todo: onStep(2, 3) }) })]);
     expect(done.container.querySelector('[data-scene]')).toBeNull();
     expect(bar().textContent).not.toContain('Step 2 of 3');
   });
 
   it('gives a run at work on a to-do list its step in its tab', () => {
     panel([
-      run('working', { activity: activity({ todos: list(3, 7) }) }),
+      run('working', { activity: activity({ todo: onStep(3, 7) }) }),
       run(
         'working',
         { title: 'Globex · Cover letter' },

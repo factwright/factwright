@@ -152,9 +152,11 @@ const nextLine = () =>
 /**
  * As Claude does with a task in several steps and helpers: a to-do list with the Task tools, then
  * two helpers in the background, each on a step of its own, and a turn that ends while they work,
- * as Claude Code's does. They're back, and Claude finishes, once the user types another line.
+ * as Claude Code's does, or that ends in an error, whose StopFailure says nothing of them. They're
+ * back, Claude Code wakes Claude with their report, and Claude finishes, once the user types
+ * another line.
  */
-async function planWithHelpers() {
+async function planWithHelpers({ failing = false } = {}) {
   const items = [
     ['Read the posting', 'Reading the posting'],
     ['Filter the listings', 'Filtering the listings'],
@@ -212,24 +214,39 @@ async function planWithHelpers() {
     });
     await claudeCall(reading(agent), null, { going: true });
   }
-  await hook('Stop', {
-    last_assistant_message: 'Two helpers are filtering the listings.',
-    background_tasks: helpers.map(([id, description]) => ({
-      id,
-      type: 'subagent',
-      status: 'running',
-      description,
-      agent_type: 'general-purpose',
-    })),
-    session_crons: [],
-  });
+  if (failing) {
+    await hook('StopFailure', {
+      error: 'server_error',
+      error_details: 'Internal server error',
+      last_assistant_message: 'API Error: 500 Internal server error',
+    });
+  } else {
+    await hook('Stop', {
+      last_assistant_message: 'Two helpers are filtering the listings.',
+      background_tasks: helpers.map(([id, description]) => ({
+        id,
+        type: 'subagent',
+        status: 'running',
+        description,
+        agent_type: 'general-purpose',
+      })),
+      session_crons: [],
+    });
+  }
   // Said once the app has heard the turn end, so a test that reads it sees where that left the run.
-  show('Two helpers are filtering the listings.\n> ');
+  show(
+    failing
+      ? 'API Error: 500 Internal server error\n> '
+      : 'Two helpers are filtering the listings.\n> ',
+  );
   await nextLine();
   for (const [agent] of helpers) {
     await hook('PostToolUse', { ...reading(agent), tool_response: { type: 'text' } });
     await hook('SubagentStop', { agent_id: agent, agent_type: 'general-purpose' });
   }
+  await hook('UserPromptSubmit', {
+    prompt: '<task-notification>Both helpers are done.</task-notification>',
+  });
   await update('2', 'completed');
   await update('3', 'in_progress');
   await update('3', 'completed');
@@ -723,8 +740,8 @@ async function work(text) {
     );
     show('\n');
   }
-  if (text === 'plan it with helpers') {
-    await planWithHelpers();
+  if (text === 'plan it with helpers' || text === 'plan it with helpers, then fail') {
+    await planWithHelpers({ failing: text.endsWith(', then fail') });
     return;
   }
   // A turn the user interrupts runs no Stop hook: Claude Code says it's waiting for them, later.

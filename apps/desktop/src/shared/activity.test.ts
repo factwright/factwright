@@ -151,27 +151,28 @@ describe('stepKind', () => {
   });
 });
 
-describe('todoWords', () => {
+describe('todoAt and todoWords', () => {
   const list = (...states: TodoState[]): TodoItem[] =>
     states.map((state, at) => ({ text: `Do ${at + 1}`, doing: `Doing ${at + 1}`, state }));
+  const words = (todos: TodoItem[]) => todoWords(todoAt(todos));
 
   it('says the step Claude is on, by its place in the list, in the words it says while on it', () => {
     const todos = list('completed', 'completed', 'in_progress', 'pending');
     expect(todoAt(todos)).toMatchObject({ at: 3, of: 4 });
-    expect(todoWords(todos)).toBe('Step 3 of 4: Doing 3');
+    expect(words(todos)).toBe('Step 3 of 4: Doing 3');
     expect(
-      todoWords([{ text: 'Read it', doing: null, state: 'in_progress' }, ...list('pending')]),
+      words([{ text: 'Read it', doing: null, state: 'in_progress' }, ...list('pending')]),
     ).toBe('Step 1 of 2: Read it');
   });
 
   it('says the next step between two, in its own words', () => {
-    expect(todoWords(list('completed', 'pending', 'pending'))).toBe('Step 2 of 3: Do 2');
+    expect(words(list('completed', 'pending', 'pending'))).toBe('Step 2 of 3: Do 2');
   });
 
   it('says nothing of a list of one, or one that’s done', () => {
-    expect(todoWords([])).toBeNull();
-    expect(todoWords(list('in_progress'))).toBeNull();
-    expect(todoWords(list('completed', 'completed'))).toBeNull();
+    expect(words([])).toBeNull();
+    expect(words(list('in_progress'))).toBeNull();
+    expect(words(list('completed', 'completed'))).toBeNull();
   });
 });
 

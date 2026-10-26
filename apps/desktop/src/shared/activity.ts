@@ -49,9 +49,23 @@ export interface RunHelper {
   what: string | null;
 }
 
-/** Where a run's task stands beyond its steps: Claude's to-do list, and its helpers at work. */
+/**
+ * Where Claude is on its to-do list: the item it's on, or else the next one to do, by its place
+ * on the list, counting from 1, and how many items the list has.
+ */
+export interface TodoAt {
+  at: number;
+  of: number;
+  item: TodoItem;
+}
+
+/**
+ * Where a run's task stands beyond its steps: where Claude is on its to-do list, however long the
+ * list, and its helpers at work.
+ */
 export interface RunProgress {
-  todos: TodoItem[];
+  /** Null without a list of two or more, or once every item on it is done. */
+  todo: TodoAt | null;
   helpers: RunHelper[];
 }
 
@@ -367,13 +381,10 @@ export function stepKind({ tool }: Pick<RunStep, 'tool'>): StepKind | null {
 }
 
 /**
- * Where Claude is on its to-do list: the item it's on, or else the next one to do, by its place
- * in the list, counting from 1, and how many there are. Null for a list of fewer than two, or
- * once every item is done.
+ * Where Claude is on its to-do list. Null for a list of fewer than two, or once every item is
+ * done.
  */
-export function todoAt(
-  todos: readonly TodoItem[],
-): { at: number; of: number; item: TodoItem } | null {
+export function todoAt(todos: readonly TodoItem[]): TodoAt | null {
   if (todos.length < 2) return null;
   const on = todos.findIndex(({ state }) => state === 'in_progress');
   const at = on >= 0 ? on : todos.findIndex(({ state }) => state === 'pending');
@@ -386,8 +397,7 @@ export function todoAt(
  * the summary": the item it's on, in the words it says while it's on it, or else the next one to
  * do, in its own.
  */
-export function todoWords(todos: readonly TodoItem[]): string | null {
-  const where = todoAt(todos);
+export function todoWords(where: TodoAt | null): string | null {
   if (!where) return null;
   const { at, of, item } = where;
   const words = item.state === 'in_progress' ? (item.doing ?? item.text) : item.text;

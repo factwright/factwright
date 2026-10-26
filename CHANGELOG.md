@@ -27,7 +27,7 @@ Notable changes to Factwright, newest first. The format follows [Keep a Changelo
 ### Fixed
 - On Ashby, a Yes or No that Fill picked could look picked once Ashby's Autofill from resume had read a resume, while Ashby had taken it back, so Submit said it wasn't answered. Fill now puts files in first, waits while a page reads a resume, and checks each choice again a moment later, picking again any the page took back.
 - On iCIMS's posting pages, and Lever's and Ashby's in a company's page, with the job application sites off, the popup offered Save and fill where there's no form yet. It offers Save.
-- A task whose Claude waited on its helpers, working in the background, could read as done until they were back, and let a task in line start early. It reads as working until Claude is done.
+- A task whose Claude waited on its helpers, working in the background, could read as done until they were back, or as not finished if an error ended Claude's turn meanwhile, and let a task in line start early. It reads as working until Claude is done.
 
 ## 0.17.0 - 2026-10-25
 

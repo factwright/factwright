@@ -120,7 +120,7 @@ describe('RunActivity’s to-do list and helpers', () => {
       WORKSPACE,
       (progress) => told.push(progress),
     );
-    return { told, activity, now: () => told.at(-1) ?? { todos: [], helpers: [] } };
+    return { told, activity, now: () => told.at(-1) ?? { todo: null, helpers: [] } };
   };
   let ids = 0;
   /** One of Claude's calls, as it starts and then as it ran, with what it gave back. */
@@ -143,19 +143,20 @@ describe('RunActivity’s to-do list and helpers', () => {
     status,
   });
 
-  it('keeps the to-do list TodoWrite sends, whole, each time', () => {
+  it('keeps the to-do list TodoWrite sends, whole, each time, and tells where Claude is on it', () => {
     const { told, activity, now } = run();
     ran(activity, 'TodoWrite', {
       todos: [todo('Read the posting', 'in_progress'), todo('Write the resume', 'pending')],
     });
-    expect(now().todos).toEqual([
-      { text: 'Read the posting', doing: 'Reading the posting', state: 'in_progress' },
-      { text: 'Write the resume', doing: 'Writing the resume', state: 'pending' },
-    ]);
+    expect(now().todo).toEqual({
+      at: 1,
+      of: 2,
+      item: { text: 'Read the posting', doing: 'Reading the posting', state: 'in_progress' },
+    });
     ran(activity, 'TodoWrite', {
       todos: [todo('Read the posting', 'completed'), todo('Write the resume', 'in_progress')],
     });
-    expect(now().todos.map((each) => each.state)).toEqual(['completed', 'in_progress']);
+    expect(now().todo).toMatchObject({ at: 2, of: 2, item: { text: 'Write the resume' } });
     // The window hears only of a change.
     const heard = told.length;
     ran(activity, 'TodoWrite', {
@@ -191,12 +192,13 @@ describe('RunActivity’s to-do list and helpers', () => {
     );
     ran(activity, 'TaskUpdate', { taskId: '3', status: 'deleted' }, { success: true });
     // One that didn't take changes nothing, nor does one for an item the app never heard of.
-    ran(activity, 'TaskUpdate', { taskId: '1', status: 'pending' }, { success: false });
+    ran(activity, 'TaskUpdate', { taskId: '2', status: 'completed' }, { success: false });
     ran(activity, 'TaskUpdate', { taskId: '9', status: 'completed' }, { success: true });
-    expect(now().todos).toEqual([
-      { text: 'Read the posting', doing: 'Reading the posting', state: 'completed' },
-      { text: 'Write the resume', doing: 'Writing it', state: 'in_progress' },
-    ]);
+    expect(now().todo).toEqual({
+      at: 2,
+      of: 2,
+      item: { text: 'Write the resume', doing: 'Writing it', state: 'in_progress' },
+    });
     // TaskList's whole list settles anything the app missed, keeping what Claude says on each.
     ran(
       activity,
@@ -205,24 +207,97 @@ describe('RunActivity’s to-do list and helpers', () => {
       {
         tasks: [
           { id: '1', subject: 'Read the posting', status: 'completed', blockedBy: [] },
-          { id: '2', subject: 'Write the resume', status: 'completed', blockedBy: [] },
-          { id: '4', subject: 'Build it', status: 'in_progress', blockedBy: [] },
+          { id: '2', subject: 'Write the resume', status: 'in_progress', blockedBy: [] },
+          { id: '4', subject: 'Build it', status: 'pending', blockedBy: [] },
         ],
       },
     );
-    expect(now().todos).toEqual([
-      { text: 'Read the posting', doing: 'Reading the posting', state: 'completed' },
-      { text: 'Write the resume', doing: 'Writing it', state: 'completed' },
-      { text: 'Build it', doing: null, state: 'in_progress' },
-    ]);
+    expect(now().todo).toEqual({
+      at: 2,
+      of: 3,
+      item: { text: 'Write the resume', doing: 'Writing it', state: 'in_progress' },
+    });
   });
 
-  it('keeps only the run’s own Claude’s list, not a helper’s', () => {
+  it('keeps where Claude is on a list however long, and how many items it has', () => {
     const { activity, now } = run();
-    ran(activity, 'TodoWrite', { todos: [todo('Read the posting', 'pending')] }, null, {
-      agent_id: 'agent-a1',
+    const state = (at: number) => (at < 54 ? 'completed' : at === 54 ? 'in_progress' : 'pending');
+    ran(activity, 'TodoWrite', {
+      todos: Array.from({ length: 60 }, (_, at) => todo(`Read part ${at + 1}`, state(at))),
     });
-    expect(now().todos).toEqual([]);
+    expect(now().todo).toEqual({
+      at: 55,
+      of: 60,
+      item: { text: 'Read part 55', doing: 'Reading part 55', state: 'in_progress' },
+    });
+    const tasks = run();
+    for (let at = 1; at <= 60; at += 1) {
+      const subject = `Read part ${at}`;
+      ran(tasks.activity, 'TaskCreate', { subject }, { task: { id: String(at), subject } });
+    }
+    for (let at = 1; at <= 54; at += 1) {
+      ran(tasks.activity, 'TaskUpdate', { taskId: String(at), status: 'completed' }, {});
+    }
+    ran(tasks.activity, 'TaskUpdate', { taskId: '55', status: 'in_progress' }, {});
+    expect(tasks.now().todo).toMatchObject({ at: 55, of: 60, item: { text: 'Read part 55' } });
+  });
+
+  it('keeps only the run’s own Claude’s list, not one a helper keeps with TodoWrite', () => {
+    const { activity, now } = run();
+    ran(
+      activity,
+      'TodoWrite',
+      { todos: [todo('Read the posting', 'in_progress'), todo('Write the resume', 'pending')] },
+      null,
+      { agent_id: 'agent-a1' },
+    );
+    expect(now().todo).toBeNull();
+  });
+
+  it('leaves a helper’s own items on the Task tools’ list off the run’s, but takes its ticks', () => {
+    const { activity, now } = run();
+    const helper = { agent_id: 'agent-a1' };
+    const create = (id: string, subject: string, extra = {}) =>
+      ran(activity, 'TaskCreate', { subject }, { task: { id, subject } }, extra);
+    const update = (taskId: string, status: string, extra = {}) =>
+      ran(activity, 'TaskUpdate', { taskId, status }, { success: true }, extra);
+    create('1', 'Read the posting');
+    create('2', 'Check the facts');
+    create('3', 'Write the resume');
+    update('1', 'completed');
+    update('2', 'in_progress');
+    // A helper Claude waits for has the Task tools too, and the list is the whole session's.
+    create('4', 'Read the first fact', helper);
+    create('5', 'Read the second fact', helper);
+    update('4', 'in_progress', helper);
+    expect(now().todo).toMatchObject({ at: 2, of: 3, item: { text: 'Check the facts' } });
+    const list = (states: string[]) => ({
+      tasks: [
+        'Read the posting',
+        'Check the facts',
+        'Write the resume',
+        'Read one',
+        'Read two',
+      ].map((subject, at) => ({ id: String(at + 1), subject, status: states[at], blockedBy: [] })),
+    });
+    ran(
+      activity,
+      'TaskList',
+      {},
+      list(['completed', 'in_progress', 'pending', 'in_progress', 'pending']),
+    );
+    expect(now().todo).toMatchObject({ at: 2, of: 3, item: { text: 'Check the facts' } });
+    // Its tick on an item of the run's own Claude's is the run's, as is the list it reads.
+    update('2', 'completed', helper);
+    expect(now().todo).toMatchObject({ at: 3, of: 3, item: { text: 'Write the resume' } });
+    ran(
+      activity,
+      'TaskList',
+      {},
+      list(['completed', 'completed', 'in_progress', 'completed', 'completed']),
+      helper,
+    );
+    expect(now().todo).toMatchObject({ at: 3, of: 3, item: { state: 'in_progress' } });
   });
 
   it('follows a helper in the background from its start until Claude Code says it’s done', () => {
@@ -354,6 +429,38 @@ describe('RunActivity’s to-do list and helpers', () => {
     expect(now().helpers).toHaveLength(2);
   });
 
+  it('keeps a helper in the background at work as a turn ends in an error, which says none', () => {
+    const { activity, now } = run();
+    ran(
+      activity,
+      'Agent',
+      { description: 'Fact-check the resume' },
+      { status: 'async_launched', agentId: 'agent-a1' },
+    );
+    // A start the app never hears the end of, as when a hook of the user's own refuses it.
+    activity.started({
+      hook_event_name: 'PreToolUse',
+      tool_name: 'Agent',
+      tool_use_id: 'toolu_refused',
+      tool_input: { description: 'Read the board' },
+    });
+    expect(now().helpers).toHaveLength(2);
+    activity.hear({ hook_event_name: 'StopFailure', error: 'server_error' });
+    expect(now().helpers).toEqual([{ id: 'agent-a1', what: 'Fact-check the resume' }]);
+    expect(activity.hasHelpersAtWork()).toBe(true);
+    activity.hear({ hook_event_name: 'SubagentStop', agent_id: 'agent-a1', agent_type: 'x' });
+    expect(activity.hasHelpersAtWork()).toBe(false);
+    // A start Claude Code hasn't named a helper for yet isn't one at work.
+    const starting = run();
+    starting.activity.started({
+      hook_event_name: 'PreToolUse',
+      tool_name: 'Agent',
+      tool_use_id: 'toolu_starting',
+      tool_input: { description: 'Read the posting' },
+    });
+    expect(starting.activity.hasHelpersAtWork()).toBe(false);
+  });
+
   it('brings a helper back that Claude sends back to work, as Claude Code says', () => {
     const { activity, now } = run();
     ran(
@@ -392,10 +499,11 @@ describe('RunActivity’s to-do list and helpers', () => {
     create('3', 'Shorten the summary');
     create('4', 'Build it again');
     update('3', 'in_progress');
-    expect(now().todos).toEqual([
-      { text: 'Shorten the summary', doing: null, state: 'in_progress' },
-      { text: 'Build it again', doing: null, state: 'pending' },
-    ]);
+    expect(now().todo).toEqual({
+      at: 1,
+      of: 2,
+      item: { text: 'Shorten the summary', doing: null, state: 'in_progress' },
+    });
   });
 });
 

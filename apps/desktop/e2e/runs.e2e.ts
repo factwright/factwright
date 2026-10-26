@@ -194,3 +194,30 @@ test('shows where a run is in its working strip: its step on Claude’s to-do li
   await claudePanel().getByRole('button', { name: 'Close' }).click();
   await expect(claudePanel()).toHaveCount(0);
 });
+
+test('keeps a run working whose turn ends in an error while its helpers work in the background', async () => {
+  const { window } = opened;
+  await window.getByRole('button', { name: 'Find jobs' }).click();
+  await window
+    .getByRole('dialog', { name: 'Find jobs' })
+    .getByRole('button', { name: /^Search/ })
+    .click();
+  const status = claudePanel().getByRole('status').first();
+  await expect(status).toHaveText('Done');
+  await showWork(window);
+  const typing = claudePanel().locator('[data-shown] .xterm-helper-textarea');
+  await typing.pressSequentially('plan it with helpers, then fail');
+  await typing.press('Enter');
+  // Claude Code's StopFailure says nothing of the helpers, so the ones the app knows of keep the
+  // run working, and nothing says Claude didn't finish.
+  await expect.poll(() => terminalText(window)).toContain('API Error: 500');
+  await expect(status).toHaveText('Working');
+  await expect(claudePanel()).toContainText('2 helpers going through the jobs');
+  await expect(claudePanel()).not.toContainText('didn’t finish');
+  // They're back, Claude Code wakes Claude with their report, and its turn's end is the run done.
+  await typing.pressSequentially('go on');
+  await typing.press('Enter');
+  await expect(status).toHaveText('Done');
+  await claudePanel().getByRole('button', { name: 'Close' }).click();
+  await expect(claudePanel()).toHaveCount(0);
+});

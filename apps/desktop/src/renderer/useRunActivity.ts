@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import type { RunHelper, RunStep, TodoItem, TurnEnd } from '../shared/activity.ts';
+import type { RunHelper, RunStep, TodoAt, TurnEnd } from '../shared/activity.ts';
 import type { FactwrightApi } from '../shared/api.ts';
 
 /** The most steps kept for one task, the latest, however long it runs. */
@@ -16,8 +16,8 @@ export interface RunActivity {
   lastAt: number | null;
   /** How Claude's last turn ended: what it said, or the error that ended it. */
   end: TurnEnd | null;
-  /** The to-do list Claude keeps, each item as it stands now, or none. */
-  todos: readonly TodoItem[];
+  /** Where Claude is on the to-do list it keeps, or null without one. */
+  todo: TodoAt | null;
   /** The helpers at work on the task, in the order Claude started them. */
   helpers: readonly RunHelper[];
 }
@@ -35,7 +35,7 @@ export const NOTHING_DONE: RunActivity = {
   steps: [],
   lastAt: null,
   end: null,
-  todos: [],
+  todo: null,
   helpers: [],
 };
 
@@ -55,8 +55,8 @@ export function useRunActivity(
     const stopSteps = api.onClaudeStep(({ runId, step }) =>
       change(runId, (was) => ({ ...was, steps: merged(was.steps, step), lastAt: Date.now() })),
     );
-    const stopProgress = api.onClaudeProgress(({ runId, progress: { todos, helpers } }) =>
-      change(runId, (was) => ({ ...was, todos, helpers, lastAt: Date.now() })),
+    const stopProgress = api.onClaudeProgress(({ runId, progress: { todo, helpers } }) =>
+      change(runId, (was) => ({ ...was, todo, helpers, lastAt: Date.now() })),
     );
     const stopEnds = api.onClaudeTurnEnd(({ runId, end }) =>
       change(runId, (was) => ({ ...was, end })),

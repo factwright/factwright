@@ -69,24 +69,29 @@ describe('useRunActivity', () => {
     expect(result.current('run-2').steps).toHaveLength(1);
   });
 
-  it('keeps where each run’s task stands: its to-do list and its helpers at work', () => {
+  it('keeps where each run’s task stands: where Claude is on its to-do list, and its helpers at work', () => {
     const { api, step, progress } = fakeApi();
     const { result } = renderHook(() => useRunActivity(api, ['run-1', 'run-2']));
-    expect(result.current('run-1')).toMatchObject({ todos: [], helpers: [] });
-    const todos = [
-      { text: 'Read the posting', doing: 'Reading the posting', state: 'completed' as const },
-      { text: 'Write the resume', doing: 'Writing the resume', state: 'in_progress' as const },
-    ];
+    expect(result.current('run-1')).toMatchObject({ todo: null, helpers: [] });
+    const todo = {
+      at: 2,
+      of: 2,
+      item: {
+        text: 'Write the resume',
+        doing: 'Writing the resume',
+        state: 'in_progress' as const,
+      },
+    };
     act(() => step(read('done')));
-    act(() => progress({ todos, helpers: [{ id: 'agent-a1', what: 'Fact-check it' }] }));
+    act(() => progress({ todo, helpers: [{ id: 'agent-a1', what: 'Fact-check it' }] }));
     expect(result.current('run-1')).toMatchObject({
-      todos,
+      todo,
       helpers: [{ id: 'agent-a1', what: 'Fact-check it' }],
     });
     // Its steps stay as they were, and another run's task is its own.
     expect(result.current('run-1').steps).toEqual([read('done')]);
     expect(result.current('run-2')).toEqual(NOTHING_DONE);
-    act(() => progress({ todos, helpers: [] }));
+    act(() => progress({ todo, helpers: [] }));
     expect(result.current('run-1').helpers).toEqual([]);
   });
 });

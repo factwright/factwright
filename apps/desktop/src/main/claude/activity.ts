@@ -6,6 +6,7 @@ import {
   type TodoItem,
   type TodoState,
   type TurnEnd,
+  todoAt,
 } from '../../shared/activity.ts';
 
 /** The most of a web search's words a step keeps, or of what Claude asked of a helper. */
@@ -17,11 +18,8 @@ const MAX_SAID = 4000;
 /** The most of an item's words on Claude's to-do list that the window gets. */
 const MAX_TODO_WORDS = 200;
 
-/**
- * The most items of Claude's to-do list that the window gets, the first, and of its helpers at
- * work, the latest.
- */
-const MAX_ITEMS = 50;
+/** The most of Claude's helpers at work that the window gets, the latest. */
+const MAX_HELPERS = 50;
 
 const TODO_STATES: readonly string[] = ['pending', 'in_progress', 'completed'];
 
@@ -170,7 +168,13 @@ export class RunActivity {
   private readonly tell: ((progress: RunProgress) => void) | undefined;
   /** The run's workspace, which a file's path is told from. */
   private readonly workspace: string;
+  /** The whole list, however long: the window gets only where Claude is on it. */
   private todos: Todo[] = [];
+  /**
+   * The items Claude's helpers put on the Task tools' list, by ID. The list is the whole
+   * session's, and a helper Claude waits for has the tools too, but its items are its own steps.
+   */
+  private readonly helpersItems = new Set<string>();
   private helpers: Helper[] = [];
   /**
    * The helpers that are done, by Claude Code's ID: a call of theirs heard after brings none back.
@@ -178,7 +182,7 @@ export class RunActivity {
    */
   private readonly finished = new Set<string>();
   /** Where the task stood when the window last heard, so it hears only of a change. */
-  private told = JSON.stringify({ todos: [], helpers: [] });
+  private told = JSON.stringify({ todo: null, helpers: [] });
 
   constructor(
     emit: (step: RunStep) => void,
@@ -198,7 +202,7 @@ export class RunActivity {
     if (call.helper) this.heardFrom(call.helper);
     if (HELPER_TOOLS.includes(call.tool) && !this.helpers.some((each) => each.call === call.id)) {
       this.helpers = [...this.helpers, { call: call.id, agent: null, what: call.detail }].slice(
-        -MAX_ITEMS,
+        -MAX_HELPERS,
       );
     }
     this.tellProgress();
@@ -218,7 +222,7 @@ export class RunActivity {
       this.emit({ ...ran, state: 'done' });
       if (ran.helper) this.heardFrom(ran.helper);
       if (HELPER_TOOLS.includes(ran.tool)) this.launched(ran.id, answerOf(fields.tool_response));
-      else if (!ran.helper) this.listChanged(ran.tool, fieldsOf(fields.tool_input) ?? {}, fields);
+      else this.listChanged(ran, fieldsOf(fields.tool_input) ?? {}, fields);
     } else if (failed) {
       this.emit({ ...failed, state: 'failed' });
       if (failed.helper) this.heardFrom(failed.helper);
@@ -235,8 +239,20 @@ export class RunActivity {
       }
       const atWork = helpersAtWork(event);
       if (atWork) this.stillAtWork(atWork);
+      // A turn that ends in an error doesn't say which are at work, but its end ends every call
+      // of the run's own Claude: one that started a helper Claude Code never named started none.
+      else if (turnEnd(event)) this.drop((each) => each.agent === null);
     }
     this.tellProgress();
+  }
+
+  /**
+   * Whether a helper Claude Code named is still at work, as far as the app knows, such as one
+   * Claude started in the background. For a turn that ends in an error, whose StopFailure hook
+   * doesn't list them, as a Stop hook does.
+   */
+  hasHelpersAtWork(): boolean {
+    return this.helpers.some((each) => each.agent !== null);
   }
 
   /**
@@ -270,7 +286,7 @@ export class RunActivity {
     if (this.finished.has(agent) || this.helpers.some((each) => each.agent === agent)) return;
     const unnamed = this.helpers.find((each) => each.agent === null);
     if (unnamed) unnamed.agent = agent;
-    else this.helpers = [...this.helpers, { call: null, agent, what: null }].slice(-MAX_ITEMS);
+    else this.helpers = [...this.helpers, { call: null, agent, what: null }].slice(-MAX_HELPERS);
   }
 
   /**
@@ -297,7 +313,7 @@ export class RunActivity {
       other.agent = helper.agent;
     }
     helper.agent = agent;
-    if (!mine) this.helpers = [...this.helpers, helper].slice(-MAX_ITEMS);
+    if (!mine) this.helpers = [...this.helpers, helper].slice(-MAX_HELPERS);
   }
 
   /**
@@ -312,7 +328,7 @@ export class RunActivity {
       this.finished.delete(agent);
       const known = this.helpers.find((each) => each.agent === agent);
       if (known) known.what ??= what;
-      else this.helpers = [...this.helpers, { call: null, agent, what }].slice(-MAX_ITEMS);
+      else this.helpers = [...this.helpers, { call: null, agent, what }].slice(-MAX_HELPERS);
     }
   }
 
@@ -321,30 +337,36 @@ export class RunActivity {
   }
 
   /**
-   * A call of the run's own Claude that keeps its to-do list ran: TodoWrite, with the whole list,
-   * or one of the Task tools, which make an item, change one by its ID, or list them all.
+   * A call that keeps a to-do list ran: TodoWrite, with the whole list, or one of the Task tools,
+   * which make an item, change one by its ID, or list them all. TodoWrite keeps a list for each
+   * helper, of its own. The Task tools keep one for the whole session, so a helper's change to an
+   * item on the run's list changes it, but an item a helper makes is its own.
    */
-  private listChanged(tool: string, input: Record<string, unknown>, hook: Record<string, unknown>) {
+  private listChanged(
+    { tool, helper }: Omit<RunStep, 'state'>,
+    input: Record<string, unknown>,
+    hook: Record<string, unknown>,
+  ) {
     const answer = answerOf(hook.tool_response);
     if (tool === 'TodoWrite' && Array.isArray(input.todos)) {
-      this.todos = input.todos
-        .flatMap((todo) => {
-          const each = fieldsOf(todo);
-          const item = todoItem(each?.content, each?.activeForm, each?.status);
-          return item ? [{ ...item, id: null }] : [];
-        })
-        .slice(0, MAX_ITEMS);
+      if (helper) return;
+      this.todos = input.todos.flatMap((todo) => {
+        const each = fieldsOf(todo);
+        const item = todoItem(each?.content, each?.activeForm, each?.status);
+        return item ? [{ ...item, id: null }] : [];
+      });
       return;
     }
     if (tool === 'TaskCreate') {
       const task = fieldsOf(answer?.task);
       const id = textIn(task?.id, MAX_WORDS);
+      if (id && helper) this.helpersItems.add(id);
       const item = todoItem(input.subject ?? task?.subject, input.activeForm, 'pending');
-      if (!id || !item) return;
+      if (!id || !item || helper) return;
       // Claude Code clears a list once every item on it is done, so a new item then starts a new
       // list, as for a follow-up.
       const kept = this.todos.every((todo) => todo.state === 'completed') ? [] : this.todos;
-      this.todos = [...kept.filter((todo) => todo.id !== id), { ...item, id }].slice(0, MAX_ITEMS);
+      this.todos = [...kept.filter((todo) => todo.id !== id), { ...item, id }];
       return;
     }
     if (tool === 'TaskUpdate') {
@@ -365,25 +387,30 @@ export class RunActivity {
       });
       return;
     }
-    // The whole list, as Claude Code keeps it, which settles anything the app missed.
+    // The whole list, as Claude Code keeps it, which settles anything the app missed, less the
+    // helpers' items.
     if (tool === 'TaskList' && Array.isArray(answer?.tasks)) {
       const doing = new Map(this.todos.map((todo) => [todo.id, todo.doing]));
-      this.todos = answer.tasks
-        .flatMap((task) => {
-          const each = fieldsOf(task);
-          const id = textIn(each?.id, MAX_WORDS);
-          const item = id && todoItem(each?.subject, doing.get(id), each?.status);
-          return item ? [{ ...item, id }] : [];
-        })
-        .slice(0, MAX_ITEMS);
+      this.todos = answer.tasks.flatMap((task) => {
+        const each = fieldsOf(task);
+        const id = textIn(each?.id, MAX_WORDS);
+        if (!id || this.helpersItems.has(id)) return [];
+        const item = todoItem(each?.subject, doing.get(id), each?.status);
+        return item ? [{ ...item, id }] : [];
+      });
     }
   }
 
   /** Tells the window where the task stands, when that changed. */
   private tellProgress(): void {
     if (!this.tell) return;
+    const where = todoAt(this.todos);
     const progress: RunProgress = {
-      todos: this.todos.map(({ text, doing, state }) => ({ text, doing, state })),
+      todo: where && {
+        at: where.at,
+        of: where.of,
+        item: { text: where.item.text, doing: where.item.doing, state: where.item.state },
+      },
       helpers: this.helpers.map(({ call, agent, what }) => ({ id: agent ?? call ?? '', what })),
     };
     const now = JSON.stringify(progress);

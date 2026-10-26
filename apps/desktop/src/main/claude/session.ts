@@ -230,13 +230,15 @@ export async function openRun(
   });
   if (!launch) return 'not-ready';
 
-  const signals = new RunSignals(events.signal);
+  const activity = events.step && new RunActivity(events.step, launch.cwd, events.progress);
+  // A turn that ends in an error doesn't say which helpers are still at work, so the app's own
+  // list of them does.
+  const signals = new RunSignals(events.signal, () => activity?.hasHelpersAtWork() ?? false);
   const kept = deps.changes;
   const tellChanges = (view: RunChangesView | null | undefined) => {
     if (view) events.changes?.(view);
   };
   tellChanges(kept?.begin());
-  const activity = events.step && new RunActivity(events.step, launch.cwd, events.progress);
   const trust = new ScreenWatch(TRUST_QUESTION);
   const firstRun = new ScreenWatch(FIRST_RUN_SCREENS);
   let heard = false;

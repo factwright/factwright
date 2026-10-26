@@ -1,5 +1,11 @@
 import { localDate } from '@factwright/core';
-import type { RunProgress, RunStep, TodoItem, TurnEnd } from '../shared/activity.ts';
+import {
+  type RunProgress,
+  type RunStep,
+  type TodoItem,
+  type TurnEnd,
+  todoAt,
+} from '../shared/activity.ts';
 import type {
   ClaudeStatus,
   FactwrightApi,
@@ -846,13 +852,18 @@ export function sampleApi(): FactwrightApi {
       ...(helper && { helper }),
     });
     const done = (step: RunStep): RunStep => ({ ...step, state: 'done' });
-    // A to-do list, in what each item is and what Claude says while it's on it, on the one given.
-    const list = (items: [string, string][], on: number): TodoItem[] =>
-      items.map(([text, doing], i) => ({
-        text,
-        doing,
-        state: i < on ? 'completed' : i === on ? 'in_progress' : 'pending',
-      }));
+    // Where Claude is on a to-do list, given as what each item is and what Claude says while it's
+    // on it: on the one given.
+    const onList = (items: [string, string][], on: number) =>
+      todoAt(
+        items.map(
+          ([text, doing], i): TodoItem => ({
+            text,
+            doing,
+            state: i < on ? 'completed' : i === on ? 'in_progress' : 'pending',
+          }),
+        ),
+      );
     const posting = (jobId: string) => `applications/${jobId}/posting.md`;
     const strips: { task: RunTask; steps: RunStep[]; progress?: RunProgress }[] = [
       {
@@ -887,7 +898,7 @@ export function sampleApi(): FactwrightApi {
           at('Read', 'facts/platform-engineering.md', 'agent-fact-check'),
         ],
         progress: {
-          todos: list(
+          todo: onList(
             [
               ['Set up the folder', 'Setting up the folder'],
               ['Research the company', 'Researching the company'],
@@ -932,7 +943,7 @@ export function sampleApi(): FactwrightApi {
           at('mcp__factwright__find_job', null, 'agent-4'),
         ],
         progress: {
-          todos: list(
+          todo: onList(
             [
               ['Read HN’s October thread', 'Reading HN’s October thread'],
               ['Read the company boards', 'Reading the company boards'],
