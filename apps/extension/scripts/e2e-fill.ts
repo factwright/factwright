@@ -16,7 +16,8 @@
 // leaves this computer.
 // `pnpm --filter @factwright/extension e2e:fill` (it needs Playwright's Chromium, as `e2e` does,
 // and a C compiler, for the helper). With `-- --shots <folder>`, it saves the panel and the filled
-// form there as pictures, to look over a change.
+// form there as pictures, to look over a change, and with `-- --screenshots`, it draws the stores'
+// screenshot of the panel, into store/screenshots.
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import {
@@ -58,6 +59,7 @@ import {
   systemsSite,
 } from './e2e-fill-systems.ts';
 import { LEVER_LOOKS_UP, withOwnCode, workdayCode } from './sites-own-code.ts';
+import { closeFramer, DRAWING, frame } from './store-shots.ts';
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
 const DESKTOP = fileURLToPath(new URL('../../desktop', import.meta.url));
@@ -474,6 +476,17 @@ try {
     }
     await page.emulateMedia({ colorScheme: null });
   };
+  /** A picture of part of a page, light, as the stores' screenshots show the extension. */
+  const lightShot = async (
+    page: Page,
+    clip: { x: number; y: number; width: number; height: number },
+  ): Promise<Buffer> => {
+    await page.emulateMedia({ colorScheme: 'light' });
+    await page.waitForTimeout(300);
+    const shot = await page.screenshot({ clip });
+    await page.emulateMedia({ colorScheme: null });
+    return shot;
+  };
 
   // With Factwright closed, the panel says to open it, and fills nothing.
   const closed = await panelOn();
@@ -533,6 +546,18 @@ try {
   );
   await shoot(panel, 'fill-1-panel');
   await shoot(form, 'fill-2-form');
+  if (DRAWING) {
+    // The panel's top, down to where it says it never submits a form, for a store's picture.
+    const never = await panel.getByText('Factwright never submits a form').boundingBox();
+    if (!never) throw new Error('The panel doesn’t say it never submits a form.');
+    await frame(
+      await lightShot(panel, { x: 0, y: 0, width: 380, height: never.y + never.height + 10 }),
+      380,
+      'Every answer, and where it came from',
+      'Click Fill, and it fills the form where you are. Details shows what needs you first, then each answer it filled and where it came from.',
+      '2-fill.png',
+    );
+  }
 
   // Your Claude drafts the form's own questions that nothing on file answers, and the panel
   // fills each draft in once it's done.
@@ -1357,6 +1382,7 @@ try {
   console.error(error);
 } finally {
   for (const context of contexts) await context.close().catch(() => {});
+  await closeFramer().catch(() => {});
   local.close();
   try {
     rmSync(work, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
