@@ -77,7 +77,7 @@ function open(result: EditResult = { ok: true }, round = ROUND) {
     <ClaudeQuestions
       api={api}
       round={round}
-      about="Tailored resume · Acme Robotics"
+      about="Acme Robotics · Tailored resume"
       onClose={onClose}
     />,
   );
@@ -103,7 +103,7 @@ describe('ClaudeQuestions', () => {
     const { container } = open();
     const dialog = screen.getByRole('dialog', { name: 'Claude has 2 questions' });
     expect(dialog.textContent).toContain(
-      'From your Claude, working on Tailored resume · Acme Robotics.',
+      'From your Claude, working on Acme Robotics · Tailored resume.',
     );
     const graphql = question('Have you used it');
     expect(within(graphql).getByText('Experience')).toBeTruthy();
@@ -450,6 +450,53 @@ describe('ClaudeQuestions', () => {
     await userEvent.type(screen.getByRole('textbox', { name: 'Your answer' }), 'Sam');
     await userEvent.click(screen.getByRole('button', { name: 'Send answer' }));
     expect(api.answerClaude).toHaveBeenCalledWith('toolu_2', [answer([], 'Sam')]);
+  });
+
+  it('names the run asking, and which of those waiting it is, with a way to the others', async () => {
+    const go = vi.fn();
+    const api = { answerClaude: vi.fn(async () => ({ ok: true as const })) };
+    const onAnswered = vi.fn();
+    const onClose = vi.fn();
+    const { container } = render(
+      <ClaudeQuestions
+        api={api}
+        round={ROUND}
+        about="Talkiatry · Tailored resume"
+        turn={{ run: 'Talkiatry · Tailored resume', at: 1, of: 3, go }}
+        onAnswered={onAnswered}
+        onClose={onClose}
+      />,
+    );
+    const dialog = screen.getByRole('dialog', { name: 'Claude has 2 questions' });
+    expect(dialog.textContent).toContain('Talkiatry · Tailored resume1 of 3');
+    const previous = within(dialog).getByRole('button', { name: 'Previous' }) as HTMLButtonElement;
+    expect(previous.disabled).toBe(true);
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Next' }));
+    expect(go).toHaveBeenCalledWith(1);
+    expect((await axe.run(container)).violations).toEqual([]);
+    // Answered, it goes on to what waits next, rather than closing.
+    await userEvent.click(
+      within(question('Have you used it')).getByRole('radio', { name: 'Yes, in production' }),
+    );
+    await userEvent.click(within(question(TOOLS)).getByRole('button', { name: 'Skip Tools' }));
+    await userEvent.click(send());
+    expect(api.answerClaude).toHaveBeenCalled();
+    expect(onAnswered).toHaveBeenCalled();
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it('names only the run, with one waiting', () => {
+    render(
+      <ClaudeQuestions
+        api={{ answerClaude: vi.fn() }}
+        round={ROUND}
+        about="Talkiatry · Tailored resume"
+        turn={{ run: 'Talkiatry · Tailored resume', at: 1, of: 1, go: vi.fn() }}
+        onClose={vi.fn()}
+      />,
+    );
+    expect(screen.queryByRole('button', { name: 'Next' })).toBeNull();
+    expect(screen.queryByText('1 of 1')).toBeNull();
   });
 
   it('takes the focus to a skipped box’s words once the user answers it after all', async () => {

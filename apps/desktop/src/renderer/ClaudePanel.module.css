@@ -8,6 +8,14 @@
   background: var(--fw-surface);
 }
 
+/* The shown run's bar, and what goes under it. */
+.run {
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+  min-height: 0;
+}
+
 /* One line, whatever the width: what Claude is doing shortens first, so the buttons never move. */
 .header {
   position: relative;
@@ -190,6 +198,24 @@
   height: 0;
   overflow: hidden;
   border-top: 0;
+}
+
+/* The shown run's terminal. */
+.stage {
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+}
+
+/*
+ * Every other run's terminal keeps its size, out of sight, as a folded one does, so each Claude
+ * Code draws what it prints as it would in view, and switching tabs redraws nothing.
+ */
+.offstage {
+  display: flex;
+  flex-direction: column;
+  height: 0;
+  overflow: hidden;
 }
 
 /*

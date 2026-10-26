@@ -57,12 +57,17 @@ const pickView = (name: RegExp) =>
     .click();
 
 /**
- * Closes Claude's panel once its run is done, ready for the next: Close quits Claude Code and puts
- * the panel away in one click. Stop is only for a run that's still going.
+ * Closes Claude's panel once its runs are done, ready for the next: Close quits a run's Claude
+ * Code and closes its tab in one click, and the panel goes with the last. Each task has a run of
+ * its own, so a test with two leaves two. Stop is only for a run that's still going.
  */
 async function closeRun() {
   const panel = claudePanel();
-  await panel.getByRole('button', { name: 'Close' }).click();
+  const tabs = await panel.getByRole('tab').count();
+  for (let left = Math.max(tabs, 1); left > 0; left -= 1) {
+    await panel.getByRole('button', { name: 'Close' }).click();
+    if (left > 1) await expect(panel.getByRole('tab')).not.toHaveCount(left);
+  }
   await expect(panel).toHaveCount(0);
 }
 
@@ -556,7 +561,10 @@ test('answers a question about the job, and keeps the answer with it', async () 
   // Asked again, Claude answers it again, in place of the first answer.
   await asked.getByRole('button', { name: 'Ask again' }).click();
   await expect(asked.getByText('A short screen, from the stand-in Claude. Again.')).toBeVisible();
+  // Asked again, it's a task of its own, in a run of its own, beside the first one.
+  await expect(claudePanel().getByRole('tab')).toHaveCount(2);
   expect(await terminalText(window)).toMatch(/\/factwright:ask job \S+ question 20\d\d-/);
+  await closeRun();
 });
 
 test('adds a call with who it’s with, preps for it, and keeps the prep sheet with the call', async () => {
@@ -582,7 +590,7 @@ test('adds a call with who it’s with, preps for it, and keeps the prep sheet w
   );
 
   await calls.getByRole('button', { name: 'Call prep for the recruiter screen' }).click();
-  // The question's run is done already, so the bar saying what the prep made is what tells it's done.
+  // The bar saying what the prep made is what tells it's done.
   await expect(claudePanel()).toContainText(
     'Your prep sheet for the recruiter screen at Acme Robotics is ready.',
   );
@@ -650,7 +658,9 @@ test('keeps a picture pasted into Claude’s panel with the run’s job, for Cla
     const blob = await new Promise((done) => canvas.toBlob(done, 'image/png'));
     const pasted = new DataTransfer();
     pasted.items.add(new File([blob], 'image.png', { type: 'image/png' }));
-    const input = document.querySelector('section[aria-label="Claude"] .xterm-helper-textarea');
+    const input = document.querySelector(
+      'section[aria-label="Claude"] [data-shown] .xterm-helper-textarea',
+    );
     input.focus();
     input.dispatchEvent(
       new ClipboardEvent('paste', { clipboardData: pasted, bubbles: true, cancelable: true }),
@@ -666,7 +676,7 @@ test('keeps a picture pasted into Claude’s panel with the run’s job, for Cla
       }
     })
     .toEqual([expect.stringMatching(/^pasted-\d{4}-\d{2}-\d{2}-\d{6}-1\.png$/)]);
-  await claudePanel().locator('.xterm-helper-textarea').press('Enter');
+  await claudePanel().locator('[data-shown] .xterm-helper-textarea').press('Enter');
   await expect.poll(() => terminalText(window)).toContain('pasted-');
   await closeRun();
 });
@@ -687,7 +697,7 @@ test('saves to the user’s profile without asking, and lists each change, with 
   // The user types into Claude's work, once it shows.
   const say = async (words: string) => {
     await showWork(window);
-    const typing = panel.locator('.xterm-helper-textarea');
+    const typing = panel.locator('[data-shown] .xterm-helper-textarea');
     await typing.pressSequentially(words);
     await typing.press('Enter');
   };
@@ -705,7 +715,8 @@ test('saves to the user’s profile without asking, and lists each change, with 
   expect(answers().start).toBe('Two weeks’ notice');
   await expect(changed).toContainText('answers.json');
   await expect(changed).toContainText('New');
-  // The next task's card starts again, with what it changed.
+  // The next task is a run of its own, whose card starts again, with what it changed.
+  await closeRun();
   await search();
   await expect(changed).toHaveCount(0);
   // The user interrupts this one, so no Stop hook comes: the card lists what it changed once the
@@ -985,7 +996,7 @@ test('makes a quick resume, typing only the job and the app’s own word, and as
     .getByRole('button', { name: 'Quick resume' })
     .click();
   const panel = claudePanel();
-  await expect(panel).toContainText('Quick resume · Tidewater Analytics');
+  await expect(panel).toContainText('Tidewater Analytics · Quick resume');
   await expect(panel.getByRole('status').first()).toHaveText('Done');
   // No questions: no dialog, and the stand-in says it asked nothing.
   await expect(window.getByRole('dialog')).toHaveCount(0);
@@ -1021,7 +1032,7 @@ test('saves what the user answers while Claude tailors a resume, unverified, and
   // terminal. Put aside, the round waits in Claude's panel.
   const asks = window.getByRole('dialog', { name: 'Claude has 2 questions' });
   await expect(asks).toContainText(
-    'From your Claude, working on Tailored resume · Tidewater Analytics.',
+    'From your Claude, working on Tidewater Analytics · Tailored resume.',
   );
   // The user says yes to one, puts the round aside, and comes back to it as they left it.
   const graphql = asks
@@ -1156,7 +1167,7 @@ test('explains the first run’s question about trusting the workspace', async (
   // The terminal is outlined, as the place to answer.
   const outlined = panel.locator('[class*="attention"]');
   await expect(outlined).toHaveCount(1);
-  await panel.locator('.xterm-helper-textarea').press('Enter');
+  await panel.locator('[data-shown] .xterm-helper-textarea').press('Enter');
   await expect(panel.getByRole('note')).toHaveCount(0);
   await expect(outlined).toHaveCount(0);
   await expect(panel.getByRole('status')).toHaveText('Done');
@@ -1230,11 +1241,23 @@ test('explains Claude Code’s first-run screens when the app leaves them, and c
   await expect(panel.getByRole('note')).toContainText('Press Enter on each one');
   await expect(panel.getByRole('status')).toHaveText('Needs your answer');
   await expect(panel.locator('[class*="attention"]')).toHaveCount(1);
-  // With the panel open, the card has nothing to open, and other runs wait.
+  // With the panel open, the card has nothing to open. Another task waits in line until Claude
+  // Code is past these screens, so they're answered once, not in every run.
   await expect(card.getByRole('button', { name: 'Open Claude’s panel' })).toHaveCount(0);
-  const findJobs = window.getByRole('button', { name: 'Find jobs' });
-  await expect(findJobs).toBeDisabled();
-  const terminal = panel.locator('.xterm-helper-textarea');
+  await window.getByRole('button', { name: 'Find jobs' }).click();
+  await window
+    .getByRole('dialog', { name: 'Find jobs' })
+    .getByRole('button', { name: /^Search/ })
+    .click();
+  const search = panel.getByRole('tab', { name: /^Job search/ });
+  await expect(search).toContainText('in line');
+  await expect(panel).toContainText(
+    'Waits for Claude Code to get going in another tab, then starts.',
+  );
+  // Back in the first run's tab, its work opens for the screen only its terminal takes.
+  await panel.getByRole('tab', { name: /^Claude/ }).click();
+  await expect(panel.getByRole('button', { name: 'Hide Claude’s work' })).toBeVisible();
+  const terminal = panel.locator('[data-shown] .xterm-helper-textarea');
   await terminal.press('Enter');
   // The next screen says so too, until it's answered.
   await expect.poll(() => terminalText(window)).toContain('Security notes:');
@@ -1242,9 +1265,13 @@ test('explains Claude Code’s first-run screens when the app leaves them, and c
   await terminal.press('Enter');
   await expect(panel.getByRole('note')).toHaveCount(0);
   await expect.poll(() => terminalText(window)).toContain("Factwright's tools");
-  // Past them, it waits for what the user types, and isn't in the way of another run.
+  // Past them, it waits for what the user types, and the search starts by itself, with no first
+  // screens of its own.
   await expect(panel.getByRole('status')).toHaveText('Ready');
-  await expect(findJobs).toBeEnabled();
+  await expect(search).toContainText('done');
+  await search.click();
+  await expect.poll(() => terminalText(window)).toContain('/factwright:job-search');
+  expect(await terminalText(window)).not.toContain('Security notes:');
   // Claude Code noted them done itself, and the check passes now.
   expect(JSON.parse(readFileSync(join(claude, '.claude.json'), 'utf8'))).toEqual({
     hasCompletedOnboarding: true,

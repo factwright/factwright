@@ -4,7 +4,7 @@ import { Check } from 'lucide-react';
 import { type ReactNode, useId, useState } from 'react';
 import type { FactwrightApi } from '../../shared/api.ts';
 import { type RunTask, THANKS_SKILL } from '../../shared/runs.ts';
-import { ClaudeButton, isRunning } from './ClaudeButton.tsx';
+import { ClaudeButton, isComing } from './ClaudeButton.tsx';
 import { FOCUS_NEXT, SORT_MOVES } from './Decide.tsx';
 import { requestAddCall } from './JobCalls.tsx';
 import { showSection } from './PanelSection.tsx';
@@ -110,8 +110,9 @@ export function UpNext({
     label = claude.label;
     main = <ClaudeButton run={run} task={claude.task} label={label} primary />;
     if (action?.kind === 'outreach') more = also('Mark no reply', () => onMove('ghosted'));
-    // Beside Tailor a resume, one that asks nothing. While either runs, one says Claude is on it.
-    if (action?.kind === 'resume' && !isRunning(run, claude.task)) {
+    // Beside Tailor a resume, one that asks nothing. While either runs, or waits in line, one
+    // says so.
+    if (action?.kind === 'resume' && !isComing(run, claude.task)) {
       const quick: RunTask = { skill: 'focused-resume', jobId: job.id, quick: true };
       more = <ClaudeButton run={run} task={quick} label="Quick resume" />;
     }
@@ -164,8 +165,9 @@ export function UpNext({
       {each.label}
     </Button>
   ));
-  // While Claude does the step, its button says so, so the step says what it is.
-  const running = claude ? isRunning(run, claude.task) : false;
+  // While Claude does the step, or it waits in line, its button says so, so the step says what
+  // it is.
+  const running = claude ? isComing(run, claude.task) : false;
   const text = next && !(label && said(next.text, label) && !running) ? next.text : null;
 
   return (

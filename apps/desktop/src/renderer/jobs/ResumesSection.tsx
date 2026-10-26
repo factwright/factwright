@@ -5,14 +5,14 @@ import type { FactwrightApi } from '../../shared/api.ts';
 import type { RunTask } from '../../shared/runs.ts';
 import type { DocVersion } from '../../shared/versions.ts';
 import { OpenXRay } from '../xray/OpenXRay.tsx';
-import { ClaudeButton, isRunning } from './ClaudeButton.tsx';
+import { ClaudeButton, isComing } from './ClaudeButton.tsx';
 import { CoverLetterPart } from './CoverLetterSection.tsx';
 import { FileRow, fileActions } from './JobFiles.tsx';
 import panel from './JobPanel.module.css';
 import { PanelSection, Part, Placeholder } from './PanelSection.tsx';
 import { ProjectsPagePart } from './ProjectsPageSection.tsx';
 import { ResumePreview } from './ResumePreview.tsx';
-import { BUSY, type RunControls } from './RunActions.tsx';
+import type { RunControls } from './RunActions.tsx';
 import { EarlierVersions, NewVersionButton, RequestChanges, SentPill } from './Versions.tsx';
 
 /** A file's name without its extension, which a resume's PDF and Word file share. */
@@ -25,12 +25,12 @@ const count = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
 
 /**
  * Tailor a resume, and Quick resume beside it, which asks the user nothing and uses verified facts
- * only. While either runs, one button says Claude is on it.
+ * only. While either runs, or waits in line, one button says so.
  */
 function FirstResume({ run, jobId }: { run: RunControls | undefined; jobId: string }) {
   const tailored: RunTask = { skill: 'focused-resume', jobId };
   const tailor = <ClaudeButton run={run} task={tailored} label="Tailor a resume" adds />;
-  if (isRunning(run, tailored)) return tailor;
+  if (isComing(run, tailored)) return tailor;
   const quick: RunTask = { skill: 'focused-resume', jobId, quick: true };
   return (
     <>
@@ -168,7 +168,8 @@ export function ResumesSection({
           posting={posting}
           revise={{
             jobId: job.id,
-            busy: run ? BUSY.includes(run.phase) : false,
+            // A revision keeps the resume's version first, so it waits for the job's other tasks.
+            busy: run ? run.tasksOn(job.id).length > 0 : false,
             start: run?.start ?? null,
           }}
           onClose={() => setXray(null)}

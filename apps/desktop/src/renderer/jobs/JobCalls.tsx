@@ -66,14 +66,14 @@ import { type DragEvent, type FormEvent, useEffect, useId, useRef, useState } fr
 import type { FactwrightApi } from '../../shared/api.ts';
 import { LIMITS } from '../../shared/limits.ts';
 import { REMINDER_LEAD } from '../../shared/reminders.ts';
-import { type RunTask, THANKS_SKILL, taskCall, taskJob } from '../../shared/runs.ts';
+import { type RunTask, THANKS_SKILL } from '../../shared/runs.ts';
 import { keepsDrafts } from '../unsaved.ts';
 import { ClaudeButton } from './ClaudeButton.tsx';
 import styles from './JobCalls.module.css';
 import panel from './JobPanel.module.css';
 import { Problem, useEdit } from './JobTracking.tsx';
 import { PanelSection, Placeholder, showSection } from './PanelSection.tsx';
-import { BUSY, type RunControls } from './RunActions.tsx';
+import type { RunControls } from './RunActions.tsx';
 import type { ReminderSwitch } from './useCallReminders.ts';
 
 /** The event that asks the job's Calls and interviews to open its form to add a call. */
@@ -844,13 +844,6 @@ const runTask = (jobId: string, callId: string, kind: CallRun): RunTask =>
       ? { skill: 'interview-prep', jobId, callId, practice: true }
       : { skill: 'interview-prep', jobId, callId };
 
-/** Which of a call's runs is the one Claude's panel has, if any. */
-function runOf(task: RunTask | null): CallRun | null {
-  if (!task || !('callId' in task)) return null;
-  if (task.skill === THANKS_SKILL) return 'thanks';
-  return 'practice' in task && task.practice ? 'practice' : 'prep';
-}
-
 /**
  * One call: when, how long and how, where, who it's with and what it's about, with Claude's prep
  * for it and practice before it, and once it's happened, how it went and thank-you notes after.
@@ -912,13 +905,15 @@ function CallCard({
   const thanks = doc('thanks');
   const { ahead, started } = timing(call, today, now);
   const canceled = call.state === 'canceled';
-  const busy = run ? BUSY.includes(run.phase) : false;
-  const mine = run && taskJob(run.task) === job.id && taskCall(run.task) === call.id;
-  const running = (kind: CallRun) => Boolean(mine && busy && runOf(run?.task ?? null) === kind);
+  // Each of the call's runs, as Claude has it: going now, waiting in line, or neither.
+  const stateOf = (kind: CallRun) => run?.stateOf(runTask(job.id, call.id, kind)) ?? null;
+  const running = (kind: CallRun) => stateOf(kind) === 'running';
+  const inLine = (kind: CallRun) => stateOf(kind) === 'in-line';
   const start = (kind: CallRun) => {
     if (!run) return;
-    if (running(kind)) run.show();
-    else run.start(runTask(job.id, call.id, kind));
+    const task = runTask(job.id, call.id, kind);
+    if (stateOf(kind)) run.show(task);
+    else run.start(task);
   };
   const link = callLink(call.place);
   // A calendar file for the call, saved where the user picks, to open in their calendar.
@@ -1050,17 +1045,24 @@ function CallCard({
               size="sm"
               variant={prep ? 'quiet' : 'primary'}
               icon={<Sparkles size={13} aria-hidden="true" />}
-              disabled={busy && !running('prep')}
               aria-label={
                 running('prep')
                   ? `Preparing for ${name}: show Claude`
-                  : prep
-                    ? `Prep again for ${name}`
-                    : `Call prep for ${name}`
+                  : inLine('prep')
+                    ? `Call prep for ${name}, in line: show Claude`
+                    : prep
+                      ? `Prep again for ${name}`
+                      : `Call prep for ${name}`
               }
               onClick={() => start('prep')}
             >
-              {running('prep') ? 'Preparing…' : prep ? 'Prep again' : 'Call prep'}
+              {running('prep')
+                ? 'Preparing…'
+                : inLine('prep')
+                  ? 'In line'
+                  : prep
+                    ? 'Prep again'
+                    : 'Call prep'}
             </Button>
           )}
           {run && (
@@ -1068,13 +1070,16 @@ function CallCard({
               size="sm"
               variant="quiet"
               icon={<MessagesSquare size={13} aria-hidden="true" />}
-              disabled={busy && !running('practice')}
               aria-label={
-                running('practice') ? `Practicing ${name}: show Claude` : `Practice ${name}`
+                running('practice')
+                  ? `Practicing ${name}: show Claude`
+                  : inLine('practice')
+                    ? `Practice ${name}, in line: show Claude`
+                    : `Practice ${name}`
               }
               onClick={() => start('practice')}
             >
-              {running('practice') ? 'Practicing…' : 'Practice'}
+              {running('practice') ? 'Practicing…' : inLine('practice') ? 'In line' : 'Practice'}
             </Button>
           )}
           <Button
@@ -1164,17 +1169,24 @@ function CallCard({
                 size="sm"
                 variant="quiet"
                 icon={<Sparkles size={13} aria-hidden="true" />}
-                disabled={busy && !running('thanks')}
                 aria-label={
                   running('thanks')
                     ? `Writing thank-you notes for ${name}: show Claude`
-                    : thanks
-                      ? `Write again: the thank-you notes for ${name}`
-                      : `Write thank-you notes for ${name}`
+                    : inLine('thanks')
+                      ? `Thank-you notes for ${name}, in line: show Claude`
+                      : thanks
+                        ? `Write again: the thank-you notes for ${name}`
+                        : `Write thank-you notes for ${name}`
                 }
                 onClick={() => start('thanks')}
               >
-                {running('thanks') ? 'Writing…' : thanks ? 'Write again' : 'Write thank-you notes'}
+                {running('thanks')
+                  ? 'Writing…'
+                  : inLine('thanks')
+                    ? 'In line'
+                    : thanks
+                      ? 'Write again'
+                      : 'Write thank-you notes'}
               </Button>
             )}
             {prep && !ahead && (

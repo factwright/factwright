@@ -26,9 +26,7 @@ import type { StartingResume, TemplateInfo } from '../../shared/profile.ts';
 import type { ProfileEntry } from '../../shared/profiles.ts';
 import { type RunTask, TEMPLATE_SKILL } from '../../shared/runs.ts';
 import { ResumePreview } from '../jobs/ResumePreview.tsx';
-import { BUSY } from '../jobs/RunActions.tsx';
 import { ProfilesLine } from '../profiles/ProfilesLine.tsx';
-import type { RunPhase } from '../useClaudeRun.ts';
 import { OpenXRay } from '../xray/OpenXRay.tsx';
 import type { XRayFile } from '../xray/useXRay.ts';
 import styles from './ProfilePage.module.css';
@@ -242,7 +240,7 @@ const asJobFile = (path: string, format: 'pdf' | 'docx'): JobFile => ({
 export function ProfilePage({
   state,
   api,
-  phase,
+  busy,
   ready,
   onRun,
   onOpenFacts,
@@ -250,8 +248,11 @@ export function ProfilePage({
 }: {
   state: ProfileState & { profile: NonNullable<ProfileState['profile']> };
   api: FactwrightApi;
-  /** Where Claude's run stands, so buttons wait while it's busy. */
-  phase: RunPhase;
+  /**
+   * Whether Claude has a task going, or waiting in line, on the user's facts and Profile, so the
+   * buttons for another wait.
+   */
+  busy: boolean;
   /** Whether Claude Code is ready to run. */
   ready: boolean;
   onRun: (task: RunTask) => void;
@@ -282,7 +283,6 @@ export function ProfilePage({
   const [addingProject, setAddingProject] = useState(false);
   const [preview, setPreview] = useState<JobFile | null>(null);
   const [xray, setXray] = useState<StartingResume | null>(null);
-  const busy = BUSY.includes(phase);
   const canRun = ready && !busy;
   const { claims, unconfirmed, files } = status.facts;
   const started = answers.startedOn !== null;
@@ -752,7 +752,8 @@ export function ProfilePage({
                   templates={profile.templates}
                   update={state.update}
                   api={api}
-                  canMake={canRun}
+                  // A template's run waits in line behind another, so it's never busy here.
+                  canMake={ready}
                   onMake={(source) => {
                     // Claude's panel shows it at work. The template joins the gallery once saved.
                     setEditing(null);

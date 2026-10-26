@@ -168,7 +168,10 @@ test('has their Claude make a template of their own from a resume they like', as
   // The dialog steps aside for Claude's panel, where Claude makes it from the copy the app kept.
   await expect(dialog).toBeHidden();
   const panel = window.locator('section[aria-label="Claude"]');
-  await expect(panel.getByText('A template of your own')).toBeVisible();
+  // It's a run of its own, in a tab beside getting started's, and it shows.
+  await expect(
+    panel.getByRole('tab', { name: /^A template of your own/, selected: true }),
+  ).toBeVisible();
   await expect(panel.getByRole('status')).toHaveText('Done');
   const terminal = await terminalText(window);
   expect(terminal).toMatch(

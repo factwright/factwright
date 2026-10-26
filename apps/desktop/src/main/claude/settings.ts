@@ -9,6 +9,7 @@ import {
   TEMPLATE_TOOLS,
   WEB_TOOLS,
 } from '../tools/index.ts';
+import { LOGS } from '../tools/logs.ts';
 import { FILING_TOOLS, hookToolName } from './questions.ts';
 
 /** The environment variable that carries a run's token to Claude Code, never to disk. */
@@ -72,6 +73,12 @@ const USERS_OWN = [
 ];
 
 /**
+ * The job hunt's logs, which runs side by side may add to at the same time: Factwright's
+ * log_check tool writes their rows, one at a time, so Claude never edits them itself.
+ */
+const LOGS_THE_APP_WRITES = Object.values(LOGS).map((log) => log.path);
+
+/**
  * What a run that isn't on the job hunt may never use: the web, and the tools that read job
  * posts. Getting started and adding facts change the user's facts, a run for their work history
  * their Profile, and a template run their templates, so nothing they read may come from a page
@@ -125,8 +132,9 @@ function allowed(scope: RunScope): string[] {
  *   which asks first. A run started to make a template copies a resume from anywhere, so it may
  *   read and save templates without asking, and nothing else, and never reads the web either.
  * - never: changing Claude Code's settings or the instructions it loads, the user's own notes,
- *   shared files and Profile other than through Factwright's tools, and outside getting started
- *   and adding facts, the fact bank other than through Factwright's fact tools
+ *   shared files and Profile other than through Factwright's tools, the job hunt's logs other
+ *   than through log_check, and outside getting started and adding facts, the fact bank other
+ *   than through Factwright's fact tools
  * - hooks that tell the app, over HTTP on this computer, where the run stands, what the user
  *   answers Claude's questions, which Claude calls the tools that file the answers, and when the
  *   session ends, which the self-test listens for. The ones for Claude's questions and Claude
@@ -167,6 +175,7 @@ export function sessionSettings({
       deny: [
         ...NEVER_CHANGED.map(edits),
         ...USERS_OWN.map(edits),
+        ...LOGS_THE_APP_WRITES.map(edits),
         ...(scope === 'profile' ? [] : [edits(FACTS)]),
         ...(scope === 'hunt' ? [] : OFF_THE_WEB),
         // A revision changes a template only through save_template, which asks.

@@ -2,8 +2,8 @@
 import { cleanup, render, screen } from '@testing-library/react';
 import axe from 'axe-core';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import type { RunPhase } from '../shared/api.ts';
 import { PanelHeader } from './PanelHeader.tsx';
-import type { RunPhase } from './useClaudeRun.ts';
 
 afterEach(cleanup);
 
@@ -14,7 +14,7 @@ function renderHeader(
   const actions = { onStop: vi.fn(), onShowWork: vi.fn(), onClose: vi.fn() };
   const result = render(
     <PanelHeader
-      title="Tailored resume · Acme"
+      title="Acme · Tailored resume"
       phase={phase}
       plan="Max plan"
       problem={problem as string | undefined}
@@ -32,7 +32,7 @@ describe('PanelHeader', () => {
   it('says whose Claude it is, what it’s doing, and for how long', () => {
     renderHeader('working');
     expect(screen.getByText('Runs on your own Claude · Max plan')).toBeTruthy();
-    expect(screen.getByText('Tailored resume · Acme')).toBeTruthy();
+    expect(screen.getByText('Acme · Tailored resume')).toBeTruthy();
     expect(screen.getByText('Reading your fact bank…')).toBeTruthy();
     expect(screen.getByText('1:24').textContent).toBe('Running for 1:24');
   });
@@ -90,9 +90,29 @@ describe('PanelHeader', () => {
   });
 
   it("explains a run that couldn't start", () => {
-    renderHeader('idle', { problem: 'Claude Code couldn’t start.' });
+    renderHeader('failed', { problem: 'Claude Code couldn’t start.' });
     expect(screen.getByRole('status').textContent).toBe('Didn’t finish');
     expect(screen.getByText('Claude Code couldn’t start.')).toBeTruthy();
+  });
+
+  it('says a task waits in line, with Close to take it out, and no work to show', () => {
+    const onClose = vi.fn();
+    render(
+      <PanelHeader
+        title="Acme · Cover letter"
+        phase="in-line"
+        plan="Max plan"
+        problem={undefined}
+        text="Waits for Claude’s other task on this job, then starts by itself."
+        onStop={vi.fn()}
+        onClose={onClose}
+      />,
+    );
+    expect(screen.getByRole('status').textContent).toBe('In line');
+    expect(screen.queryByRole('button', { name: 'Stop' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Show Claude’s work' })).toBeNull();
+    screen.getByRole('button', { name: 'Close' }).click();
+    expect(onClose).toHaveBeenCalledOnce();
   });
 
   it('finds no accessibility problems', async () => {

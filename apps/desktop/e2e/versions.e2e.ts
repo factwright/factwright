@@ -50,23 +50,19 @@ test.afterAll(async () => {
   rmSync(dataDir, { recursive: true, force: true });
 });
 
-test('refuses changes it didn’t keep, and gives them a run of their own', async () => {
+test('refuses changes it didn’t keep, saying so in a run of its own', async () => {
   const task = { skill: 'cover-letter', jobId: ACME_ID, changes: true };
   type Api = { factwright: FactwrightApi };
-  const started = await opened.window.evaluate(
-    (given) =>
-      (globalThis as unknown as Api).factwright.startClaude(
-        { cols: 80, rows: 24 },
-        given as RunTask,
-      ),
+  const runId = await opened.window.evaluate(
+    (given) => (globalThis as unknown as Api).factwright.startClaude(given as RunTask),
     task,
   );
-  expect(started).toEqual({ ok: false, reason: 'changes' });
-  const asTask = await opened.window.evaluate(
-    (given) => (globalThis as unknown as Api).factwright.runTask(given as RunTask),
-    task,
-  );
-  expect(asTask).toEqual({ ok: false, reason: 'new-run' });
+  expect(runId).toMatch(/^run-\d+$/);
+  const panel = claudePanel();
+  await expect(panel.getByRole('status')).toHaveText('Didn’t finish');
+  await expect(panel).toContainText('These changes need asking for again.');
+  await panel.getByRole('button', { name: 'Close' }).click();
+  await expect(panel).toHaveCount(0);
 });
 
 test('makes the changes the user asks for, typing only the job and the app’s own word', async () => {

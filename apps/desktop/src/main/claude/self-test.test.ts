@@ -13,6 +13,7 @@ const LAUNCH: Launch = {
   cwd: '/workspace',
   env: {},
   token: 'a'.repeat(64),
+  files: [],
   levels: 'best',
   model: undefined,
   effort: undefined,

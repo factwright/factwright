@@ -20,6 +20,7 @@ import {
 import { searchFocusText } from './focus.ts';
 import { historyText, saveHistory } from './history.ts';
 import { buildCoverLetter } from './letter.ts';
+import { addLogRow, LOG_COLUMNS, LOG_NAMES, logRow } from './logs.ts';
 import { findJob, findJobs, type JobQuery, jobDetails } from './lookup.ts';
 import { huntCall, type McpTool, type ToolCall } from './mcp.ts';
 import { type FetchDeps, ReadCache, readLink, savePosting } from './posting.ts';
@@ -57,7 +58,7 @@ const SEARCH_FOLDER = {
 
 /** What Factwright's tools tell Claude about themselves when it connects. */
 export const TOOLS_INSTRUCTIONS =
-  'Factwright’s tools work on the user’s job hunt: the jobs on file with everything saved for each, their status, notes and calls, what the user sent on applications and asked about a job, what they told Factwright about themselves, reading postings and web pages and saving postings word for word, reading whole job boards and Hacker News’s hiring thread, building resumes and cover letters, the resume templates, and saving to the fact bank what the user answers when you ask them. Use them to read the tracker and the web, and to save answers, prep sheets and thank-you notes for calls, facts from the user’s answers, templates, and resume and cover letter files.';
+  'Factwright’s tools work on the user’s job hunt: the jobs on file with everything saved for each, their status, notes and calls, what the user sent on applications and asked about a job, what they told Factwright about themselves, reading postings and web pages and saving postings word for word, reading whole job boards and Hacker News’s hiring thread, building resumes and cover letters, the resume templates, the job hunt’s logs of fit checks, salary checks and unmasked listings, and saving to the fact bank what the user answers when you ask them. Use them to read the tracker and the web, and to save answers, prep sheets and thank-you notes for calls, facts from the user’s answers, templates, rows in the logs, and resume and cover letter files.';
 
 /** The tools that never reach past this computer, so Claude may call them without asking. */
 export const LOCAL_TOOLS = [
@@ -72,6 +73,7 @@ export const LOCAL_TOOLS = [
   'about_you',
   'past_answers',
   'save_answer',
+  'log_check',
   'save_call_prep',
   'save_thank_you',
   'list_templates',
@@ -689,6 +691,37 @@ export function factwrightTools(deps: ToolDeps): McpTool[] {
           today(),
           call?.keep,
         );
+      },
+    },
+    {
+      name: 'log_check',
+      description:
+        'Adds one row to one of the job hunt’s logs: fit-checks (searches/fit-checks.md), salary-checks (searches/salary-checks.md) or unmask-checks (searches/unmask-checks.md). The app writes it, one row at a time, as other runs may be adding to the same log at once, so never edit those files yourself. Give the log and the row by its columns: fit-checks takes date, company, role, verdict, score, link, pay and note; salary-checks takes date, company, role, estimate, confidence and link; unmask-checks takes date, listing, employer, role, apply and link. The date is today’s unless you give one.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          log: { type: 'string', enum: LOG_NAMES, description: 'Which log the row goes in.' },
+          row: {
+            type: 'object',
+            description: 'The row, by its columns. Leave out a column that’s blank.',
+            properties: Object.fromEntries(
+              LOG_COLUMNS.map((column) => [
+                column,
+                column === 'score' ? { type: ['number', 'string'] } : { type: 'string' },
+              ]),
+            ),
+            additionalProperties: false,
+          },
+        },
+        required: ['log', 'row'],
+        additionalProperties: false,
+      },
+      // It adds a row to a log in the workspace, from what's on this computer.
+      annotations: { readOnlyHint: false, openWorldHint: false },
+      run: async (input, call) => {
+        const log = LOG_NAMES.find((name) => name === input.log);
+        if (!log) throw new Error(`Give the log: ${LOG_NAMES.join(', ')}.`);
+        return addLogRow(deps.workspace, log, logRow(log, input.row, today()), call?.keep);
       },
     },
     {

@@ -4,12 +4,11 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testi
 import userEvent from '@testing-library/user-event';
 import axe from 'axe-core';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
-import type { EditResult, FactwrightApi, SaveFileResult } from '../../shared/api.ts';
+import type { EditResult, FactwrightApi, RunPhase, SaveFileResult } from '../../shared/api.ts';
 import type { RunTask } from '../../shared/runs.ts';
-import type { RunPhase } from '../useClaudeRun.ts';
 import { type InviteMe, plainNote, requestAddCall, thanksNotes } from './JobCalls.tsx';
 import { JobPanel } from './JobPanel.tsx';
-import type { RunControls } from './RunActions.tsx';
+import { type RunControls, runControlsFor } from './RunActions.tsx';
 import { jobRows } from './rows.ts';
 import { sampleCallDocs, sampleJobs } from './sample-jobs.ts';
 import type { ReminderSwitch } from './useCallReminders.ts';
@@ -46,8 +45,10 @@ const byCompany = (company: string): Job => {
 
 const NORTHWIND = 'northwind-labs--senior-software-engineer-platform';
 
-function controls(phase: RunPhase = 'idle', task: RunTask | null = null): RunControls {
-  return { phase, task, start: vi.fn(), show: vi.fn() };
+/** The job panel's run controls, with a run of a task in a phase, or none. */
+function controls(phase: RunPhase | null = null, task: RunTask | null = null): RunControls {
+  const runs = phase && task ? [{ id: 'run-1', task, phase }] : [];
+  return { ...runControlsFor(runs, vi.fn(), vi.fn()), show: vi.fn() };
 }
 
 function panel(
@@ -363,7 +364,7 @@ describe('before a call', () => {
     });
   });
 
-  it('shows a run for the call as it goes, and waits while Claude works on something else', async () => {
+  it('shows a run for the call as it goes, and starts the call’s others beside it', async () => {
     const task: RunTask = { skill: 'interview-prep', jobId: NORTHWIND, callId: 'northwind-panel' };
     const run = controls('working', task);
     panel(byCompany('Northwind Labs'), { run });
@@ -372,12 +373,19 @@ describe('before a call', () => {
     });
     expect(prepping.textContent).toBe('Preparing…');
     await userEvent.click(prepping);
-    expect(run.show).toHaveBeenCalled();
+    expect(run.show).toHaveBeenCalledWith(task);
     expect(run.start).not.toHaveBeenCalled();
-    expect(
-      (screen.getByRole('button', { name: 'Practice the panel interview' }) as HTMLButtonElement)
-        .disabled,
-    ).toBe(true);
+    // Practice is a task of its own, which waits in line behind the prep.
+    const practice = screen.getByRole('button', { name: 'Practice the panel interview' });
+    expect((practice as HTMLButtonElement).disabled).toBe(false);
+    await userEvent.click(practice);
+    expect(run.start).toHaveBeenCalledWith({ ...task, practice: true });
+    cleanup();
+    panel(byCompany('Northwind Labs'), { run: controls('in-line', task) });
+    const waiting = screen.getByRole('button', {
+      name: 'Call prep for the panel interview, in line: show Claude',
+    });
+    expect(waiting.textContent).toBe('In line');
   });
 
   it('opens the call’s prep sheet', async () => {
