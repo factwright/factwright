@@ -6,6 +6,7 @@ import {
   otherPostings,
   postingKey,
   readTitle,
+  sameJob,
   savedJobFor,
   titleFit,
   titlesFit,
@@ -472,5 +473,54 @@ describe('savedJobFor', () => {
     expect(
       savedJobFor([found], page('https://apply.workable.com/acme/j/1C2D3E4F50/', 'Acme')),
     ).toBeNull();
+  });
+});
+
+describe('sameJob', () => {
+  const job = (company: string, role: string, ...links: string[]) => ({
+    company,
+    companyKey: '',
+    role,
+    links: links.map((url) => ({ url, label: 'Posting' })),
+  });
+  // Seeq's job as a Hacker News search found it, by its company's board, and as the browser saved
+  // it, from its own posting.
+  const board = job(
+    'Seeq',
+    'AI Software Engineer, Staff/Principal',
+    'https://apply.workable.com/seeq',
+  );
+  const posted = job(
+    'Seeq',
+    'AI Software Engineer - Staff/Principal',
+    'https://apply.workable.com/seeq/j/1B6E0A1710/',
+  );
+
+  it('is sure of the same posting, at any company', () => {
+    const other = job('Workable', 'AI Engineer', 'https://apply.workable.com/seeq/j/1B6E0A1710');
+    expect(sameJob(posted, other)).toBe('posting');
+  });
+
+  it('is sure of the same role at the same company when one has no posting of its own', () => {
+    expect(sameJob(board, posted)).toBe('role');
+    expect(sameJob(posted, board)).toBe('role');
+    expect(sameJob(job('Seeq', 'AI Software Engineer, Staff/Principal'), posted)).toBe('role');
+  });
+
+  it('leaves the rest to the user: two postings, a title saying more, a company written longer', () => {
+    const another = job(
+      'Seeq',
+      'AI Software Engineer, Staff/Principal',
+      'https://apply.workable.com/seeq/j/2C7F1B2821/',
+    );
+    expect(sameJob(posted, another)).toBeNull();
+    expect(
+      sameJob(board, job('Seeq', 'Staff AI Software Engineer, Analytics Platform')),
+    ).toBeNull();
+    expect(
+      sameJob(board, job('Seeq Corporation Labs', 'AI Software Engineer, Staff/Principal')),
+    ).toBeNull();
+    expect(sameJob(board, job('Seeq', 'Product Manager'))).toBeNull();
+    expect(sameJob(board, job('Acme', 'AI Software Engineer, Staff/Principal'))).toBeNull();
   });
 });

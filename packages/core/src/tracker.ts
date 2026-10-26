@@ -201,6 +201,36 @@ export interface Ask {
   on: string;
 }
 
+/**
+ * A job's details as the user set them in its panel: its company, role, pay and place, such as
+ * "Remote (US)". Each one wins over what the posting or Claude's work says, and Claude's work
+ * never changes it. Null for one the user left to them.
+ */
+export interface OwnDetails {
+  company: string | null;
+  role: string | null;
+  pay: string | null;
+  location: string | null;
+}
+
+/** No details of the user's own. */
+export const NO_OWN_DETAILS: OwnDetails = { company: null, role: null, pay: null, location: null };
+
+/**
+ * Another job your Claude found might be this one, without being sure enough to merge them: the
+ * user merges them, or says they aren't the same, and then it shows no more.
+ */
+export interface MaybeSame {
+  /** The other job, by its ID. */
+  id: string;
+  /** Why it might be, in a line, as your Claude put it. */
+  why: string | null;
+  /** When your Claude noted it, as an ISO date. */
+  on: string;
+  /** The user said the two aren't the same. */
+  notSame: boolean;
+}
+
 /** What the user tracks about a job by hand. */
 export interface TrackerFields {
   status: JobStatus | null;
@@ -235,6 +265,10 @@ export interface TrackerFields {
    * Claude's suggestion, or else their target pay.
    */
   payAsk: string | null;
+  /** The details the user set in the job's panel, which win over what Claude found. */
+  own: OwnDetails;
+  /** Other jobs your Claude found might be this one, for the user to merge or not. */
+  maybeSame: MaybeSame[];
 }
 
 /** A call or interview the user logged for a job: one step in the company's hiring process. */

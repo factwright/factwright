@@ -36,12 +36,15 @@ import {
 } from './records.ts';
 import type { Call, JobStage, Note, StatusChange, TrackerFields } from './tracker.ts';
 
-/** A job's pay, and whether the posting listed it or a salary check estimated it. */
+/**
+ * A job's pay, and whether the posting listed it, a salary check estimated it, or the user gave it
+ * themselves.
+ */
 export interface JobPay {
   text: string;
   min: number | null;
   max: number | null;
-  source: 'listed' | 'estimate';
+  source: 'listed' | 'estimate' | 'own';
 }
 
 /**
@@ -80,6 +83,8 @@ export interface KnownJob {
    * other, so work that would have joined it joins that one.
    */
   mergedInto?: string | null;
+  /** The company and role the user gave it themselves, which it goes by too. */
+  own?: { company: string | null; role: string | null };
 }
 
 /** Everything the workspace says about one job. */
@@ -288,13 +293,21 @@ function companyOf(draft: Draft, name: CompanyName): 'same' | 'related' | 'diffe
   return matches.includes('same') ? 'same' : matches.includes('related') ? 'related' : 'different';
 }
 
+/** The job a record names by its ID, if it names one. */
+const namedJob = (record: ToolRecord): string | null =>
+  record.tool === 'search' || record.tool === 'folder' || record.tool === 'fit-check'
+    ? record.job
+    : null;
+
 /**
  * Finds the job a record belongs to:
- * 1. the job a job search said it is, by its ID from find_job, when that job is at the same
+ * 1. the job a job's folder or the fit check log names by its ID, as the app's own buttons gave
+ *    it, so a twin with the same company and title can't take its folder or its score;
+ * 2. the job a job search said it is, by its ID from find_job, when that job is at the same
  *    company, or one whose name holds the other's, or shares a link with it;
- * 2. the job with the same link, or a link to the same posting, at any company, since "Acme" and
+ * 3. the job with the same link, or a link to the same posting, at any company, since "Acme" and
  *    "Acme Robotics" can both list it;
- * 3. the job with the same role at the same company, however it's written ("Sr." is "Senior"),
+ * 4. the job with the same role at the same company, however it's written ("Sr." is "Senior"),
  *    or else the one job there whose title says more or less about the same work ("Staff
  *    Engineer" and "Staff Software Engineer"), or else the one job with the same role at a
  *    company whose name holds the other's.
@@ -312,7 +325,11 @@ function findDraft(
   const shares = (draft: Draft) =>
     clues.urls.some((url) => draft.urls.has(url)) ||
     clues.postings.some((key) => draft.postings.has(key));
-  const named = record.tool === 'search' && record.job ? byId.get(record.job) : undefined;
+  const id = namedJob(record);
+  const named = id ? byId.get(id) : undefined;
+  // A folder or a fit check names the job it was made for, which may have been saved under
+  // another company's name, as a job board's: Analyze job puts its own right from the posting.
+  if (named && record.tool !== 'search') return named;
   if (named && (shares(named) || companyOf(named, clues.name) !== 'different')) return named;
   const byLink = drafts.find(shares);
   if (byLink) return byLink;
@@ -640,6 +657,12 @@ export function collectJobs(
     const draft = byId.get(targets.get(job.id) ?? job.id) ?? start(job);
     byId.set(job.id, draft);
     learn(draft, name, job.role, job.links);
+    // What the user calls it, which work since then names it by.
+    const own = job.own;
+    if (own?.company || own?.role) {
+      const company = own.company ?? job.company;
+      learn(draft, { company, companyKey: companyKey(company) }, own.role ?? job.role, []);
+    }
   }
 
   const add = (draft: Draft, record: ToolRecord, clues: Clues) => {

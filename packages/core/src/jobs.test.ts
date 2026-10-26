@@ -61,6 +61,7 @@ function fitCheck(company: string, role: string, extra: Partial<FitCheckRecord> 
     company,
     role,
     links: [],
+    job: null,
     verdict: 'Strong',
     score: 82,
     pay: null,
@@ -75,6 +76,7 @@ function folder(company: string, role: string, extra: Partial<FolderRecord> = {}
     tool: 'folder',
     key: `2026-10-07-${company}`,
     folder: `2026-10-07-${company}`,
+    job: null,
     date: '2026-10-07',
     company,
     role,
@@ -734,5 +736,69 @@ describe('collectJobs, for a job found again', () => {
       ],
     );
     expect(alone?.id).toBe('tidewater-analytics--data-pipelines-engineer');
+  });
+});
+
+describe('collectJobs, for a record that names its job', () => {
+  const first = 'seeq--ai-software-engineer';
+  const twin = 'seeq--ai-software-engineer-2';
+  const twins = [
+    known(first, 'Seeq', 'AI Software Engineer'),
+    known(twin, 'Seeq', 'AI Software Engineer'),
+  ];
+  const owner = (
+    jobs: ReturnType<typeof collectJobs>,
+    test: (job: (typeof jobs)[number]) => boolean,
+  ) => jobs.filter(test).map((job) => job.id);
+
+  it('gives a twin with the same title its own folder and fit check, not the first one’s', () => {
+    const jobs = collectJobs(
+      [
+        folder('Seeq', 'AI Software Engineer', { job: twin }),
+        fitCheck('Seeq', 'AI Software Engineer', { job: twin, score: 71 }),
+      ],
+      twins,
+    );
+    expect(owner(jobs, (job) => job.folder !== null)).toEqual([twin]);
+    expect(jobs.find((job) => job.id === twin)?.fit?.score).toBe(71);
+    expect(jobs.find((job) => job.id === first)).toBeUndefined();
+  });
+
+  it('goes to its job even when the job was saved under another name, as a job board’s', () => {
+    const saved = 'workable--ai-engineer';
+    const [job] = collectJobs(
+      [folder('Seeq', 'AI Software Engineer, Staff/Principal', { job: saved })],
+      [known(saved, 'Workable', 'AI Engineer', ['https://apply.workable.com/seeq/'])],
+    );
+    expect(job).toMatchObject({ id: saved, company: 'Seeq' });
+  });
+
+  it('goes by its company and title as before when its job isn’t on file', () => {
+    const jobs = collectJobs(
+      [fitCheck('Seeq', 'AI Software Engineer', { job: 'gone--job' })],
+      twins,
+    );
+    expect(owner(jobs, (job) => job.fit !== null)).toEqual([first]);
+  });
+
+  it('reaches the job a named one was merged into', () => {
+    const jobs = collectJobs(
+      [folder('Seeq', 'AI Software Engineer', { job: twin })],
+      [twins[0] as KnownJob, { ...(twins[1] as KnownJob), mergedInto: first }],
+    );
+    expect(owner(jobs, (job) => job.folder !== null)).toEqual([first]);
+  });
+
+  it('joins records named by the company and role the user gave the job', () => {
+    const id = 'healthequity-blog--staff-engineer';
+    const jobs = collectJobs(
+      [search('HealthEquity', 'Staff Software Engineer, Payments')],
+      [
+        known(id, 'HealthEquity blog', 'Staff Engineer', [], {
+          own: { company: 'HealthEquity', role: 'Staff Software Engineer, Payments' },
+        }),
+      ],
+    );
+    expect(jobs.map((job) => job.id)).toEqual([id]);
   });
 });

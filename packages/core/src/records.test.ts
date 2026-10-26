@@ -138,12 +138,40 @@ describe('readRecords', () => {
         company: 'Acme Robotics',
         role: 'Staff Engineer, Developer Tools',
         links: [{ url: 'https://jobs.ashbyhq.com/acme/7f3a', label: 'Posting' }],
+        job: null,
         verdict: 'Strong',
         score: 82,
         pay: '$185k–$215k',
         note: 'Build tooling at scale',
       },
       expect.objectContaining({ score: null, links: [], pay: null, note: null }),
+    ]);
+  });
+
+  it('reads which job a folder and a fit check are for, by the ID they name', () => {
+    const named = readRecords(
+      memoryWorkspace({
+        'searches/fit-checks.md': [
+          '| Date | Company | Role | Verdict | Score | Link | Pay | Note | Job |',
+          '|---|---|---|---|---|---|---|---|---|',
+          '| 2026-10-25 | Seeq | AI Software Engineer | Good | 71 | | | | seeq--ai-software-engineer-2 |',
+          '| 2026-10-25 | Seeq | AI Software Engineer | Good | 71 | | | | not an id! |',
+        ].join('\n'),
+        'applications/2026-10-25-seeq-ai/job.md': [
+          '# Seeq: AI Software Engineer',
+          '',
+          '- **Job ID:** `Seeq--AI-Software-Engineer-2`',
+        ].join('\n'),
+        'applications/older/job.md': '# Seeq: AI Software Engineer\n',
+      }),
+    );
+    expect(of(named, 'fit-check').map((record) => record.job)).toEqual([
+      'seeq--ai-software-engineer-2',
+      null,
+    ]);
+    expect(of(named, 'folder').map((record) => [record.folder, record.job])).toEqual([
+      ['2026-10-25-seeq-ai', 'seeq--ai-software-engineer-2'],
+      ['older', null],
     ]);
   });
 

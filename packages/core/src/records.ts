@@ -96,6 +96,8 @@ interface RecordBase {
 
 export interface FitCheckRecord extends RecordBase {
   tool: 'fit-check';
+  /** The job it's for, by its ID, as Analyze job logs it. Older rows don't say. */
+  job: string | null;
   verdict: string | null;
   score: number | null;
   pay: string | null;
@@ -106,6 +108,8 @@ export interface FitCheckRecord extends RecordBase {
 export interface FolderRecord extends RecordBase {
   tool: 'folder';
   folder: string;
+  /** The job it's for, by its ID, as job.md's Job ID line names it. Older folders don't say. */
+  job: string | null;
   pay: string | null;
   location: string | null;
   /** The fit check's verdict as job.md gives it, such as "Strong, 82". */
@@ -274,7 +278,14 @@ function readJobNotes(markdown: string) {
     style: field('Style / track') ?? field('Style'),
     kind: field('Kind of job'),
     ask: field('Pay to ask for'),
+    job: jobId(field('Job ID')),
   };
+}
+
+/** A job's ID as a record gives it, in backticks or not, or null for anything else. */
+function jobId(value: string | null | undefined): string | null {
+  const id = value?.replace(/^`|`$/g, '').trim().toLowerCase() ?? '';
+  return JOB_ID.test(id) ? id : null;
 }
 
 /** The rows of one of the workspace's log tables, with a date and a company each. */
@@ -295,6 +306,7 @@ function fitCheckRecords(workspace: WorkspaceReader): FitCheckRecord[] {
     return {
       tool: 'fit-check',
       ...base,
+      job: jobId(row.job),
       verdict: cell(row.verdict),
       score: Number.isNaN(score) ? null : score,
       pay: cell(row.pay),
@@ -365,6 +377,7 @@ function folderRecords(workspace: WorkspaceReader): ToolRecord[] {
       tool: 'folder',
       key: folder,
       folder,
+      job: notes.job,
       date,
       company: notes.company,
       role: notes.role,
@@ -478,7 +491,6 @@ function runRecords(
     const posting = text(item.posting);
     const site = text(item.site);
     const hnId = number(item.hnId);
-    const job = text(item.job)?.trim().toLowerCase() ?? null;
     return {
       tool: 'search',
       key: `${runKey}:${companyKey(company)}:${roleKey(role)}`,
@@ -486,7 +498,7 @@ function runRecords(
       source,
       folder,
       run,
-      job: job && JOB_ID.test(job) ? job : null,
+      job: jobId(text(item.job)),
       company,
       role,
       links: [

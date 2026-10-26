@@ -639,3 +639,24 @@ export function savedJobFor<T extends JobIdentity>(
   const [only, ...more] = roles;
   return only && more.length === 0 ? { job: only.job, how: 'role' } : null;
 }
+
+/**
+ * Whether two jobs on file are surely one job found twice, as your Claude's Analyze job merges
+ * them: the same posting, by its address or its ID, at any company; or the same role at the same
+ * company, its title the same however it's written, where one of the two has no posting of its
+ * own, only a board's address, a Hacker News post or the company's site. Null for anything less
+ * sure, which the user decides with Merge.
+ */
+export function sameJob(a: JobIdentity, b: JobIdentity): 'posting' | 'role' | null {
+  const named = (job: JobIdentity) => ({
+    company: job.company,
+    companyKey: job.companyKey || companyKey(job.company),
+  });
+  const like = jobLikeness({ ...a, ...named(a) }, { ...b, ...named(b) });
+  if (like === 'posting') return 'posting';
+  if (like !== 'role') return null;
+  const company = companyMatch(named(a), named(b));
+  const title = titleFit(readTitle(a.role), readTitle(b.role));
+  const oneHasNone = !hasOwnPosting(a) || !hasOwnPosting(b);
+  return company === 'same' && title === 'same' && oneHasNone ? 'role' : null;
+}
