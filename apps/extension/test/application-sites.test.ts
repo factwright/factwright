@@ -548,4 +548,20 @@ describe('the frames of a tab, as a careers page shows an applicant system’s f
     await stopJobSites();
     expect(await framedSystem(1)).toBeNull();
   });
+
+  it('names none for a frame that shows a posting, with no form yet, as iCIMS’s does', async () => {
+    browser.granted.add(CAREERS);
+    browser.framed[1] = [
+      'https://careers-healthequity.icims.com/jobs/12345/staff-software-engineer/job?in_iframe=1',
+      'https://careers-acme.icims.com/jobs/search?ss=1&in_iframe=1',
+      'https://jobs.lever.co/acme/7a1c9e40-2b6d-4f1e-9c3a-5d8e0f2b4a71',
+      'https://jobs.ashbyhq.com/acme/1d1f0e3a-9b7c-4c1e-8f2a-3b4c5d6e7f80?embed=js',
+    ];
+    expect(await framedSystem(1)).toBeNull();
+    // Its application, at an address of its own, is a form.
+    browser.framed[1].push(
+      'https://careers-healthequity.icims.com/jobs/12345/staff-software-engineer/candidate?in_iframe=1',
+    );
+    expect(await framedSystem(1)).toBe('iCIMS');
+  });
 });

@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { menuHeight } from '../src/frame-size.ts';
 import type { FieldMenu } from '../src/job-site-messages.ts';
@@ -18,28 +20,42 @@ const extension = vi.hoisted(() => {
       sender: { id?: string },
       reply: (answer: unknown) => void,
     ) => unknown)[],
-    /** Each field's menu, by its question: how many answers, and whether Profile keeps it. */
-    menus: {} as Record<string, { answers: number; keeps: boolean }>,
+    /**
+     * Each field's menu, by its question: how many answers, whether Profile keeps it, and whether
+     * it offers your Claude's drafts.
+     */
+    menus: {} as Record<string, { answers: number; keeps: boolean; draft?: boolean }>,
     /** How many answers a menu the script opens has. */
     shown: 1,
+    /** The form the script asked about last. */
+    form: null as PageForm | null,
+    /** Whether the background waits to hear how a submit on the page before this one went. */
+    watch: false,
   };
   const answer = (message: Record<string, unknown>): unknown => {
     switch (message.do) {
       case 'hello':
-        return { allowed: state.allowed };
+        return { allowed: state.allowed, ...(state.watch && { watch: true }) };
       case 'form':
+        state.form = message.form as PageForm;
         return {
-          menus: (message.form as PageForm).fields.map(
+          menus: state.form.fields.map(
             (field): FieldMenu => ({
               ref: field.ref,
               key: field.key,
               answers: state.menus[field.question]?.answers ?? 0,
               keeps: state.menus[field.question]?.keeps ?? false,
+              draft: state.menus[field.question]?.draft ?? false,
             }),
           ),
         };
-      case 'menu':
+      case 'menu': {
+        const asked = state.form?.fields[message.ref as number]?.question ?? '';
+        if (message.answers && state.menus[asked]?.draft) {
+          return { answers: 0, save: message.save, draft: true };
+        }
         return { answers: message.answers ? state.shown : 0, save: message.save };
+      }
       case 'left':
         return { offer: false };
       default:
@@ -109,6 +125,7 @@ beforeEach(() => {
   });
   roots.clear();
   extension.allowed = true;
+  extension.watch = false;
   extension.shown = 1;
   extension.sent.length = 0;
   extension.menus = {
@@ -237,6 +254,51 @@ describe('the script on a job site you allowed', () => {
     expect(input('name').value).toBe('');
     // Nothing the script sends has an answer: the frame gets them from the background.
     expect(JSON.stringify(extension.sent)).not.toContain('Ana');
+  });
+
+  it('opens the menu again on a click in the field the cursor’s in', async () => {
+    script = startScript(() => true, 0);
+    await vi.waitFor(() => expect(frames()).toHaveLength(1));
+    clickIn('name');
+    await vi.waitFor(() => expect(frames()).toHaveLength(2));
+    // Escape closes it, and the cursor stays in the field.
+    input('name').dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    await vi.waitFor(() => expect(frames()).toHaveLength(1));
+    expect(document.activeElement).toBe(input('name'));
+    // A click in it, with no focus to come, opens it again; one more, with it open, does nothing.
+    input('name').dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
+    await vi.waitFor(() => expect(frames()).toHaveLength(2));
+    input('name').dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(sentOf('menu')).toHaveLength(2);
+  });
+
+  it('goes just under its field, over the page, where there’s no room beside it', async () => {
+    // A control of the page's everywhere beside the field, as in a narrow window.
+    document.body.insertAdjacentHTML('beforeend', '<button id="everywhere">Chat</button>');
+    boxes.set('everywhere', new DOMRect(0, 0, innerWidth, innerHeight));
+    script = startScript(() => true, 0);
+    // Placing it looks at every spot beside the field first, which takes a while on a busy run.
+    await vi.waitFor(() => expect(sentOf('hello')).toHaveLength(1), { timeout: 5000 });
+    clickIn('name');
+    await vi.waitFor(
+      () => expect(frames().some(({ frame }) => frame.src.includes('#menu:'))).toBe(true),
+      { timeout: 5000 },
+    );
+    const menu = frames().find(({ frame }) => frame.src.includes('#menu:'));
+    expect(menu?.host.style.getPropertyValue('left')).toBe('40px');
+    expect(menu?.host.style.getPropertyValue('top')).toBe(`${100 + 24 + 6}px`);
+  });
+
+  it('offers your Claude’s drafts in one of the form’s own questions with no answer', async () => {
+    extension.menus['Cover note'] = { answers: 0, keeps: false, draft: true };
+    script = startScript(() => true, 0);
+    await vi.waitFor(() => expect(frames()).toHaveLength(1));
+    clickIn('note');
+    await vi.waitFor(() => expect(frames()).toHaveLength(2));
+    expect(sentOf('menu')[0]).toMatchObject({ ref: 3, answers: true, save: false });
+    // As big as a menu of answers, so the page can't tell them apart.
+    expect(frames()[1]?.host.style.getPropertyValue('height')).toBe(`${menuHeight(true, false)}px`);
   });
 
   it('is the same size however many answers it has, so the page can’t count them', async () => {
@@ -440,6 +502,170 @@ describe('the script on a job site you allowed', () => {
     expect(sentOf('look')).toEqual([]);
   });
 
+  it('says what the form held as you submit it, and whether its button sends the application', async () => {
+    document
+      .querySelector('form')
+      ?.insertAdjacentHTML(
+        'beforeend',
+        '<button id="add" type="button">Add another</button><button id="next" type="button">Save and Continue</button><button id="send" type="button">Submit application</button>',
+      );
+    script = startScript(() => true, 0);
+    await vi.waitFor(() => expect(frames()).toHaveLength(1));
+    input('note').value = 'Gear that lasts.';
+    // A button that adds a part, or uploads, says nothing.
+    document.getElementById('add')?.click();
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(sentOf('submitting')).toEqual([]);
+    document.getElementById('next')?.click();
+    await vi.waitFor(() => expect(sentOf('submitting')).toHaveLength(1));
+    expect(sentOf('submitting')[0]).toMatchObject({ final: false });
+    document.getElementById('send')?.click();
+    await vi.waitFor(() => expect(sentOf('submitting')).toHaveLength(2));
+    const [, sent] = sentOf('submitting') as [
+      unknown,
+      { final: boolean; values: { value: string }[] },
+    ];
+    expect(sent.final).toBe(true);
+    expect(sent.values.map((each) => each.value)).toContain('Gear that lasts.');
+    // A click the page made itself isn't yours.
+    script.stop();
+    script = startScript(() => false, 0);
+    document.getElementById('send')?.click();
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(sentOf('submitting')).toHaveLength(2);
+  });
+
+  it('says how a submit went once the page moves on: the form gone, or the words that it went in', async () => {
+    document
+      .querySelector('form')
+      ?.insertAdjacentHTML('beforeend', '<button id="send">Submit</button>');
+    script = startScript(() => true, 0);
+    await vi.waitFor(() => expect(frames()).toHaveLength(1));
+    document.getElementById('send')?.click();
+    await vi.waitFor(() => expect(sentOf('submitting')).toHaveLength(1));
+    // The page swaps its form for what it says once the application's in.
+    document.body.innerHTML = '<main><h1>Thank you for applying!</h1></main>';
+    await vi.waitFor(() =>
+      expect(sentOf('outcome').at(-1)).toMatchObject({ submitted: true, form: false }),
+    );
+  });
+
+  it('says how a submit went on the page after it, as the background asks', async () => {
+    extension.watch = true;
+    document.body.innerHTML = '<main><p>Your application was submitted successfully.</p></main>';
+    script = startScript(() => true, 0);
+    await vi.waitFor(() =>
+      expect(sentOf('outcome')).toEqual([
+        expect.objectContaining({ submitted: true, form: false, errors: false }),
+      ]),
+    );
+  });
+
+  it('hears only the application form’s own buttons, never a posting’s Apply above it', async () => {
+    document.body.insertAdjacentHTML(
+      'afterbegin',
+      '<button id="apply" type="button">Apply</button>',
+    );
+    document.body.insertAdjacentHTML(
+      'beforeend',
+      `<form id="search"><input name="q" type="search"><button id="find">Submit</button></form>
+      <form id="news"><label for="news-email">Your email</label><input id="news-email" type="email"><button id="join">Submit</button></form>
+      <div id="similar" role="button">Apply</div>`,
+    );
+    script = startScript(() => true, 0);
+    await vi.waitFor(() => expect(frames()).toHaveLength(1));
+    // A posting's Apply above the form, a search box's, a newsletter's and a similar job's below
+    // it, aren't its.
+    document.getElementById('apply')?.click();
+    document.getElementById('find')?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    document.getElementById('join')?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    document.getElementById('similar')?.click();
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(sentOf('submitting')).toEqual([]);
+  });
+
+  it('hears a page’s own button after its fields, where it keeps them in no form', async () => {
+    document.body.innerHTML = `
+      <div role="button" id="apply">Apply</div>
+      <main>
+        <label for="name">Full name</label><input id="name" type="text">
+        <label for="email">Email</label><input id="email" type="email">
+        <label for="phone">Phone</label><input id="phone" type="tel">
+      </main>
+      <footer><div role="button" id="send">Submit application</div></footer>`;
+    script = startScript(() => true, 0);
+    await vi.waitFor(() => expect(frames()).toHaveLength(1));
+    document.getElementById('apply')?.click();
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(sentOf('submitting')).toEqual([]);
+    document.getElementById('send')?.click();
+    await vi.waitFor(() => expect(sentOf('submitting')).toHaveLength(1));
+    expect(sentOf('submitting')[0]).toMatchObject({ final: true });
+  });
+
+  it('hears the form sent as you press Enter in one of its boxes, never one the page sends itself', async () => {
+    script = startScript(() => true, 0);
+    await vi.waitFor(() => expect(frames()).toHaveLength(1));
+    const form = document.querySelector('form') as HTMLFormElement;
+    form.addEventListener('submit', (event) => event.preventDefault());
+    // The page's own code sends it, with no key of yours.
+    form.requestSubmit();
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(sentOf('submitting')).toEqual([]);
+    // Enter for a new line in its box of several, then the page's code sends it: not yours either.
+    input('note').dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    form.requestSubmit();
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(sentOf('submitting')).toEqual([]);
+    // Enter, in one of its one-line boxes.
+    input('name').dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    form.requestSubmit();
+    await vi.waitFor(() => expect(sentOf('submitting')).toHaveLength(1));
+  });
+
+  it('hears the Submit on Workday’s Review, with nothing to fill, and waits for the page to go on', async () => {
+    const step = (n: number, name: string, body: string) => `
+      <div data-automation-id="progressBar"><ol>
+        <li><div>step ${n - 1} of 6</div><label>Self Identify</label></li>
+        <li data-automation-id="progressBarActiveStep"><div>current step ${n} of 6</div><label>${name}</label></li>
+      </ol></div>
+      <main>${body}</main>`;
+    document.body.innerHTML = step(
+      6,
+      'Review',
+      '<p>Check your application.</p><button id="send" type="button">Submit</button>',
+    );
+    script = startScript(() => true, 0);
+    await vi.waitFor(() => expect(sentOf('hello')).toHaveLength(1));
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    document.getElementById('send')?.click();
+    await vi.waitFor(() => expect(sentOf('submitting')).toHaveLength(1));
+    expect(sentOf('submitting')[0]).toMatchObject({ final: true, values: [] });
+    // Review, as Workday sends what's on it, is still the page you submitted, not one it went on to.
+    document.querySelector('main')?.insertAdjacentHTML('beforeend', '<p>Submitting…</p>');
+    await vi.waitFor(() => expect(sentOf('outcome')).toHaveLength(1));
+    expect(sentOf('outcome')[0]).toMatchObject({ submitted: false, form: true });
+    document.body.innerHTML = '<main><h2>Application Submitted</h2></main>';
+    await vi.waitFor(() =>
+      expect(sentOf('outcome').at(-1)).toMatchObject({ submitted: true, form: false }),
+    );
+  });
+
+  it('puts a note in the Fill button’s place, as the background says, and takes it away', async () => {
+    script = startScript(() => true, 0);
+    await vi.waitFor(() => expect(frames()).toHaveLength(1));
+    const token = '0f3c9a8e-4b1d-4c2e-9f6a-1a2b3c4d5e6f';
+    await tell({ type: 'job-site', do: 'note', token });
+    await vi.waitFor(() => expect(frames()).toHaveLength(2));
+    const shown = frames().filter(({ host }) => host.style.getPropertyValue('display') !== 'none');
+    expect(shown.map(({ frame }) => frame.src)).toEqual([
+      `chrome-extension://factwright/frame.html#note:${token}`,
+    ]);
+    await tell({ type: 'job-site', do: 'unnote', token });
+    await vi.waitFor(() => expect(frames()).toHaveLength(1));
+    expect(frames()[0]?.host.style.getPropertyValue('display')).toBe('block');
+  });
+
   it('stops when the background says so, taking its frames away', async () => {
     script = startScript(() => true, 0);
     await vi.waitFor(() => expect(frames()).toHaveLength(1));
@@ -449,5 +675,68 @@ describe('the script on a job site you allowed', () => {
     clickIn('name');
     await new Promise((resolve) => setTimeout(resolve, 50));
     expect(extension.sent).toHaveLength(before);
+  });
+});
+
+/**
+ * Each applicant system's own page, as the fixtures have it, and the button that sends it, or
+ * goes on to its next page: what the script says as you press it.
+ */
+describe('submitting, on each applicant system’s own pages', () => {
+  const FIXTURES = join(import.meta.dirname, 'fixtures');
+  const cases: [page: string, button: string, final: boolean][] = [
+    ['greenhouse-application', 'Submit application', true],
+    ['lever-application', 'Submit application', true],
+    ['ashby-application', 'Submit Application', true],
+    ['smartrecruiters-application', 'Next', false],
+    ['smartrecruiters-screening', 'Submit', true],
+    ['successfactors-application', 'Apply', true],
+    ['icims-candidate', 'Submit Profile', false],
+    ['icims-questions', 'Submit', false],
+    ['icims-eeo', 'Submit', true],
+    ['taleo-personal', 'Save and Continue', false],
+    ['taleo-esignature', 'Save and Continue', false],
+    ['workday-my-information', 'Save and Continue', false],
+    ['workday-application-questions', 'Save and Continue', false],
+    ['workday-review', 'Submit', true],
+  ];
+  it.each(cases)('%s: %s', async (name, words, final) => {
+    const page = new DOMParser().parseFromString(
+      readFileSync(join(FIXTURES, `${name}.html`), 'utf8'),
+      'text/html',
+    );
+    // Without the page's own code, which the fixtures don't have: its scripts, and the handlers in
+    // its elements' attributes.
+    for (const each of page.querySelectorAll('script')) each.remove();
+    for (const element of page.querySelectorAll('*')) {
+      for (const { name: attribute } of [...element.attributes]) {
+        if (attribute.toLowerCase().startsWith('on')) element.removeAttribute(attribute);
+      }
+    }
+    document.replaceChild(
+      document.importNode(page.documentElement, true),
+      document.documentElement,
+    );
+    script = startScript(() => true, 0);
+    await vi.waitFor(() => expect(sentOf('hello')).toHaveLength(1));
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    // The button by its words, as you see it: a page's own kind of button by the words inside it.
+    const button = [
+      ...document.querySelectorAll(
+        'button, input[type="submit"], input[type="button"], [role="button"], spl-button span',
+      ),
+    ]
+      .reverse()
+      .find(
+        (each) =>
+          (each.textContent?.trim() || (each as HTMLInputElement).value || '').replace(
+            /\s+/g,
+            ' ',
+          ) === words,
+      ) as HTMLElement | undefined;
+    if (!button) throw new Error(`No ${words} on ${name}.`);
+    button.click();
+    await vi.waitFor(() => expect(sentOf('submitting')).toHaveLength(1));
+    expect(sentOf('submitting')[0]).toMatchObject({ final });
   });
 });

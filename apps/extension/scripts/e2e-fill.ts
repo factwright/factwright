@@ -5,12 +5,15 @@
 // stand-in here, and the panel fills its drafts in once it's done. Once the form is done, Mark as
 // applied records what was sent, marks the job Applied, and offers to keep a new answer in
 // Profile. Then the job application sites: turned on from the panel, they put a Fill button on
-// the form, which opens Chromium's side panel and fills it, and menus in its fields, whose answers
-// go in a field only once you pick one, and which offer to keep a new answer you typed. A company's
-// careers page on another site that shows the form in a frame gets them in the frame, where the
-// panel fills it, and Lever's location box gets the place it suggests. Turned off in setup,
-// they're gone. On a form with fields you can't see, as a page's traps for bots, it reads only
-// those you can. Nothing is submitted, and nothing leaves this computer.
+// the form, which fills it in its page and says so in a note whose Details opens Chromium's side
+// panel, and menus in its fields, whose answers go in a field only once you pick one, which offer
+// to keep a new answer you typed, and Draft with Claude. A company's careers page on another site
+// that shows the form in a frame gets them in the frame, and Lever's location box gets the place
+// it suggests. A Greenhouse form you submit, on a page served here, marks its job Applied, with
+// Undo. Turned off in setup, they're gone, and Fill from the popup still fills the form in its
+// page, with a note whose Details opens the side panel. On a form with fields you can't see, as a
+// page's traps for bots, it reads only those you can. Nothing real is submitted, and nothing
+// leaves this computer.
 // `pnpm --filter @factwright/extension e2e:fill` (it needs Playwright's Chromium, as `e2e` does,
 // and a C compiler, for the helper). With `-- --shots <folder>`, it saves the panel and the filled
 // form there as pictures, to look over a change.
@@ -47,7 +50,13 @@ import { JobsService } from '../../desktop/src/main/jobs/service.ts';
 import { Tracker } from '../../desktop/src/main/jobs/tracker.ts';
 import { type AboutYou, applyChanges, NO_ANSWERS } from '../../desktop/src/shared/about.ts';
 import { PRIVATE_FILE } from '../../desktop/src/shared/private.ts';
-import { fillSystems, type SystemsSite, systemsJobs, systemsSite } from './e2e-fill-systems.ts';
+import {
+  fillSystems,
+  jobAtTop,
+  type SystemsSite,
+  systemsJobs,
+  systemsSite,
+} from './e2e-fill-systems.ts';
 import { LEVER_LOOKS_UP, withOwnCode, workdayCode } from './sites-own-code.ts';
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
@@ -69,6 +78,14 @@ const unpackedId = (folder: string) =>
 
 /** The job's application, as Lever shows its form, served on this computer. */
 const FORM_PATH = '/northwind/7a1c9e40-2b6d-4f1e-9c3a-5d8e0f2b4a71/apply';
+
+/**
+ * A Greenhouse application, for a job you haven't applied to, at its own address, which sends
+ * itself back there with what's in it, as its form's own submit: the page then says it went in.
+ */
+const GREENHOUSE_PATH = '/harborpine/jobs/5426468004';
+const THANKS =
+  '<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Harbor &amp; Pine Outfitters</title></head><body><main><h1>Thank you for applying to Harbor &amp; Pine Outfitters!</h1><p>We’ll be in touch.</p></main></body></html>';
 
 /** A form with fields you can't see, and the questions of the ones you can. */
 const TRAPS_PATH = '/fernway/apply';
@@ -107,6 +124,7 @@ async function site(systems: SystemsSite) {
     ...systems.pages,
     [FORM_PATH]: Buffer.from(withOwnCode(lever, LEVER_LOOKS_UP)),
     [TRAPS_PATH]: readFileSync(join(FIXTURES, 'hidden-fields.html')),
+    [GREENHOUSE_PATH]: readFileSync(join(FIXTURES, 'greenhouse-application.html')),
     [WORKDAY_PATH]: Buffer.from(
       withOwnCode(
         readFileSync(join(FIXTURES, 'workday-my-information.html'), 'utf8'),
@@ -129,6 +147,12 @@ async function site(systems: SystemsSite) {
     if (page) {
       response.writeHead(200, { 'content-type': 'text/html' });
       response.end(page);
+      return;
+    }
+    // Greenhouse's application, sent: the page after says it went in.
+    if (request.url?.startsWith(`${GREENHOUSE_PATH}?`)) {
+      response.writeHead(200, { 'content-type': 'text/html' });
+      response.end(THANKS);
       return;
     }
     // The browser asks every site for its icon itself.
@@ -242,6 +266,22 @@ try {
   );
   // The other applicant systems' jobs, each with its application's address.
   systemsJobs(workspace, local.origin);
+  // A job on Greenhouse you haven't applied to, with its resume.
+  const harborFolder = join(
+    workspace,
+    'applications',
+    '2026-10-25-harbor-pine-outfitters-account-executive-mid-market',
+  );
+  mkdirSync(harborFolder, { recursive: true });
+  writeFileSync(
+    join(harborFolder, 'job.md'),
+    [
+      '# Harbor & Pine Outfitters: Account Executive, Mid-Market',
+      '',
+      '- **Date:** 2026-10-25',
+      `- **Apply:** Greenhouse ${local.origin}${GREENHOUSE_PATH}`,
+    ].join('\n'),
+  );
   const tracker = new Tracker(join(home, 'tracker.db'));
   const jobs = new JobsService({ workspace, tracker, onChange: () => {} });
   jobs.read();
@@ -283,13 +323,14 @@ try {
   const drafts = {
     start: async (jobId: string) => {
       const asked = jobs.savedForm(jobId)?.questions ?? [];
+      const job = jobs.job(jobId);
       drafting = true;
       setTimeout(() => {
         const choices = asked.filter((each) => each.options.length > 0);
         writeFileSync(
-          join(folder, 'answers.md'),
+          join(job?.folder ? join(workspace, 'applications', job.folder) : folder, 'answers.md'),
           [
-            '# Application questions: Northwind Labs, Senior Product Manager, Data',
+            `# Application questions: ${job?.company}, ${job?.role}`,
             '',
             ...asked
               .filter((each) => each.options.length === 0)
@@ -419,11 +460,19 @@ try {
     await panel.goto(`chrome-extension://${id}/sidepanel.html`);
     return panel;
   };
-  /** A picture of a page, whole, or as the window shows it, with the extension's frame on it. */
+  /**
+   * A picture of a page, whole, or as the window shows it, with the extension's frame on it, light
+   * and dark.
+   */
   const shoot = async (page: Page, name: string, fullPage = true) => {
     if (!SHOTS) return;
     mkdirSync(SHOTS, { recursive: true });
-    await page.screenshot({ path: join(SHOTS, `${name}.png`), fullPage });
+    for (const colorScheme of ['light', 'dark'] as const) {
+      await page.emulateMedia({ colorScheme });
+      await page.waitForTimeout(200);
+      await page.screenshot({ path: join(SHOTS, `${name}-${colorScheme}.png`), fullPage });
+    }
+    await page.emulateMedia({ colorScheme: null });
   };
 
   // With Factwright closed, the panel says to open it, and fills nothing.
@@ -441,7 +490,7 @@ try {
   const said = (await panel.getByRole('status').first().textContent()) ?? '';
   console.log(`  ${said}`);
   check(
-    (await panel.getByText('Senior Product Manager, Data at Northwind Labs').count()) === 1,
+    (await jobAtTop(panel, 'Senior Product Manager, Data', 'Northwind Labs')) === 1,
     'the panel finds the job the form is for, by its posting',
   );
   const value = (selector: string) =>
@@ -466,8 +515,8 @@ try {
       [...((input as HTMLInputElement).files ?? [])].map((file) => `${file.name} ${file.size}`),
     );
   check(
-    uploaded.length === 1 && uploaded[0] === `Ana María Ruiz - Resume.pdf ${pdf.length}`,
-    'it uploads the job’s own resume, whole, under a plain name',
+    uploaded.length === 1 && uploaded[0] === `AnaRuizResume10202026_Northwind.pdf ${pdf.length}`,
+    'it uploads the job’s own resume, whole, under its own name',
   );
   const checked = (label: string) =>
     form
@@ -552,8 +601,8 @@ try {
   );
   await offering.close();
 
-  /** The extension's frame on the form, its Fill button or a menu, once it shows `words`. */
-  const frameOn = async (mode: 'button' | 'menu', words = '', ms = 20_000, on = form) => {
+  /** The extension's frame on the form, its Fill button, a menu or a note, once it shows `words`. */
+  const frameOn = async (mode: 'button' | 'menu' | 'note', words = '', ms = 20_000, on = form) => {
     const until = Date.now() + ms;
     for (;;) {
       for (const frame of on.frames()) {
@@ -562,15 +611,14 @@ try {
           .locator('body')
           .innerText()
           .catch(() => '');
-        if (
-          (await frame
-            .locator('button')
-            .count()
-            .catch(() => 0)) > 0 &&
-          text.includes(words)
-        ) {
-          return frame;
-        }
+        // Drawn: with the words asked for, or else with its buttons.
+        const drawn = words
+          ? text.includes(words)
+          : (await frame
+              .locator('button')
+              .count()
+              .catch(() => 0)) > 0;
+        if (drawn) return frame;
       }
       if (Date.now() > until) throw new Error(`No ${mode} frame on the form with ${words}.`);
       await on.waitForTimeout(100);
@@ -613,18 +661,43 @@ try {
     'its script is registered for the job application sites, and never LinkedIn or Indeed',
   );
 
-  // The Fill button opens Chromium's side panel, which fills the form, as Fill does.
+  // The Fill button fills the form in its page, and a note in its place says how it went.
   await form.reload();
   await form.bringToFront();
   const fillButton = await frameOn('button');
   check((await fieldValue('email')) === '', 'a form loaded again is empty');
   await shoot(form, 'fill-4-button', false);
+  const panels = context.pages().length;
   await press(fillButton.getByRole('button', { name: 'Fill', exact: true }));
   await waitForValue('email', 'ana@example.com');
   check(
-    (await fieldValue('name')) === 'Ana María Ruiz',
-    'its Fill button opens the side panel, which fills the form',
+    (await fieldValue('name')) === 'Ana María Ruiz' && context.pages().length === panels,
+    'its Fill button fills the form in its page, with no panel',
   );
+  const filledNote = await frameOn('note', 'Factwright filled');
+  const noteWords = (await filledNote.locator('body').innerText()).replace(/\s+/g, ' ');
+  console.log(`  ${noteWords}`);
+  check(
+    /^Factwright filled \d+ fields( · \d+ need you)? Details/.test(noteWords) &&
+      (await filledNote.getByRole('button', { name: 'Details' }).count()) === 1,
+    'and a note on the page says how many it filled, and how many need you, with Details',
+  );
+  await shoot(form, 'fill-4b-note', false);
+  // Details opens the panel, which shows that fill as it was, without filling it again.
+  await form.locator('input[name="email"]').fill('mine@example.com');
+  const shown = await panelOn();
+  await shown.getByText(/^Filled \d+ of \d+ fields/).waitFor({ timeout: 40_000 });
+  check(
+    (await fieldValue('email')) === 'mine@example.com' &&
+      (await shown.locator('details.group summary').first().textContent())?.startsWith(
+        'Filled · ',
+      ) === true &&
+      (await shown.locator('.card.job').textContent())?.includes('Senior Product Manager, Data') ===
+        true,
+    'the panel shows the fill as it was, the job at the top and Filled folded away, and fills nothing over what you typed since',
+  );
+  await shoot(shown, 'fill-4c-panel');
+  await shown.close();
 
   // A field's menu offers Factwright's answer, and puts it in the field only once you pick it.
   await form.reload();
@@ -757,8 +830,10 @@ try {
   check(
     (await framedValue('name')) === 'Ana María Ruiz' &&
       (await framedValue('email')) === 'ana@example.com',
-    'its Fill button opens the side panel, which fills the form in the frame',
+    'its Fill button fills the form in the frame, in its page',
   );
+  await frameOn('note', 'Factwright filled', 20_000, careers);
+  check(true, 'and its note goes in the part of the frame that shows');
   check(
     !(await careers.content()).includes('ana@example.com'),
     'and the careers page around it never has an answer',
@@ -926,7 +1001,7 @@ try {
   };
   await workdayPanel.getByText(/^Filled \d+ of \d+ fields/).waitFor({ timeout: 40_000 });
   check(
-    (await workdayPanel.getByText('Senior Product Manager at Larkspur Energy').count()) === 1,
+    (await jobAtTop(workdayPanel, 'Senior Product Manager', 'Larkspur Energy')) === 1,
     'the panel finds the Workday job by its application’s address',
   );
   check(
@@ -965,11 +1040,11 @@ try {
   await workday.locator('[id="workExperience-225--jobTitle"]').fill('Sr. PM');
   await fillThisPage();
   check(
-    (await typedIn('workExperience-225--jobTitle')) === 'Sr. PM' &&
+    (await typedIn('workExperience-225--jobTitle')) === 'Director of Product' &&
       (await typedIn('workExperience-225--companyName')) === 'Tidewater Analytics' &&
       (await dateShows('workExperience-225--startDate-dateSectionMonth')) === '04' &&
       (await dateShows('workExperience-225--startDate-dateSectionYear')) === '2023',
-    'the first Work Experience takes your newest job, its dates typed a key at a time, and keeps what Workday filled',
+    'the first Work Experience takes your newest job, its dates typed a key at a time, in place of what Workday filled',
   );
   check(
     (await typedIn('education-247--schoolName')) === 'CU Boulder' &&
@@ -985,7 +1060,7 @@ try {
     (await inPart('Work-Experience-2-panel', 'jobTitle')) === 'Senior Product Manager' &&
       (await inPart('Work-Experience-3-panel', 'jobTitle')) === 'Product Manager' &&
       (await inPart('Work-Experience-3-panel', 'companyName')) === 'Fernway' &&
-      (await typedIn('workExperience-225--jobTitle')) === 'Sr. PM',
+      (await typedIn('workExperience-225--jobTitle')) === 'Director of Product',
     'Add for your other jobs presses Workday’s Add Another, and fills each new part with the next job',
   );
   await workdayPanel
@@ -1086,6 +1161,120 @@ try {
     shoot,
   });
 
+  // Greenhouse's application, for a job you haven't applied to: Fill fills it in its page, and its
+  // note's Details opens Chromium's side panel. A question nothing on file answers offers Draft
+  // with Claude in its menu. Then you submit it, as you would, and the page after says it went in:
+  // the job's marked Applied, with what you sent, and a note there offers Undo.
+  const harbor = await context.newPage();
+  harbor.on('pageerror', (error) => errors.push(error.message));
+  await harbor.goto(`${local.origin}${GREENHOUSE_PATH}`);
+  await harbor.bringToFront();
+  const harborButton = await frameOn('button', '', 20_000, harbor);
+  await press(harborButton.getByRole('button', { name: 'Fill', exact: true }), harbor);
+  const harborNote = await frameOn('note', 'Factwright filled', 60_000, harbor);
+  check(
+    (await harbor.locator('#email').inputValue()) === 'ana@example.com',
+    'Fill fills a Greenhouse application in its page, with its note',
+  );
+  await shoot(harbor, 'fill-12-note', false);
+  /** The extension's side panels open now, as Chromium counts them. */
+  const sidePanels = () =>
+    setup.evaluate(
+      async () =>
+        (
+          await (
+            globalThis as unknown as {
+              chrome: { runtime: { getContexts(filter: object): Promise<unknown[]> } };
+            }
+          ).chrome.runtime.getContexts({ contextTypes: ['SIDE_PANEL'] })
+        ).length,
+    );
+  const panelsBefore = await sidePanels();
+  await press(harborNote.getByRole('button', { name: 'Details' }), harbor);
+  const until5 = Date.now() + 10_000;
+  while ((await sidePanels()) <= panelsBefore) {
+    if (Date.now() > until5) throw new Error('Details didn’t open the side panel.');
+    await harbor.waitForTimeout(100);
+  }
+  check(true, 'the note’s Details opens Chromium’s side panel, from your click on it');
+  // The panel, as Details shows it: the fill as it was, what needs you, then what it filled.
+  if (SHOTS) {
+    const harborTab = (
+      await setup.evaluate(
+        (url) =>
+          (
+            globalThis as unknown as {
+              chrome: {
+                tabs: { query(query: object): Promise<{ id: number; windowId: number }[]> };
+              };
+            }
+          ).chrome.tabs.query({ url }),
+        `${local.origin}${GREENHOUSE_PATH}`,
+      )
+    )[0];
+    if (harborTab) {
+      const details = await panelOn({
+        id: harborTab.id,
+        windowId: harborTab.windowId,
+        url: `${local.origin}${GREENHOUSE_PATH}`,
+        title: await harbor.title(),
+      });
+      await details.getByText(/^Filled \d+ of \d+ fields/).waitFor({ timeout: 40_000 });
+      await details.locator('details.group summary').first().click();
+      await details.locator('details.group .field').first().hover();
+      await shoot(details, 'fill-12b-panel');
+      await details.close();
+    }
+  }
+  const whyJoin = harbor.locator('#question_12497120004');
+  await whyJoin.click();
+  const draftMenu = await frameOn('menu', 'Draft with Claude', 30_000, harbor);
+  await shoot(harbor, 'fill-13-menu-draft', false);
+  await press(draftMenu.getByRole('button', { name: /^Draft with Claude/ }), harbor);
+  await frameOn('menu', 'Drafting…', 20_000, harbor);
+  await shoot(harbor, 'fill-14-menu-drafting', false);
+  const draftedMenu = await frameOn('menu', 'Drafted by the stand-in.', 60_000, harbor);
+  check(
+    (await whyJoin.inputValue()) === '' &&
+      (await draftedMenu.getByText('Your Claude’s draft for this job').count()) === 1,
+    'Draft with Claude in a question’s menu has your Claude draft the form’s open questions, and the menu offers its draft',
+  );
+  await shoot(harbor, 'fill-15-menu-drafted', false);
+  await press(draftedMenu.getByRole('button', { name: /Drafted by the stand-in/ }), harbor);
+  const until6 = Date.now() + 10_000;
+  while ((await whyJoin.inputValue()) !== 'Drafted by the stand-in.') {
+    if (Date.now() > until6) throw new Error('The draft never went in its field.');
+    await harbor.waitForTimeout(100);
+  }
+  check(true, 'and it goes in the field once you pick it');
+  // You submit it, as you would: Greenhouse's own code checks it, which a test's page doesn't.
+  await harbor.evaluate(() => {
+    (document.getElementById('application-form') as HTMLFormElement).noValidate = true;
+  });
+  const harborJob = () =>
+    jobs.list().jobs.find((each) => each.company === 'Harbor & Pine Outfitters');
+  check(harborJob()?.status !== 'applied', 'the Greenhouse job isn’t applied to yet');
+  await harbor.getByRole('button', { name: 'Submit application' }).click();
+  const appliedNote = await frameOn('note', 'Marked applied', 30_000, harbor);
+  check(
+    harborJob()?.status === 'applied' &&
+      harborJob()?.sent.some(
+        (each) =>
+          each.question === 'Why do you want to join Harbor & Pine?' &&
+          each.text === 'Drafted by the stand-in.',
+      ) === true,
+    'once the page says it went in, the job is marked Applied, with what you sent for its own question',
+  );
+  await shoot(harbor, 'fill-16-applied', false);
+  await press(appliedNote.getByRole('button', { name: 'Undo' }), harbor);
+  await frameOn('note', 'Not applied', 20_000, harbor);
+  check(
+    harborJob()?.status !== 'applied' && (harborJob()?.sent.length ?? 0) > 0,
+    'Undo takes that back, and keeps what you sent with the job',
+  );
+  await shoot(harbor, 'fill-17-undone', false);
+  await harbor.close();
+
   // Turned off in setup, the Fill button and the menus are gone, there and then.
   await setup.reload();
   await setup.getByRole('button', { name: 'Turn off', exact: true }).click();
@@ -1107,6 +1296,32 @@ try {
   check(
     left.length === 0 && !form.frames().some((each) => each.url().includes('/frame.html')),
     'turned off in setup, its script is unregistered, and its button and menus are gone',
+  );
+  // As on any site you haven't allowed, Fill from the popup fills the form in its page, with a note
+  // the background puts there, as no script's there, and its Details opens the side panel too.
+  await form.bringToFront();
+  await setup.evaluate(
+    (tab) =>
+      (
+        globalThis as unknown as {
+          chrome: { runtime: { sendMessage(message: unknown): Promise<unknown> } };
+        }
+      ).chrome.runtime.sendMessage({ type: 'fill', tab }),
+    formTabAt,
+  );
+  const offNote = await frameOn('note', 'Factwright filled', 60_000);
+  check(
+    (await fieldValue('email')) === 'ana@example.com',
+    'off the job application sites, Fill from the popup fills the form in its page, with its note',
+  );
+  // The window's side panel may be open still, from Greenhouse's: the browser opening it from this
+  // click, rather than refusing, is what the note says nothing more for.
+  await press(offNote.getByRole('button', { name: 'Details' }));
+  await form.waitForTimeout(1500);
+  check(
+    (await sidePanels()) > 0 &&
+      !(await offNote.locator('body').innerText()).includes('click Factwright’s button'),
+    'and its note’s Details opens Chromium’s side panel there too, from your click',
   );
 
   // The built form function, as the panel sends it into a page, on a form with traps for bots.

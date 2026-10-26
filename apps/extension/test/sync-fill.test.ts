@@ -347,7 +347,7 @@ describe('filling a form from your job hunt through sync', () => {
     expect(ours['First name']).toMatchObject({ text: 'Ana María', source: 'profile' });
     expect(ours['Resume/CV']).toMatchObject({
       file: 'resume',
-      from: 'Ana María Ruiz - Resume.pdf',
+      from: 'AnaRuizResume10202026_Northwind.pdf',
     });
     expect(ours['Cover letter']).toMatchObject({ file: 'cover-letter' });
     expect(ours['Current company']).toMatchObject({
@@ -488,6 +488,11 @@ describe('filling a form from your job hunt through sync', () => {
       did: 'sent',
       recorded: 1,
       job: { ...plan.job, status: 'applied', appliedOn: '2026-10-23' },
+      marked: true,
+      undo: {
+        line: expect.any(String),
+        row: { status: null, status_on: null, applied_on: null },
+      },
     });
     await engine.syncOnce();
     desktop.jobs.read();
@@ -512,6 +517,41 @@ describe('filling a form from your job hunt through sync', () => {
         .get(plan.job.id)
         ?.map((each) => each.status),
     ).toEqual(['applied']);
+  });
+
+  it('takes marking it Applied back, as Undo asks, with its line in the job’s history', async () => {
+    const { keys, client, desktop, engine } = await account();
+    const fill = fillFor(client, keys);
+    const plan = ok(await fill.ask(FILL));
+    if (plan.did !== 'fill' || !plan.job) throw new Error('No job.');
+    const id = plan.job.id;
+    const sent = ok(
+      await fill.ask({
+        ask: 'sent',
+        job: id,
+        url: FORM_URL,
+        answers: [{ question: 'Why Northwind Labs?', text: 'Data products.' }],
+      }),
+    );
+    if (sent.did !== 'sent' || !sent.undo) throw new Error('Nothing to undo.');
+    const undone = ok(await fill.ask({ ask: 'unsent', job: id, undo: sent.undo }));
+    expect(undone).toEqual({
+      ok: true,
+      did: 'unsent',
+      undone: true,
+      job: { ...plan.job, status: 'new', appliedOn: null },
+    });
+    await engine.syncOnce();
+    desktop.jobs.read();
+    expect(desktop.jobs.job(id)).toMatchObject({ status: null, statusOn: null, appliedOn: null });
+    expect(desktop.tracker.history().get(id) ?? []).toEqual([]);
+    // What you sent stays with the job, and Undo again changes nothing.
+    expect(desktop.jobs.job(id)?.sent.map((each) => each.text)).toEqual(['Data products.']);
+    expect(await fill.ask({ ask: 'unsent', job: id, undo: sent.undo })).toMatchObject({
+      undone: false,
+    });
+    // Without what to put back, it says where to change it.
+    expect(await fill.ask({ ask: 'unsent', job: id })).toMatchObject({ ok: false });
   });
 
   it('keeps what another device changed meanwhile, making its change again on top', async () => {

@@ -170,6 +170,13 @@ export type InboxAsk =
   /** What you sent, once you've applied: the answers to the form's own questions. */
   | { ask: 'sent'; job: string; url: string; answers: { question: string; text: string }[] }
   /**
+   * Takes back marking a job Applied, as the extension's Undo asks once it noticed you submitted
+   * the job's application and marked it: the job goes back where it was, unless it's moved on
+   * since. An app from before it knew how answers bad-message. The extension's own answers through
+   * sync take `undo`, as its `sent` said, since the app's readInboxAsk refuses extra keys.
+   */
+  | { ask: 'unsent'; job: string; undo?: SentUndo }
+  /**
    * New answers to keep in Profile, each one you chose to save. The extension's own answers
    * through sync take `since`, the version of Profile the form was filled from, as its fill said.
    */
@@ -335,6 +342,9 @@ export function readInboxAsk(text: string): InboxAsk | null {
   if (asked.ask === 'drafts' && keys === 'ask job') {
     return isJobId(asked.job) ? { ask: 'drafts', job: asked.job } : null;
   }
+  if (asked.ask === 'unsent' && keys === 'ask job') {
+    return isJobId(asked.job) ? { ask: 'unsent', job: asked.job } : null;
+  }
   if (asked.ask === 'job' && keys === 'ask company role url') {
     const { url, company, role } = asked;
     if (!isPage(url) || !isText(company, JOB_LIMITS.company) || !isText(role, JOB_LIMITS.role)) {
@@ -343,6 +353,17 @@ export function readInboxAsk(text: string): InboxAsk | null {
     return { ask: 'job', url, company, role };
   }
   return null;
+}
+
+/**
+ * What taking back marking a job Applied puts back, through sync, as the extension marked it: its
+ * row's status, the day that status started and the day you applied, as they were, and the line it
+ * added to the job's history, which goes. Factwright on your computer keeps the job's history
+ * itself, and needs none of it.
+ */
+export interface SentUndo {
+  line: string;
+  row: { status: string | null; status_on: string | null; applied_on: string | null };
 }
 
 /** A job, as the app tells the extension of it: enough to say which it is, and if you applied. */
@@ -389,7 +410,21 @@ export type InboxAskAnswer =
       profile?: string;
     }
   | { ok: true; did: 'file'; part: number; parts: number; base64: string }
-  | { ok: true; did: 'sent'; job: AskedJob; recorded: number }
+  | {
+      ok: true;
+      did: 'sent';
+      job: AskedJob;
+      recorded: number;
+      /**
+       * Whether this marked the job Applied, as it wasn't, which only that Undo takes back.
+       * Factwright from before Undo doesn't say.
+       */
+      marked?: boolean;
+      /** Through sync, what Undo puts back, once marking the job Applied changed it. */
+      undo?: SentUndo;
+    }
+  /** Marking the job Applied taken back (`undone`), or not, as it's moved on since, as it is now. */
+  | { ok: true; did: 'unsent'; job: AskedJob; undone: boolean }
   | {
       ok: true;
       did: 'remember';

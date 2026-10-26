@@ -166,6 +166,26 @@ export async function addParts(
   return answer?.did === 'add' ? answer.added : null;
 }
 
+/**
+ * Waits while the page reads a resume, as one may once it's given the file, and fills fields in
+ * from it, up to a limit, as long as `quiet` passes with no reading: what it fills in from the
+ * resume would take the place of what's put there before it's done. Words it showed before Fill
+ * put anything in (`ignore`) don't count.
+ */
+async function waitForPage(place: FormPlace, quiet: number, ignore: string[]): Promise<void> {
+  await inPage(place, { do: 'wait', ms: READING_MS, quiet, ignore });
+}
+
+/**
+ * The words about reading a resume a page shows before Fill puts anything in, once it's waited a
+ * moment for one it's reading already, as one you gave it yourself: words it still shows then are
+ * there all along.
+ */
+async function readingAlready(place: FormPlace): Promise<string[]> {
+  const said = await inPage(place, { do: 'wait', ms: ALREADY_MS, quiet: 0 });
+  return said?.did === 'wait' ? said.seen : [];
+}
+
 /** Outlines fields in orange on the page, as left for you. */
 export async function outlineFields(place: FormPlace, fields: PageField[]): Promise<void> {
   await inPage(place, { do: 'outline', fields: fields.map(({ ref, key }) => ({ ref, key })) });
@@ -323,10 +343,11 @@ export const picksOf = (reply: Pick<FieldReply, 'kind' | 'pick'>): string[] =>
 const NAMES_PART = new Set<FieldReply['kind']>(['current-company', 'school']);
 
 /**
- * What to put in each field Factwright answered, with the files it fetched. On a page of an
- * application that runs over several, which its site may have filled from your resume, as
- * Workday's does, or as asked (`onlyEmpty`), only in the fields that are empty, and none in a part
- * for a job or school the site filled with another one.
+ * What to put in each field Factwright answered, with the files it fetched, in place of what's
+ * there. On a page of an application that runs over several, which its site may have filled from
+ * your resume, as Workday's does, none in a part for a job or school the site filled with another
+ * one; and only in the fields that are empty, as asked (`onlyEmpty`), once parts were added to the
+ * form, whose earlier parts hold what you gave them.
  */
 export function fillAnswers(
   form: PageForm,
@@ -367,7 +388,7 @@ export function fillAnswers(
     const part = field?.section && fieldPart(field) ? field.section : undefined;
     return {
       ...answer,
-      ifEmpty: true,
+      ...(onlyEmpty && { ifEmpty: true }),
       ...(part && { part, names: NAMES_PART.has(replies[at]?.kind ?? 'question') }),
     };
   });
@@ -409,6 +430,25 @@ const PASSES = 3;
  */
 const SETTLE_MS = 700;
 
+/**
+ * The longest a page gets to read a resume, as Ashby's does in a second or two, and how long it
+ * gets to start once it's given the file.
+ */
+const READING_MS = 15_000;
+const START_READING_MS = 1200;
+
+/**
+ * How long, before filling, it waits for a page to finish reading a resume it's reading already,
+ * as one you gave it yourself: words about reading one that stay longer are there all along.
+ */
+const ALREADY_MS = 5000;
+
+/**
+ * How long after filling the form's choices are checked again: a page reading a resume you gave
+ * it may take an answer back as it fills in what it read, as Ashby's can.
+ */
+const CHECK_AGAIN_MS = 1500;
+
 /** A form being filled, as filling it in passes goes along. */
 export interface Passes {
   place: FormPlace;
@@ -434,10 +474,13 @@ export interface Passes {
 
 /**
  * Fills a form with Factwright's answers, as the panel and the Fill button on the job sites you
- * allowed do: it fetches the job's files to upload first, fills each field, then again for those
- * the form showed meanwhile, and outlines what's left for you, and needed, in orange. Or it says
- * why it stopped: the tab moved on from the form, the browser doesn't let it reach the tab, or a
- * later start took over.
+ * allowed do: it fetches the job's files to upload first, and fills each field, then again for
+ * those the form showed meanwhile, and outlines what's left for you, and needed, in orange. A page
+ * may read a resume it's given and fill fields in from it, as Ashby's and Lever's do, so the files
+ * go in first, and the rest once the page has read them, or the one you gave it yourself. Then,
+ * a moment later, each choice is checked again, and picked again if the page took it back. Or it
+ * says why it stopped: the tab moved on from the form, the browser doesn't let it reach the tab,
+ * or a later start took over.
  */
 export async function fillInPasses(
   passes: Passes,
@@ -459,6 +502,31 @@ export async function fillInPasses(
     }
   }
   passes.status?.('Filling the form…');
+  const already = await readingAlready(place);
+  if (stale()) return 'stale';
+  /** The answers that went in the form's choices, to check again once it's filled. */
+  const choices: { answer: FieldAnswer; field: PageField }[] = [];
+  /** Fills some of a form's fields, and keeps how each went, or says why it couldn't. */
+  const fillSome = async (
+    fields: readonly PageField[],
+    answers: FieldAnswer[],
+  ): Promise<true | 'elsewhere' | 'unreachable' | 'stale'> => {
+    if (answers.length === 0) return true;
+    const done = await fillForm(place, form.url, answers);
+    if (stale()) return 'stale';
+    if (done === null) return 'unreachable';
+    if (done === 'elsewhere') return 'elsewhere';
+    for (const each of done) {
+      const field = fields.find((one) => one.ref === each.ref);
+      if (!field) continue;
+      filled.set(field.key, each);
+      const answer = answers.find((one) => one.ref === each.ref);
+      if (answer && each.ok && !each.kept && /^choices?$/.test(field.control)) {
+        choices.push({ answer, field });
+      }
+    }
+    return true;
+  };
   let from = 0;
   for (let pass = 0; pass < PASSES; pass++) {
     const fields = form.fields.slice(from);
@@ -468,14 +536,16 @@ export async function fillInPasses(
       fetched,
       passes.onlyEmpty,
     );
-    const done = await fillForm(place, form.url, answers);
+    const files = answers.filter((answer) => answer.file);
+    const sent = await fillSome(fields, files);
+    if (sent !== true) return sent;
+    await waitForPage(place, files.length > 0 ? START_READING_MS : 0, already);
     if (stale()) return 'stale';
-    if (done === null) return 'unreachable';
-    if (done === 'elsewhere') return 'elsewhere';
-    for (const each of done) {
-      const field = fields.find((one) => one.ref === each.ref);
-      if (field) filled.set(field.key, each);
-    }
+    const rest = await fillSome(
+      fields,
+      answers.filter((answer) => !answer.file),
+    );
+    if (rest !== true) return rest;
     // Fields the form showed once others were answered, filled in the next pass.
     const known = new Set(form.fields.map((field) => field.key));
     const newFields = async () => {
@@ -499,6 +569,26 @@ export async function fillInPasses(
     form.fields.push(...added);
     replies.push(...planned.replies);
     passes.added?.();
+  }
+  // Each choice again, a moment later: one the page took back, as it filled in from a resume it
+  // read, is picked again. One it still shows is left as it is.
+  if (choices.length > 0) {
+    await new Promise((done) => setTimeout(done, CHECK_AGAIN_MS));
+    if (stale()) return 'stale';
+    await waitForPage(place, 0, already);
+    if (stale()) return 'stale';
+    const again = await fillForm(
+      place,
+      form.url,
+      choices.map(({ answer }) => answer),
+    );
+    if (stale()) return 'stale';
+    if (Array.isArray(again)) {
+      for (const each of again) {
+        const field = choices.find(({ answer }) => answer.ref === each.ref)?.field;
+        if (field) filled.set(field.key, each);
+      }
+    }
   }
   // What's left for you, and needed, is outlined in orange on the page.
   const left = form.fields.filter((field) => field.required && !filled.get(field.key)?.ok);

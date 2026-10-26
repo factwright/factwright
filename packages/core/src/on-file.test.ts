@@ -286,10 +286,11 @@ describe('a job’s uploads and where it was found', () => {
     modified: '2026-10-20T10:00:00.000Z',
   };
 
-  it('names an upload as a person would, or by the file’s own name', () => {
-    expect(uploadName('Ana María Ruiz', 'resume', file)).toBe('Ana María Ruiz - Resume.pdf');
-    expect(uploadName('Ana/Ruiz', 'cover-letter', file)).toBe('Ana Ruiz - Cover Letter.pdf');
-    expect(uploadName(' ', 'resume', file)).toBe('AnaRuizResume.pdf');
+  it('uploads a file under its own name', () => {
+    expect(uploadName(file)).toBe('AnaRuizResume.pdf');
+    expect(uploadName({ ...file, name: 'SteveHillyerResume10242026_Talkiatry.pdf' })).toBe(
+      'SteveHillyerResume10242026_Talkiatry.pdf',
+    );
   });
 
   it('says where you found it, by the site it was saved from', () => {

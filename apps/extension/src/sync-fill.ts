@@ -34,6 +34,7 @@ import {
   resumeDetails,
   type SavedForm,
   SENT_STATUSES,
+  type SentUndo,
   type StoredRow,
   savedFormFile,
   savedFormJson,
@@ -211,6 +212,9 @@ const privately = (reply: FieldReply): FieldReply =>
     ? { ...reply, left: 'private' }
     : reply;
 
+/** A row's column that holds words, or null. */
+const textOf = (value: unknown): string | null => (typeof value === 'string' ? value : null);
+
 /** A job's row, as the extension tells the panel of it. */
 function askedRow(row: RowValues): AskedJob {
   const job = trackedRow(row as StoredRow);
@@ -366,10 +370,10 @@ export class SyncFill {
 
   /**
    * The job's newest resume and cover letter PDFs, offered to upload as the app offers them: each
-   * with a plain name, its size, its parts and its version. One the store doesn't have, or that's
+   * with its own name, its size, its parts and its version. One the store doesn't have, or that's
    * empty or too big, isn't offered.
    */
-  private async offers(read: Read, job: Job, you: string) {
+  private async offers(read: Read, job: Job) {
     const kinds = ['resume', 'cover-letter'] as const;
     const files = kinds.map((kind) => {
       const [file] = jobPdfs(job, kind);
@@ -383,7 +387,7 @@ export class SyncFill {
     const [resume, letter] = files.map((each): OfferedFile | null =>
       each && !missing.has(each.synced.id)
         ? {
-            name: uploadName(you, each.kind, each.file),
+            name: uploadName(each.file),
             size: each.synced.size,
             parts: Math.ceil(each.synced.size / FILE_PART_BYTES),
             version: versionOf(each.synced),
@@ -407,9 +411,7 @@ export class SyncFill {
       folder ? this.text(read, `applications/${folder}/cover-letter.json`) : null,
       this.resume(read, folder),
     ]);
-    // Your name for the upload's name, from Profile or else the resume.
-    const you = read.profile.you.name || resume?.name || '';
-    const files = job ? await this.offers(read, job, you) : { resume: null, 'cover-letter': null };
+    const files = job ? await this.offers(read, job) : { resume: null, 'cover-letter': null };
     const letter = readLetterText(letterJson);
     const { targetPay: _, ...profile } = read.profile;
     const onFile: OnFile = {
@@ -623,13 +625,16 @@ export class SyncFill {
   /**
    * What you sent, once you've applied, as the app records it: each answer to the form's own
    * questions, kept with the job, and the job marked Applied, today, with a line in its history.
+   * What it changed to mark it comes back too, for Undo to put back.
    */
   private async sent(ask: Extract<InboxAsk, { ask: 'sent' }>): Promise<SyncAnswer> {
     const answers = sentAnswersOf(ask.answers);
     const made = this.made();
     const today = localDate(this.now());
     let recorded = 0;
-    let applied = false;
+    // Each try sets it, which the compiler can't see.
+    let applied = false as boolean;
+    let before: SentUndo['row'] = { status: null, status_on: null, applied_on: null };
     const job = await this.jobNow(ask.job);
     const changed =
       job &&
@@ -638,6 +643,11 @@ export class SyncFill {
         const sent = withSentAnswers(job.sent, answers, { today, now: made.at });
         recorded = sent.recorded;
         applied = !(job.status && SENT_STATUSES.includes(job.status));
+        before = {
+          status: textOf(row.status),
+          status_on: textOf(row.status_on),
+          applied_on: textOf(row.applied_on),
+        };
         if (recorded === 0 && !applied) return null;
         return {
           ...row,
@@ -651,16 +661,23 @@ export class SyncFill {
         };
       }));
     if (!job || !changed) return notFound('That job isn’t in your job hunt anymore.');
-    if (changed.changed && applied) await this.logApplied(job.id, today, made);
-    return { ok: true, did: 'sent', job: askedRow(changed.row), recorded };
+    const line = changed.changed && applied ? await this.logApplied(job.id, today, made) : null;
+    return {
+      ok: true,
+      did: 'sent',
+      job: askedRow(changed.row),
+      recorded,
+      marked: changed.changed && applied,
+      ...(changed.changed && applied && { undo: { line: line ?? '', row: before } }),
+    };
   }
 
   /**
    * The job's history's line for applying, once its row says Applied, so a job another device
    * changed meanwhile isn't marked twice. It's tried again through a lost connection, and the job
-   * stays Applied without it, as it would with the line lost.
+   * stays Applied without it, as it would with the line lost. Says the line's ID, once it's up.
    */
-  private async logApplied(jobId: string, today: string, made: Made): Promise<void> {
+  private async logApplied(jobId: string, today: string, made: Made): Promise<string | null> {
     const { client, keys } = this.deps;
     const pause = this.deps.pause ?? ((ms: number) => new Promise((done) => setTimeout(done, ms)));
     const id = (this.deps.uuid ?? (() => crypto.randomUUID()))();
@@ -668,12 +685,48 @@ export class SyncFill {
     const change = await rowChange(keys, 'status_log', id, line, made);
     for (let attempt = 1; attempt <= 3; attempt++) {
       try {
-        await client.push([change]);
-        return;
+        const [result] = (await client.push([change])).results;
+        return result?.ok ? id : null;
       } catch (error) {
-        if (!(error instanceof SyncError) || error.kind !== 'offline') return;
+        if (!(error instanceof SyncError) || error.kind !== 'offline') return null;
         if (attempt < 3) await pause(attempt * 1000);
       }
+    }
+    return null;
+  }
+
+  /**
+   * Takes back marking a job Applied, as Undo asks once the extension marked it: its row's status,
+   * the day that started and the day you applied go back as they were, as `undo` says, while it's
+   * still Applied, and the line marking it added to its history goes, as Undo in the app's history
+   * takes one away. What you sent stays with the job, as you'd send the same again.
+   */
+  private async unsent(ask: Extract<InboxAsk, { ask: 'unsent' }>): Promise<SyncAnswer> {
+    const { undo } = ask;
+    if (!undo) return failed('Change the job’s status in Factwright on your computer.');
+    const job = await this.jobNow(ask.job);
+    if (!job) return notFound('That job isn’t in your job hunt anymore.');
+    const made = this.made();
+    const changed = await this.changeJob(job, (row) =>
+      trackedRow(row as StoredRow).status === 'applied'
+        ? { ...row, ...undo.row, updated_at: made.at }
+        : null,
+    );
+    if (!changed) return notFound('That job isn’t in your job hunt anymore.');
+    if (changed.changed && undo.line) await this.dropLine(undo.line, made);
+    return { ok: true, did: 'unsent', job: askedRow(changed.row), undone: changed.changed };
+  }
+
+  /**
+   * Takes the line marking a job Applied out of its history, as the version after the one that
+   * added it. A line another device changed since stays: the job's row says where it is.
+   */
+  private async dropLine(id: string, made: Made): Promise<void> {
+    const { client, keys } = this.deps;
+    try {
+      await client.push([await rowChange(keys, 'status_log', id, null, made, 1)]);
+    } catch {
+      // Gone from sync, or sync can't be reached: the job's row is back as it was.
     }
   }
 
@@ -813,6 +866,7 @@ export class SyncFill {
       if (ask.ask === 'file') return await this.file(ask);
       if (ask.ask === 'draft') return await this.leave(ask);
       if (ask.ask === 'sent') return await this.sent(ask);
+      if (ask.ask === 'unsent') return await this.unsent(ask);
       if (ask.ask === 'remember') return await this.remember(ask);
       // Your Claude drafting at once needs Factwright on your computer.
       return failed('That needs Factwright on your computer.');

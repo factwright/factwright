@@ -1,11 +1,35 @@
+import type { AskedJob } from '@factwright/core';
+import type { Tab } from './ext.ts';
+import type { KeptFill } from './kept-fill.ts';
+import type { Note } from './notes.ts';
 import type { JobToSave, SaveResult } from './save.ts';
 import { type PageAsked, readSavedFor, type SavedFor } from './saved.ts';
 
 /**
- * What the extension's own pages ask its background to do: save a job, or look up whether the job
- * on a page is in your job hunt, through sync.
+ * What the extension's own pages ask its background to do: save a job, look up whether the job on
+ * a page is in your job hunt, through sync, fill the form in a tab in its page, as the popup's Fill
+ * does, mark a job applied, as its Mark as applied does, or take that back, by its note. The popup
+ * and the panel ask it what Fill did on a tab, as it keeps that, and the panel gives it a fill of
+ * its own to keep.
  */
-export type Message = { type: 'save'; job: JobToSave } | { type: 'job'; page: PageAsked };
+export type Message =
+  | { type: 'save'; job: JobToSave }
+  | { type: 'job'; page: PageAsked }
+  | { type: 'fill'; tab: Tab & { id: number } }
+  | { type: 'applied'; tabId: number; job: AskedJob; via: 'computer' | 'sync'; url: string }
+  | { type: 'undo'; tabId: number; token: string }
+  | { type: 'kept'; tabId: number }
+  | { type: 'keep'; fill: KeptFill };
+
+/**
+ * What Fill did on a tab, as the background keeps it: its fill, the notes on its pages, and
+ * whether a note's Details opened the panel a moment ago (`fromNote`).
+ */
+export interface KeptHere {
+  fill: KeptFill | null;
+  notes: Note[];
+  fromNote: boolean;
+}
 
 /** Whether something is a save the popup asked for, with every field a string. */
 export function isSave(message: unknown): message is Extract<Message, { type: 'save' }> {
@@ -55,5 +79,80 @@ export async function askForJob(
     return readSavedFor(await send({ type: 'job', page } satisfies Message));
   } catch {
     return null;
+  }
+}
+
+const isObject = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null && !Array.isArray(value);
+
+/** Whether something is a fill the popup asked for, of a tab by its number. */
+export function isFill(message: unknown): message is Extract<Message, { type: 'fill' }> {
+  if (!isObject(message) || message.type !== 'fill' || !isObject(message.tab)) return false;
+  const { id, windowId, url, title } = message.tab;
+  return (
+    Number.isInteger(id) &&
+    (windowId === undefined || Number.isInteger(windowId)) &&
+    (url === undefined || typeof url === 'string') &&
+    (title === undefined || typeof title === 'string')
+  );
+}
+
+/** Whether something is Mark as applied, as the popup asks it, for a job it found. */
+export function isApplied(message: unknown): message is Extract<Message, { type: 'applied' }> {
+  if (!isObject(message) || message.type !== 'applied' || !isObject(message.job)) return false;
+  const { id, company, role, status, appliedOn } = message.job;
+  return (
+    Number.isInteger(message.tabId) &&
+    (message.via === 'computer' || message.via === 'sync') &&
+    typeof message.url === 'string' &&
+    [id, company, role, status].every((each) => typeof each === 'string') &&
+    (appliedOn === null || typeof appliedOn === 'string')
+  );
+}
+
+/** Whether something is Undo, as the popup asks it, by a note's token. */
+export function isUndo(message: unknown): message is Extract<Message, { type: 'undo' }> {
+  return (
+    isObject(message) &&
+    message.type === 'undo' &&
+    Number.isInteger(message.tabId) &&
+    typeof message.token === 'string'
+  );
+}
+
+/** Whether something asks what Fill did on a tab, by its number. */
+export function isKept(message: unknown): message is Extract<Message, { type: 'kept' }> {
+  return isObject(message) && message.type === 'kept' && Number.isInteger(message.tabId);
+}
+
+/** Whether something is a fill the panel made, for the background to keep for its tab. */
+export function isKeep(message: unknown): message is Extract<Message, { type: 'keep' }> {
+  if (!isObject(message) || message.type !== 'keep' || !isObject(message.fill)) return false;
+  const { tabId, place, via, form, plan, filled, at } = message.fill;
+  return (
+    Number.isInteger(tabId) &&
+    isObject(place) &&
+    (via === 'computer' || via === 'sync') &&
+    isObject(form) &&
+    isObject(plan) &&
+    Array.isArray(filled) &&
+    typeof at === 'number'
+  );
+}
+
+/** Asks the background what Fill did on a tab: nothing, where it can't say. */
+export async function askKept(
+  send: (message: unknown) => Promise<unknown>,
+  tabId: number,
+): Promise<KeptHere> {
+  try {
+    const kept = (await send({ type: 'kept', tabId } satisfies Message)) as KeptHere | null;
+    return {
+      fill: kept?.fill ?? null,
+      notes: Array.isArray(kept?.notes) ? kept.notes : [],
+      fromNote: kept?.fromNote === true,
+    };
+  } catch {
+    return { fill: null, notes: [], fromNote: false };
   }
 }

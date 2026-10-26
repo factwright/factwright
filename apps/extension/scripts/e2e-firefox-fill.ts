@@ -33,7 +33,7 @@ import type {
 } from '../src/page/form.ts';
 import { Firefox, waitFor } from './bidi.ts';
 import { icimsCode } from './icims-own-code.ts';
-import { ASHBY_PRESSES, LEVER_LOOKS_UP, withOwnCode, workdayCode } from './sites-own-code.ts';
+import { ashbyCode, LEVER_LOOKS_UP, withOwnCode, workdayCode } from './sites-own-code.ts';
 import { smartRecruitersCode } from './smartrecruiters-own-code.ts';
 import { successFactorsCode } from './successfactors-own-code.ts';
 import { PDF, syncedHunt } from './synced-hunt.ts';
@@ -73,7 +73,7 @@ const UUID = '5f0d3a91-2c4b-4e8a-9b6f-7d1e2c3b4a50';
 const PAGES: Record<string, { file: string; code?: string }> = {
   '/plain/apply': { file: 'plain-application.html' },
   '/lever/apply': { file: 'lever-application.html', code: LEVER_LOOKS_UP },
-  '/ashby/apply': { file: 'ashby-application.html', code: ASHBY_PRESSES },
+  '/ashby/apply': { file: 'ashby-application.html', code: ashbyCode() },
 };
 
 /** A form with fields you can't see, and the questions of the ones you can. */
@@ -576,11 +576,9 @@ try {
   // The frame takes a click only once it's shown for half a second, as a person sees it first.
   await new Promise((resolve) => setTimeout(resolve, 600));
   await click(fillButton, 'Fill');
-  await says(fillButton, 'couldn’t find Factwright');
-  check(
-    true,
-    'its Fill button asks for the form’s answers itself, as Firefox opens its sidebar only from its own click, and says why it can’t fill it',
-  );
+  const problem = await frameOn(tab, 'note');
+  await says(problem, 'couldn’t find Factwright');
+  check(true, 'its Fill button fills the form in its page, and its note says why it can’t fill it');
   // A company's careers page on another site, which shows the form in a frame from a job site:
   // the Fill button is in the frame, and the extension reads the form there, by the frame's
   // number, while the page around it is one it may not read.
@@ -677,10 +675,12 @@ try {
   );
   await new Promise((resolve) => setTimeout(resolve, 600));
   await click(framedButton, 'Fill');
-  await says(framedButton, 'couldn’t find Factwright');
+  // Its note goes in the button's place, in the same frame.
+  const framedNote = await nested(tab, '/frame.html#note');
+  await says(framedNote, 'couldn’t find Factwright');
   check(
     true,
-    'and its Fill button there fills the form in the frame, as it does on the form’s own page',
+    'and its Fill button there fills the form in the frame, as it does on the form’s own page, with its note there',
   );
 
   // Through sync, as on a computer without Factwright: Factwright on another computer synced its
@@ -737,7 +737,16 @@ try {
   const syncButton = await frameOn(tab, 'button');
   await new Promise((resolve) => setTimeout(resolve, 600));
   await click(syncButton, 'Fill');
-  await says(syncButton, 'Filled ');
+  const filledNote = await frameOn(tab, 'note');
+  await says(filledNote, 'Factwright filled');
+  // A click in a page's frame can't open Firefox's sidebar: Details says where to find it.
+  await new Promise((resolve) => setTimeout(resolve, 600));
+  await click(filledNote, 'Details');
+  await says(filledNote, 'click Factwright’s button');
+  check(
+    true,
+    'its note’s Details says to click Factwright’s button, as Firefox opens its sidebar only from its own click',
+  );
   const inForm = (name: string) =>
     running.run(
       tab,
@@ -758,7 +767,8 @@ try {
     ].map((file) => `${file.name} ${file.size}`),
   );
   check(
-    JSON.stringify(uploaded) === JSON.stringify([`Ana María Ruiz - Resume.pdf ${PDF.length}`]),
+    JSON.stringify(uploaded) ===
+      JSON.stringify([`AnaRuizResume10202026_Northwind.pdf ${PDF.length}`]),
     'and uploads the job’s resume from what sync holds, through Firefox’s content-script sandbox',
   );
 
@@ -781,6 +791,15 @@ try {
   await firefox?.close().catch(() => {});
   site.close();
   sync?.close();
+  if (mac) {
+    try {
+      // A Mac gives the folders Firefox makes in its home, such as Library and Downloads, an
+      // access list that lets nothing delete them, which chmod -N takes off, as e2e:firefox does.
+      execFileSync('chmod', ['-R', '-N', work], { stdio: 'ignore' });
+    } catch {
+      // Then the folder stays, as below.
+    }
+  }
   // Firefox may hold its profile a moment after it stops.
   try {
     rmSync(work, { recursive: true, force: true, maxRetries: 10, retryDelay: 300 });

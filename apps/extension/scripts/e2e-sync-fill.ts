@@ -31,6 +31,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { startServer, type TestServer } from '@factwright/server/testing';
 import { type BrowserContext, chromium, type Page } from '@playwright/test';
+import { jobAtTop } from './e2e-fill-systems.ts';
 import { LEVER_LOOKS_UP, withOwnCode, workdayCode } from './sites-own-code.ts';
 import { FOLDER, PDF, syncedHunt } from './synced-hunt.ts';
 
@@ -263,7 +264,7 @@ try {
     'the panel fills from your job hunt, through sync, and says so',
   );
   check(
-    (await panel.getByText('Senior Product Manager, Data at Northwind Labs').count()) === 1,
+    (await jobAtTop(panel, 'Senior Product Manager, Data', 'Northwind Labs')) === 1,
     'it finds the job the form is for, by its posting, as Factwright would',
   );
   check((await value('name')) === 'Ana María Ruiz', 'it fills the name from the synced Profile');
@@ -284,7 +285,7 @@ try {
       [...((input as HTMLInputElement).files ?? [])].map((file) => `${file.name} ${file.size}`),
     );
   check(
-    uploaded.length === 1 && uploaded[0] === `Ana María Ruiz - Resume.pdf ${PDF.length}`,
+    uploaded.length === 1 && uploaded[0] === `AnaRuizResume10202026_Northwind.pdf ${PDF.length}`,
     'it uploads the job’s own resume, whole, from what sync holds',
   );
   check(

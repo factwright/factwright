@@ -101,15 +101,15 @@ export interface FieldAnswer {
   /** For a file field: the file, as base64. */
   file?: { name: string; type: string; base64: string };
   /**
-   * Only where the field is empty, as on a form of several pages, which its site may have filled
-   * from your resume, as Workday does: what's there stays as it is.
+   * Only where the field is empty, as once parts were added to a form, whose earlier parts hold
+   * what you gave them: what's there stays as it is.
    */
   ifEmpty?: boolean;
   /**
    * The part of the form for a job or school it's in, by its heading, and whether it names that
    * job or school, as a title, a company or a school's name does. A part that holds another one,
-   * as a site filled it in from your resume in its own order, keeps its empty fields empty: none
-   * of the fields that name it agrees with the answers.
+   * as a site filled it in from your resume in its own order, stays as it is, its empty fields
+   * empty: none of the fields that name it agrees with the answers.
    */
   part?: string;
   names?: boolean;
@@ -128,7 +128,10 @@ export interface FieldFilled {
    * resume box, which would stop filling midway, so it's left for you (`reloads`).
    */
   why: '' | 'moved' | 'no-option' | 'not-taken' | 'other-part' | 'reloads';
-  /** Whether it held an answer already, which it left as it was (`ifEmpty`). */
+  /**
+   * Whether it held an answer already, which it left as it was: a file you attached, what's in a
+   * part that holds another job or school, or anything, where only empty fields are filled.
+   */
   kept?: boolean;
 }
 
@@ -156,7 +159,12 @@ export type FormTask =
   | { do: 'values'; fields: FieldRef[] }
   | { do: 'outline'; fields: FieldRef[] }
   | { do: 'show'; ref: number; key: string }
-  | { do: 'add'; url: string; adder: PageAdder; times: number };
+  | { do: 'add'; url: string; adder: PageAdder; times: number }
+  /**
+   * Waits while the page reads a resume, as one may once it's given the file, up to `ms`: done once
+   * it's shown no reading for `quiet`, as a page starts a beat after it's given the file.
+   */
+  | { do: 'wait'; ms: number; quiet: number; ignore?: string[] };
 
 /**
  * What each task gives back. A form the tab has moved on from, to another address, isn't filled:
@@ -177,12 +185,15 @@ export type FormAnswer =
     }
   | { did: 'outline' }
   | { did: 'show'; found: boolean }
-  | { did: 'add'; added: number };
+  | { did: 'add'; added: number }
+  /** Whether the page was still reading a resume once it had waited as long as it may. */
+  | { did: 'wait'; busy: boolean; seen: string[] };
 
 /**
- * Reads the application form on the page you're on, fills it, reads what's in it, or shows one of
- * its fields: whatever the extension asks, and only when you ask it to. The extension sends this
- * one function into the page, so everything it needs is inside it.
+ * Reads the application form on the page you're on, fills it, reads what's in it, shows one of
+ * its fields, or waits while the page reads a resume: whatever the extension asks, and only when
+ * you ask it to. The extension sends this one function into the page, so everything it needs is
+ * inside it.
  * - It reads only fields you can see, outside the page's menus, header and footer, and never what
  *   you've typed, but for the fields the extension names as you go, to have what you sent once
  *   you mark the job applied.
@@ -232,6 +243,21 @@ export async function formPage(
   /** What a page says once an application went in. */
   const SUBMITTED =
     /thank(s| you) for (applying|your application|submitting)|application (has been |was )?(submitted|received|sent)|we(’|')?ve received your application|we have received your application|you(’|')?ve (successfully )?applied|your application is (in|complete)|\bview my submissions\b/i;
+  /**
+   * What a page shows while it reads a resume it was given, to fill the form in from it, as
+   * Ashby's "Parsing your resume. Autofilling key fields...", Lever's "Analyzing resume..." and
+   * iCIMS's "Parsing resume, please wait...": what it fills then takes the place of what's there.
+   */
+  const READING =
+    /\b(pars|analy[sz]|read|scann|process)ing (your |the )?(resume|cv)\b|\bautofilling\b/i;
+  /**
+   * Where a page shows the name of a file it took for a field, beside the field: Workday's list of
+   * those it uploaded, and an element that says it's a file's name, as Ashby's and Lever's.
+   */
+  const FILE_NAMES =
+    '[class*="file-item-name"], [class*="filename" i], [class*="file-name" i], [class*="file_name" i]';
+  /** Words that are a file's name, with its extension, as "AnaRuizResume.pdf". */
+  const NAMED_FILE = /^[^\n]{1,200}\.[a-z0-9]{2,5}$/i;
   /** Orange, as the app marks what needs you. */
   const ORANGE = '#e8590c';
   /**
@@ -1798,6 +1824,48 @@ export async function formPage(
     return box.getAttribute('aria-valuenow') ?? (box as HTMLInputElement).value ?? '';
   };
 
+  /**
+   * The names of the files a file field holds: those in it, and those its page shows it took,
+   * beside it, as Workday lists each one it uploaded, and Ashby and Lever show the one they took.
+   */
+  const filesIn = (control: HTMLElement): string[] => {
+    const boxes = ownBoxes(control);
+    const listed = boxes.flatMap((box) => [
+      ...box.querySelectorAll('[data-automation-id="file-upload-item-name"]'),
+    ]);
+    const named = boxes
+      .flatMap((box) => [...box.querySelectorAll(FILE_NAMES)])
+      .filter((each) => !listed.includes(each) && shown(each));
+    return [
+      ...new Set(
+        [
+          ...[...((control as HTMLInputElement).files ?? [])].map((file) => file.name),
+          ...listed.map((each) => squash(each.textContent ?? '')),
+          ...named
+            .map((each) => squash(each.textContent ?? ''))
+            .filter((words) => NAMED_FILE.test(words)),
+        ].filter(Boolean),
+      ),
+    ];
+  };
+
+  /**
+   * The files Factwright put in file fields on this page, by field, with what tells one file from
+   * another: kept in the extension's own part of the page, which the page can't reach, for as long
+   * as the page is open, so a file you attached yourself is told from one Factwright did.
+   */
+  const UPLOADS = Symbol.for('factwright uploads');
+  const keeping = globalThis as unknown as Record<
+    symbol,
+    WeakMap<Element, { name: string; bytes: string }> | undefined
+  >;
+  keeping[UPLOADS] ??= new WeakMap();
+  const uploads = keeping[UPLOADS];
+
+  /** What tells one file's base64 from another's, without keeping it all. */
+  const bytesOf = (base64: string) =>
+    `${base64.length}:${base64.slice(0, 64)}:${base64.slice(-64)}`;
+
   /** What a field shows now: its text, the option picked, or the file's name. */
   const shownIn = (found: Found): string => {
     const [control] = found.controls;
@@ -1826,20 +1894,7 @@ export async function formPage(
         .join(', ');
     }
     if (field.control === 'check') return ticked(control) ? 'Checked' : '';
-    if (field.control === 'file') {
-      // With the files the page took already, as Workday lists each one it uploaded beside it.
-      const uploaded = new Set(
-        ownBoxes(control).flatMap((box) => [
-          ...box.querySelectorAll('[data-automation-id="file-upload-item-name"]'),
-        ]),
-      );
-      return [
-        ...[...((control as HTMLInputElement).files ?? [])].map((file) => file.name),
-        ...[...uploaded].map((each) => squash(each.textContent ?? '')),
-      ]
-        .filter(Boolean)
-        .join(', ');
-    }
+    if (field.control === 'file') return filesIn(control).join(', ');
     if (field.control === 'combo') return comboShows(control);
     if (control.getAttribute('role') === 'spinbutton') return spinShows(control);
     if (field.type === 'password') return '';
@@ -1929,19 +1984,29 @@ export async function formPage(
       why: ok ? ('' as const) : why || ('not-taken' as const),
     });
     if (!control || field.type === 'password') return done(false, 'not-taken');
-    // A field that holds an answer already, as a site may fill in from your resume, stays as it is.
+    // Only an empty field, as asked, once parts were added to the form: what's in the others stays.
     if (answer.ifEmpty && shownIn(found).trim() !== '') return { ...done(true), kept: true };
     // A field whose own code sends the page away as it changes is left for you, as filling would
     // stop there, and the page might throw away what went in before it.
     if (controls.some(sendsPage)) return done(false, 'reloads');
     if (answer.file && field.control === 'file') {
-      const bytes = Uint8Array.from(atob(answer.file.base64), (char) => char.charCodeAt(0));
-      const files = new DataTransfer();
-      files.items.add(new File([bytes], answer.file.name, { type: answer.file.type }));
       const input = control as HTMLInputElement;
+      const had = filesIn(input);
+      const ours = uploads?.get(input);
+      // A file you attached yourself stays: one the field holds that Factwright didn't put there.
+      if (had.length > 0 && !(had.length === 1 && had[0] === ours?.name)) {
+        return { ...done(true), kept: true };
+      }
+      // The same file, put there before, isn't sent again, as a page may read it again.
+      const bytes = bytesOf(answer.file.base64);
+      if (had[0] === answer.file.name && ours?.bytes === bytes) return done(true);
+      const data = Uint8Array.from(atob(answer.file.base64), (char) => char.charCodeAt(0));
+      const files = new DataTransfer();
+      files.items.add(new File([data], answer.file.name, { type: answer.file.type }));
       input.files = files.files;
       input.dispatchEvent(new Event('input', TYPED));
       input.dispatchEvent(new Event('change', { bubbles: true }));
+      uploads?.set(input, { name: answer.file.name, bytes });
       return done((input.files?.length ?? 0) === 1);
     }
     const picks = answer.pick ?? (answer.text !== undefined ? [answer.text] : []);
@@ -1953,6 +2018,21 @@ export async function formPage(
       return done(Boolean(took));
     }
     if (field.control === 'choice' || field.control === 'choices') {
+      /** The options each of the answer's picks names, as a set takes several. */
+      const named = <T>(options: T[], words: (option: T) => string) =>
+        new Set(picks.flatMap((pick) => pickOf(options, words, [pick], answer.exact) ?? []));
+      if (control instanceof HTMLSelectElement && control.multiple) {
+        // A list that takes several ends up with just the answer's picks.
+        const wanted = named([...control.options], (each) => each.text);
+        if (wanted.size === 0) return done(false, 'no-option');
+        const options = [...control.options];
+        if (options.some((option) => option.selected !== wanted.has(option))) {
+          for (const option of options) option.selected = wanted.has(option);
+          control.dispatchEvent(new Event('input', TYPED));
+          control.dispatchEvent(new Event('change', { bubbles: true }));
+        }
+        return done(options.every((option) => option.selected === wanted.has(option)));
+      }
       if (control instanceof HTMLSelectElement) {
         const find = () => pickOf([...control.options], (each) => each.text, picks, answer.exact);
         // A list with no options of its own yet may be getting them from the page's site, as a
@@ -1960,9 +2040,12 @@ export async function formPage(
         const option =
           find() ?? (control.options.length <= 1 ? await waitFor(find, LIST_MS) : undefined);
         if (!option) return done(false, 'no-option');
-        option.selected = true;
-        control.dispatchEvent(new Event('input', TYPED));
-        control.dispatchEvent(new Event('change', { bubbles: true }));
+        // One picked already isn't picked again, as a page may clear what follows from it.
+        if (!option.selected) {
+          option.selected = true;
+          control.dispatchEvent(new Event('input', TYPED));
+          control.dispatchEvent(new Event('change', { bubbles: true }));
+        }
         return done(option.selected);
       }
       if (field.control === 'choice') {
@@ -1972,14 +2055,14 @@ export async function formPage(
         // A page's own radio button may take a moment to say it's picked.
         return done(ticked(option) || Boolean(await waitFor(() => ticked(option), 1000)));
       }
-      let any = false;
-      for (const pick of picks) {
-        const option = pickOf(controls, optionWords, [pick], answer.exact);
-        if (!option) continue;
-        if (!ticked(option)) press(option);
-        any = any || ticked(option);
+      // A set of boxes ends up with just the answer's picks ticked: any other one ticked goes.
+      const wanted = named(controls, optionWords);
+      if (wanted.size === 0) return done(false, 'no-option');
+      for (const option of controls) {
+        if (ticked(option) !== wanted.has(option)) press(option);
       }
-      return done(any, 'no-option');
+      const exact = () => controls.every((option) => ticked(option) === wanted.has(option));
+      return done(exact() || Boolean(await waitFor(exact, 1000)));
     }
     if (field.control === 'check') return done(false, 'not-taken');
     if (field.control === 'combo') {
@@ -2306,13 +2389,15 @@ export async function formPage(
           filled.push({ ref: answer.ref, ok: false, shown: '', why: 'moved' });
           continue;
         }
-        if (
-          answer.ifEmpty &&
-          answer.part !== undefined &&
-          agrees.get(answer.part) === false &&
-          shownIn(found).trim() === ''
-        ) {
-          filled.push({ ref: answer.ref, ok: false, shown: '', why: 'other-part' });
+        // A part that holds another job or school, as the site filled it in from your resume in
+        // its own order, stays as it is: what's in it, and what's empty.
+        if (answer.part !== undefined && agrees.get(answer.part) === false) {
+          const shows = cut(shownIn(found).trim());
+          filled.push(
+            shows
+              ? { ref: answer.ref, ok: true, shown: shows, why: '', kept: true }
+              : { ref: answer.ref, ok: false, shown: '', why: 'other-part' },
+          );
           continue;
         }
         filled.push(await fill(found, answer));
@@ -2344,6 +2429,32 @@ export async function formPage(
     } finally {
       view?.removeEventListener('submit', stop, true);
     }
+  }
+  if (task.do === 'wait') {
+    // Words that say the page is reading a resume, as a status beside the field does, and shows:
+    // not ones it showed before anything was put in (`ignore`), as a line on what it does with
+    // your resume, which it shows all along.
+    const ignore = new Set(task.ignore ?? []);
+    const reading = (most = 10): string[] => {
+      const found: string[] = [];
+      const walker = doc.createTreeWalker(doc.body ?? doc, 4);
+      for (let node = walker.nextNode(); node && found.length < most; node = walker.nextNode()) {
+        const words = (node.textContent ?? '').trim();
+        if (words.length > MAX_TEXT || !READING.test(words) || ignore.has(words)) continue;
+        if (node.parentElement && shown(node.parentElement)) found.push(words);
+      }
+      return found;
+    };
+    // Done once it's shown none for a moment, or once it's waited as long as it may.
+    const until = Date.now() + task.ms;
+    let quietSince = Date.now();
+    while (Date.now() < until) {
+      if (reading(1).length > 0) quietSince = Date.now();
+      else if (Date.now() - quietSince >= task.quiet) return { did: 'wait', busy: false, seen: [] };
+      await sleep(100);
+    }
+    const seen = reading();
+    return { did: 'wait', busy: seen.length > 0, seen };
   }
   if (task.do === 'outline') {
     for (const each of task.fields) {

@@ -389,16 +389,20 @@
               each, through the same helper, and the app answers from what you’ve told it: Profile,
               your work history and resumes, what you sent before, and your Claude’s drafts. Without
               it, the extension answers from your job hunt through sync, below. It puts the answers
-              in the form for you to check, and its panel lists each one with where it came from. It
-              fills only fields you can see, never a password or payment details, never answers
-              personal questions, such as your age, which it never keeps either, and never agrees to
-              anything for you. With the app, all of this stays on your computer, between your
-              browser and the app. On LinkedIn and Indeed it only gives you answers to copy.
+              in the form for you to check, in place of what’s there, but never over a file you
+              attached, and a small note on the page says how it went. Its panel, which opens only
+              when you ask for it, lists each answer with where it came from. It fills only fields
+              you can see, never a password or payment details, never answers personal questions,
+              such as your age, which it never keeps either, and never agrees to anything for you.
+              With the app, all of this stays on your computer, between your browser and the app.
+              The panel keeps what it filled in your browser’s memory while your browser runs, never
+              on your disk, so it can show it to you. On LinkedIn and Indeed it only gives you
+              answers to copy.
             </p>
             <p>
               It fills an application that runs over several pages a page at a time, each only when
               you choose, as you go on with the form’s own button: it never presses one that goes on
-              or submits. There, it leaves a field that already holds an answer as it is, as
+              or submits. There, it leaves a part of the form that holds another job as it is, as
               some sites fill one in from your resume, and adds a part to the form for each job or
               school you have on file only if you choose that. It keeps what you sent on each page
               for when you mark the job applied. A page to sign in or make an account gets nothing
@@ -421,8 +425,9 @@
             </p>
             <p>
               For the questions nothing on file answers, the panel offers Draft them with your
-              Claude. If you click it, the extension gives the app those questions, as the form asks
-              them, and never what’s in them. The app keeps them with the job, in your job
+              Claude, as a question’s menu does on the job application sites you allow. If you click
+              it, the extension gives the app those questions, as the form asks them, and never
+              what’s in them. The app keeps them with the job, in your job
               hunt, and starts your Claude on them, so what Claude reads goes to Anthropic under your
               account, as <a href="#claude">Your Claude</a> says. The panel fills in each draft once
               it’s done.
@@ -436,8 +441,9 @@
               keys, in your browser: the job tracker, Profile, your work history, and only the files
               a form needs, such as the job’s resume, cover letter and your Claude’s drafts. What it
               opens stays in your browser’s memory for the fill, goes 5 minutes after its last use,
-              and is never stored. Your street, postal code and equal-opportunity answers never
-              sync, so it leaves those for you.
+              and is never stored. What it filled a form with stays in that memory too, for its
+              panel, until you close the tab. Your street, postal code and equal-opportunity answers
+              never sync, so it leaves those for you.
             </p>
             <p>
               Instead of starting your Claude, the panel offers to leave a form’s new questions with
@@ -474,6 +480,18 @@
               reads a password or an equal-opportunity answer. Those sites can tell the extension is there,
               as its button and menus are on their pages, and whether Factwright has an answer for a
               field, as a menu shows, but not what the answer is.
+            </p>
+            <p>
+              When you submit an application there, or go on to its next page with its own button,
+              the script reads what the form holds, but a password, and gives it to the extension,
+              which keeps only your answers to the form’s own questions, in your browser’s memory.
+              Once the page says your application went in, or moves on with nothing wrong showing,
+              it marks the job Applied, giving the app, or your job hunt through sync, those
+              answers, as Mark as applied does, and a note on the page offers Undo, or the
+              extension’s popup does, where it can’t reach the page. Only your own click on the
+              form’s button, or Enter in one of its boxes, counts as submitting it. Anything else,
+              and anything for a job you haven’t saved, it forgets as the tab closes. On other
+              sites, the extension’s popup has Mark as applied.
             </p>
 
             <h3>Forms in another site’s page</h3>

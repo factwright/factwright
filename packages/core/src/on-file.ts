@@ -135,12 +135,11 @@ export const jobPdfs = (job: Job, kind: 'resume' | 'cover-letter'): JobFile[] =>
     .filter((file) => file.format === 'pdf')
     .sort((a, b) => b.modified.localeCompare(a.modified));
 
-/** A plain name for an upload, as a person would name it: "Ana Ruiz - Resume.pdf". */
-export function uploadName(you: string, kind: 'resume' | 'cover-letter', file: JobFile): string {
-  const name = you.replace(/[\\/:*?"<>|]+/g, ' ').trim();
-  if (!name) return file.name;
-  return `${name} - ${kind === 'resume' ? 'Resume' : 'Cover Letter'}.pdf`;
-}
+/**
+ * The name a job's file goes up under: its own, as your rule for naming them names it, such as
+ * "AnaRuizResume10202026_Northwind.pdf", so a form shows the file you made for the job.
+ */
+export const uploadName = (file: JobFile): string => file.name;
 
 /** Everything you sent before, newest first, with whose application each was in. */
 export function sentBefore(jobs: readonly Job[]): SentBefore[] {

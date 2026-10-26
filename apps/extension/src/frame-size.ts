@@ -22,6 +22,9 @@ export const MENU_ROWS = 4;
 export const menuHeight = (answers: boolean, save: boolean): number =>
   MENU_HEAD + (answers ? MENU_ROWS_SHOWN * MENU_ROW : 0) + (save ? MENU_SAVE : 0) + MENU_FOOT;
 
-/** The Fill button, and what it says once it's filled the form in Firefox, without the sidebar. */
+/**
+ * The Fill button, and the note that goes in its place once Factwright's done something on the
+ * page (src/notes.ts): a line or two of words, with its buttons.
+ */
 export const BUTTON = { width: 120, height: 40 };
-export const BUTTON_CARD = { width: 300, height: 112 };
+export const NOTE = { width: 400, height: 56 };

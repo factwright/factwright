@@ -2,6 +2,7 @@ import type { AccountKeys } from '@factwright/sync';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   allowComputer,
+  askComputer,
   canReachComputer,
   canSendNow,
   destination,
@@ -180,6 +181,25 @@ describe('looking for Factwright on this computer', () => {
       };
       expect(await findComputer()).toMatchObject({ ok: false, missing: true });
     }
+  });
+
+  it('says so too when asking it something, as filling does, with what it said', async () => {
+    await allowComputer();
+    browser.state.answer = () => {
+      throw new Error('Specified native messaging host not found.');
+    };
+    expect(
+      await askComputer({ ask: 'unsent', job: 'harbor-and-pine--senior-product-manager-data' }),
+    ).toMatchObject({ ok: false, unreachable: true, missing: true });
+    browser.state.answer = () => {
+      throw new Error('Native host has exited.');
+    };
+    const stopped = await askComputer({
+      ask: 'unsent',
+      job: 'harbor-and-pine--senior-product-manager-data',
+    });
+    expect(stopped).toMatchObject({ ok: false, unreachable: true });
+    expect(stopped).not.toHaveProperty('missing');
   });
 
   it('says it didn’t answer when the helper stops short', async () => {

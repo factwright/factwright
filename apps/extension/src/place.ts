@@ -1,9 +1,11 @@
 /**
  * Where the extension's own frame goes on a job site you allowed: its menu beside the field you're
- * in, and its Fill button in a corner of the window, each only where it covers none of the page's
- * own controls, and never the field. In a form another site's page shows in a frame, "the window"
- * is the part of the frame you can see, as the page around it scrolls it. Where nothing has room,
- * it doesn't show: the panel has the same answers, by a click on the extension's button.
+ * in, where it covers none of the page's own controls, or else just under the field, over the
+ * page, as a password manager's does, and its Fill button in a corner of the window that covers
+ * none of them. Neither ever covers the field. In a form another site's page shows in a frame,
+ * "the window" is the part of the frame you can see, as the page around it scrolls it. Where
+ * nothing has room, it doesn't show: the panel has the same answers, by a click on the extension's
+ * button.
  */
 
 /** A box on the screen, as a page's layout gives one, from the window's top left corner. */
@@ -91,7 +93,10 @@ function firstFree(
 /**
  * Where a menu of a size goes beside its field: to its right, below it, above it, or to its left,
  * lined up with one of its edges, the first of these that's inside the window and covers neither
- * the field nor any of the page's own controls. Null when none is.
+ * the field nor any of the page's own controls. Where none is, as in a form of one column with
+ * labels between its fields, it goes just under the field, over the page, as a password manager's
+ * does, or just over it, lined up with its left edge as far as the window lets it. Null only when
+ * neither is inside the window.
  */
 export function placeMenu(
   size: Size,
@@ -101,7 +106,7 @@ export function placeMenu(
 ): Place | null {
   const right = field.left + field.width;
   const bottom = field.top + field.height;
-  return firstFree(
+  const beside = firstFree(
     [
       { left: right + GAP, top: field.top },
       { left: right + GAP, top: bottom - size.height },
@@ -116,6 +121,22 @@ export function placeMenu(
     [field, ...controls],
     area,
   );
+  return beside ?? overThePage(size, field, area);
+}
+
+/**
+ * Just under a field, or just over it, over the page, lined up with the field's left edge as far as
+ * the window lets it: or null where neither is inside the window.
+ */
+function overThePage(size: Size, field: Box, area: Area): Place | null {
+  const first = (area.left ?? 0) + EDGE;
+  const last = (area.left ?? 0) + area.width - EDGE - size.width;
+  if (last < first) return null;
+  const left = Math.min(Math.max(field.left, first), last);
+  for (const top of [field.top + field.height + GAP, field.top - GAP - size.height]) {
+    if (inside({ left, top, ...size }, area)) return { left, top };
+  }
+  return null;
 }
 
 /**

@@ -1,4 +1,11 @@
-import type { FieldAnswer, FieldFilled, PageAdder, PageField, PageForm } from './page/form.ts';
+import type {
+  FieldAnswer,
+  FieldFilled,
+  FieldValue,
+  PageAdder,
+  PageField,
+  PageForm,
+} from './page/form.ts';
 
 /**
  * What the extension's script on a job site you allowed (src/content.ts), its own frame there
@@ -33,6 +40,24 @@ export interface FieldMenu {
   answers: number;
   /** Whether what you give it is one Profile can keep, so leaving it may offer to save it. */
   keeps: boolean;
+  /**
+   * Whether it's one of the form's own questions nothing on file answers, whose menu offers to
+   * have your Claude draft them, for a job you saved.
+   */
+  draft: boolean;
+}
+
+/**
+ * Your Claude drafting a form's own questions, as a field's menu says it: the offer to, drafting,
+ * waiting on you in Factwright, left with the job through sync, or why it couldn't, with how many
+ * questions it's for.
+ */
+export interface DraftShows {
+  is: 'offer' | 'drafting' | 'waiting' | 'left' | 'failed';
+  questions: number;
+  through: 'computer' | 'sync';
+  /** What went wrong, as Factwright said it. */
+  says?: string;
 }
 
 /** What the script asks the background. */
@@ -68,7 +93,45 @@ export type FromScript =
    * fields, or the page went on to another in the same tab: the panel filling it looks at it now,
    * before what you typed is gone with the page.
    */
-  | { type: 'job-site'; do: 'look'; doc: string };
+  | { type: 'job-site'; do: 'look'; doc: string }
+  /**
+   * You submitted the form, or pressed a page's own Save and Continue: what its fields held, and
+   * whether its button sends the application (`final`), rather than going on to another page.
+   */
+  | {
+      type: 'job-site';
+      do: 'submitting';
+      doc: string;
+      form: PageForm;
+      job: { company: string; role: string };
+      values: FieldValue[];
+      final: boolean;
+    }
+  /**
+   * What the page shows since you submitted: whether it says the application went in, whether
+   * it shows an application form, and whether it shows what's wrong with an answer.
+   */
+  | {
+      type: 'job-site';
+      do: 'outcome';
+      doc: string;
+      submitted: boolean;
+      form: boolean;
+      errors: boolean;
+    };
+
+/** What a note on a page says, as its frame shows it (src/notes.ts). */
+export type NoteSays =
+  /** Fill filled the form in place: how many fields, and how many need you, for a job you saved. */
+  | { is: 'filled'; filled: number; need: number; job: boolean }
+  /**
+   * It noticed you submitted the job's application, by its title and company, and marked it
+   * applied: Undo takes that back, and once it has, the note says where the job is now, or why
+   * it couldn't.
+   */
+  | { is: 'applied'; job: string; undo: 'can' | 'undone' | 'cannot'; says?: string }
+  /** What stopped it. */
+  | { is: 'problem'; says: string };
 
 /** What the frame asks the background. */
 export type FromFrame =
@@ -80,10 +143,20 @@ export type FromFrame =
   | { type: 'job-site'; do: 'save'; token: string }
   /** You closed it, with Not now, or with Escape, which puts the cursor back in its field. */
   | { type: 'job-site'; do: 'dismiss'; token: string; refocus: boolean }
+  /** You chose to have your Claude draft the form's own questions nothing on file answers. */
+  | { type: 'job-site'; do: 'draft'; token: string }
   /** You clicked the Fill button, which the script names by its own name for its page. */
   | { type: 'job-site'; do: 'fill'; token: string }
   /** You hid the Fill button on this page. */
-  | { type: 'job-site'; do: 'hide-button'; token: string };
+  | { type: 'job-site'; do: 'hide-button'; token: string }
+  /** What a note says, by the token it names. */
+  | { type: 'job-site'; do: 'note'; token: string }
+  /** You clicked a note's Details, which opens the panel. */
+  | { type: 'job-site'; do: 'details'; token: string }
+  /** You clicked a note's Undo, which takes back marking its job applied. */
+  | { type: 'job-site'; do: 'undo'; token: string }
+  /** You closed a note. */
+  | { type: 'job-site'; do: 'unnote'; token: string };
 
 /** What the background tells the script. */
 export type ToScript =
@@ -91,32 +164,27 @@ export type ToScript =
   | { type: 'job-site'; do: 'write'; answer: FieldAnswer }
   /** Close the menu, and put the cursor back in its field. */
   | { type: 'job-site'; do: 'close'; refocus: boolean }
-  /** Show the Fill button as a button, or as what it says once it's filled the form. */
-  | { type: 'job-site'; do: 'button'; size: 'button' | 'card' }
   /** Hide the Fill button on this page. */
   | { type: 'job-site'; do: 'hide-button' }
+  /** Put a note on the page, in place of the Fill button, by the token its frame names. */
+  | { type: 'job-site'; do: 'note'; token: string }
+  /** Take that note away, as you closed it. */
+  | { type: 'job-site'; do: 'unnote'; token: string }
   /** Stop: the site isn't one you allow anymore. */
   | { type: 'job-site'; do: 'stop' };
 
-/** What filling the form from the Fill button came to, without the panel, as in Firefox. */
+/** What filling a form in its page came to, as the Fill button, the popup and the shortcut ask. */
 export type FilledHere =
-  | { did: 'panel' }
-  | { did: 'filled'; says: string }
+  | { did: 'filled'; filled: number; need: number; job: boolean }
   | { did: 'problem'; says: string };
 
 /**
- * What the background tells the panel: fill the form in a tab, as the Fill button asks, or look at
- * a tab's form now, as you left a field of an application that runs over several, or its page
- * changed.
+ * What the background tells the panel: a tab's form was filled in its page, which the panel shows
+ * if it's beside that tab, or look at a tab's form now, as you left a field of an application that
+ * runs over several, or its page changed.
  */
 export type ToPanel =
-  | {
-      type: 'panel';
-      do: 'fill';
-      tabId: number;
-      /** When you clicked it. */
-      at: number;
-    }
+  | { type: 'panel'; do: 'filled'; tabId: number }
   | { type: 'panel'; do: 'look'; tabId: number };
 
 /** The most fields a form's message carries, and the longest of its words, as the form reads them. */
@@ -238,6 +306,31 @@ export function isFromScript(message: unknown): message is FromScript {
       return isPlace(message.ref) && isText(message.key) && isText(message.value, MAX_VALUE);
     case 'closed':
       return isToken(message.token);
+    case 'submitting':
+      return (
+        isToken(message.doc) &&
+        isPageForm(message.form) &&
+        isObject(message.job) &&
+        isText(message.job.company) &&
+        isText(message.job.role) &&
+        typeof message.final === 'boolean' &&
+        Array.isArray(message.values) &&
+        message.values.length <= MAX_FIELDS &&
+        message.values.every(
+          (each) =>
+            isObject(each) &&
+            isPlace(each.ref) &&
+            isText(each.key) &&
+            isText(each.value, MAX_VALUE),
+        )
+      );
+    case 'outcome':
+      return (
+        isToken(message.doc) &&
+        typeof message.submitted === 'boolean' &&
+        typeof message.form === 'boolean' &&
+        typeof message.errors === 'boolean'
+      );
     default:
       return false;
   }
@@ -249,6 +342,7 @@ export function isFromFrame(message: unknown): message is FromFrame {
   switch (message.do) {
     case 'shows':
     case 'save':
+    case 'draft':
       return isToken(message.token);
     case 'dismiss':
       return isToken(message.token) && typeof message.refocus === 'boolean';
@@ -256,6 +350,10 @@ export function isFromFrame(message: unknown): message is FromFrame {
       return isToken(message.token) && isPlace(message.at);
     case 'fill':
     case 'hide-button':
+    case 'note':
+    case 'details':
+    case 'undo':
+    case 'unnote':
       return isToken(message.token);
     default:
       return false;
@@ -270,22 +368,23 @@ export function isToScript(message: unknown): message is ToScript {
       return isObject(message.answer) && isPlace(message.answer.ref) && isText(message.answer.key);
     case 'close':
       return typeof message.refocus === 'boolean';
-    case 'button':
-      return message.size === 'button' || message.size === 'card';
     case 'hide-button':
     case 'stop':
       return true;
+    case 'note':
+    case 'unnote':
+      return isToken(message.token);
     default:
       return false;
   }
 }
 
-/** Whether a message is the background's, for the panel to fill a form, or look at it again. */
+/** Whether a message is the background's, for the panel to show a fill, or look at a form again. */
 export function isToPanel(message: unknown): message is ToPanel {
   if (!isObject(message) || message.type !== 'panel' || typeof message.tabId !== 'number') {
     return false;
   }
-  return message.do === 'look' || (message.do === 'fill' && typeof message.at === 'number');
+  return message.do === 'look' || message.do === 'filled';
 }
 
 /** How writing a picked answer went, as the script says it. */

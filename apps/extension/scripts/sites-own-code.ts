@@ -1,14 +1,34 @@
 // What applicant systems' own code does on their forms, which the forms saved as fixtures don't
 // have, as the end-to-end runs act it out in a real browser: Lever's location box looking up the
-// places it suggests, and Ashby's Yes and No staying pressed. Each goes in a form's page before
-// its </body>. The places are made up.
+// places it suggests, and Ashby's Yes and No, its Resume field and its Autofill from resume. Each
+// goes in a form's page before its </body>. The places are made up.
 
 /**
  * Lever's own code for its location box, as it works: as you type, it looks the city up, saying
  * it's loading, then lists the places it found, or says it found none, and a click on one keeps
- * it, in the box and in a hidden field, which is what Lever takes.
+ * it, in the box and in a hidden field, which is what Lever takes. And for its resume: its lines
+ * that say how reading one went show only as they say it, as Lever's styles have them, and a
+ * resume put in the field is read for a moment, "Analyzing resume...", then fills in your current
+ * company from it, as Lever's does, in place of what's there.
  */
 export const LEVER_LOOKS_UP = `<script>
+(() => {
+  const upload = document.getElementById('resume-upload-input');
+  const [failed, working, read, big] = ['failure', 'working', 'success', 'oversize'].map((each) =>
+    document.querySelector('.resume-upload-' + each),
+  );
+  for (const line of [failed, working, read, big]) line.style.display = 'none';
+  upload.addEventListener('change', () => {
+    document.querySelector('.filename').textContent = upload.files[0] ? upload.files[0].name : '';
+    read.style.display = 'none';
+    working.style.display = '';
+    setTimeout(() => {
+      working.style.display = 'none';
+      read.style.display = '';
+      document.querySelector('input[name="org"]').value = 'Read From The Resume Inc.';
+    }, 800);
+  });
+})();
 (() => {
   const PLACES = ['Denver City, Texas, United States', 'Denver, Colorado, United States', 'Boulder, Colorado, United States'];
   const box = document.getElementById('location-input');
@@ -53,17 +73,100 @@ export const LEVER_LOOKS_UP = `<script>
 })();
 </script>`;
 
-/** Ashby's own code for its Yes and No: a click presses the one, and lets the other go. */
-export const ASHBY_PRESSES = `<script>
-for (const button of document.querySelectorAll('button[aria-pressed]')) {
-  button.addEventListener('click', (event) => {
-    event.preventDefault();
-    for (const each of button.parentElement.querySelectorAll('button[aria-pressed]')) {
-      each.setAttribute('aria-pressed', String(each === button));
+/**
+ * Ashby's own code on its application, as it works on a real form (Talkiatry's, 2026-10-25, read
+ * without submitting), which its page saved as a fixture doesn't have, as the runs and the tests act
+ * it out on a page's own document:
+ * - a Yes or No click keeps the answer, `true` or `false`, presses that button and lets the other
+ *   go, and ticks the hidden box beside them for Yes alone; then Ashby's server keeps it too
+ *   (ApiSetFormValue), a moment later;
+ * - a file put in the Resume field is shown by its name beside it, and kept in the field, and read
+ *   no further;
+ * - a resume dropped in "Autofill from resume" shows "Parsing your resume…", and once it's read,
+ *   Ashby puts in the whole form as its server had it when the reading started, with what the
+ *   resume says (ApiAutofillApplicationFormWithUploadedResume): a Yes or No answered meanwhile is
+ *   taken back, as the reset seen live, which Submit then says isn't answered.
+ * What Ashby's server has is on the document, as `ashbyServer`, by each question's name.
+ */
+export function ashbyActs(doc: Document, readMs = 800): void {
+  const own = (doc.defaultView ?? doc) as unknown as {
+    ashbyServer?: Record<string, boolean | null>;
+    ashbyParses?: number;
+  };
+  const server: Record<string, boolean | null> = {};
+  own.ashbyServer = server;
+  own.ashbyParses = 0;
+  const later = (ms: number, then: () => void) =>
+    (doc.defaultView ?? globalThis).setTimeout(then, ms);
+  /** Each Yes and No, with the answer it keeps, which the page shows. */
+  const boxes = [...doc.querySelectorAll('.ashby-application-form-input-yesno')].map((box) => {
+    const buttons = [...box.querySelectorAll('button[aria-pressed]')];
+    const hidden = box.querySelector('input[type="checkbox"]') as HTMLInputElement | null;
+    const name = hidden?.name ?? '';
+    server[name] = null;
+    const yesNo = { name, value: null as boolean | null, show: () => {} };
+    yesNo.show = () => {
+      for (const button of buttons) {
+        const on = yesNo.value !== null && (button.textContent?.trim() === 'Yes') === yesNo.value;
+        button.setAttribute('aria-pressed', String(on));
+        button.classList.toggle('_active_1svni_57', on);
+      }
+      if (hidden) hidden.checked = yesNo.value === true;
+    };
+    for (const button of buttons) {
+      button.addEventListener('click', (event) => {
+        event.preventDefault();
+        yesNo.value = button.textContent?.trim() === 'Yes';
+        yesNo.show();
+        const value = yesNo.value;
+        later(150, () => {
+          server[name] = value;
+        });
+      });
     }
+    return yesNo;
+  });
+  // The Resume field shows the file it took by its name, as Ashby's does.
+  const resume = doc.getElementById('_systemfield_resume') as HTMLInputElement | null;
+  resume?.addEventListener('change', () => {
+    const name = resume.files?.[0]?.name;
+    const zone = resume.parentElement;
+    if (!name || !zone) return;
+    zone.querySelector('.ashby-application-form-input-file-item')?.remove();
+    const item = doc.createElement('div');
+    item.className = 'ashby-application-form-input-file-item';
+    const words = doc.createElement('p');
+    words.className = 'ashby-application-form-input-file-item-name';
+    words.textContent = name;
+    item.append(words);
+    resume.after(item);
+  });
+  // "Autofill from resume": reading shows only while it reads.
+  const pane = doc.querySelector('.ashby-application-form-autofill-input-root');
+  const pending = doc.querySelector('.ashby-application-form-autofill-input-pending-layer');
+  const dropped = pane?.querySelector('input[type="file"]') as HTMLInputElement | null;
+  if (pending instanceof HTMLElement) pending.hidden = true;
+  dropped?.addEventListener('change', () => {
+    if (!dropped.files?.length || !(pending instanceof HTMLElement)) return;
+    own.ashbyParses = (own.ashbyParses ?? 0) + 1;
+    pending.hidden = false;
+    const asWas = { ...server };
+    later(readMs, () => {
+      pending.hidden = true;
+      for (const box of boxes) {
+        box.value = asWas[box.name] ?? null;
+        server[box.name] = box.value;
+        box.show();
+      }
+      const name = doc.getElementById('_systemfield_name') as HTMLInputElement | null;
+      if (name) name.value = 'Alex Rivera';
+    });
   });
 }
-</script>`;
+
+/** Ashby's own code, as a script for a page in a browser (ashbyActs). */
+export const ashbyCode = (readMs = 800) =>
+  `<script>(${ashbyActs.toString()})(document, ${readMs});</script>`;
 
 /** A form's page with what its site's own code does in it. */
 export const withOwnCode = (page: string, code: string) =>

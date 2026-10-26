@@ -6,38 +6,42 @@ import {
 } from '@factwright/core';
 import { isCopyOnlySite } from './applicant-systems.ts';
 import { forgetFrame, isAllowedPage, keepFrame, keptFrame } from './application-sites.ts';
+import { forgetApplying, left, outcome, undoApplied, waitingAt, whenSubmitted } from './applied.ts';
 import { ext, type Sender, type Tab } from './ext.ts';
 import {
   answerSource,
+  askForDrafts,
+  draftable,
+  draftsSoFar,
   type FillPlan,
   type FormPlace,
-  filledSummary,
-  fillInPasses,
   isPlace,
   newAnswers,
   picksOf,
   placeNames,
   planFill,
-  readForm,
 } from './fill.ts';
 import { type FillWay, fillWays, firstAnswer, type NoWay } from './fill-way.ts';
 import { MENU_ROWS } from './frame-size.ts';
+import { fillAndNote } from './in-place.ts';
 import {
+  type DraftShows,
   type FieldMenu,
-  type FilledHere,
   type FromFrame,
   type FromScript,
   isFromFrame,
   isFromScript,
   type MenuAnswer,
+  type NoteSays,
   type SaveOffer,
   type ToPanel,
   type ToScript,
   type Written,
 } from './job-site-messages.ts';
-import type { FieldAnswer, FieldFilled, PageField, PageForm } from './page/form.ts';
+import { forgetFill, openedFromNote } from './kept-fill.ts';
+import { forgetNotes, hideLostNote, hideNote, noteFor } from './notes.ts';
+import type { FieldAnswer, PageField, PageForm } from './page/form.ts';
 import { openPanel } from './panel-open.ts';
-import { readFormJob } from './read-tab.ts';
 import { serverName } from './server.ts';
 
 /**
@@ -205,7 +209,29 @@ interface Menu {
   at: number;
   answers: Offered[];
   save: Saving | null;
+  /** Whether it offers to have your Claude draft the form's own questions, as it has no answer. */
+  draft: boolean;
 }
+
+/** Your Claude drafting a form's own questions, from a field's menu, as the background follows it. */
+interface Drafting {
+  /** The fields it's drafting, by their keys. */
+  keys: Set<string>;
+  is: Exclude<DraftShows['is'], 'offer'>;
+  /** What went wrong, as Factwright said it. */
+  says?: string;
+  since: number;
+  /** When it last asked how they're coming, so menus that ask at once ask Factwright once. */
+  askedAt: number;
+  /** Asking now, which a menu that asks meanwhile waits for. */
+  asking: Promise<void> | null;
+}
+
+/** How often a menu asks how your Claude's drafts are coming along, while it drafts them. */
+const DRAFTS_EVERY_MS = 2500;
+
+/** How long it follows your Claude's drafts: a long application's take a few minutes. */
+const DRAFTS_FOR_MS = 20 * 60 * 1000;
 
 /** Where a script runs: a tab, a frame in it, its top frame being 0, and the page it's on. */
 interface ScriptAt extends FormPlace {
@@ -223,11 +249,15 @@ interface OnPage {
   way: FillWay;
   form: PageForm;
   plan: FillPlan;
+  /** The company and job title the page shows, which the job the form is for is found by. */
+  shows: { company: string; role: string };
   menu: Menu | null;
   /** The new answer you last gave, to offer in the next menu. */
   saving: Saving | null;
   /** The fields whose new answers it's offered to keep, so it offers each once. */
   offered: Set<string>;
+  /** Your Claude drafting the form's own questions, once you chose to in a menu. */
+  drafting: Drafting | null;
 }
 
 /** A frame of a tab, as the background keeps what it knows of each. */
@@ -247,15 +277,26 @@ function fieldAt(form: PageForm, ref: number, key: string): number {
   return same.length === 1 ? (same[0] ?? -1) : -1;
 }
 
+/**
+ * The form's own questions nothing on file answers, by their keys, which your Claude can draft:
+ * for a job you haven't saved too, which it says to save first, so whether a menu opens on one
+ * says nothing to the page of whether you saved it.
+ */
+const openQuestions = (page: OnPage): Set<string> =>
+  new Set(draftable(page.form, page.plan.replies, new Map()).map((field) => field.key));
+
 /** The menu for each field, as the script asks before it shows one. */
-const menusOf = (page: OnPage): FieldMenu[] =>
-  page.form.fields.map((field, at) => ({
+function menusOf(page: OnPage): FieldMenu[] {
+  const open = openQuestions(page);
+  return page.form.fields.map((field, at) => ({
     ref: field.ref,
     key: field.key,
     answers: menuAnswers(field, page.plan.replies[at]).length,
     // Profile keeps new answers through Factwright on this computer alone.
     keeps: page.way.via === 'computer' && keepsAnswer(field, page.plan.replies[at]),
+    draft: open.has(field.key) || page.drafting?.keys.has(field.key) === true,
   }));
+}
 
 /** Has the panel filling a tab's form look at it now, if it's open. */
 const tellPanelLook = (tabId: number) =>
@@ -318,7 +359,7 @@ async function answer(
         ...before.plan,
         replies: form.fields.map((field) => replies.get(field.key) as FieldReply),
       };
-      const page = { ...before, form, plan, menu: null };
+      const page = { ...before, form, plan, shows: job, menu: null };
       pages.set(key, page);
       return page;
     }
@@ -335,9 +376,11 @@ async function answer(
     way,
     form,
     plan: planned,
+    shows: job,
     menu: null,
     saving: null,
     offered: before?.url === url ? before.offered : new Set(),
+    drafting: before?.url === url ? before.drafting : null,
   };
   pages.set(key, page);
   return page;
@@ -368,6 +411,28 @@ export async function answerScript(
   if (message.do === 'bye') {
     if (scripts.get(key)?.doc === message.doc) forgetPage(place);
     await forgetFrame(place.tabId, { frameId: place.frameId, doc: message.doc });
+    // A page you submitted, going away as it loads the next.
+    await left(place, message.doc);
+    return {};
+  }
+  if (message.do === 'submitting') {
+    // In its turn, started before anything's waited on, as the page after it may say hello at once.
+    await whenSubmitted(place, async () => {
+      if (!(await isAllowedPage(url)) || inCopyOnly(from.top, [])) return null;
+      // Only the form on the page the script is on, with Factwright's answers for it.
+      if (pageOf(message.form.url) !== pageOf(url)) return null;
+      const page = await answer(place, message.form, message.job);
+      if (typeof page === 'string') return null;
+      return {
+        place,
+        doc: message.doc,
+        form: message.form,
+        plan: page.plan,
+        way: page.way,
+        values: message.values,
+        final: message.final,
+      };
+    });
     return {};
   }
   const around = message.do === 'hello' ? message.around : [];
@@ -378,7 +443,12 @@ export async function answerScript(
   if (message.do === 'hello') {
     scripts.set(key, { ...place, url, doc: message.doc });
     await keepFrame(place.tabId, { frameId: place.frameId, url, doc: message.doc });
-    return { allowed: true };
+    // The page after one you submitted, in the same frame, says how it went.
+    return { allowed: true, ...((await waitingAt(place)) && { watch: true }) };
+  }
+  if (message.do === 'outcome') {
+    await outcome({ place, ...message });
+    return {};
   }
   if (message.do === 'look') {
     // You left a field of an application that runs over several, or it went on to another page:
@@ -411,17 +481,132 @@ export async function answerScript(
     if (saving) page.saving = saving;
     return { offer: Boolean(saving) };
   }
-  // A menu beside the field: its answers, the new answer you last gave, to keep, or both. The new
+  // A menu beside the field: its answers, or for one of the form's own questions with none, the
+  // offer to have your Claude draft them, the new answer you last gave, to keep, or both. The new
   // answer waits for a menu with room for it.
   const answers = message.answers ? menuAnswers(field, reply) : [];
+  const draft =
+    message.answers &&
+    answers.length === 0 &&
+    (openQuestions(page).has(field.key) || page.drafting?.keys.has(field.key) === true);
   const save = message.save ? page.saving : null;
   if (save) page.saving = null;
-  if (answers.length === 0 && !save) {
+  if (answers.length === 0 && !save && !draft) {
     page.menu = null;
     return { answers: 0, save: false };
   }
-  page.menu = { token: message.token, at, answers, save };
-  return { answers: answers.length, save: Boolean(save) };
+  page.menu = { token: message.token, at, answers, save, draft };
+  return { answers: answers.length, save: Boolean(save), draft };
+}
+
+/**
+ * Has your Claude draft the form's own questions nothing on file answers, all of them at once, as
+ * a menu's Draft with Claude asks: Factwright on this computer starts it in its window, and
+ * through sync, they're left with the job, for your Claude in Factwright on your computer.
+ */
+async function startDrafts(page: OnPage): Promise<void> {
+  if (page.drafting?.is === 'drafting' || page.drafting?.is === 'waiting') return;
+  const fields = draftable(page.form, page.plan.replies, new Map());
+  if (fields.length === 0) return;
+  const now = Date.now();
+  // Drafting from now, so a second click meanwhile starts nothing more.
+  const drafting: Drafting = {
+    keys: new Set(fields.map((field) => field.key)),
+    is: 'drafting',
+    since: now,
+    askedAt: now,
+    asking: null,
+  };
+  page.drafting = drafting;
+  // A job you saved since the page's answers were asked for is found now.
+  if (!page.plan.job) {
+    const planned = await planFill(page.form, page.shows, page.way);
+    if (page.drafting !== drafting) return;
+    if (planned.ok && planned.did === 'fill') page.plan = planned;
+  }
+  const { job } = page.plan;
+  if (!job) {
+    drafting.is = 'failed';
+    drafting.says = 'Save this job first, from Factwright’s button. Then try again.';
+    return;
+  }
+  const asked = await askForDrafts(page.form, job.id, fields, page.way);
+  if (page.drafting !== drafting) return;
+  if (!asked.ok || asked.did !== 'draft') {
+    drafting.is = 'failed';
+    drafting.says = asked.ok
+      ? 'Factwright didn’t answer. Try again.'
+      : asked.reason === 'bad-message'
+        ? 'Update Factwright on this computer to have your Claude draft these.'
+        : (asked.message ?? 'Factwright couldn’t start your Claude. Try again.');
+    return;
+  }
+  if (page.way.via === 'sync') drafting.is = 'left';
+}
+
+/**
+ * Asks how your Claude's drafts are coming along, at most every few seconds, as a menu asks what it
+ * shows. Once they're done, or it's taken too long, the drafted questions' answers are asked for
+ * again: each menu offers its draft, to pick.
+ */
+async function followDrafts(page: OnPage): Promise<void> {
+  const drafting = page.drafting;
+  const { job } = page.plan;
+  if (!drafting || !job || (drafting.is !== 'drafting' && drafting.is !== 'waiting')) return;
+  if (drafting.asking) return drafting.asking;
+  if (Date.now() - drafting.askedAt < DRAFTS_EVERY_MS) return;
+  drafting.askedAt = Date.now();
+  drafting.asking = (async () => {
+    const now = await draftsSoFar(job.id, page.way);
+    if (page.drafting !== drafting) return;
+    if (!now.ok || now.did !== 'drafts') {
+      // Factwright was busy a moment: it's asked again next time.
+      if (!now.ok && now.reason === 'busy') return;
+      drafting.is = 'failed';
+      drafting.says = now.ok ? 'Factwright didn’t answer. Try again.' : now.message;
+      return;
+    }
+    if (now.drafting && Date.now() - drafting.since < DRAFTS_FOR_MS) {
+      drafting.is = now.waiting ? 'waiting' : 'drafting';
+      return;
+    }
+    const places = page.form.fields.flatMap((field, at) =>
+      drafting.keys.has(field.key) ? [at] : [],
+    );
+    const fields = places.flatMap((at) => page.form.fields[at] ?? []);
+    const planned = await planFill({ ...page.form, fields }, page.shows, page.way);
+    if (page.drafting !== drafting) return;
+    if (!planned.ok || planned.did !== 'fill') {
+      drafting.is = 'failed';
+      drafting.says = planned.ok ? 'Factwright didn’t answer. Try again.' : planned.message;
+      return;
+    }
+    places.forEach((at, i) => {
+      const reply = planned.replies[i];
+      if (reply) page.plan.replies[at] = reply;
+    });
+    page.drafting = null;
+  })().finally(() => {
+    drafting.asking = null;
+  });
+  return drafting.asking;
+}
+
+/** What a menu with no answer of its own says of your Claude's drafts, or null for nothing. */
+function draftShows(page: OnPage, menu: Menu): DraftShows | null {
+  if (!menu.draft || menu.answers.length > 0) return null;
+  const through = page.way.via;
+  const { drafting } = page;
+  if (drafting) {
+    return {
+      is: drafting.is,
+      questions: drafting.keys.size,
+      through,
+      ...(drafting.says && { says: drafting.says }),
+    };
+  }
+  const open = openQuestions(page);
+  return open.size > 0 ? { is: 'offer', questions: open.size, through } : null;
 }
 
 /** The page whose menu a frame names by its token, in one of the frame's own tab's frames. */
@@ -445,65 +630,36 @@ async function buttonFor(tabId: number, token: string): Promise<ScriptAt | null>
   return kept ? { tabId, ...kept } : null;
 }
 
-/** Has the panel fill the form in a tab, if it's open, as it does when the click opens it. */
-const tellPanel = (tabId: number, at: number) =>
-  ext.runtime.sendMessage({ type: 'panel', do: 'fill', tabId, at } satisfies ToPanel).catch(() => {
-    // The panel isn't open yet: it fills the form as it opens.
-  });
+/** What a note says once Undo can't reach what it marked: the background doesn't know it now. */
+const UNDO_LOST: NoteSays = {
+  is: 'problem',
+  says: 'Undo can’t reach this anymore. Change the job’s status in Factwright.',
+};
 
 /**
- * What the Fill button does, as clicking Fill does: Chrome's side panel opens and fills the form,
- * or fills it again if it was open (`opening`, which the click itself started). Firefox opens its
- * sidebar only from a click of its own, so where it's open, it fills this tab, and where it isn't,
- * the form is filled here, as the sidebar would fill it.
+ * What a note's frame asks, answered, for a note on a page in its own tab: what it says, Details,
+ * which opens the panel (`opening`, which the click itself started), Undo, for a job it marked
+ * applied, or Close. A note that names a job read through sync is gone once the browser stopped
+ * the background meanwhile: Details and Close still work, and Undo says it can't.
  */
-async function fillButton(
+async function answerNote(
+  message: Extract<FromFrame, { do: 'note' | 'details' | 'undo' | 'unnote' }>,
   tab: Tab & { id: number },
-  place: FormPlace,
   opening: Promise<boolean> | null,
-): Promise<FilledHere> {
-  const at = Date.now();
-  if (opening) {
-    if (!(await opening)) return fillHere(tab, place);
-    void tellPanel(tab.id, at);
-    return { did: 'panel' };
+): Promise<unknown> {
+  if (message.do === 'details') {
+    openedFromNote(tab.id);
+    return { opened: (await opening) === true };
   }
-  const open = await (ext.sidebarAction?.isOpen({ windowId: tab.windowId }) ?? false);
-  if (!open) return fillHere(tab, place);
-  void tellPanel(tab.id, at);
-  return { did: 'panel' };
-}
-
-/** Fills the form in a tab's frame as the panel would, without it, and says how it went. */
-async function fillHere(tab: Tab & { id: number }, place: FormPlace): Promise<FilledHere> {
-  const problem = (says: string) => ({ did: 'problem', says }) as const;
-  const ways = await fillWays();
-  if (!Array.isArray(ways)) {
-    return problem(
-      ways.why === 'sync'
-        ? `Filling needs your OK to reach ${serverName(ways.server)}: click Factwright’s button, then Fill this application.`
-        : 'Filling needs your OK to reach Factwright on this computer: click Factwright’s button, then Fill this application.',
-    );
+  const note = await noteFor(tab.id, message.token);
+  if (message.do === 'unnote') {
+    if (note) await hideNote(note);
+    else await hideLostNote(tab.id, message.token);
+    return {};
   }
-  const form = await readForm(place);
-  if (!form) return problem('Factwright can’t read this page.');
-  if (form.fields.length === 0) {
-    return problem('There’s no form here. Open the application itself, then click Fill again.');
-  }
-  const shows = await readFormJob(tab, place.frameId);
-  const { way, answer: plan } = await firstAnswer(ways, (each) => planFill(form, shows, each));
-  if (!plan.ok || plan.did !== 'fill') {
-    return problem(plan.ok ? 'Factwright didn’t answer. Try again.' : plan.message);
-  }
-  const filled = new Map<string, FieldFilled>();
-  const done = await fillInPasses({ place, way, form, plan, shows, filled, stale: () => false });
-  if (done === 'elsewhere') return problem('This tab has moved on from the form.');
-  if (done !== true) return problem('Factwright can’t reach this page anymore.');
-  const unsaved = plan.job ? '' : ' Save the job first to upload its resume.';
-  return {
-    did: 'filled',
-    says: `${filledSummary(form, filled)}${unsaved} To check each answer, click Factwright’s button, then Fill this application.`,
-  };
+  if (!note) return message.do === 'undo' ? UNDO_LOST : null;
+  if (message.do === 'note') return note.says;
+  return undoApplied(note);
 }
 
 /** What the frame asks, answered, for the script in its own tab that shows it. */
@@ -514,6 +670,14 @@ export async function answerFrame(
 ): Promise<unknown> {
   const { tab } = from;
   const tabId = tab.id;
+  if (
+    message.do === 'note' ||
+    message.do === 'details' ||
+    message.do === 'undo' ||
+    message.do === 'unnote'
+  ) {
+    return answerNote(message, tab, opening);
+  }
   if (message.do === 'fill' || message.do === 'hide-button') {
     const script = await buttonFor(tabId, message.token);
     if (!script || !(await isAllowedPage(script.url))) return null;
@@ -522,23 +686,30 @@ export async function answerFrame(
       await tellScript(place, { type: 'job-site', do: 'hide-button' });
       return {};
     }
-    const done = await fillButton(tab, place, opening);
-    // Filled here, the button says how it went, in room the script makes for it.
-    if (done.did !== 'panel')
-      await tellScript(place, { type: 'job-site', do: 'button', size: 'card' });
-    return done;
+    // Filled in its page, with a note there that says how it went.
+    return fillAndNote(tab, place);
   }
   const found = menuFor(tabId, message.token);
   if (!found || !(await isAllowedPage(found.page.url))) return null;
   const { page, menu } = found;
   const field = page.form.fields[menu.at] as PageField;
-  if (message.do === 'shows') {
+  if (message.do === 'draft') {
+    if (!menu.draft) return null;
+    await startDrafts(page);
+  }
+  if (message.do === 'shows' || message.do === 'draft') {
+    // Your Claude's drafts, once they're done, are this menu's answers.
+    await followDrafts(page);
+    if (menu.draft && menu.answers.length === 0) {
+      menu.answers = menuAnswers(field, page.plan.replies[menu.at]);
+    }
     return {
       question: field.question,
       answers: menu.answers.map((each) => each.shown),
       save: menu.save
         ? { question: menu.save.question, text: menu.save.text, private: menu.save.private }
         : null,
+      draft: draftShows(page, menu),
     };
   }
   if (message.do === 'pick') {
@@ -590,9 +761,10 @@ export function onJobSiteMessage(
   if (isFromFrame(message)) {
     const from = frameSender(sender);
     if (!from) return undefined;
-    // Chrome opens its side panel only straight from the click, before anything is waited on.
+    // A browser opens its panel only straight from the click, before anything is waited on: Chrome
+    // from a click in the note, and Firefox only from one of its own, as on its button.
     const opening =
-      message.do === 'fill' && ext.sidePanel
+      message.do === 'details'
         ? openPanel(from.tab).then(
             () => true,
             () => false,
@@ -604,11 +776,14 @@ export function onJobSiteMessage(
   return undefined;
 }
 
-/** Forgets a tab's forms, in each of its frames, once it closes. */
+/** Forgets a tab's forms, in each of its frames, its fill, notes and applications, once it closes. */
 export function forgetTab(tabId: number): void {
   for (const [key, page] of pages) if (page.place.tabId === tabId) pages.delete(key);
   for (const [key, script] of scripts) if (script.tabId === tabId) scripts.delete(key);
   void forgetFrame(tabId);
+  void forgetFill(tabId);
+  void forgetNotes(tabId);
+  void forgetApplying(tabId);
 }
 
 /**

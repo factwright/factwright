@@ -57,6 +57,7 @@ let deps: FillDeps & {
   jobs: {
     recordAnswers: ReturnType<typeof vi.fn>;
     updateJob: ReturnType<typeof vi.fn>;
+    undoApplied: ReturnType<typeof vi.fn>;
     keepForm: ReturnType<typeof vi.fn>;
   };
   drafts: { start: ReturnType<typeof vi.fn>; state: ReturnType<typeof vi.fn> };
@@ -144,6 +145,7 @@ beforeEach(() => {
         recorded: answers.length,
       })),
       updateJob: vi.fn(() => ({ ok: true as const })),
+      undoApplied: vi.fn(() => ({ ok: true as const, undone: true })),
       keepForm: vi.fn((id: string, form: SavedForm) => {
         forms.set(id, form);
         return { ok: true as const };
@@ -216,7 +218,7 @@ describe('answering a form to fill', () => {
     ]);
     expect(answer.files).toEqual({
       resume: {
-        name: 'Ana María Ruiz - Resume.pdf',
+        name: 'AnaRuizResume10202026_HarborPine.pdf',
         size: PDF.length,
         parts: 2,
         version: expect.stringMatching(/^[0-9a-f]{16}$/),
@@ -377,7 +379,7 @@ describe('answering from the resumes, where Profile is blank', () => {
       from: 'From the job’s resume',
     });
     expect(answer.replies[1]?.text).toBe('Tidewater Analytics');
-    expect(answer.files.resume?.name).toBe('Ana María Ruiz - Resume.pdf');
+    expect(answer.files.resume?.name).toBe('AnaRuizResume10202026_HarborPine.pdf');
   });
 
   it('takes your newest resume for a job that has none yet', async () => {
@@ -465,7 +467,8 @@ describe('what was sent', () => {
       { question: 'Street address', text: '1420 Larimer St' },
       { question: 'Anything else?', text: '  ' },
     ]);
-    expect(answer).toMatchObject({ ok: true, did: 'sent', recorded: 3 });
+    // It marked the job Applied, as it wasn't, which Undo may take back.
+    expect(answer).toMatchObject({ ok: true, did: 'sent', recorded: 3, marked: true });
     expect(deps.jobs.recordAnswers.mock.calls).toEqual([
       [
         'harbor-pine--account-executive',
@@ -481,9 +484,27 @@ describe('what was sent', () => {
     });
   });
 
-  it('leaves a job you applied to as it is', async () => {
-    await sent([{ question: 'Why?', text: 'Because.' }], 'lumen--product-manager');
+  it('leaves a job you applied to as it is, and says it didn’t mark it, so there’s no Undo', async () => {
+    const answer = await sent([{ question: 'Why?', text: 'Because.' }], 'lumen--product-manager');
     expect(deps.jobs.updateJob).not.toHaveBeenCalled();
+    expect(answer).toMatchObject({ ok: true, did: 'sent', marked: false });
+  });
+
+  it('takes marking a job Applied back, as Undo asks', async () => {
+    const job = 'harbor-pine--account-executive';
+    expect(await answerAsk({ ask: 'unsent', job }, deps)).toMatchObject({
+      ok: true,
+      did: 'unsent',
+      job: { id: job },
+      undone: true,
+    });
+    expect(deps.jobs.undoApplied).toHaveBeenCalledWith(job);
+    deps.jobs.undoApplied.mockReturnValueOnce({ ok: true, undone: false });
+    expect(await answerAsk({ ask: 'unsent', job }, deps)).toMatchObject({ undone: false });
+    expect(await answerAsk({ ask: 'unsent', job: 'gone--job' }, deps)).toMatchObject({
+      ok: false,
+      reason: 'not-found',
+    });
   });
 });
 

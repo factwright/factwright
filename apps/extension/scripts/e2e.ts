@@ -750,6 +750,18 @@ try {
       'and on its application, the same job, with Fill and no save',
     );
     await shoot(applying, 'popup-4-saved-with-form');
+    // A site the extension doesn't notice you submit on, as one you haven't turned on: the popup
+    // has Mark as applied, which marks the job through sync, and Undo, which takes it back.
+    await applying.getByRole('button', { name: 'Mark as applied' }).click();
+    await applying.getByText(/^Marked applied: /).waitFor({ timeout: 20_000 });
+    check(
+      (await applying.getByRole('button', { name: 'Undo' }).count()) === 1,
+      'where the extension doesn’t notice you submit, the popup marks the job applied, with Undo',
+    );
+    await shoot(applying, 'popup-4b-marked-applied');
+    await applying.getByRole('button', { name: 'Undo' }).click();
+    await applying.getByText(/^Not applied: .* is back to New\.$/).waitFor({ timeout: 20_000 });
+    check(true, 'and Undo takes it back through sync');
     await applying.close();
 
     // A job that isn't saved, on its application: one button saves it and fills the form.
@@ -779,15 +791,8 @@ try {
     await shoot(unsaved, 'popup-5-save-and-fill');
     const pages = context.pages().length;
     await unsaved.getByRole('button', { name: 'Save and fill' }).click();
-    // Chrome opens the panel straight after the click that saved it, and the popup closes, or the
-    // popup offers Fill, as where the browser won't.
-    const panelled = await Promise.race([
-      unsaved.waitForEvent('close', { timeout: 15_000 }).then(() => 'panel' as const),
-      unsaved
-        .getByRole('button', { name: 'Fill this application' })
-        .waitFor({ timeout: 15_000 })
-        .then(() => 'button' as const),
-    ]);
+    // Saved, the form fills in its page, in the same click, as the popup closes.
+    await unsaved.waitForEvent('close', { timeout: 15_000 });
     const engineer = await recordId(keys, rowName('jobs', 'harbor-and-pine--data-engineer'));
     const postingOf = await recordId(
       keys,
@@ -797,10 +802,8 @@ try {
     check(
       synced.some((each) => each.record === engineer) &&
         !synced.some((each) => each.record === postingOf),
-      `Save and fill saves the job by its link, then fills (${panelled === 'panel' ? 'the panel opened' : 'Fill to click'})`,
+      'Save and fill saves the job by its link, then fills the form in its page, in one click',
     );
-    if (panelled === 'button') await shoot(unsaved, 'popup-6-saved-fill');
-    if (!unsaved.isClosed()) await unsaved.close();
     for (const page of context.pages().slice(pages)) await page.close();
 
     // Where saving doesn't work, the form can still be filled.
