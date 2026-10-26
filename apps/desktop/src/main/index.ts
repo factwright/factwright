@@ -64,6 +64,7 @@ import { ElectronResumePrinter } from './resume/printer.ts';
 import { TemplateLibrary } from './resume/templates.ts';
 import { applyDevPolicy, denyPermissions, hardenContents } from './security.ts';
 import { SyncAccount } from './sync/account.ts';
+import { Claims } from './sync/claims.ts';
 import { NO_KEYCHAIN } from './sync/secrets.ts';
 import { factwrightTools } from './tools/index.ts';
 import { UpdateWatcher } from './updates.ts';
@@ -271,8 +272,10 @@ function start(home: string, profile: ProfileFolder, stopped: ProfileFolder | nu
           if (page) opener.open(jobId, page);
         }),
     });
-    // Claude analyzing new jobs on its own, once everything it needs is open, further down.
+    // Claude analyzing new jobs on its own, and the claims on jobs that keep two computers from
+    // both analyzing one, once everything they need is open, further down.
     let analyzeNew: AnalyzeNew | null = null;
+    let claims: Claims | null = null;
     const sync = new SyncAccount({
       dataDir,
       server: syncServer,
@@ -287,6 +290,8 @@ function start(home: string, profile: ProfileFolder, stopped: ProfileFolder | nu
       openUrl: (url) => shell.openExternal(url),
       onStatus: (status) => {
         window.send('sync:status', status);
+        // A round that got through may let jobs that waited for sync be claimed now.
+        if (status.state === 'on' && status.activity === 'idle') analyzeNew?.look();
         // Which account this profile syncs with, and on which server, so no other profile here
         // signs in to it.
         if (status.state === 'off') profiles.noteSync(null);
@@ -303,9 +308,10 @@ function start(home: string, profile: ProfileFolder, stopped: ProfileFolder | nu
       onApplied: () => {
         window.send('jobs:changed', jobs.read());
         reminders.check({ synced: true });
-        // A job saved on another device may be one for Claude to analyze on its own, once that
-        // device has had time to.
-        analyzeNew?.look('sync');
+        // Another computer may have claimed a job a run of Claude's own here is on, and a job
+        // saved on another device may be one for Claude to analyze on its own.
+        claims?.synced();
+        analyzeNew?.look();
       },
     });
     const jobs = new JobsService({
@@ -400,6 +406,8 @@ function start(home: string, profile: ProfileFolder, stopped: ProfileFolder | nu
       atOnce,
       onView: (view) => {
         window.send('claude:runs', view);
+        // Each run with work going holds its jobs' claims, and a run that ended lets go.
+        claims?.heard(view);
         // A run that ended, or a slot that freed, may let Claude analyze new jobs on its own.
         analyzeNew?.look();
       },
@@ -545,6 +553,12 @@ function start(home: string, profile: ProfileFolder, stopped: ProfileFolder | nu
     // Claude analyzing new jobs on its own while it's free, once Claude Code is ready and past its
     // first screens, with the window open to show its run. The tests turn it off, or wait less.
     let claudeReady = false;
+    claims = new Claims({
+      tracker,
+      sync: sync.claimSync(),
+      stepAside: (runId) => claude.stepAside(runId),
+    });
+    claims.heard(claude.view());
     const analyzing = new AnalyzeNew({
       dataDir,
       jobs: () => jobs.list().jobs,
@@ -555,6 +569,7 @@ function start(home: string, profile: ProfileFolder, stopped: ProfileFolder | nu
         window.current() !== null &&
         (claude.view().setUp || setup.current()?.result === 'passed'),
       today: () => localDate(new Date()),
+      claims,
       ...(develop('FACTWRIGHT_ANALYZE_WAIT_MS') && {
         quietMs: Number(develop('FACTWRIGHT_ANALYZE_WAIT_MS')),
       }),
@@ -652,6 +667,7 @@ function start(home: string, profile: ProfileFolder, stopped: ProfileFolder | nu
       updates?.stop();
       reminders.stop();
       analyzing.stop();
+      claims?.stop();
       claude.closeAll();
       setup.stop();
       server.stop();

@@ -9,6 +9,7 @@ import {
   startedOnItsOwn,
   taskJobs,
 } from '../../shared/runs.ts';
+import type { Claims } from '../sync/claims.ts';
 import type { OwnEnd, RunHeard } from './runs.ts';
 import { saveJson, settled } from './save.ts';
 
@@ -22,10 +23,10 @@ const FILE = 'analyze-new.json';
 const QUIET_MS = 60_000;
 
 /**
- * How much longer a job that came from another device waits: one saved on a computer with the app
- * open is usually analyzed there by then, and comes back checked, so the two don't both analyze it.
+ * How long it waits to claim again after a try that held no job, as when sync isn't working, so
+ * it never asks the server over and over.
  */
-const SYNCED_MS = 9 * 60_000;
+const AGAIN_MS = 30_000;
 
 /** How soon it looks again once something changed, so changes that come together look once. */
 const LOOK_MS = 500;
@@ -115,6 +116,11 @@ export interface AnalyzeNewDeps {
    */
   ready: () => boolean;
   today: () => string;
+  /**
+   * Claims on jobs through sync, so no two computers analyze one at once: a job another computer
+   * holds waits, and a run starts only on the jobs this computer holds.
+   */
+  claims?: Pick<Claims, 'elsewhere' | 'take' | 'letGo'>;
   now?: () => number;
   /** How long it waits after the newest job turns up. Tests wait less. */
   quietMs?: number;
@@ -123,22 +129,22 @@ export interface AnalyzeNewDeps {
 /**
  * Claude analyzing new jobs on its own, while it's free, several in one run, until the user turns
  * it off. Jobs saved together wait a moment, so they go in one run, and a run takes as many as it
- * can, the oldest first. A job that came from another device waits longer, for that device to
- * analyze it. It starts only when it can start at once, never in line. A run that ends,
- * done, stopped, closed or failed, leaves the jobs it didn't finish to the user, so none is tried
- * over and over. One that steps aside for a task the user starts, or goes as the window closes or
- * the app quits, leaves them for the next.
+ * can, the oldest first. With sync on, it first claims them, so another computer's run never
+ * analyzes them too, and leaves any another computer holds. It starts only when it can start at
+ * once, never in line. A run that ends, done, stopped, closed or failed, leaves the jobs it didn't
+ * finish to the user, so none is tried over and over. One that steps aside for a task the user
+ * starts, here or on another computer, or goes as the window closes or the app quits, leaves them
+ * for the next.
  */
 export class AnalyzeNew {
   private readonly deps: AnalyzeNewDeps;
   private state: AnalyzeNewState | null = null;
-  /**
-   * When the app first saw each job it could take, or for one that came from another device, nine
-   * minutes after, so it waits ten in all.
-   */
+  /** When the app first saw each job it could take. */
   private readonly seen = new Map<string, number>();
-  /** Whether sync brought changes in since it last looked, so the jobs new since came with them. */
-  private synced = false;
+  /** Whether it's claiming jobs through sync now, which no other look does meanwhile. */
+  private claiming = false;
+  /** When it may claim again, after a try that held no job. */
+  private again = 0;
   /** Whether it stopped for good, as the app quits or restarts to update. */
   private stopped = false;
   private timer: ReturnType<typeof setTimeout> | undefined;
@@ -176,10 +182,9 @@ export class AnalyzeNew {
 
   /**
    * Looks again in a moment whether to start, as when a job is saved, a run ends, or sync brings in
-   * changes from another device.
+   * changes from another device, or works again.
    */
-  look(from: 'here' | 'sync' = 'here'): void {
-    if (from === 'sync') this.synced = true;
+  look(): void {
     this.at(LOOK_MS);
   }
 
@@ -222,26 +227,31 @@ export class AnalyzeNew {
     }, ms);
   }
 
+  /** The jobs waiting for a run of its own: none taken here, nor held by another computer. */
+  private waiting(state: AnalyzeNewState, view: RunsView): Job[] {
+    const { claims } = this.deps;
+    return jobsToAnalyze(this.deps.jobs(), state, takenIn(view)).filter(
+      (job) => !claims?.elsewhere(job.id),
+    );
+  }
+
   /**
    * Starts a run on the jobs waiting, if it's time and Claude is free, one run of its own at a
-   * time.
+   * time, once it holds their claims.
    */
   private check(): void {
     const state = this.state;
-    if (!state?.on) return;
+    if (!state?.on || this.claiming) return;
     const now = this.now();
-    const jobs = this.deps.jobs();
     const view = this.deps.runs.view();
-    const waiting = jobsToAnalyze(jobs, state, takenIn(view));
+    const waiting = this.waiting(state, view);
     for (const id of this.seen.keys()) {
       if (!waiting.some((job) => job.id === id)) this.seen.delete(id);
     }
-    const later = this.synced ? SYNCED_MS : 0;
-    this.synced = false;
-    for (const job of waiting) if (!this.seen.has(job.id)) this.seen.set(job.id, now + later);
+    for (const job of waiting) if (!this.seen.has(job.id)) this.seen.set(job.id, now);
     if (waiting.length === 0) return;
     const newest = Math.max(...waiting.map((job) => this.seen.get(job.id) ?? now));
-    const wait = newest + (this.deps.quietMs ?? QUIET_MS) - now;
+    const wait = Math.max(newest + (this.deps.quietMs ?? QUIET_MS), this.again) - now;
     if (wait > 0) {
       this.at(wait);
       return;
@@ -250,8 +260,48 @@ export class AnalyzeNew {
     // it takes are its run's while it goes, so no look takes them twice.
     if (ownGoing(view) || !this.deps.ready()) return;
     const picked = waiting.slice(0, ANALYZE_ON_ITS_OWN).map((job) => job.id);
-    if (!this.deps.runs.startOwn({ skill: ANALYZE_SKILL, jobIds: picked, auto: true })) return;
+    const { claims } = this.deps;
+    if (!claims) {
+      this.start(picked);
+      return;
+    }
+    this.claiming = true;
+    void claims
+      .take(picked)
+      .then(
+        (held) => this.claimed(held),
+        () => this.claimed([]),
+      )
+      .finally(() => {
+        this.claiming = false;
+      });
+  }
+
+  /**
+   * Starts a run on the jobs this computer holds the claims of, if they still wait and Claude is
+   * still free. Any it doesn't start, it lets go of. Holding none, it tries again in a while.
+   */
+  private claimed(held: readonly string[]): void {
+    const state = this.state;
+    const view = this.deps.runs.view();
+    const still = state?.on && !this.stopped ? this.waiting(state, view).map((job) => job.id) : [];
+    const jobIds = held.filter((id) => still.includes(id));
+    const started = jobIds.length > 0 && !ownGoing(view) && this.deps.ready() && this.start(jobIds);
+    this.deps.claims?.letGo(started ? held.filter((id) => !jobIds.includes(id)) : held);
+    if (started) return;
+    this.again = this.now() + AGAIN_MS;
+    this.look();
+  }
+
+  /** Starts a run of its own on the jobs, if it can start at once. */
+  private start(jobIds: readonly string[]): boolean {
+    const state = this.state;
+    if (!state) return false;
+    if (!this.deps.runs.startOwn({ skill: ANALYZE_SKILL, jobIds: [...jobIds], auto: true })) {
+      return false;
+    }
     // Only jobs still not checked stay on the list of those left to the user, so it stays short.
+    const jobs = this.deps.jobs();
     const kept = state.tried.filter((id) =>
       jobs.some((job) => job.id === id && notCheckedYet(job)),
     );
@@ -259,6 +309,7 @@ export class AnalyzeNew {
       this.state = { ...state, tried: kept };
       void this.save();
     }
+    return true;
   }
 
   private save(): Promise<void> {

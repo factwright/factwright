@@ -19,6 +19,7 @@ const ADDED: readonly (
   { jobColumns: ['folder'] },
   { jobColumns: ['pay_ask'] },
   { jobColumns: ['own_company', 'own_role', 'own_pay', 'own_location', 'maybe_same'] },
+  { table: 'claims' },
 ];
 
 /**

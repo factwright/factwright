@@ -1103,7 +1103,7 @@ describe('the database file', () => {
         ['calls', ['minutes', 'mode', 'place', 'people', 'debrief']],
       ]),
     );
-    expect(second.gainedTables()).toEqual(['notes']);
+    expect(second.gainedTables()).toEqual(['claims', 'notes']);
     second.close();
   });
 
@@ -1178,7 +1178,7 @@ describe('the database file', () => {
         ['calls', ['minutes', 'mode', 'place', 'people', 'debrief']],
       ]),
     );
-    expect(second.gainedTables()).toEqual(['notes']);
+    expect(second.gainedTables()).toEqual(['claims', 'notes']);
     second.close();
     // A tracker that's up to date, or new, made nothing.
     const third = new Tracker(file);

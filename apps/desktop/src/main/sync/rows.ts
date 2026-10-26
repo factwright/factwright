@@ -10,9 +10,10 @@ import type { SyncState } from './state.ts';
  * Claude noted might be the same keep what either device added, its earlier notes keep both
  * texts, and on a clash the later change wins, by when the row changed. A call's notes and how it
  * went keep both too, its people keep whoever either device added, by name, and a note's text
- * keeps both.
+ * keeps both. A claim on a job never merges: the one the server took first stands.
  */
 export const MERGE_RULES: Record<SyncTable, MergeRules> = {
+  claims: { whole: true },
   jobs: {
     lists: {
       links: (link) => String((link as { url?: unknown } | null)?.url ?? ''),
@@ -53,6 +54,7 @@ export const MERGE_RULES: Record<SyncTable, MergeRules> = {
 
 /** Columns that don't count as a change on their own, such as when a row last changed. */
 export const IGNORED: Record<SyncTable, readonly string[]> = {
+  claims: [],
   jobs: ['updated_at'],
   status_log: [],
   calls: [],

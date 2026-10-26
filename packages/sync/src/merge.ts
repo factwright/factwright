@@ -11,6 +11,11 @@ export interface MergeRules {
   texts?: readonly string[];
   /** The column holding when the row last changed. Of two changes, the later one wins. */
   stamp?: string;
+  /**
+   * Rows that never merge column by column, such as a computer's claim on a job: of two changes,
+   * the other device's, which the server took first, stands whole.
+   */
+  whole?: boolean;
 }
 
 const cell = (row: RowValues | null, column: string): RowValue => row?.[column] ?? null;
@@ -113,7 +118,7 @@ function mergeList(
  * first. A column only one side changed takes that change. Where both changed it, lists and
  * texts keep both, the later change wins when the row says when it changed, and otherwise the
  * other device's change stands. With no base, both devices added the row: a blank on one side
- * takes the other's value.
+ * takes the other's value. A row that's kept whole is the other device's.
  */
 export function mergeRows(
   base: RowValues | null,
@@ -122,6 +127,7 @@ export function mergeRows(
   rules: MergeRules,
   otherDevice: string,
 ): RowValues {
+  if (rules.whole) return { ...theirs };
   const columns = new Set([...Object.keys(theirs), ...Object.keys(mine)]);
   const stamp = rules.stamp;
   const mineLater =

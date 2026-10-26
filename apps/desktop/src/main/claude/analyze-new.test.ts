@@ -6,7 +6,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { sampleJob } from '../../renderer/jobs/sample-jobs.ts';
 import type { RunsView, RunView } from '../../shared/api.ts';
 import type { RunTask } from '../../shared/runs.ts';
-import { AnalyzeNew, type AnalyzeNewState, jobsToAnalyze, loadAnalyzeNew } from './analyze-new.ts';
+import {
+  AnalyzeNew,
+  type AnalyzeNewDeps,
+  type AnalyzeNewState,
+  jobsToAnalyze,
+  loadAnalyzeNew,
+} from './analyze-new.ts';
 import { settled } from './save.ts';
 
 const TODAY = '2026-10-26';
@@ -93,7 +99,7 @@ describe('Claude analyzing new jobs on its own', () => {
   let ready: boolean;
 
   const view = (): RunsView => ({ runs, atOnce: 3, setUp: true });
-  const analyzing = (quietMs = 60_000) =>
+  const analyzing = (quietMs = 60_000, claims?: AnalyzeNewDeps['claims']) =>
     new AnalyzeNew({
       dataDir,
       jobs: () => jobs,
@@ -111,6 +117,7 @@ describe('Claude analyzing new jobs on its own', () => {
       ready: () => ready,
       today: () => TODAY,
       quietMs,
+      ...(claims && { claims }),
     });
   /** Lets the clock run on, and the timers with it. */
   const wait = (ms: number) => vi.advanceTimersByTimeAsync(ms);
@@ -191,19 +198,60 @@ describe('Claude analyzing new jobs on its own', () => {
     ]);
   });
 
-  it('waits ten minutes for a job from another device, which that device may analyze meanwhile', async () => {
-    const claude = analyzing();
+  it('leaves a job another computer holds, and starts only on the jobs it holds', async () => {
+    // Acme's claim is another computer's already, and as this one claims Initech, another's claim
+    // on it gets to the server first.
+    const elsewhere = new Set(['acme--staff']);
+    const take = vi.fn(async (ids: readonly string[]) => {
+      elsewhere.add('initech--staff');
+      return ids.filter((id) => id !== 'initech--staff');
+    });
+    const claude = analyzing(0, {
+      elsewhere: (id) => elsewhere.has(id),
+      take,
+      letGo: () => {},
+    });
     await claude.load();
-    jobs = [saved('acme--staff'), saved('globex--staff')];
-    claude.look('sync');
-    await wait(5 * 60_000);
-    // Analyzed on the device it was saved on, it comes back checked.
-    analyzed('acme--staff');
-    claude.look('sync');
-    await wait(4 * 60_000 + 59_000);
-    expect(started).toEqual([]);
-    await wait(2000);
+    jobs = [saved('acme--staff'), saved('globex--staff'), saved('initech--staff')];
+    claude.look();
+    await wait(1000);
+    expect(take).toHaveBeenCalledWith(['globex--staff', 'initech--staff']);
     expect(started).toEqual([{ skill: 'analyze-job', jobIds: ['globex--staff'], auto: true }]);
+  });
+
+  it('tries again in half a minute when it holds none, as while sync isn’t working', async () => {
+    let working = false;
+    const take = vi.fn(async (ids: readonly string[]) => (working ? [...ids] : []));
+    const claude = analyzing(0, { elsewhere: () => false, take, letGo: () => {} });
+    await claude.load();
+    jobs = [saved('acme--staff')];
+    claude.look();
+    await wait(1000);
+    expect(take).toHaveBeenCalledTimes(1);
+    expect(started).toEqual([]);
+    // Sync works again, and says so: the next try waits out the half minute, and holds the job.
+    working = true;
+    claude.look();
+    await wait(1000);
+    expect(take).toHaveBeenCalledTimes(1);
+    await wait(30_000);
+    expect(take).toHaveBeenCalledTimes(2);
+    expect(started).toEqual([{ skill: 'analyze-job', jobIds: ['acme--staff'], auto: true }]);
+  });
+
+  it('lets go of the jobs it held when Claude got busy as it claimed them', async () => {
+    const letGo = vi.fn();
+    const take = vi.fn(async (ids: readonly string[]) => {
+      free = false;
+      return [...ids];
+    });
+    const claude = analyzing(0, { elsewhere: () => false, take, letGo });
+    await claude.load();
+    jobs = [saved('acme--staff')];
+    claude.look();
+    await wait(1000);
+    expect(started).toEqual([]);
+    expect(letGo).toHaveBeenCalledWith(['acme--staff']);
   });
 
   it('starts nothing once stopped, as the app restarts to update', async () => {

@@ -319,6 +319,17 @@ export class ClaudeRuns {
     entry.run?.stop();
   }
 
+  /**
+   * Makes a run of Claude's own step aside, as when another computer took its job: its tab closes,
+   * and the jobs it didn't finish go back for the next run. Any other run is left as it is.
+   */
+  stepAside(id: string): void {
+    const entry = this.entry(id);
+    if (!entry?.own) return;
+    this.closeEntry(entry, 'stepped-aside');
+    this.pump();
+  }
+
   /** Closes a run's tab: its Claude Code quits, if it's open, and a task in line leaves it. */
   close(id: string): void {
     const entry = this.entry(id);

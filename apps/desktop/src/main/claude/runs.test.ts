@@ -578,6 +578,22 @@ describe('runs on several jobs, and runs of Claude’s own', () => {
     expect(claude.startOwn(own('acme'))).toBe('run-5');
   });
 
+  it('steps aside when asked, as when another computer took its job, and never a user’s run', async () => {
+    const claude = ownRuns();
+    claude.start(resume('globex'));
+    await settle();
+    run('run-1').events.past();
+    claude.startOwn(own('acme'));
+    await settle();
+    run('run-2').events.signal('working');
+    claude.stepAside('run-1');
+    expect(stops).toEqual([]);
+    claude.stepAside('run-2');
+    expect(stops).toEqual(['run-2']);
+    expect(ended).toEqual(['run-2 stepped-aside']);
+    expect(lastView()).toEqual(['run-1 starting']);
+  });
+
   it('holds no update for a run of its own, which steps aside as the app restarts', async () => {
     const claude = ownRuns();
     claude.startOwn(own('acme'));

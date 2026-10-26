@@ -51,8 +51,8 @@ export class SyncRunner {
   private readonly deps: RunnerDeps;
   private timer: ReturnType<typeof setTimeout> | undefined;
   private every: ReturnType<typeof setInterval> | undefined;
-  /** The round running now, if one is. */
-  private running: Promise<void> | null = null;
+  /** The round running now, if one is, which says whether it got through. */
+  private running: Promise<boolean> | null = null;
   private again = false;
   private failures = 0;
   private stopped = false;
@@ -90,6 +90,23 @@ export class SyncRunner {
     this.timer = setTimeout(() => void this.run(), delay);
   }
 
+  /** Whether sync is working: it's running, and its last round got through. */
+  working(): boolean {
+    return !this.stopped && this.failures === 0;
+  }
+
+  /**
+   * Syncs now, as when a claim on a job needs the server's word, and answers whether the round got
+   * through. A round going is waited out first, as it may have started before the change.
+   */
+  async now(): Promise<boolean> {
+    while (this.running) await this.running;
+    if (this.stopped) return false;
+    clearTimeout(this.timer);
+    this.running = this.round();
+    return this.running;
+  }
+
   private async run(): Promise<void> {
     if (this.running) {
       this.again = true;
@@ -100,7 +117,7 @@ export class SyncRunner {
     await this.running;
   }
 
-  private async round(): Promise<void> {
+  private async round(): Promise<boolean> {
     this.deps.onActivity('syncing', null);
     try {
       const report = await this.deps.engine.syncOnce();
@@ -110,8 +127,10 @@ export class SyncRunner {
         report.full ? 'problem' : 'idle',
         report.full ? problemOf(new SyncError('full', '')) : null,
       );
+      return !report.full;
     } catch (error) {
       this.failed(error);
+      return false;
     } finally {
       this.running = null;
       if (this.again && !this.stopped) {

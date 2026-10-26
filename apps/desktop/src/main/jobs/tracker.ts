@@ -59,12 +59,27 @@ export interface EditContext {
 }
 
 /**
- * The tables that sync, in the order a new device fills them: jobs before their history, calls
- * and notes.
+ * The tables that sync, in the order a device sends and fills them: computers' claims on jobs
+ * first, so a job never reaches another computer ahead of its claim, then jobs before their
+ * history, calls and notes.
  */
-export const SYNC_TABLES = ['jobs', 'status_log', 'calls', 'notes'] as const;
+export const SYNC_TABLES = ['claims', 'jobs', 'status_log', 'calls', 'notes'] as const;
 
 export type SyncTable = (typeof SYNC_TABLES)[number];
+
+/**
+ * A computer's claim on a job, while sync is on, so no two computers analyze it at once. It holds
+ * while that computer renews it, and lapses on its own once it stops, as when it sleeps or quits.
+ */
+export interface Claim {
+  job: string;
+  /** The computer that made it, by the ID its sync made for it. */
+  device: string;
+  /** When it lapses unless renewed, as an ISO time. */
+  until: string;
+  /** Whether it's for a run of Claude's own, which steps aside for a task the user starts. */
+  own: boolean;
+}
 
 /** A row as sync carries it between devices: its table, its ID and its columns as stored. */
 export interface SyncRow {
@@ -161,6 +176,15 @@ const MIGRATIONS = [
   ALTER TABLE jobs ADD COLUMN own_pay TEXT;
   ALTER TABLE jobs ADD COLUMN own_location TEXT;
   ALTER TABLE jobs ADD COLUMN maybe_same TEXT NOT NULL DEFAULT '[]';`,
+  // Each job's claim, while sync is on, by its ID: the computer whose run is on the job, by an ID
+  // its sync made, when the claim lapses unless that computer renews it, and whether it's for a
+  // run of Claude's own.
+  `CREATE TABLE IF NOT EXISTS claims (
+    id TEXT PRIMARY KEY,
+    device TEXT NOT NULL,
+    until TEXT NOT NULL,
+    own INTEGER NOT NULL DEFAULT 0
+  );`,
 ];
 
 /** Latest first. Entries on the same day go by when they were added (SQLite's rowid). */
@@ -168,6 +192,16 @@ const LATEST_FIRST = 'ORDER BY at DESC, rowid DESC';
 
 const text = (value: unknown) => (typeof value === 'string' ? value : null);
 const required = (value: unknown) => (typeof value === 'string' ? value : '');
+
+/** A claim as its row has it, or null for a row another device left in a shape it can't be. */
+export const readClaim = (row: Record<string, unknown>): Claim | null =>
+  typeof row.id === 'string' &&
+  typeof row.device === 'string' &&
+  row.device !== '' &&
+  typeof row.until === 'string' &&
+  !Number.isNaN(Date.parse(row.until))
+    ? { job: row.id, device: row.device, until: row.until, own: row.own === 1 }
+    : null;
 
 const failed = (message: string): { ok: false; message: string } => ({ ok: false, message });
 const NOT_FOUND = failed('That job isn’t in your tracker anymore. Reload and try again.');
@@ -899,6 +933,36 @@ export class Tracker {
     const said = (from: TrackedRow, to: string) =>
       from.maybeSame.some((each) => each.id === to && each.notSame);
     return said(job, other.id) || said(other, job.id);
+  }
+
+  /** Every claim on a job this computer knows of: its own, and other computers' through sync. */
+  claims(): Claim[] {
+    return this.db
+      .prepare('SELECT * FROM claims ORDER BY id')
+      .all()
+      .flatMap((row) => readClaim(row) ?? []);
+  }
+
+  /** A job's claim, by the job's ID, or null for none. */
+  claim(jobId: string): Claim | null {
+    const row = this.db.prepare('SELECT * FROM claims WHERE id = ?').get(jobId);
+    return row ? readClaim(row) : null;
+  }
+
+  /** Sets a job's claim, which sync takes to the account's other devices. */
+  setClaim(claim: Claim): void {
+    this.db
+      .prepare(
+        `INSERT INTO claims (id, device, until, own) VALUES (?, ?, ?, ?)
+         ON CONFLICT (id) DO UPDATE SET device = excluded.device, until = excluded.until,
+           own = excluded.own`,
+      )
+      .run(claim.job, claim.device, claim.until, claim.own ? 1 : 0);
+  }
+
+  /** Takes a job's claim away. */
+  dropClaim(jobId: string): void {
+    this.db.prepare('DELETE FROM claims WHERE id = ?').run(jobId);
   }
 
   private setMaybeSame(jobId: string, list: readonly MaybeSame[], now: string): void {
