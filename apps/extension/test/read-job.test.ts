@@ -152,6 +152,72 @@ describe('reading a job page', () => {
     expect(job.source).toBe('main');
   });
 
+  it('leaves out a form built without a form element: each field, with its question, hint and options', () => {
+    const careers = page(`<html><head><title>Data Lead | Lumen Health</title></head><body><main>
+      <h1>Data Lead</h1>
+      <div class="description"><h2>What you’ll do</h2><p>Run our data platform.</p></div>
+      <div class="apply">
+        <h2>Apply for this job</h2>
+        <div class="field"><div class="label">First name *</div><input name="first"></div>
+        <div class="field"><label for="mail">Email</label><input id="mail" type="email">
+          <p class="hint">We’ll write to you here.</p></div>
+        <div class="field"><span>Resume</span><input type="file"><span>Attach</span></div>
+        <div class="field"><p>Will you need a visa?</p>
+          <label><input type="radio" name="visa" value="yes"> Yes</label>
+          <label><input type="radio" name="visa" value="no"> No</label></div>
+        <div class="field"><span>Country</span><div role="combobox"><input></div>
+          <ul role="listbox"><li role="option">Albania</li><li role="option">Algeria</li></ul></div>
+        <div class="field"><span>How did you hear about us?</span>
+          <button type="button" aria-haspopup="listbox">Select…</button></div>
+        <p>Your answers go only to Lumen Health.</p>
+        <button type="submit">Submit application</button>
+      </div></main></body></html>`);
+    const job = readJobPage(careers, 'https://lumen.example/careers/data-lead', '');
+    expect(job.source).toBe('main');
+    expect(job.posting).toBe(
+      'Data Lead\n\nWhat you’ll do\n\nRun our data platform.\n\nApply for this job\n\nYour answers go only to Lumen Health.',
+    );
+  });
+
+  it('leaves out a box that comes with a posting, and keeps the posting around it', () => {
+    const about = 'Run our data platform with the analysts and the engineers who build it. ';
+    const shared = page(`<main><article><h1>Data Lead</h1><p>${about.repeat(20)}</p>
+      <div class="share"><span>Copy its link</span><input readonly value="https://lumen.example/7"></div>
+      <div class="search"><label>Search jobs <input type="search"></label></div>
+      </article></main>`);
+    const job = readJobPage(shared, 'https://lumen.example/careers/7', '');
+    expect(job.posting).toBe(`Data Lead\n\n${about.repeat(20).trim()}`);
+  });
+
+  it('reads no application form as a job site’s posting, as Ashby’s is on its application’s tab', () => {
+    // The form in the pane beside the job's title, where the posting's tab shows the posting.
+    const tab = readFileSync(
+      join(import.meta.dirname, 'fixtures', 'ashby-application.html'),
+      'utf8',
+    )
+      .replace(
+        '<main>',
+        '<main><div class="ashby-job-posting-left-pane"><h1 class="ashby-job-posting-heading">Staff Engineer, Integrations</h1></div><div class="ashby-job-posting-right-pane">',
+      )
+      .replace('</main>', '</div></main>');
+    const at =
+      'https://jobs.ashbyhq.com/tidewater/1f2e3d4c-5b6a-4980-a1b2-c3d4e5f60718/application';
+    // Its job data's posting, where it has one.
+    const data = { ...JOB_DATA, title: 'Staff Engineer, Integrations' };
+    const withPosting = tab.replace(
+      '</head>',
+      `<script type="application/ld+json">${JSON.stringify(data).replace(/</g, '\\u003c')}</script></head>`,
+    );
+    expect(readJobPage(page(withPosting), at, '')).toMatchObject<Partial<PageJob>>({
+      source: 'structured',
+      posting: 'Lead our data platform.\n\nWhat you’ll do\n\n- Own the roadmap\n- Ship weekly',
+    });
+    // Or else the page's main text, without the form's questions.
+    const job = readJobPage(page(tab), at, '');
+    expect(job.source).toBe('main');
+    expect(job.posting).not.toMatch(/Github|Resume|Email/);
+  });
+
   it('reads the page as it is, and changes nothing in it', () => {
     const doc = withData(
       JOB_DATA,

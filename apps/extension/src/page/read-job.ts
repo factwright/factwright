@@ -91,6 +91,36 @@ export function readJobPage(
   ]);
   /** A page's own parts around its content, left out of its main text. */
   const AROUND = new Set(['NAV', 'HEADER', 'FOOTER', 'ASIDE', 'FORM']);
+  /** A form's own words, its fields' labels and the sets they're in: never a posting's. */
+  const FORM_WORDS = new Set(['FORM', 'LABEL', 'LEGEND', 'FIELDSET']);
+  /**
+   * What a form asks you to fill in, as the form's own function counts its fields (page/form.ts):
+   * boxes, lists and boxes to tick, and what a site builds them of, as a list that's a button. A
+   * site's search box isn't one.
+   */
+  const FIELDS = [
+    'input:not([type="hidden"]):not([type="submit"]):not([type="button"]):not([type="reset"]):not([type="image"]):not([type="search"])',
+    'select',
+    'textarea',
+    '[contenteditable="true"]',
+    '[role="textbox"]',
+    '[role="combobox"]',
+    '[role="radiogroup"]',
+    '[role="radio"]',
+    '[role="checkbox"]',
+    '[role="switch"]',
+    'button[aria-haspopup="listbox"]',
+    '[role="button"][aria-haspopup="listbox"]',
+  ].join(', ');
+  /** Lists of options to pick from, as a site's own lists and menus are: never a posting. */
+  const OPTIONS = '[role="listbox"], [role="menu"]';
+  /**
+   * The most text one field of a form has around it, its question, hint and options, in
+   * characters: a posting has more.
+   */
+  const MAX_FIELD_TEXT = 1000;
+  /** A job site's posting that holds this many fields is its application form, not its posting. */
+  const FORM_FIELDS = 3;
   /** Elements that start a new line or paragraph. */
   const BLOCKS = new Set([
     'P',
@@ -337,9 +367,14 @@ export function readJobPage(
 
   /**
    * An element's text as lines and paragraphs, with list items as "- " lines, leaving out the
-   * elements named in `skip`. It reads the page as it is: nothing in it is copied or changed.
+   * elements named in `skip`, and the elements in `leaveOut`. It reads the page as it is: nothing
+   * in it is copied or changed.
    */
-  function textOf(root: Node, skip: ReadonlySet<string> = new Set()): string {
+  function textOf(
+    root: Node,
+    skip: ReadonlySet<string> = new Set(),
+    leaveOut: ReadonlySet<Element> = new Set(),
+  ): string {
     const parts: string[] = [];
     const visit = (node: Node) => {
       if (node.nodeType === 3) {
@@ -349,7 +384,7 @@ export function readJobPage(
       if (node.nodeType !== 1) return;
       const element = node as Element;
       const tag = element.tagName.toUpperCase();
-      if (SKIPPED.has(tag) || skip.has(tag) || hidden(element)) return;
+      if (SKIPPED.has(tag) || skip.has(tag) || leaveOut.has(element) || hidden(element)) return;
       if (tag === 'BR') {
         parts.push('\n');
         return;
@@ -384,6 +419,72 @@ export function readJobPage(
         .trim()
     );
   }
+
+  /** How much text an element has, as far as `most` characters, without lists of options. */
+  function textLength(root: Element, most: number): number {
+    let length = 0;
+    const left: Node[] = [root];
+    while (left.length > 0 && length <= most) {
+      const node = left.pop() as Node;
+      if (node.nodeType === 3) {
+        length += (node.nodeValue ?? '').trim().length;
+      } else if (
+        node.nodeType === 1 &&
+        !SKIPPED.has((node as Element).tagName.toUpperCase()) &&
+        !(node as Element).matches(OPTIONS)
+      ) {
+        for (const child of Array.from(node.childNodes)) left.push(child);
+      }
+    }
+    return length;
+  }
+
+  /**
+   * The parts of an element that are a form's fields, each with what's around it: its question,
+   * hint and options, as far out as holds no other field, and no more text than one field has.
+   * A form built without a form element, as a site's components can be, has its questions
+   * among the page's own words, and so can a box that comes with a posting, as one to copy its
+   * link. Radio buttons and boxes to tick that share a name answer one question.
+   */
+  function fieldParts(root: Element): Set<Element> {
+    const fields = Array.from(root.querySelectorAll(FIELDS)).filter((field) => {
+      const around = field.parentElement?.closest(FIELDS);
+      return !around || !root.contains(around);
+    });
+    const question = (field: Element, at: number) => {
+      const name = field.getAttribute('name');
+      return /^(radio|checkbox)$/i.test(field.getAttribute('type') ?? '') && name
+        ? `name ${name}`
+        : `field ${at}`;
+    };
+    // What each element around a field holds: one question, or several ('').
+    const holds = new Map<Element, string>();
+    for (const [at, field] of fields.entries()) {
+      const asks = question(field, at);
+      for (let up = field.parentElement; up && up !== root; up = up.parentElement) {
+        const held = holds.get(up);
+        holds.set(up, held === undefined || held === asks ? asks : '');
+      }
+    }
+    const parts = new Set<Element>(Array.from(root.querySelectorAll(OPTIONS)));
+    for (const [at, field] of fields.entries()) {
+      const asks = question(field, at);
+      let part = field;
+      for (let up = field.parentElement; up && up !== root; up = up.parentElement) {
+        if (holds.get(up) !== asks || textLength(up, MAX_FIELD_TEXT) > MAX_FIELD_TEXT) break;
+        part = up;
+      }
+      parts.add(part);
+    }
+    return parts;
+  }
+
+  /**
+   * An element's text, as a posting's: without the page's forms, their fields and their labels,
+   * nor the elements named in `skip`.
+   */
+  const postingText = (root: Element, skip: ReadonlySet<string> = new Set()) =>
+    textOf(root, new Set([...skip, ...FORM_WORDS]), fieldParts(root));
 
   /** Markup, such as a posting's description in the page's job data, as text. */
   function textOfMarkup(markup: string): string {
@@ -799,16 +900,23 @@ export function readJobPage(
 
   const selection = oneLine(selected).length >= MIN_SELECTION ? selected.trim() : '';
   const described = data?.description ? textOfMarkup(String(data.description)) : '';
-  const onSite = post ? postText : first(known?.posting ?? [], (element) => textOf(element));
-  // The page's main text, without its navigation, headers, footers and forms. Never LinkedIn's,
-  // where anything but the job's own posting, such as messages, isn't the job's.
+  // Where the job site shows its posting, unless what's there holds its application form, as
+  // Ashby's does on its application's tab.
+  const onSite = post
+    ? postText
+    : first(known?.posting ?? [], (element) =>
+        element.querySelectorAll(FIELDS).length >= FORM_FIELDS ? '' : postingText(element),
+      );
+  // The page's main text, without its navigation, headers, footers and forms, nor a form's fields
+  // outside a form element. Never LinkedIn's, where anything but the job's own posting, such as
+  // messages, isn't the job's.
   const main = () => {
     if (linkedIn) return '';
     const root =
       doc.querySelector('main, [role="main"], article') ??
       doc.querySelector('#content') ??
       doc.body;
-    return root ? textOf(root, AROUND) : '';
+    return root ? postingText(root, AROUND) : '';
   };
 
   let posting = '';

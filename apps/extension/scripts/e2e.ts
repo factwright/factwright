@@ -785,8 +785,10 @@ try {
     check(
       ((await unsaved.locator('.card.job').textContent()) ?? '').includes(
         'No posting: only its link is saved',
-      ) && (await unsaved.getByRole('button', { name: 'Fill this application' }).count()) === 0,
-      'an unsaved job on its application gets Save and fill, saving the link alone',
+      ) &&
+        (await unsaved.getByRole('button', { name: 'Fill this application' }).count()) === 0 &&
+        (await unsaved.getByRole('button', { name: 'Save only' }).count()) === 1,
+      'an unsaved job on its application gets Save and fill, saving the link alone, and Save only',
     );
     await shoot(unsaved, 'popup-5-save-and-fill');
     const pages = context.pages().length;
@@ -805,6 +807,52 @@ try {
       'Save and fill saves the job by its link, then fills the form in its page, in one click',
     );
     for (const page of context.pages().slice(pages)) await page.close();
+
+    // A careers page that shows the posting above its form: Save only, beside Save and fill, saves
+    // the job with the posting, and fills nothing, so the popup stays, with Fill for later.
+    const onePage = 'https://careers.harborpine.example/jobs/analytics-engineer';
+    const alone = await popupOn(
+      context,
+      setup,
+      {
+        ...SAMPLE_JOB,
+        url: onePage,
+        pageUrl: onePage,
+        site: 'careers.harborpine.example',
+        pageTitle: 'Analytics Engineer | Harbor & Pine',
+        title: 'Analytics Engineer',
+        location: 'Denver, CO',
+        pay: '',
+        posting: `About the role\n\n${'Build the pipelines our analysts use every day. '.repeat(40)}`,
+        source: 'main',
+      },
+      { ...SAMPLE_FORM, url: onePage, title: 'Analytics Engineer | Harbor & Pine' },
+    );
+    await alone.getByRole('button', { name: 'Save only' }).waitFor({ timeout: 10_000 });
+    check(
+      ((await alone.locator('.card.job').textContent()) ?? '').includes(
+        'words, from the page’s main text',
+      ) && (await alone.getByRole('button', { name: 'Save and fill' }).count()) === 1,
+      'a page with the posting beside its form gets Save and fill and Save only, with the posting',
+    );
+    await shoot(alone, 'popup-5b-save-only');
+    await alone.getByRole('button', { name: 'Save only' }).click();
+    await alone.getByText('Saved to your job hunt, as New.').waitFor({ timeout: 15_000 });
+    const analytics = await recordId(keys, rowName('jobs', 'harbor-and-pine--analytics-engineer'));
+    const itsPosting = await recordId(
+      keys,
+      fileName('saved/harbor-and-pine--analytics-engineer/posting.md'),
+    );
+    const savedAlone = (await sam.client.changes(0)).changes;
+    check(
+      savedAlone.some((each) => each.record === analytics) &&
+        savedAlone.some((each) => each.record === itsPosting) &&
+        !alone.isClosed() &&
+        (await alone.getByRole('button', { name: 'Fill this application' }).count()) === 1,
+      'Save only saves the job with its posting and fills nothing: the popup stays, with Fill',
+    );
+    await shoot(alone, 'popup-5c-saved-only');
+    await alone.close();
 
     // Where saving doesn't work, the form can still be filled.
     const elsewhere = 'https://jobs.lever.co/harborpine/77aa11bb/apply';
