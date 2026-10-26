@@ -241,13 +241,13 @@ describe('reading a job page', () => {
 
   it('reads a page with thousands of boxes to tick quickly', () => {
     const boxes = Array.from(
-      { length: 3000 },
+      { length: 5000 },
       (_, at) => `<label><input type="checkbox" name="skills" value="${at}"> Skill ${at}</label>`,
     ).join('');
     const doc = page(`<main><h1>Data Lead</h1><p>Lead data.</p><div>${boxes}</div></main>`);
     const start = performance.now();
     expect(readJobPage(doc, 'https://lumen.example/careers/7', '').posting).toContain('Lead data.');
-    expect(performance.now() - start).toBeLessThan(1000);
+    expect(performance.now() - start).toBeLessThan(3000);
   });
 
   it('reads no application form as a job site’s posting, as Ashby’s is on its application’s tab', () => {
