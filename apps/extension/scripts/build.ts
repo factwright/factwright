@@ -118,6 +118,19 @@ function checkPageReader(folder: string): void {
   ) {
     throw new Error(`The built page reader read the wrong job: ${JSON.stringify(job)}`);
   }
+  // And a posting beside an application form built without a form element, which it leaves out.
+  const beside = new JSDOM(
+    '<main><h1>Staff Engineer</h1><p>Build things.</p><div><input name="name"><input type="email"><input type="file"></div></main>',
+    { url: 'https://jobs.example.com/staff', runScripts: 'outside-only' },
+  ).window;
+  const read = (beside.eval(`(${source})`) as typeof run)(
+    beside.document,
+    beside.location.href,
+    '',
+  );
+  if (read.posting !== 'Staff Engineer\n\nBuild things.') {
+    throw new Error(`The built page reader read a form as the posting: ${JSON.stringify(read)}`);
+  }
 }
 
 /**

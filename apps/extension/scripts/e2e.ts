@@ -850,8 +850,9 @@ try {
       timeout: 15_000,
     });
     check(
-      (await offline.getByRole('button', { name: 'Fill without saving' }).count()) === 1,
-      'where saving doesn’t work, it offers to fill the form without saving',
+      (await offline.getByRole('button', { name: 'Fill without saving' }).count()) === 1 &&
+        (await offline.getByRole('button', { name: 'Save only' }).count()) === 1,
+      'where saving doesn’t work, it offers to fill the form without saving, or Save only again',
     );
     await offline.close();
 
