@@ -27,7 +27,7 @@ import { isWebPage, readTab, type Unread } from './read-tab.ts';
 import type { JobToSave, SaveResult } from './save.ts';
 import { type PageAsked, type SavedFor, savedOnComputer } from './saved.ts';
 import { serverName } from './server.ts';
-import { isJobAddress, looksLikeJob, toSave } from './tab-job.ts';
+import { isJobAddress, looksLikeJob, postingBesideForm, toSave } from './tab-job.ts';
 
 /**
  * The popup under the toolbar button: it reads the job on the page you're on and looks it up in
@@ -35,10 +35,10 @@ import { isJobAddress, looksLikeJob, toSave } from './tab-job.ts';
  * and Mark as applied where the extension doesn't notice you submit it. Any other shows what was
  * read, its title, company, pay, place and posting, to save in one click, or to check and change
  * first, in Edit details. On an application form's page, that click saves the job and fills the
- * form. Fill fills the form in its page, and a note there says how it went: Details, there or here,
- * opens the panel. It saves through sync, or straight to Factwright on this computer. Nothing is
- * saved until you click, and the look-up tells Factwright on this computer only the page's address,
- * the company and the job's title.
+ * form, and Save only saves it alone, to fill later. Fill fills the form in its page, and a note
+ * there says how it went: Details, there or here, opens the panel. It saves through sync, or
+ * straight to Factwright on this computer. Nothing is saved until you click, and the look-up
+ * tells Factwright on this computer only the page's address, the company and the job's title.
  */
 
 const app = document.getElementById('app') as HTMLElement;
@@ -48,6 +48,12 @@ let savingTo: Destination = null;
 
 /** The tab's application form, to fill, when the page has one. */
 let fillable: Tab | null = null;
+
+/**
+ * The page of an application that runs over several the form is on, as the form says, such as
+ * Workday's "My Experience", or "" for a form on one page.
+ */
+let formStep = '';
 
 /** Whether the form is LinkedIn's or Indeed's, which the panel gives answers to copy for. */
 let copyOnly = false;
@@ -306,21 +312,28 @@ function saveTo(to: Exclude<Destination, null>, job: JobToSave): Promise<SaveRes
 /**
  * The job as the popup saves it: what it read, with the company from its address where the page
  * names none, and the pay from the posting's words where it says none, but not from a page that
- * doesn't look like a job's. An application form's page that shows no posting of its own, whose
- * main text is the form's, saves the job's link alone.
+ * doesn't look like a job's. An application form's page saves the posting it shows beside the
+ * form, and one that shows none, whose main text is only what's around the form, the job's link
+ * alone (postingBesideForm).
  */
 function readJob(page: PageJob): JobToSave {
   const job = toSave(page);
   return {
     ...job,
     pay: notAJob ? page.pay : job.pay,
-    posting: fillable && page.source === 'main' ? '' : job.posting,
+    posting: fillable && !postingBesideForm(page, formStep) ? '' : job.posting,
   };
 }
 
 /** The words on the button that saves: it fills the form too, on an application form's page. */
 const saveWords = () =>
   fillable ? 'Save and fill' : notAJob ? 'Save it anyway' : 'Save to Factwright';
+
+/**
+ * Beside Save and fill, on an application form's page, the button that saves the job alone, for
+ * an application you'll fill later, or not at all: the popup then shows it saved, with Fill.
+ */
+const saveOnly = (click: () => void) => fillable && button('Save only', click);
 
 /**
  * Saves a job where it goes: where the extension saves, or for an application form's page, where
@@ -331,8 +344,8 @@ const saveHere = (to: Exclude<Destination, null>, job: JobToSave) =>
 
 /**
  * Saves a job, then, on an application form's page, fills the form in its page, with the job on
- * file, in the same click. Saving only a posting for a job on file, `fill` is false, and the popup
- * says how it went, with Fill to click.
+ * file, in the same click. Saving it alone, as Save only does, or only a posting for a job on
+ * file, `fill` is false, and the popup says how it went, with Fill to click.
  */
 async function saveIt(
   to: Exclude<Destination, null>,
@@ -398,6 +411,7 @@ function summary(
       'div',
       { class: 'actions' },
       save,
+      saveOnly(() => void saveIt(to, shown, unread, job, keep, false)),
       linkButton('Edit details', () => form(to, page, unread, undefined, keep)),
     ),
     settingsLink(),
@@ -426,6 +440,7 @@ function saved(
     how === 'joins'
       ? button(saveWords(), () => void saveIt(to, shown, unread, read, true), true)
       : filling && button(fillWords(), () => fillIn(filling), true);
+  const only = how === 'joins' && saveOnly(() => void saveIt(to, shown, unread, read, true, false));
   // Where the extension doesn't notice you submit the application, for a job you haven't sent.
   const sent =
     readStatus(job.status) !== null && SENT_STATUSES.includes(readStatus(job.status) ?? 'new');
@@ -468,8 +483,8 @@ function saved(
         'You saved a job at this company with a title like this one.',
       ),
     ...filledLine(),
-    (main || another || posting || applied) &&
-      h('div', { class: 'actions' }, main, another, posting, applied),
+    (main || only || another || posting || applied) &&
+      h('div', { class: 'actions' }, main, only, another, posting, applied),
     settingsLink(),
   );
   if (main) main.focus();
@@ -589,8 +604,8 @@ function form(
     notAJob || problem ? { ...read, company: page.company.trim(), pay: page.pay } : read;
   const hasPosting = Boolean(start.posting.trim());
   const keep = h('input', { id: 'keep', type: 'checkbox', checked: hasPosting && keepPosting });
-  const save = async (event: Event) => {
-    event.preventDefault();
+  // Saved, and on an application form's page, filled too, unless it's Save only.
+  const save = async (fill = true) => {
     const job: JobToSave = {
       ...start,
       company: inputValue('company'),
@@ -603,7 +618,7 @@ function form(
       form(to, edited, unread, 'Add the company’s name.', keep.checked);
       return;
     }
-    await saveIt(to, edited, unread, job, keep.checked);
+    await saveIt(to, edited, unread, job, keep.checked, fill);
   };
   const facts = h(
     'dl',
@@ -639,7 +654,14 @@ function form(
       ),
     h(
       'form',
-      { on: { submit: (event) => void save(event) } },
+      {
+        on: {
+          submit: (event) => {
+            event.preventDefault();
+            void save();
+          },
+        },
+      },
       ...field('role', 'Job title', start.role, JOB_LIMITS.role),
       ...field('company', 'Company', start.company, JOB_LIMITS.company),
       ...field('pay', 'Pay', start.pay, JOB_LIMITS.pay, 'If the posting says'),
@@ -652,6 +674,7 @@ function form(
         'div',
         { class: 'actions' },
         h('button', { class: notAJob ? '' : 'primary', type: 'submit', id: 'save' }, saveWords()),
+        saveOnly(() => void save(false)),
         // Where saving didn't work, the form can still be filled.
         Boolean(problem) && filling && linkButton('Fill without saving', () => fillIn(filling)),
       ),
@@ -824,6 +847,7 @@ async function start(): Promise<void> {
     const form = found && looksLikeApplication(found.form) ? found.form : null;
     const framed = form ? null : await framedSystem(tab.id);
     fillable = form || framed ? tab : null;
+    formStep = form?.step ?? '';
     copyOnly = isCopyOnly(form?.url ?? tab.url ?? '');
     framedOnly = !form && Boolean(framed);
     // The script on a job site you allowed notices you submit its form.
