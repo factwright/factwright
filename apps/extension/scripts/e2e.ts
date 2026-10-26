@@ -778,23 +778,31 @@ try {
     // A careers page that shows the posting above its form: Save only, beside Save and fill, saves
     // the job with the posting, and fills nothing, so the popup stays, with Fill for later.
     const onePage = 'https://careers.harborpine.example/jobs/analytics-engineer';
-    const alone = await popupOn(
-      context,
-      setup,
-      {
-        ...SAMPLE_JOB,
-        url: onePage,
-        pageUrl: onePage,
-        site: 'careers.harborpine.example',
-        pageTitle: 'Analytics Engineer | Harbor & Pine',
-        title: 'Analytics Engineer',
-        location: 'Denver, CO',
-        pay: '',
-        posting: `About the role\n\n${'Build the pipelines our analysts use every day. '.repeat(40)}`,
-        source: 'main',
-      },
-      { ...SAMPLE_FORM, url: onePage, title: 'Analytics Engineer | Harbor & Pine' },
+    const onePageJob = {
+      ...SAMPLE_JOB,
+      url: onePage,
+      pageUrl: onePage,
+      site: 'careers.harborpine.example',
+      pageTitle: 'Analytics Engineer | Harbor & Pine',
+      title: 'Analytics Engineer',
+      location: 'Denver, CO',
+      pay: '',
+      posting: `About the role\n\n${'Build the pipelines our analysts use every day. '.repeat(40)}`,
+      source: 'main',
+    };
+    const onePageForm = { ...SAMPLE_FORM, url: onePage, title: onePageJob.pageTitle };
+    // Edit details has it too, beside Save and fill.
+    const editing = await popupOn(context, setup, onePageJob, onePageForm);
+    await editing.getByRole('button', { name: 'Edit details' }).click();
+    check(
+      (await editing.locator('#keep').isChecked()) &&
+        (await editing.getByRole('button', { name: 'Save and fill' }).count()) === 1 &&
+        (await editing.getByRole('button', { name: 'Save only' }).count()) === 1,
+      'Edit details has Save only beside Save and fill, with the posting',
     );
+    await shoot(editing, 'popup-5b-edit-details');
+    await editing.close();
+    const alone = await popupOn(context, setup, onePageJob, onePageForm);
     await alone.getByRole('button', { name: 'Save only' }).waitFor({ timeout: 10_000 });
     check(
       ((await alone.locator('.card.job').textContent()) ?? '').includes(
