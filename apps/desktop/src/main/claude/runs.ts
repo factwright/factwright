@@ -227,24 +227,33 @@ export class ClaudeRuns {
   /**
    * Whether work is going: a run is starting, Claude is working, or it waits on the user, or a
    * task waits in line. Restarting the app would stop that, so updates and switching profiles
-   * wait for it. Claude Code that's done, or ready with nothing to do yet, has none.
+   * wait for it. Claude Code that's done, or ready with nothing to do yet, has none, and nor does
+   * a run of Claude's own, which steps aside for them.
    */
   working(): boolean {
-    return this.entries.some((entry) => entry.phase === 'in-line' || hasWork(entry));
+    return this.entries.some(
+      (entry) => entry.phase === 'in-line' || (hasWork(entry) && !entry.own),
+    );
   }
 
   /**
    * Quits every Claude Code that has no work going, as before the app restarts, and settles once
-   * they've closed, or after a few seconds whatever happens. Runs with work going are left as
-   * they are.
+   * they've closed, or after a few seconds whatever happens. A run of Claude's own steps aside
+   * too, leaving the jobs it didn't finish for the next. Runs with work going are left as they
+   * are.
    */
   async closeIdle(): Promise<void> {
-    const idle = this.entries.filter((entry) => entry.run && !hasWork(entry));
+    const idle = this.entries.filter((entry) => entry.run && (!hasWork(entry) || entry.own));
     if (idle.length === 0) return;
-    for (const entry of idle) this.stop(entry.id);
+    const exits = idle.map((entry) => entry.run?.exited);
+    for (const entry of idle) {
+      if (entry.own) this.closeEntry(entry, 'stepped-aside');
+      else this.stop(entry.id);
+    }
+    this.pump();
     let timer: ReturnType<typeof setTimeout> | undefined;
     await Promise.race([
-      Promise.all(idle.map((entry) => entry.run?.exited)),
+      Promise.all(exits),
       new Promise<void>((resolve) => {
         timer = setTimeout(resolve, CLOSE_WAIT_MS);
       }),

@@ -569,6 +569,20 @@ describe('runs on several jobs, and runs of Claude’s own', () => {
     expect(claude.startOwn(own('acme'))).toBe('run-3');
   });
 
+  it('holds no update for a run of its own, which steps aside as the app restarts', async () => {
+    const claude = ownRuns();
+    claude.startOwn(own('acme'));
+    await settle();
+    run('run-1').events.past();
+    run('run-1').events.signal('working');
+    expect(claude.working()).toBe(false);
+    expect(claude.busy()).toBe(true);
+    await claude.closeIdle();
+    expect(stops).toEqual(['run-1']);
+    expect(ended).toEqual(['run-1 stepped-aside']);
+    expect(lastView()).toEqual([]);
+  });
+
   it('says once that a run of its own ended: done, stopped, closed or failed', async () => {
     const claude = ownRuns();
     claude.startOwn(own('acme'));

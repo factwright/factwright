@@ -22,6 +22,7 @@ import {
   type RunRequest,
   type RunTask,
   SEARCH_SKILL,
+  startedOnItsOwn,
   TEMPLATE_SKILL,
 } from '../shared/runs.ts';
 import styles from './App.module.css';
@@ -535,10 +536,12 @@ export function App({ api }: { api: FactwrightApi }) {
   });
   // Work going, which restarting the app would stop: a run that's starting, working or waiting on
   // the user, as for a reply to a question Claude asked in its own words, or a task in line.
-  // Updates and switching profiles wait for it. Claude Code that's done closes as the app restarts.
+  // Updates and switching profiles wait for it. Claude Code that's done closes as the app restarts,
+  // and a run Claude started on its own steps aside.
   const workGoing = panelRuns.some(
     ({ view, state }) =>
-      view.phase === 'in-line' || BUSY.includes(view.phase) || state === 'waiting',
+      !startedOnItsOwn(view.task) &&
+      (view.phase === 'in-line' || BUSY.includes(view.phase) || state === 'waiting'),
   );
   // Opens what the task made from the notification that says so, too: the last one told of, as
   // it stands now.

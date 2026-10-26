@@ -764,13 +764,27 @@ describe('collectJobs, for a record that names its job', () => {
     expect(jobs.find((job) => job.id === first)).toBeUndefined();
   });
 
-  it('goes to its job even when the job was saved under another name, as a job board’s', () => {
+  it('goes to its job when it was saved under another name, as a job board’s, by its link', () => {
     const saved = 'workable--ai-engineer';
+    const link = 'https://apply.workable.com/seeq/j/1B6E0A1710/';
     const [job] = collectJobs(
-      [folder('Seeq', 'AI Software Engineer, Staff/Principal', { job: saved })],
-      [known(saved, 'Workable', 'AI Engineer', ['https://apply.workable.com/seeq/'])],
+      [
+        folder('Seeq', 'AI Software Engineer, Staff/Principal', {
+          job: saved,
+          links: [{ url: link, label: 'Posting' }],
+        }),
+      ],
+      [known(saved, 'Workable', 'AI Engineer', [link])],
     );
     expect(job).toMatchObject({ id: saved, company: 'Seeq' });
+  });
+
+  it('never goes to another company’s job by a mistaken ID, with no link in common', () => {
+    const jobs = collectJobs(
+      [folder('Seeq', 'AI Software Engineer', { job: 'globex--pm' })],
+      [...twins, known('globex--pm', 'Globex', 'Product Manager')],
+    );
+    expect(jobs.map((job) => job.id)).toEqual(['seeq--ai-software-engineer']);
   });
 
   it('goes by its company and title as before when its job isn’t on file', () => {
