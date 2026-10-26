@@ -326,10 +326,10 @@ export function registerIpc({
     // A focus for a search, by the ID the app kept it under.
     const focus = task && 'sources' in task ? task.sources?.focus : undefined;
     if (focus !== undefined) return hasFocus(workspace, focus) ? task : null;
-    // Jobs to analyze, every one of them on file.
+    // Jobs to analyze, every one of them on file. Only the app starts Claude on them on its own.
     if (task && 'jobIds' in task) {
       const known = new Set(jobs.list().jobs.map((each) => each.id));
-      return task.jobIds.every((id) => known.has(id)) ? task : null;
+      return task.jobIds.every((id) => known.has(id)) && !task.auto ? task : null;
     }
     if (!task || !('jobId' in task)) return task;
     const job = jobs.list().jobs.find((each) => each.id === task.jobId);

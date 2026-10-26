@@ -10,7 +10,7 @@ import type {
 } from '../../shared/api.ts';
 import type { FiledFacts } from '../../shared/facts.ts';
 import type { RunChanges as RunChangesView } from '../../shared/run-changes.ts';
-import { AT_ONCE, lanesOf, type RunTask, startedOnItsOwn, taskJobs } from '../../shared/runs.ts';
+import { AT_ONCE, lanesOf, type RunTask, taskJobs } from '../../shared/runs.ts';
 import type { OpenRun, RunEvents, RunOptions, RunScreen } from './session.ts';
 
 /**
@@ -184,7 +184,7 @@ export class ClaudeRuns {
       id: `run-${this.count}`,
       task,
       lanes: lanesOf(task),
-      own: startedOnItsOwn(task),
+      own: false,
       analyzed: new Set(),
       phase: 'in-line',
       waits: 'turn',
