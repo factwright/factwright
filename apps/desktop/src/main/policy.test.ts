@@ -589,6 +589,12 @@ describe('analyzing several jobs', () => {
     expect(
       asksNothingAfter(SEVERAL_PERMITS_NOTHING, { hook_event_name: 'Stop' }, permitsNothing),
     ).toBe(SEVERAL_PERMITS_NOTHING);
+    // A helper reporting back is part of the same run.
+    const back = sent('<task-notification>\n<status>completed</status>\n</task-notification>');
+    expect(asksNothingAfter(SEVERAL_PERMITS_NOTHING, back, permitsNothing)).toBe(
+      SEVERAL_PERMITS_NOTHING,
+    );
+    expect(asksNothingAfter(SEVERAL_ASK_NOTHING, back)).toBe(SEVERAL_ASK_NOTHING);
   });
 });
 
@@ -777,6 +783,17 @@ describe('asksNothing', () => {
     ]) {
       reason = asksNothingAfter(reason, event);
     }
+    expect(reason).toBe(QUICK_ASKS_NOTHING);
+    // So does a helper Claude ran in the background reporting back, as its fact check does,
+    // which Claude Code sends as a prompt.
+    const back = [
+      '<task-notification>',
+      '<task-id>a1b2</task-id>',
+      '<status>completed</status>',
+      '</task-notification>',
+    ].join('\n');
+    reason = asksNothingAfter(reason, sent(back));
+    reason = asksNothingAfter(reason, sent(`<system-reminder>\n${back}\n</system-reminder>`));
     expect(reason).toBe(QUICK_ASKS_NOTHING);
     // The user's own words next start a task that may ask, and so does a prompt without any.
     expect(asksNothingAfter(reason, sent('Now ask me about the gaps'))).toBeNull();

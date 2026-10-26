@@ -33,6 +33,7 @@ Notable changes to Factwright, newest first. The format follows [Keep a Changelo
 ### Fixed
 - A job's folder and its fit check stay with the job they were made for: another job with the same company and title, as a job saved twice can be, no longer takes them. Each folder names its job by its ID, and so does each fit check's row in the log, and two such jobs get a folder each.
 - Merging two jobs keeps the decision you made on either, such as Applied or Passed, with its reason and day, over the New of a later save of the job, whatever the day.
+- A quick resume asks you nothing to the end: once its fact check came back from the background, your Claude's questions could get through again.
 - On Ashby, a Yes or No that Fill picked could look picked once Ashby's Autofill from resume had read a resume, while Ashby had taken it back, so Submit said it wasn't answered. Fill now puts files in first, waits while a page reads a resume, and checks each choice again a moment later, picking again any the page took back.
 - On iCIMS's posting pages, and Lever's and Ashby's in a company's page, with the job application sites off, the popup offered Save and fill where there's no form yet. It offers Save.
 

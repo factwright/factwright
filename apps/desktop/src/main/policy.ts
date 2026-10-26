@@ -451,10 +451,14 @@ export function permitsNothing(prompt: unknown): string | null {
     : null;
 }
 
+/** Claude Code's word that a task it ran in the background is back, which comes as a prompt. */
+const TASK_NOTIFICATION = /<task-notification[\s>]/;
+
 /**
  * Why the task at hand asks the user nothing, once another hook comes from its run: a prompt
  * sent, the app's or one the user typed, starts another task, which asks nothing only if its
- * prompt says so, by the same rule. Any other hook leaves it as it was.
+ * prompt says so, by the same rule. A helper Claude ran in the background reporting back, which
+ * Claude Code sends as a prompt too, is part of the same task, as is any other hook.
  */
 export function asksNothingAfter(
   reason: string | null,
@@ -463,5 +467,7 @@ export function asksNothingAfter(
 ): string | null {
   if (typeof event !== 'object' || event === null) return reason;
   const fields = event as Record<string, unknown>;
-  return fields.hook_event_name === 'UserPromptSubmit' ? rule(fields.prompt) : reason;
+  if (fields.hook_event_name !== 'UserPromptSubmit') return reason;
+  if (typeof fields.prompt === 'string' && TASK_NOTIFICATION.test(fields.prompt)) return reason;
+  return rule(fields.prompt);
 }
