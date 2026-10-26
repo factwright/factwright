@@ -12,7 +12,7 @@ describe('the levels Claude runs at', () => {
 
   it('with Pro’s levels: Opus at High, and lighter for the checks and searches', () => {
     const each = taskLevels(DEFAULT_MODELS, DEFAULT_EFFORT, 'pro');
-    expect(each['fit-check']).toEqual({ model: 'sonnet', effort: 'high' });
+    expect(each['analyze-job']).toEqual({ model: 'sonnet', effort: 'high' });
     expect(each['salary-check']).toEqual({ model: 'sonnet', effort: 'medium' });
     const { most, others } = summarize(each);
     expect(levelName(most)).toBe('Opus · High');
@@ -39,14 +39,14 @@ describe('the levels Claude runs at', () => {
     const careful = summarize(
       taskLevels(
         { main: 'sonnet', tasks: {} },
-        { main: 'high', tasks: { 'fit-check': 'max', 'focused-resume': 'xhigh' } },
+        { main: 'high', tasks: { 'analyze-job': 'max', 'focused-resume': 'xhigh' } },
         'best',
       ),
     );
     expect(careful.others).toBe('More careful for 2 tasks');
     const mixed = summarize(
       taskLevels(
-        { main: 'sonnet', tasks: { 'fit-check': 'haiku' } },
+        { main: 'sonnet', tasks: { 'analyze-job': 'haiku' } },
         { main: 'high', tasks: { 'focused-resume': 'xhigh' } },
         'best',
       ),
@@ -60,7 +60,7 @@ describe('the levels Claude runs at', () => {
         {
           main: 'haiku',
           tasks: {
-            'fit-check': 'sonnet',
+            'analyze-job': 'sonnet',
             'salary-check': 'sonnet',
             'who-to-message': 'sonnet',
             'focused-resume': 'opus',

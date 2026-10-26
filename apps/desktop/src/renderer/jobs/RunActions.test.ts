@@ -5,7 +5,7 @@ import { isSameRun, requestedRun, runControlsFor, runState } from './RunActions.
 
 const RESUME: RunTask = { skill: 'focused-resume', jobId: 'acme--staff' };
 const LETTER: RunTask = { skill: 'cover-letter', jobId: 'acme--staff' };
-const GLOBEX: RunTask = { skill: 'fit-check', jobId: 'globex--pm' };
+const GLOBEX: RunTask = { skill: 'analyze-job', jobId: 'globex--pm' };
 
 const runs = (...each: [RunTask, RunPhase][]) =>
   each.map(([task, phase], at) => ({ id: `run-${at + 1}`, task, phase }));
@@ -35,6 +35,17 @@ describe('the job panel’s run controls', () => {
       { task: LETTER, state: 'in-line' },
     ]);
     expect(controls.tasksOn('globex--pm')).toEqual([]);
+  });
+
+  it('takes a run analyzing several jobs as each one’s analysis, and each one’s task', () => {
+    const several: RunTask = { skill: 'analyze-job', jobIds: ['acme--staff', 'globex--pm'] };
+    const controls = runControlsFor(runs([several, 'working']), vi.fn(), vi.fn());
+    expect(controls.stateOf({ skill: 'analyze-job', jobId: 'globex--pm' })).toBe('running');
+    expect(controls.stateOf({ skill: 'analyze-job', jobId: 'initech--pm' })).toBeNull();
+    expect(controls.stateOf(RESUME)).toBeNull();
+    expect(controls.tasksOn('acme--staff')).toEqual([{ task: several, state: 'running' }]);
+    expect(isSameRun(several, { skill: 'analyze-job', jobId: 'acme--staff' })).toBe(true);
+    expect(isSameRun({ skill: 'analyze-job', jobId: 'acme--staff' }, several)).toBe(true);
   });
 
   it('shows a task’s tab: the run going for it, or the last one there was', () => {

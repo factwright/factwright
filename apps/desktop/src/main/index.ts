@@ -526,7 +526,11 @@ function start(home: string, profile: ProfileFolder, stopped: ProfileFolder | nu
           server,
           signal,
         }),
-      onChange: (check) => window.send('setup:checked', check),
+      onChange: (check) => {
+        window.send('setup:checked', check);
+        // Claude past its first screens may analyze new jobs on its own now.
+        analyzeNew?.look();
+      },
       busy: () => claude.busy(),
       // The end-to-end tests set a shorter wait, to see the check finish.
       ...(process.env.FACTWRIGHT_SETUP_WAIT_MS && {

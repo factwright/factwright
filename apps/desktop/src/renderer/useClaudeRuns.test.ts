@@ -5,7 +5,7 @@ import type { FactwrightApi, RunPhase, RunsView, RunView } from '../shared/api.t
 import type { RunTask } from '../shared/runs.ts';
 import { startsNow, useClaudeRuns } from './useClaudeRuns.ts';
 
-const TASK: RunTask = { skill: 'fit-check', jobId: 'acme--staff-engineer' };
+const TASK: RunTask = { skill: 'analyze-job', jobId: 'acme--staff-engineer' };
 
 const view = (id: string, phase: RunPhase, task: RunTask | null = TASK): RunView => ({
   id,
@@ -15,6 +15,7 @@ const view = (id: string, phase: RunPhase, task: RunTask | null = TASK): RunView
   screen: null,
   startedAt: phase === 'in-line' ? null : 1,
   problem: null,
+  analyzed: [],
 });
 
 function fakeApi(started: () => Promise<string> = async () => 'run-1') {
@@ -155,7 +156,7 @@ describe('useClaudeRuns', () => {
 
 describe('whether a task starts now', () => {
   it('waits while a run is still getting past Claude Code’s first screens', () => {
-    const other: RunTask = { skill: 'fit-check', jobId: 'globex--pm' };
+    const other: RunTask = { skill: 'analyze-job', jobId: 'globex--pm' };
     const starting = [view('run-1', 'starting', other)];
     expect(startsNow({ runs: starting, atOnce: 3, setUp: false }, TASK)).toBe(false);
     expect(startsNow({ runs: starting, atOnce: 3, setUp: true }, TASK)).toBe(true);
@@ -163,7 +164,7 @@ describe('whether a task starts now', () => {
   });
 
   it('starts while fewer run than may, and nothing else is on its job', () => {
-    const other: RunTask = { skill: 'fit-check', jobId: 'globex--pm' };
+    const other: RunTask = { skill: 'analyze-job', jobId: 'globex--pm' };
     const runs = (phases: RunPhase[], task: RunTask = other) =>
       phases.map((phase, at) => view(`run-${at}`, phase, task));
     expect(startsNow({ runs: runs(['working', 'done']), atOnce: 2, setUp: true }, TASK)).toBe(true);
@@ -178,5 +179,14 @@ describe('whether a task starts now', () => {
     ).toBe(false);
     expect(startsNow({ runs: runs(['in-line'], TASK), atOnce: 3, setUp: true }, TASK)).toBe(false);
     expect(startsNow({ runs: runs(['done'], TASK), atOnce: 3, setUp: true }, TASK)).toBe(true);
+  });
+
+  it('counts no run Claude started on its own, which steps aside', () => {
+    const own: RunTask = { skill: 'analyze-job', jobIds: ['acme--staff-engineer'], auto: true };
+    const picked: RunTask = { skill: 'analyze-job', jobIds: ['acme--staff-engineer'] };
+    const going = (task: RunTask) => [view('run-1', 'working', task)];
+    expect(startsNow({ runs: going(own), atOnce: 1, setUp: true }, TASK)).toBe(true);
+    // One the user started on several jobs holds each of them, and its turn.
+    expect(startsNow({ runs: going(picked), atOnce: 3, setUp: true }, TASK)).toBe(false);
   });
 });

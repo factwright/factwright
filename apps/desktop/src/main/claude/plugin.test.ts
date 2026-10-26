@@ -48,10 +48,10 @@ describe('the plugin’s skills', () => {
   it('are there', () => {
     expect(skills.map((skill) => skill.folder).sort()).toEqual([
       'add-facts',
+      'analyze-job',
       'answer-questions',
       'ask',
       'cover-letter',
-      'fit-check',
       'focused-resume',
       'get-started',
       'interview-prep',
@@ -147,7 +147,7 @@ describe('the plugin’s skills', () => {
 
   it('log their checks with log_check, which writes one row at a time, and never edit a log', () => {
     const logs = {
-      'fit-check': 'fit-checks',
+      'analyze-job': 'fit-checks',
       'salary-check': 'salary-checks',
       'unmask-job': 'unmask-checks',
     };

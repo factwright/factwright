@@ -7,24 +7,28 @@ import { JOB_ID } from '../policy.ts';
 /**
  * The job hunt's logs, which the skills add a row to as they go: a fit check's verdict, a salary
  * check's estimate, and the employer an unmasked listing hides. Each one's columns, in its
- * table's order, and the ones a row must have. A fit check names the job it's for by its ID, so
- * its score stays with that job, whatever other job has the same company and title.
+ * table's order, the ones a row must have, and the ones it gained since it began, which a table
+ * from before gets once a row fills one: a fit check names the job it's for by its ID, so its
+ * score stays with that job, whatever other job has the same company and title.
  */
 export const LOGS = {
   'fit-checks': {
     path: WORKSPACE_PATHS.fitChecks,
     columns: ['Date', 'Company', 'Role', 'Verdict', 'Score', 'Link', 'Pay', 'Note', 'Job'],
     needs: ['company', 'role', 'verdict'],
+    gained: ['Job'],
   },
   'salary-checks': {
     path: WORKSPACE_PATHS.salaryChecks,
     columns: ['Date', 'Company', 'Role', 'Estimate', 'Confidence', 'Link'],
     needs: ['company', 'role', 'estimate'],
+    gained: [],
   },
   'unmask-checks': {
     path: WORKSPACE_PATHS.unmaskChecks,
     columns: ['Date', 'Listing', 'Employer', 'Role', 'Apply', 'Link'],
     needs: ['listing', 'employer', 'role'],
+    gained: [],
   },
 } as const;
 
@@ -58,17 +62,21 @@ function headingsOf(line: string): string[] {
     .map((cell) => cell.trim().toLowerCase());
 }
 
-/** A table's line with more cells at its end, such as a heading, or its rule under them. */
+/**
+ * A table's line with more cells at its end, such as a heading, or its rule under them, spaced as
+ * the line is: "| Date | Company |", or "|---|---|".
+ */
 function withCells(line: string, cells: readonly string[]): string {
   const trimmed = line.trimEnd();
-  const open = trimmed.endsWith('|') ? trimmed.slice(0, -1).trimEnd() : trimmed;
-  return `${open} | ${cells.join(' | ')} |`;
+  const gap = /\|\s/.test(trimmed) ? ' ' : '';
+  const open = trimmed.endsWith('|') ? trimmed : `${trimmed}${gap}|`;
+  return `${open}${gap}${cells.join(`${gap}|${gap}`)}${gap}|`;
 }
 
 /**
  * A log's text with one more row, at the end of its table, in the columns its table has: a log
  * that isn't there, or has no table, gets the table first, with its heading. A table from before
- * the log had a column the row fills, such as the fit checks' Job, gets that column at its end;
+ * the log gained a column the row fills, such as the fit checks' Job, gets that column at its end;
  * the rows before it leave it blank.
  */
 export function withRow(text: string | null, log: LogName, row: Record<string, string>): string {
@@ -86,8 +94,8 @@ export function withRow(text: string | null, log: LogName, row: Record<string, s
   );
   if (start < 0) return `${text.trimEnd()}${newline}${newline}${fresh.join(newline)}${newline}`;
   const had = headingsOf(lines[start] ?? '');
-  const gained = columns.filter(
-    (column) => !had.includes(column.toLowerCase()) && row[column.toLowerCase()],
+  const gained = LOGS[log].gained.filter(
+    (column: string) => !had.includes(column.toLowerCase()) && row[column.toLowerCase()],
   );
   if (gained.length > 0) {
     lines[start] = withCells(lines[start] ?? '', gained);

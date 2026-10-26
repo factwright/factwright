@@ -780,8 +780,17 @@ export function sampleJobs(): Job[] {
         note('kestrel-note', -6, 'The recruiter wrote that the role is on hold until next year.'),
       ],
     }),
+  ];
+}
+
+/**
+ * Jobs for checking Analyze job by eye, with ?jobs=saved: the ones saved from the browser today and
+ * yesterday, not checked yet, and a job Analyze job found might be another one a search found,
+ * without being sure.
+ */
+export function sampleSaved(): Job[] {
+  return [
     ...SAVED_TODAY.map(savedToday),
-    // A job Analyze job found might be another one a search found, without being sure.
     sampleJob({
       id: KEELSON,
       company: 'Keelson AI',

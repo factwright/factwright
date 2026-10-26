@@ -131,6 +131,34 @@ afterEach(() => {
   rmSync(root, { recursive: true, force: true });
 });
 
+describe('log_check', () => {
+  it('names the job a fit check is for, and tells the run it finished that job', async () => {
+    const analyzed = vi.fn();
+    const call = { ...newCall('hunt'), analyzed };
+    const row = { company: 'Acme Robotics', role: 'Staff Engineer', verdict: 'Strong', score: 82 };
+    await tool('log_check').run(
+      { log: 'fit-checks', row: { ...row, job: 'acme-robotics--staff-engineer' } },
+      call,
+    );
+    expect(analyzed).toHaveBeenCalledWith('acme-robotics--staff-engineer');
+    const log = readFileSync(join(root, 'searches', 'fit-checks.md'), 'utf8');
+    expect(log).toContain('| Strong | 82 |  |  |  | acme-robotics--staff-engineer |');
+    // A job that isn't on file is a mistake to fix, not a row to write.
+    await expect(
+      tool('log_check').run({ log: 'fit-checks', row: { ...row, job: 'gone--job' } }, call),
+    ).rejects.toThrow('Nothing on file for gone--job.');
+    // A salary check counts nothing.
+    await tool('log_check').run(
+      {
+        log: 'salary-checks',
+        row: { company: 'Acme Robotics', role: 'Staff Engineer', estimate: '$200k' },
+      },
+      call,
+    );
+    expect(analyzed).toHaveBeenCalledOnce();
+  });
+});
+
 it('gives revision_findings only to the run started for the revision', async () => {
   const findings = tool('revision_findings');
   expect(await findings.run({}, newCall('hunt'))).toMatch(
@@ -430,6 +458,34 @@ describe('a call’s prep sheet and thank-you notes', () => {
 });
 
 describe('job_details', () => {
+  it('gives the details the user set, and the jobs Claude noted might be the same', async () => {
+    const id = 'acme-robotics--staff-engineer';
+    jobs.updateJob(id, { company: 'Acme', location: 'Remote (US)' });
+    const twin = jobs.addJob({
+      company: 'Acme',
+      role: 'Staff Engineer II',
+      link: 'https://x.example/2',
+    });
+    const third = jobs.addJob({ company: 'Acme', role: 'Platform Lead' });
+    if (!twin.ok || !third.ok) throw new Error('not added');
+    jobs.noteMaybeSame(id, twin.jobId, 'Same team');
+    jobs.noteMaybeSame(id, third.jobId, null);
+    jobs.notSame(id, third.jobId);
+    const answer = await tool('job_details').run({ job: id });
+    expect(answer).toContain('## Acme, Staff Engineer');
+    expect(answer).toContain(
+      '- The user’s own details: company “Acme”, place “Remote (US)”. They win over the posting: write them as they are, and never change them.',
+    );
+    expect(answer).toContain(
+      [
+        '- Might be the same job, as noted for the user to merge or not:',
+        `    Acme, Staff Engineer II (job ${twin.jobId}), noted 2026-10-11: Same team`,
+        '- The user said it isn’t the same job as:',
+        `    Acme, Platform Lead (job ${third.jobId})`,
+      ].join('\n'),
+    );
+  });
+
   it('gives everything on file, including the user’s notes, calls and folder', async () => {
     const id = 'acme-robotics--staff-engineer';
     jobs.updateJob(id, {

@@ -12,6 +12,7 @@ import {
   type KindName,
   kindNamesIn,
   knownJobsOf,
+  NO_OWN_DETAILS,
   noteOrder,
   readAllCallDocs,
   readJobExtras,
@@ -176,6 +177,8 @@ function untracked(job: CollectedJob): TrackedRow {
     archived: false,
     kind: null,
     payAsk: null,
+    own: NO_OWN_DETAILS,
+    maybeSame: [],
   };
 }
 

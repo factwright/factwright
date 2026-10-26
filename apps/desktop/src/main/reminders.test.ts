@@ -1,7 +1,7 @@
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { type Call, type CallDoc, callStart, type Job } from '@factwright/core';
+import { type Call, type CallDoc, callStart, type Job, NO_OWN_DETAILS } from '@factwright/core';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { settled } from './claude/save.ts';
 import { type CallReminder, CallReminders, reminderFor } from './reminders.ts';
@@ -94,6 +94,8 @@ function job(extra: Partial<Job> = {}): Job {
     archived: false,
     kind: null,
     payAsk: null,
+    own: NO_OWN_DETAILS,
+    maybeSame: [],
     manual: false,
     calls: [call()],
     callDocs: [],

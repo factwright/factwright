@@ -496,9 +496,10 @@ export class Tracker {
     if (changes.archived !== undefined) set('archived', changes.archived ? 1 : 0);
     if (changes.kind !== undefined) set('kind', changes.kind);
     if (changes.payAsk !== undefined) set('pay_ask', changes.payAsk);
+    // The details the user sets: an empty one goes back to what Claude found.
     for (const [field, column] of Object.entries(OWN_COLUMNS) as [keyof OwnDetails, string][]) {
       const value = changes[field];
-      if (value !== undefined) set(column, value);
+      if (value !== undefined) set(column, value?.trim() || null);
     }
 
     const status = changes.status;

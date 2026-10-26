@@ -37,6 +37,7 @@ import {
   sampleJob,
   sampleJobs,
   sampleOutreach,
+  sampleSaved,
   sampleVersions,
 } from './sample-jobs.ts';
 import { samplePdf } from './sample-pdf.ts';
@@ -178,8 +179,9 @@ const withFiles = (job: Job, kind: DocKind, files: Job['files']): Job =>
 /**
  * The tracker for the sample screens, kept in memory until the page reloads. It follows the
  * real tracker's main rules (a call moves a job forward, Undo puts it back) closely enough to
- * check the screens by eye. "jobs" picks the starting jobs: none, failed or loading, or twice,
- * with a job found twice to merge.
+ * check the screens by eye. "jobs" picks the starting jobs: none, failed or loading, twice,
+ * with a job found twice to merge, or saved, with jobs saved from the browser that Claude hasn't
+ * analyzed yet, and one Analyze job noted might be another.
  */
 export function sampleTracker(
   jobs: string | null,
@@ -197,7 +199,13 @@ export function sampleTracker(
   const revisionKey = (jobId: string, name: string) => `${jobId}/${stemOf(name)}`;
   let list: JobList = {
     jobs:
-      jobs === 'none' ? [] : jobs === 'twice' ? [...sampleJobs(), sampleDuplicate()] : sampleJobs(),
+      jobs === 'none'
+        ? []
+        : jobs === 'twice'
+          ? [...sampleJobs(), sampleDuplicate()]
+          : jobs === 'saved'
+            ? [...sampleJobs(), ...sampleSaved()]
+            : sampleJobs(),
     readAt: new Date().toISOString(),
   };
   for (const [jobId, kept] of sampleVersions(list.jobs)) versions.set(jobId, kept);

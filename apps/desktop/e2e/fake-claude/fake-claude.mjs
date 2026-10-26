@@ -256,6 +256,22 @@ async function work(text) {
       await call('save_answer', { job, question: id, answer: again ? `${ANSWER} Again.` : ANSWER });
     }
   }
+  // As Claude would for Analyze job, on one job or several: read each one, and log its fit check
+  // by the job's id, which tells the app that job is done. A moment between jobs, as helpers take.
+  const analyzing = text.match(/^\/factwright:analyze-job jobs? (.+?)(?: on its own)?$/);
+  if (analyzing) {
+    for (const job of analyzing[1].split(' ')) {
+      const details = await call('job_details', { job });
+      const [company, role] = (details.match(/^## (.+)$/m)?.[1] ?? job).split(/, (.*)/);
+      show(
+        `${await call('log_check', {
+          log: 'fit-checks',
+          row: { company, role: role || 'Engineer', verdict: 'Good', score: 70, job },
+        })}\n`,
+      );
+      await new Promise((resolve) => setTimeout(resolve, 300));
+    }
+  }
   // As Claude would for the questions of a job's application form: read in job_details how the
   // form asks each one, and say so.
   const drafting = text.match(/^\/factwright:answer-questions job (\S+) form$/);

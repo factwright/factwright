@@ -134,15 +134,16 @@ export function runOutcome(
         task.jobIds.includes(job.id) &&
         job.fit !== null &&
         marksOf(job).fit !== before.fits[job.id],
-    ).length;
-    if (done === 0) return null;
+    );
+    const [first] = done;
+    if (!first) return null;
     const jobs = task.auto ? 'new jobs' : 'jobs';
     const text =
       count === 1
-        ? 'The job is analyzed.'
-        : done === count
+        ? `${first.job.company} is analyzed.`
+        : done.length === count
           ? `All ${count} ${jobs} are analyzed.`
-          : `${done} of ${count} ${jobs} are analyzed.`;
+          : `${done.length} of ${count} ${jobs} are analyzed.`;
     return { text, place: { view: 'review' } };
   }
   const jobId = taskJob(task);

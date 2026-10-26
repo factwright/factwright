@@ -161,7 +161,7 @@ describe('runs side by side', () => {
     await settle();
     expect(lastView()).toEqual(['run-1 starting', 'run-2 in-line job', 'run-3 starting']);
     // A third task on the job waits behind the one ahead of it in line.
-    claude.start({ skill: 'fit-check', jobId: 'acme' });
+    claude.start({ skill: 'analyze-job', jobId: 'acme' });
     run('run-1').events.signal('working');
     run('run-1').events.signal('done');
     await settle();
@@ -446,5 +446,149 @@ describe('the size a run starts at', () => {
     await settle();
     expect(stops).toEqual(['run-1']);
     expect(lastView()).toEqual(['run-1 stopped']);
+  });
+});
+
+describe('runs on several jobs, and runs of Claude’s own', () => {
+  const analyze = (...jobIds: string[]): RunTask => ({ skill: 'analyze-job', jobIds });
+  const own = (...jobIds: string[]): RunTask => ({ skill: 'analyze-job', jobIds, auto: true });
+  /** The runs of Claude's own that ended, and how, with the jobs each finished. */
+  let ended: string[];
+  const ownRuns = (deps: Partial<ClaudeRunsDeps> = {}) =>
+    runs({
+      onOwnEnded: (heard, end, analyzed) =>
+        ended.push(`${heard.id} ${end}${analyzed.length ? ` ${analyzed.join(' ')}` : ''}`),
+      ...deps,
+    });
+
+  beforeEach(() => {
+    ended = [];
+  });
+
+  it('analyzes several jobs in one run, holding each of them, and says which it finished', async () => {
+    const claude = ownRuns();
+    claude.start(analyze('acme', 'globex'));
+    claude.start(letter('acme'));
+    claude.start(letter('initech'));
+    await settle();
+    run('run-1').events.past();
+    await settle();
+    expect(lastView()).toEqual(['run-1 starting', 'run-2 in-line job', 'run-3 starting']);
+    expect([claude.holds('acme'), claude.holds('globex'), claude.holds('umbrella')]).toEqual([
+      true,
+      true,
+      false,
+    ]);
+    run('run-1').events.signal('working');
+    run('run-1').events.analyzed?.('acme');
+    // Another job's, and the same one again, change nothing.
+    run('run-1').events.analyzed?.('initech');
+    run('run-1').events.analyzed?.('acme');
+    expect(views.at(-1)?.runs[0]?.analyzed).toEqual(['acme']);
+    run('run-1').events.analyzed?.('globex');
+    expect(views.at(-1)?.runs[0]?.analyzed).toEqual(['acme', 'globex']);
+    // A run the user started is theirs: it never steps aside.
+    expect(ended).toEqual([]);
+  });
+
+  it('starts a run of its own only when it can start at once, never in line', async () => {
+    const claude = ownRuns({ atOnce: 2 });
+    // With nothing going, it may be the first.
+    expect(claude.startOwn(own('acme'))).toBe('run-1');
+    await settle();
+    run('run-1').events.past();
+    run('run-1').events.signal('working');
+    // Not on a job a task holds.
+    claude.start(resume('globex'));
+    await settle();
+    expect(claude.startOwn(own('globex'))).toBeNull();
+    // Not past as many as may go at once.
+    expect(claude.startOwn(own('initech'))).toBeNull();
+    run('run-1').events.signal('done');
+    expect(claude.startOwn(own('initech'))).toBe('run-3');
+    // Not while a task waits in line.
+    claude.start(letter('globex'));
+    await settle();
+    expect(lastView().at(-1)).toBe('run-4 in-line job');
+    expect(claude.startOwn(own('umbrella'))).toBeNull();
+    expect(views.at(-1)?.runs.find((each) => each.id === 'run-3')?.task).toEqual(own('initech'));
+  });
+
+  it('steps aside for a task of the user’s that would wait for a turn, then gives it the turn', async () => {
+    const claude = ownRuns({ atOnce: 1 });
+    claude.startOwn(own('acme', 'globex'));
+    await settle();
+    run('run-1').events.past();
+    run('run-1').events.signal('working');
+    run('run-1').events.analyzed?.('acme');
+    claude.start(resume('initech'));
+    await settle();
+    expect(stops).toEqual(['run-1']);
+    expect(ended).toEqual(['run-1 stepped-aside acme']);
+    expect(lastView()).toEqual(['run-2 starting']);
+  });
+
+  it('steps aside for a task of the user’s on one of its jobs', async () => {
+    const claude = ownRuns();
+    claude.startOwn(own('acme', 'globex'));
+    await settle();
+    run('run-1').events.past();
+    run('run-1').events.signal('working');
+    claude.start(letter('globex'));
+    await settle();
+    expect(ended).toEqual(['run-1 stepped-aside']);
+    expect(lastView()).toEqual(['run-2 starting']);
+  });
+
+  it('stays when stepping aside wouldn’t let the user’s task start', async () => {
+    const claude = ownRuns({ atOnce: 2 });
+    claude.start(resume('acme'));
+    await settle();
+    run('run-1').events.past();
+    run('run-1').events.signal('working');
+    claude.startOwn(own('globex'));
+    await settle();
+    // The letter waits for its job's resume, whatever Claude's own run does.
+    claude.start(letter('acme'));
+    await settle();
+    expect(lastView()).toEqual(['run-1 working', 'run-2 starting', 'run-3 in-line job']);
+    expect(ended).toEqual([]);
+  });
+
+  it('steps aside at Claude Code’s own screens, and starts no other until the user’s run is past them', async () => {
+    const claude = ownRuns();
+    claude.startOwn(own('acme'));
+    await settle();
+    run('run-1').events.screen('trust');
+    expect(ended).toEqual(['run-1 stepped-aside']);
+    expect(lastView()).toEqual([]);
+    expect(claude.startOwn(own('acme'))).toBeNull();
+    claude.start(resume('globex'));
+    await settle();
+    run('run-2').events.past();
+    expect(claude.startOwn(own('acme'))).toBe('run-3');
+  });
+
+  it('says once that a run of its own ended: done, stopped, closed or failed', async () => {
+    const claude = ownRuns();
+    claude.startOwn(own('acme'));
+    await settle();
+    run('run-1').events.past();
+    run('run-1').events.signal('working');
+    run('run-1').events.analyzed?.('acme');
+    run('run-1').events.signal('done');
+    claude.close('run-1');
+    expect(ended).toEqual(['run-1 ended acme']);
+    // Closed by the user while it works.
+    claude.startOwn(own('globex'));
+    await settle();
+    run('run-2').events.signal('working');
+    claude.close('run-2');
+    // One that fails.
+    claude.startOwn(own('initech'));
+    await settle();
+    run('run-3').events.signal('working');
+    run('run-3').exit('failed');
+    expect(ended).toEqual(['run-1 ended acme', 'run-2 ended', 'run-3 ended']);
   });
 });

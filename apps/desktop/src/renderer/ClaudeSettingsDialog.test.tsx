@@ -25,11 +25,17 @@ function apiWith(start: { models?: ModelChoices; effort?: EffortChoices } = {}) 
   let models = start.models ?? DEFAULT_MODELS;
   let effort = start.effort ?? DEFAULT_EFFORT;
   let atOnce = 3;
+  let analyzes = true;
   return {
     runsAtOnce: vi.fn(async () => atOnce),
     setRunsAtOnce: vi.fn(async (count: number) => {
       atOnce = count;
       return count;
+    }),
+    analyzesNewJobs: vi.fn(async () => analyzes),
+    setAnalyzesNewJobs: vi.fn(async (on: boolean) => {
+      analyzes = on;
+      return on;
     }),
     claudeModels: vi.fn(async () => models),
     setClaudeModels: vi.fn(async (chosen: ModelChoices) => {
@@ -55,7 +61,10 @@ describe('ClaudeSettingsDialog', () => {
     expect(select('Model for everything').value).toBe('');
     expect(select('Effort for everything').value).toBe('');
     // Nothing to choose about asking: Claude changes files and reads pages, and lists them after.
-    expect(screen.queryByRole('checkbox')).toBeNull();
+    // The one box to tick is Claude analyzing new jobs on its own.
+    const boxes = await screen.findAllByRole('checkbox');
+    expect(boxes.map((box) => box.getAttribute('type'))).toEqual(['checkbox']);
+    expect(screen.getByRole('checkbox', { name: /^Analyze new jobs on their own/ })).toBeTruthy();
     expect(screen.getByText(/changes your job hunt’s files without asking/)).toBeTruthy();
     expect(screen.getByText(/lists each file it changed, with Undo/)).toBeTruthy();
     expect((await axe.run(container)).violations).toEqual([]);
@@ -128,7 +137,7 @@ describe('ClaudeSettingsDialog', () => {
   });
 
   it('sets one effort for everything, which each task follows unless it has its own', async () => {
-    const api = apiWith({ effort: { main: null, tasks: { 'fit-check': 'low' } } });
+    const api = apiWith({ effort: { main: null, tasks: { 'analyze-job': 'low' } } });
     render(<ClaudeSettingsDialog api={api} onClose={vi.fn()} />);
     await userEvent.selectOptions(
       await screen.findByRole('combobox', { name: 'Effort for everything' }),
@@ -136,17 +145,17 @@ describe('ClaudeSettingsDialog', () => {
     );
     expect(api.setClaudeEffort).toHaveBeenLastCalledWith({
       main: 'max',
-      tasks: { 'fit-check': 'low' },
+      tasks: { 'analyze-job': 'low' },
     });
     expect(screen.getByText('Choose by task').closest('details')?.open).toBe(true);
     expect(within(select('Effort for Salary check')).getAllByRole('option')[0]?.textContent).toBe(
       'Same as everything (Max)',
     );
-    expect(select('Effort for Fit check').value).toBe('low');
+    expect(select('Effort for Analyze job').value).toBe('low');
     await userEvent.selectOptions(select('Effort for everything'), '');
     expect(api.setClaudeEffort).toHaveBeenLastCalledWith({
       main: null,
-      tasks: { 'fit-check': 'low' },
+      tasks: { 'analyze-job': 'low' },
     });
   });
 
@@ -194,7 +203,7 @@ describe('ClaudeSettingsDialog', () => {
     await userEvent.click(await screen.findByText('Choose by task'));
     const option = (label: string) =>
       within(select(`Model for ${label}`)).getAllByRole('option')[0]?.textContent;
-    expect(option('Fit check')).toBe('Recommended (Sonnet)');
+    expect(option('Analyze job')).toBe('Recommended (Sonnet)');
     expect(option('Find jobs')).toBe('Recommended (Sonnet)');
     expect(option('Tailored resume')).toBe('Recommended (Opus)');
     expect(option('Getting started')).toBe('Recommended (Opus)');
@@ -244,6 +253,27 @@ describe('ClaudeSettingsDialog', () => {
     expect(
       screen.getByText(/Past this many, a task waits in line and starts by itself/),
     ).toBeTruthy();
+  });
+
+  it('turns Claude analyzing new jobs on its own off, and on again', async () => {
+    const api = apiWith();
+    render(<ClaudeSettingsDialog api={api} onClose={vi.fn()} />);
+    const box = (await screen.findByRole('checkbox', {
+      name: /^Analyze new jobs on their own/,
+    })) as HTMLInputElement;
+    expect(box.checked).toBe(true);
+    expect(box.closest('label')?.textContent).toContain('up to 8 in one run');
+    await userEvent.click(box);
+    expect(api.setAnalyzesNewJobs).toHaveBeenLastCalledWith(false);
+    await waitFor(() => expect(box.checked).toBe(false));
+    await userEvent.click(box);
+    expect(api.setAnalyzesNewJobs).toHaveBeenLastCalledWith(true);
+    await waitFor(() => expect(box.checked).toBe(true));
+    // One that didn't save shows what's really saved.
+    api.setAnalyzesNewJobs.mockRejectedValueOnce(new Error('disk full'));
+    await userEvent.click(box);
+    expect((await screen.findByRole('alert')).textContent).toBe('That didn’t save. Try again.');
+    await waitFor(() => expect(box.checked).toBe(true));
   });
 
   it('closes with Done', async () => {

@@ -42,7 +42,7 @@ describe('LevelsChip', () => {
     expect(chip.textContent).toBe('Opus · HighLighter for 4 tasks');
     expect(help).toContain('Best overall: Opus at Extra high');
     expect(help).toContain(
-      'Best on your Pro plan, whose limits are the tightest: Sonnet for fit checks, salary checks, job searches and who to message, and Opus at High for the writing.',
+      'Best on your Pro plan, whose limits are the tightest: Sonnet for analyzing jobs, salary checks, job searches and who to message, and Opus at High for the writing.',
     );
     expect(help).toContain('Lower levels are quicker and use less');
   });

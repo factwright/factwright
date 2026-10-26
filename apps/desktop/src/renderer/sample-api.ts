@@ -782,8 +782,8 @@ export function sampleApi(): FactwrightApi {
   };
   // ?runs=side opens on runs side by side: three at work, one done that stopped on a question,
   // and a cover letter in line for its job's resume. ?runs=asking has three runs waiting on the
-  // user at once: two rounds of questions and a permission prompt. ?runs=analyze has one run
-  // analyzing the six jobs saved from the browser, two of them done.
+  // user at once: two rounds of questions and a permission prompt. ?runs=analyze, with
+  // ?jobs=saved, has one run analyzing the six jobs saved from the browser, two of them done.
   const scene = query.get('runs');
   const sideBySide = (tasks: RunTask[], start: (sample: Sample, at: number) => void) => {
     const now = Date.now();
@@ -832,19 +832,35 @@ export function sampleApi(): FactwrightApi {
     add({ skill: 'cover-letter', jobId: 'tidewater-analytics--senior-backend-engineer' });
     pump();
   } else if (scene === 'analyze') {
-    // ?runs=analyze: the jobs saved today and yesterday, analyzed in one run, two of six done.
+    // ?runs=analyze: the jobs saved today and yesterday, analyzed in one run, two of six done,
+    // beside a tailored resume.
     const jobIds = SAVED_TODAY.map(([id]) => id);
     const done = jobIds.slice(0, 2);
-    sideBySide([{ skill: ANALYZE_SKILL, jobIds }], (sample) => {
-      for (const id of done) tracker.madeBy({ skill: ANALYZE_SKILL, jobId: id });
-      set(sample.id, { analyzed: done });
-      step(sample, {
-        tool: 'Agent',
-        detail: 'Analyze Northbeam Analytics',
-        id: 'agent-northbeam',
-        state: 'running',
-      });
-    });
+    sideBySide(
+      [
+        { skill: ANALYZE_SKILL, jobIds },
+        { skill: 'focused-resume', jobId: 'tidewater-analytics--senior-backend-engineer' },
+      ],
+      (sample, index) => {
+        if (index > 0) {
+          step(sample, {
+            tool: 'Read',
+            detail: 'facts/platform-engineering.md',
+            id: 'r',
+            state: 'running',
+          });
+          return;
+        }
+        for (const id of done) tracker.madeBy({ skill: ANALYZE_SKILL, jobId: id });
+        set(sample.id, { analyzed: done });
+        step(sample, {
+          tool: 'Agent',
+          detail: 'Analyze Northbeam Analytics',
+          id: 'agent-northbeam',
+          state: 'running',
+        });
+      },
+    );
   } else if (scene === 'asking') {
     sideBySide(
       [

@@ -23,7 +23,7 @@ afterEach(() => {
   rmSync(dataDir, { recursive: true, force: true });
 });
 
-const job = (skill: 'fit-check' | 'salary-check' | 'who-to-message' | 'focused-resume') => ({
+const job = (skill: 'analyze-job' | 'salary-check' | 'who-to-message' | 'focused-resume') => ({
   skill,
   jobId: 'acme--staff',
 });
@@ -32,7 +32,7 @@ describe('which model Claude runs on', () => {
   it('is Opus for everything on Max, Team and Enterprise, until the user chooses', async () => {
     expect(await loadModels(dataDir)).toEqual(DEFAULT_MODELS);
     for (const plan of ['max', 'team', 'enterprise', undefined]) {
-      expect(modelFor(DEFAULT_MODELS, job('fit-check'), planLevels(plan))).toBe('opus');
+      expect(modelFor(DEFAULT_MODELS, job('analyze-job'), planLevels(plan))).toBe('opus');
       expect(modelFor(DEFAULT_MODELS, { skill: 'job-search' }, planLevels(plan))).toBe('opus');
     }
     expect(modelFor(DEFAULT_MODELS)).toBe('opus');
@@ -40,7 +40,7 @@ describe('which model Claude runs on', () => {
 
   it('starts the checks and searches on Sonnet on a Pro plan or an API key, and the writing on Opus', () => {
     for (const levels of [planLevels('pro', 'subscription'), planLevels(undefined, 'api_key')]) {
-      expect(modelFor(DEFAULT_MODELS, job('fit-check'), levels)).toBe('sonnet');
+      expect(modelFor(DEFAULT_MODELS, job('analyze-job'), levels)).toBe('sonnet');
       expect(modelFor(DEFAULT_MODELS, job('salary-check'), levels)).toBe('sonnet');
       expect(modelFor(DEFAULT_MODELS, job('who-to-message'), levels)).toBe('sonnet');
       expect(modelFor(DEFAULT_MODELS, { skill: 'job-search' }, levels)).toBe('sonnet');
@@ -53,7 +53,7 @@ describe('which model Claude runs on', () => {
   it('recommends a model for every task, and Sonnet only for the checks and searches', () => {
     expect(MODEL_TASKS.every((task) => RECOMMENDED_MODELS[task] === 'opus')).toBe(true);
     expect(MODEL_TASKS.filter((task) => PRO_MODELS[task] === 'sonnet')).toEqual([
-      'fit-check',
+      'analyze-job',
       'salary-check',
       'who-to-message',
       'job-search',
@@ -92,13 +92,14 @@ describe('which model Claude runs on', () => {
     await saveModels(dataDir, { main: 'opus', tasks: {} });
     const opus = await loadModels(dataDir);
     expect(opus).toEqual({ main: 'opus', tasks: {} });
-    expect(modelFor(opus, job('fit-check'), pro)).toBe('opus');
+    expect(modelFor(opus, job('analyze-job'), pro)).toBe('opus');
   });
 
   it('reads Opus for everything, from before there was a recommended model, as recommended', async () => {
     const file = join(dataDir, 'claude-models.json');
     writeFileSync(file, JSON.stringify({ main: 'opus', tasks: { 'fit-check': 'haiku' } }));
-    expect(await loadModels(dataDir)).toEqual({ main: null, tasks: { 'fit-check': 'haiku' } });
+    // A fit check's choice, from before it was Analyze job, is Analyze job's.
+    expect(await loadModels(dataDir)).toEqual({ main: null, tasks: { 'analyze-job': 'haiku' } });
     // Another model was the user's own choice, since Opus was the default.
     writeFileSync(file, JSON.stringify({ main: 'sonnet', tasks: {} }));
     expect(await loadModels(dataDir)).toEqual({ main: 'sonnet', tasks: {} });
@@ -120,7 +121,7 @@ describe('which model Claude runs on', () => {
     expect(await loadModels(dataDir)).toEqual({ main: null, tasks: { 'focused-resume': 'haiku' } });
     // Only some of them on Sonnet was the user's own doing.
     writeFileSync(file, JSON.stringify({ main: 'opus', tasks: { 'fit-check': 'sonnet' } }));
-    expect(await loadModels(dataDir)).toEqual({ main: null, tasks: { 'fit-check': 'sonnet' } });
+    expect(await loadModels(dataDir)).toEqual({ main: null, tasks: { 'analyze-job': 'sonnet' } });
     // Saved again, it says so.
     await saveModels(dataDir, { main: null, tasks: {} });
     expect(JSON.parse(readFileSync(file, 'utf8'))).toEqual({ version: 2, main: null, tasks: {} });
@@ -128,10 +129,22 @@ describe('which model Claude runs on', () => {
 
   it('takes only models and tasks it knows', () => {
     expect(parseModels({ main: null, tasks: {} })).toEqual(DEFAULT_MODELS);
-    expect(parseModels({ main: 'opus', tasks: { 'fit-check': 'sonnet' } })).toEqual({
+    expect(parseModels({ main: 'opus', tasks: { 'analyze-job': 'sonnet' } })).toEqual({
       main: 'opus',
-      tasks: { 'fit-check': 'sonnet' },
+      tasks: { 'analyze-job': 'sonnet' },
     });
+    // A fit check's choice, saved before it was Analyze job, is Analyze job's, unless the file
+    // has one by its name now.
+    expect(parseModels({ main: null, tasks: { 'fit-check': 'haiku' } })).toEqual({
+      main: null,
+      tasks: { 'analyze-job': 'haiku' },
+    });
+    for (const tasks of [
+      { 'fit-check': 'haiku', 'analyze-job': 'sonnet' },
+      { 'analyze-job': 'sonnet', 'fit-check': 'haiku' },
+    ]) {
+      expect(parseModels({ main: null, tasks })?.tasks).toEqual({ 'analyze-job': 'sonnet' });
+    }
     for (const value of [
       null,
       'opus',
