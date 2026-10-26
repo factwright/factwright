@@ -501,6 +501,32 @@ describe('sameJob', () => {
     expect(sameJob(posted, other)).toBe('posting');
   });
 
+  it('is sure of the same address only for the same title at the same company', () => {
+    // A careers page, a board's address and a list of a company's jobs are many jobs'.
+    for (const url of [
+      'https://www.acme.com/about/careers',
+      'https://acme.com/en/careers',
+      'https://www.ycombinator.com/companies/acme/jobs',
+      'https://jobs.lever.co/acme?team=Engineering',
+      'https://boards.greenhouse.io/acme?gh_src=hn',
+      'https://acme.wd5.myworkdayjobs.com/en-US/External',
+    ]) {
+      expect(
+        sameJob(job('Acme', 'Senior Backend Engineer', url), job('Acme', 'Designer', url)),
+      ).toBeNull();
+    }
+    const page = 'https://acme.com/careers/staff-engineer-platform';
+    expect(
+      sameJob(job('Acme', 'Staff Engineer', page), job('Acme Inc.', 'Staff Engineer', page)),
+    ).toBe('posting');
+    expect(
+      sameJob(job('Acme', 'Staff Engineer', page), job('Acme', 'Staff Engineer, Platform', page)),
+    ).toBeNull();
+    expect(
+      sameJob(job('Acme', 'Staff Engineer', page), job('Globex', 'Staff Engineer', page)),
+    ).toBeNull();
+  });
+
   it('is sure of the same role at the same company when one has no posting of its own', () => {
     expect(sameJob(board, posted)).toBe('role');
     expect(sameJob(posted, board)).toBe('role');

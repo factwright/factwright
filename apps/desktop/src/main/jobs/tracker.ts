@@ -740,9 +740,10 @@ export class Tracker {
    * Merges another job into one, for a job the skills' work found twice: the other's changes of
    * status, calls and notes move to the job kept, with its links, the application's questions,
    * what the user sent for them and the questions they asked Claude, each kept once. The job kept
-   * takes the later of the two decisions the user made, such as passing on it, with its day, a
-   * reason or a day to come back, and whether it's archived; on the same day, a decision over New
-   * or To review. It keeps the earlier applied date, and takes from the other what it lacks: a
+   * takes the user's decision, such as passing on it, with its day, a reason or a day to come
+   * back, and whether it's archived: one the user made over New or To review, which the app sets,
+   * whatever the day, as a later save of the job has, and of two of the same kind, the later. It
+   * keeps the earlier applied date, and takes from the other what it lacks: a
    * next step, a kind of job, typed pay, the pay to ask for, the notes kept before notes were
    * dated. The other job's row stays, pointing at the one kept, so whatever it went by finds that
    * one.
@@ -757,8 +758,7 @@ export class Tracker {
     const kept = decided(keep);
     const theirs = decided(other);
     const latest =
-      !theirs ||
-      (kept && (kept.on > theirs.on || (kept.on === theirs.on && (kept.mine || !theirs.mine))))
+      !theirs || (kept && (kept.mine === theirs.mine ? kept.on >= theirs.on : kept.mine))
         ? keep
         : other;
     const earliest = (a: string | null, b: string | null) =>

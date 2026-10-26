@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { JobsService } from '../jobs/service.ts';
 import { type EditContext, Tracker } from '../jobs/tracker.ts';
-import { newCall } from './mcp.ts';
+import { newCall, type ToolCall } from './mcp.ts';
 import { mergeJob } from './merge.ts';
 
 const AT: EditContext = { today: '2026-10-25', now: '2026-10-25T18:00:00.000Z' };
@@ -40,6 +40,8 @@ afterEach(() => {
 
 describe('merge_job', () => {
   const POSTING = 'https://apply.workable.com/seeq/j/1B6E0A1710/';
+  /** A call from a run analyzing jobs, by their IDs. */
+  const analyzing = (...ids: string[]): ToolCall => ({ ...newCall('hunt'), jobs: ids });
 
   it('merges a job found twice, when one has no posting of its own, into the one analyzed', async () => {
     const posted = save('Seeq', 'AI Software Engineer, Staff/Principal', POSTING);
@@ -49,7 +51,13 @@ describe('merge_job', () => {
       'https://apply.workable.com/seeq',
     );
     jobs.read();
-    const said = await mergeJob(posted, board, 'Same role, by its board', { jobs });
+    const said = await mergeJob(
+      posted,
+      board,
+      'Same role, by its board',
+      { jobs },
+      analyzing(posted),
+    );
     expect(said).toMatch(/^Merged Seeq, AI Software Engineer, Staff\/Principal \(job /);
     expect(said).toContain('the same role at the same company, and one has no posting of its own');
     expect(said).toContain(`Go on with job ${posted}.`);
@@ -58,9 +66,10 @@ describe('merge_job', () => {
 
   it('merges the same posting, whatever company it was saved under', async () => {
     const posted = save('Seeq', 'AI Software Engineer, Staff/Principal', POSTING);
-    const twice = add('Workable', 'AI Engineer', POSTING.replace('/j/', '/J/'));
+    // Its link written another way, as a job board's share link can.
+    const twice = add('Workable', 'AI Engineer', `${POSTING.slice(0, -1)}?utm_source=linkedin`);
     jobs.read();
-    expect(await mergeJob(posted, twice, null, { jobs })).toContain(
+    expect(await mergeJob(posted, twice, null, { jobs }, analyzing(posted))).toContain(
       'they link to the same posting',
     );
     expect(tracker.resolve(twice)).toBe(posted);
@@ -74,7 +83,7 @@ describe('merge_job', () => {
       'https://www.linkedin.com/jobs/view/4088',
     );
     jobs.read();
-    const said = await mergeJob(posted, other, 'Same team and level', { jobs });
+    const said = await mergeJob(posted, other, 'Same team and level', { jobs }, analyzing(posted));
     expect(said).toMatch(/^Noted on Seeq, AI Software Engineer, Staff\/Principal/);
     expect(said).toContain('The user decides with Merge');
     expect(tracker.resolve(other)).toBe(other);
@@ -92,7 +101,7 @@ describe('merge_job', () => {
     );
     tracker.notSame(board, posted, AT);
     jobs.read();
-    expect(await mergeJob(posted, board, null, { jobs })).toMatch(
+    expect(await mergeJob(posted, board, null, { jobs }, analyzing(posted))).toMatch(
       /^The user said .* aren’t the same job/,
     );
     expect(tracker.resolve(board)).toBe(board);
@@ -107,30 +116,22 @@ describe('merge_job', () => {
     );
     jobs.read();
     const busy = (jobId: string) => jobId === board || jobId === posted;
-    const elsewhere = await mergeJob(
-      posted,
-      board,
-      null,
-      { jobs, busy },
-      {
-        ...newCall('hunt'),
-        jobs: [posted],
-      },
-    );
+    const elsewhere = await mergeJob(posted, board, null, { jobs, busy }, analyzing(posted));
     expect(elsewhere).toContain('Another of Claude’s tasks is working on the other job');
     expect(tracker.resolve(board)).toBe(board);
-    // Both jobs this run's own, as when the user picked them both to analyze.
+    // Both jobs this run's own, as when the user picked them both to analyze: the one merged is
+    // done with the other, which the run's tab counts.
+    const done: string[] = [];
     const own = await mergeJob(
       posted,
       board,
       null,
       { jobs, busy },
-      {
-        ...newCall('hunt'),
-        jobs: [posted, board],
-      },
+      { ...analyzing(posted, board), analyzed: (jobId) => done.push(jobId) },
     );
     expect(own).toMatch(/^Merged/);
+    expect(own).toContain(`Job ${board} was one of this run’s jobs: it’s done with this one`);
+    expect(done).toEqual([board]);
   });
 
   it('says so for a job that isn’t on file, or one merged already', async () => {
@@ -141,10 +142,30 @@ describe('merge_job', () => {
       'https://apply.workable.com/seeq',
     );
     jobs.read();
-    await expect(mergeJob(posted, 'gone--job', null, { jobs })).rejects.toThrow(
+    await expect(mergeJob(posted, 'gone--job', null, { jobs }, analyzing(posted))).rejects.toThrow(
       'Nothing on file for gone--job.',
     );
-    await mergeJob(posted, board, null, { jobs });
-    expect(await mergeJob(posted, board, null, { jobs })).toContain('are one job already');
+    await mergeJob(posted, board, null, { jobs }, analyzing(posted));
+    expect(await mergeJob(posted, board, null, { jobs }, analyzing(posted))).toContain(
+      'are one job already',
+    );
+  });
+
+  it('merges only into a job the run analyzes, never in any other run', async () => {
+    const posted = save('Seeq', 'AI Software Engineer, Staff/Principal', POSTING);
+    const board = add(
+      'Seeq',
+      'AI Software Engineer, Staff/Principal',
+      'https://apply.workable.com/seeq',
+    );
+    jobs.read();
+    // A run with no task, a run on other jobs, and the IDs the wrong way round.
+    for (const call of [undefined, newCall('hunt'), analyzing('acme--staff'), analyzing(board)]) {
+      await expect(mergeJob(posted, board, null, { jobs }, call)).rejects.toThrow(
+        /^merge_job is for Analyze job/,
+      );
+    }
+    expect(tracker.resolve(board)).toBe(board);
+    expect(jobs.job(posted)?.maybeSame).toEqual([]);
   });
 });

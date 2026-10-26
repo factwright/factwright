@@ -35,6 +35,12 @@ export async function mergeJob(
   deps.jobs.read();
   const job = deps.jobs.job(jobId);
   if (!job) throw new Error(`Nothing on file for ${jobId}.`);
+  // Only a run analyzing the job merges another into it, or notes one on it.
+  if (!call?.jobs?.includes(jobId) && !call?.jobs?.includes(job.id)) {
+    throw new Error(
+      `merge_job is for Analyze job, into a job the app started this run on, and ${jobId} isn’t one. Leave the two as they are, and say in a line which job it might be: the user can merge them with Merge with… in the job’s panel.`,
+    );
+  }
   const other = deps.jobs.job(otherId);
   if (!other) throw new Error(`Nothing on file for ${otherId}.`);
   if (other.id === job.id) return `${named(job)} and ${otherId} are one job already.`;
@@ -46,9 +52,17 @@ export async function mergeJob(
   if (sure && !elsewhere) {
     const merged = await deps.jobs.mergeJobs(job.id, other.id);
     if (!merged.ok) throw new Error(merged.message);
+    // Another of the run's own jobs is done once it's part of this one, and its tab counts it.
+    const ours = call?.jobs?.includes(other.id) ?? false;
+    if (ours) call?.analyzed?.(other.id);
     return [
       `Merged ${named(other)} into ${named(job)}, as ${SURE[sure]}.`,
       `Its status, notes, calls and links are job ${job.id}’s now. Go on with job ${job.id}.`,
+      ...(ours
+        ? [
+            `Job ${other.id} was one of this run’s jobs: it’s done with this one, so don’t analyze it on its own.`,
+          ]
+        : []),
     ].join(' ');
   }
   const noted = deps.jobs.noteMaybeSame(job.id, other.id, why);

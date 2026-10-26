@@ -698,6 +698,29 @@ describe('mergeJobs', () => {
     expect(row(other)).toMatchObject({ status: 'applied', appliedOn: TODAY });
   });
 
+  it('keeps a decision the user made over New from a later save, whatever the day', () => {
+    // Passed on, with why and a day to come back, and set aside, before the job was saved again.
+    tracker.updateJob(
+      'acme--staff',
+      { status: 'passed', passReason: 'pay', archived: true },
+      { today: '2026-10-08', now: '2026-10-08T18:00:00.000Z' },
+    );
+    tracker.updateJob(other, { status: 'new' }, LATER);
+    tracker.mergeJobs(other, 'acme--staff', LATER);
+    expect(row(other)).toMatchObject({
+      status: 'passed',
+      statusOn: '2026-10-08',
+      passReason: 'pay',
+      archived: true,
+    });
+    // Two of the user's: the later.
+    const third = 'acme--staff-3';
+    tracker.saveCollected([collected(third)], NOW);
+    tracker.updateJob(third, { status: 'apply' }, LATER);
+    tracker.mergeJobs(other, third, LATER);
+    expect(row(other)).toMatchObject({ status: 'apply', statusOn: '2026-10-14' });
+  });
+
   it('keeps the pay to ask for the job kept has, or else the other’s', () => {
     tracker.updateJob(other, { payAsk: '$180,000' }, AT);
     tracker.mergeJobs('acme--staff', other, AT);
