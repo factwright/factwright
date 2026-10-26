@@ -119,6 +119,10 @@ export interface ListenOptions {
   keep?: (path: string) => void;
   /** Hears each page one of Factwright's tools read, by its address. */
   read?: (url: string) => void;
+  /** The jobs the run's task is on, by their IDs. */
+  jobs?: readonly string[];
+  /** Hears each job the run finished analyzing, by its ID. */
+  analyzed?: (jobId: string) => void;
   /** Hears which MCP methods the run calls. */
   tools?: ToolsListener;
   /** What the run may change without asking. Every run but getting started is "hunt". */
@@ -210,6 +214,8 @@ export class RunServer {
       before,
       keep,
       read,
+      jobs,
+      analyzed,
       tools,
       scope = 'hunt',
       onFiled,
@@ -234,7 +240,7 @@ export class RunServer {
       context,
       held,
       allowed: [],
-      call: { ...newCall(scope, onFiled, revision, changes), keep, read },
+      call: { ...newCall(scope, onFiled, revision, changes), keep, read, jobs, analyzed },
     });
     return () => {
       this.listeners.delete(token);

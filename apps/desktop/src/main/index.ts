@@ -2,7 +2,7 @@ import { appendFileSync, existsSync, realpathSync, statSync, writeFileSync } fro
 import { readFile } from 'node:fs/promises';
 import { dirname, join, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { INBOX_FOLDER } from '@factwright/core';
+import { INBOX_FOLDER, localDate } from '@factwright/core';
 import {
   app,
   autoUpdater as macInstaller,
@@ -21,6 +21,7 @@ import type { RunTask } from '../shared/runs.ts';
 import { TemplatePreviews } from './about/previews.ts';
 import { PrivateAnswers } from './about/private.ts';
 import { AboutStore } from './about/store.ts';
+import { AnalyzeNew } from './claude/analyze-new.ts';
 import { loadAtOnce } from './claude/at-once.ts';
 import { Desk, fromRun } from './claude/desk.ts';
 import { useClaudeFolder } from './claude/launch.ts';
@@ -302,6 +303,8 @@ function start(home: string, profile: ProfileFolder, stopped: ProfileFolder | nu
         reminders.check({ synced: true });
       },
     });
+    // Claude analyzing new jobs on its own, once everything it needs is open, further down.
+    let analyzeNew: AnalyzeNew | null = null;
     const jobs = new JobsService({
       workspace,
       tracker,
@@ -310,6 +313,8 @@ function start(home: string, profile: ProfileFolder, stopped: ProfileFolder | nu
         window.send('jobs:changed', list);
         sync.requestSync();
         reminders.check();
+        // A job saved may be one for Claude to analyze on its own.
+        analyzeNew?.look();
       },
     });
     jobs.read();
@@ -326,7 +331,16 @@ function start(home: string, profile: ProfileFolder, stopped: ProfileFolder | nu
     const printer = new ElectronResumePrinter();
     const previews = new TemplatePreviews(printer, templates);
     const server = new RunServer({
-      tools: factwrightTools({ jobs, about, facts: about.facts, workspace, printer, templates }),
+      tools: factwrightTools({
+        jobs,
+        about,
+        facts: about.facts,
+        workspace,
+        printer,
+        templates,
+        // Analyze job merges a job only while no other task is on it.
+        busy: (jobId) => claude.holds(jobId),
+      }),
       version: app.getVersion(),
     });
     await server.start();
@@ -381,7 +395,12 @@ function start(home: string, profile: ProfileFolder, stopped: ProfileFolder | nu
         ),
       prepare: taskPreparer({ dataDir, revisions, versions }),
       atOnce,
-      onView: (view) => window.send('claude:runs', view),
+      onView: (view) => {
+        window.send('claude:runs', view);
+        // A run that ended, or a slot that freed, may let Claude analyze new jobs on its own.
+        analyzeNew?.look();
+      },
+      onOwnEnded: (run, end, analyzed) => analyzeNew?.ended(run, end, analyzed),
       onOutput: (runId, data) => window.send('claude:output', { runId, data }),
       onSignal: (run, signal) => {
         notifyIfAway(window, signal);
@@ -515,6 +534,26 @@ function start(home: string, profile: ProfileFolder, stopped: ProfileFolder | nu
       }),
     });
     await setup.load();
+    // Claude analyzing new jobs on its own while it's free, once Claude Code is ready and past its
+    // first screens, with the window open to show its run. The tests turn it off, or wait less.
+    let claudeReady = false;
+    const analyzing = new AnalyzeNew({
+      dataDir,
+      jobs: () => jobs.list().jobs,
+      runs: claude,
+      ready: () =>
+        claudeReady &&
+        develop('FACTWRIGHT_ANALYZE_NEW') !== 'off' &&
+        window.current() !== null &&
+        (claude.view().setUp || setup.current()?.result === 'passed'),
+      today: () => localDate(new Date()),
+      ...(develop('FACTWRIGHT_ANALYZE_WAIT_MS') && {
+        quietMs: Number(develop('FACTWRIGHT_ANALYZE_WAIT_MS')),
+      }),
+    });
+    await analyzing.load();
+    analyzeNew = analyzing;
+    analyzing.look();
     // A copy installed from Factwright's own release keeps itself up to date. One being
     // developed, or built anywhere else, such as from a fork, has no update settings and doesn't,
     // and the end-to-end tests turn it off.
@@ -566,6 +605,11 @@ function start(home: string, profile: ProfileFolder, stopped: ProfileFolder | nu
       saveHelper,
       tellRunDone: (note) => notifyRunDone(window, note, () => window.send('claude:open-result')),
       runRequests,
+      analyzeNew: analyzing,
+      onClaudeStatus: (status) => {
+        claudeReady = status.state === 'ready';
+        analyzing.look();
+      },
       formFeed: formFeedFile
         ? async () => JSON.parse(await readFile(formFeedFile, 'utf8')) as unknown
         : undefined,
@@ -595,6 +639,7 @@ function start(home: string, profile: ProfileFolder, stopped: ProfileFolder | nu
       profiles.started();
       updates?.stop();
       reminders.stop();
+      analyzing.stop();
       claude.closeAll();
       setup.stop();
       server.stop();

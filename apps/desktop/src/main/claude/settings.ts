@@ -28,7 +28,7 @@ const HOOK_SECONDS = 5;
  */
 export const ANSWER_WAIT_SECONDS = 24 * 60 * 60;
 
-/** The plugin's name in its plugin.json, which names its skills, as in /factwright:fit-check. */
+/** The plugin's name in its plugin.json, which names its skills, as in /factwright:analyze-job. */
 const PLUGIN = 'factwright';
 
 /**
@@ -83,7 +83,7 @@ const LOGS_THE_APP_WRITES = Object.values(LOGS).map((log) => log.path);
  * posts. Getting started and adding facts change the user's facts, a run for their work history
  * their Profile, and a template run their templates, so nothing they read may come from a page
  * that could tell them what to write. A revision reads what an X-ray found in a posting already.
- * Job searches and fit checks get runs of their own.
+ * Job searches and analyzing jobs get runs of their own.
  */
 const OFF_THE_WEB = [
   'WebSearch',

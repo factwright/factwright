@@ -10,7 +10,7 @@ import type {
 } from '../../shared/api.ts';
 import type { FiledFacts } from '../../shared/facts.ts';
 import type { RunChanges as RunChangesView } from '../../shared/run-changes.ts';
-import { AT_ONCE, lanesOf, type RunTask } from '../../shared/runs.ts';
+import { AT_ONCE, lanesOf, type RunTask, startedOnItsOwn, taskJobs } from '../../shared/runs.ts';
 import type { OpenRun, RunEvents, RunOptions, RunScreen } from './session.ts';
 
 /**
@@ -51,6 +51,11 @@ export interface ClaudeRunsDeps {
   onTurnEnd?: (runId: string, end: TurnEnd) => void;
   onFiled?: (runId: string, filed: FiledFacts) => void;
   onChanges?: (runId: string, changes: RunChangesView) => void;
+  /**
+   * Hears a run that started on its own end: done, stopped, failed, closed, or stepping aside for
+   * a task of the user's, with the jobs it finished analyzing.
+   */
+  onOwnEnded?: (run: RunHeard, end: OwnEnd, analyzed: readonly string[]) => void;
   now?: () => number;
   /**
    * How long the first run waits for its terminal to say its size, before it starts at a size
@@ -59,12 +64,22 @@ export interface ClaudeRunsDeps {
   sizeWaitMs?: number;
 }
 
+/**
+ * How a run that started on its own ended: it stepped aside for a task the user started, which
+ * would have waited for it, or it was done, stopped by the user, closed, or failed.
+ */
+export type OwnEnd = 'stepped-aside' | 'ended';
+
 /** One of Claude's runs, or a task waiting in line for one. */
 interface Entry {
   id: string;
   task: RunTask | null;
   /** What it works on, which no two runs going at once share. */
   lanes: string[];
+  /** Whether it started on its own, so it steps aside for any task the user starts. */
+  own: boolean;
+  /** The jobs of its task it has finished analyzing, by their IDs. */
+  analyzed: Set<string>;
   phase: RunPhase;
   waits: LineWait | null;
   screen: RunScreen | null;
@@ -112,6 +127,8 @@ export class ClaudeRuns {
   private count = 0;
   /** Whether a run got past Claude Code's first screens, so the rest skip them. */
   private pastScreens = false;
+  /** Whether a run of Claude's own met one of those screens, which only the user answers. */
+  private screened = false;
   /** The size the last terminal said, which each run starts at. */
   private size: TerminalSize | null = null;
   /** Runs waiting for a terminal to say its size. */
@@ -132,11 +149,43 @@ export class ClaudeRuns {
    * with no task, which waits for what the user types, never waits for its turn.
    */
   start(task: RunTask | null): string {
+    const entry = this.entryFor(task);
+    this.entries.push(entry);
+    this.pump();
+    return entry.id;
+  }
+
+  /**
+   * Starts a run on a task of Claude's own, such as analyzing the jobs saved since it was last
+   * free, only if it can start now: with fewer going than may at once, nothing in line, none of its
+   * jobs taken, and no run getting past Claude Code's first screens. It never waits in line, and it
+   * steps aside for any task the user starts that would otherwise wait for it, and as soon as
+   * Claude Code shows it a screen of its own, which only the user answers: then none starts until
+   * a run of the user's is past them. Answers with its ID, or null when it can't start now.
+   */
+  startOwn(task: RunTask): string | null {
+    const going = this.entries.filter(hasWork);
+    const taken = new Set(going.flatMap((entry) => entry.lanes));
+    const free =
+      (this.pastScreens || (!this.screened && !this.entries.some(isSettingUp))) &&
+      !this.entries.some((entry) => entry.phase === 'in-line') &&
+      going.length < this.atOnce &&
+      !lanesOf(task).some((lane) => taken.has(lane));
+    if (!free) return null;
+    const entry = { ...this.entryFor(task), own: true };
+    this.entries.push(entry);
+    this.pump();
+    return entry.id;
+  }
+
+  private entryFor(task: RunTask | null): Entry {
     this.count += 1;
-    this.entries.push({
+    return {
       id: `run-${this.count}`,
       task,
       lanes: lanesOf(task),
+      own: startedOnItsOwn(task),
+      analyzed: new Set(),
       phase: 'in-line',
       waits: 'turn',
       screen: null,
@@ -146,9 +195,7 @@ export class ClaudeRuns {
       typed: '',
       stopped: false,
       closed: false,
-    });
-    this.pump();
-    return `run-${this.count}`;
+    };
   }
 
   /** Every run whose tab is open, and every task in line, and what each is for. */
@@ -160,6 +207,14 @@ export class ClaudeRuns {
   setAtOnce(count: number): void {
     this.atOnce = count;
     this.pump();
+  }
+
+  /** Whether a task is going, or waits in line, on a job, by its ID. */
+  holds(jobId: string): boolean {
+    return this.entries.some(
+      (entry) =>
+        (entry.phase === 'in-line' || hasWork(entry)) && entry.lanes.includes(`job:${jobId}`),
+    );
   }
 
   /** Whether a run is open or starting, or a task waits in line. */
@@ -246,14 +301,30 @@ export class ClaudeRuns {
 
   /** Closes a run's tab: its Claude Code quits, if it's open, and a task in line leaves it. */
   close(id: string): void {
-    const at = this.entries.findIndex((entry) => entry.id === id);
-    const entry = this.entries[at];
+    const entry = this.entry(id);
     if (!entry) return;
-    this.entries.splice(at, 1);
+    this.closeEntry(entry, 'ended');
+    this.pump();
+  }
+
+  /** Takes a run off the tabs, quitting its Claude Code, as its tab closes, or as it steps aside. */
+  private closeEntry(entry: Entry, end: OwnEnd): void {
+    const at = this.entries.indexOf(entry);
+    if (at >= 0) this.entries.splice(at, 1);
     entry.closed = true;
     entry.stopped = true;
     entry.run?.stop();
-    this.pump();
+    this.ownEnded(entry, end);
+  }
+
+  /**
+   * Tells the app a run that started on its own ended, and how, once: as it's done, stops,
+   * fails, closes or steps aside, whichever comes first. From then on it's like any other run.
+   */
+  private ownEnded(entry: Entry, end: OwnEnd): void {
+    if (!entry.own) return;
+    entry.own = false;
+    this.deps.onOwnEnded?.(heardOf(entry), end, [...entry.analyzed]);
   }
 
   private entry(id: string): Entry | undefined {
@@ -263,13 +334,30 @@ export class ClaudeRuns {
   /**
    * Starts what can start, in the order it was asked for: a task whose job, or part of the job
    * hunt, no other has going or waits for ahead of it, while fewer run than may at once, and
-   * only one at a time until a run is past Claude Code's first screens. Then tells the window.
+   * only one at a time until a run is past Claude Code's first screens. A run that started on its
+   * own steps aside first for a task in line that would start without it. Then tells the window.
    */
   private pump(): void {
-    let going = this.entries.filter(hasWork).length;
-    const lanes = new Set(this.entries.filter(hasWork).flatMap((entry) => entry.lanes));
-    let settingUp = !this.pastScreens && this.entries.some(isSettingUp);
-    for (const entry of this.entries) {
+    for (const own of this.entries.filter((entry) => entry.own && entry.phase !== 'in-line')) {
+      const without = this.entries.filter((entry) => entry !== own);
+      if (this.starts(without).length > this.starts(this.entries).length) {
+        this.closeEntry(own, 'stepped-aside');
+      }
+    }
+    for (const entry of this.starts(this.entries, true)) void this.launch(entry);
+    this.deps.onView(this.view());
+  }
+
+  /**
+   * The tasks in line that would start now, of some runs, in order. Marking them says what each
+   * of the rest waits for.
+   */
+  private starts(entries: readonly Entry[], mark = false): Entry[] {
+    let going = entries.filter(hasWork).length;
+    const lanes = new Set(entries.filter(hasWork).flatMap((entry) => entry.lanes));
+    let settingUp = !this.pastScreens && entries.some(isSettingUp);
+    const starting: Entry[] = [];
+    for (const entry of entries) {
       if (entry.phase !== 'in-line') continue;
       const waits: LineWait | null = entry.lanes.some((lane) => lanes.has(lane))
         ? 'job'
@@ -280,13 +368,13 @@ export class ClaudeRuns {
             : null;
       // A task in line keeps its job for itself, ahead of the ones after it.
       for (const lane of entry.lanes) lanes.add(lane);
-      entry.waits = waits;
+      if (mark) entry.waits = waits;
       if (waits) continue;
       if (entry.task) going += 1;
       settingUp = !this.pastScreens;
-      void this.launch(entry);
+      starting.push(entry);
     }
-    this.deps.onView(this.view());
+    return starting;
   }
 
   /** Starts a run that's had its turn: its task made ready, a size for it, then Claude Code. */
@@ -346,7 +434,7 @@ export class ClaudeRuns {
   /** What a run tells the app, as its own, until its tab closes. */
   private eventsOf(entry: Entry): RunEvents {
     const live = () => !entry.closed;
-    const heard = () => ({ id: entry.id, task: entry.task });
+    const heard = () => heardOf(entry);
     return {
       output: (data) => {
         if (live()) this.deps.onOutput(entry.id, data);
@@ -355,6 +443,8 @@ export class ClaudeRuns {
         if (!live()) return;
         const changed = entry.phase !== signal || entry.screen !== null;
         entry.phase = signal;
+        // Claude finished the task it started on its own.
+        if (signal === 'done') this.ownEnded(entry, 'ended');
         // Any signal means Claude Code is past its first-run screens and the question about trust.
         entry.screen = null;
         this.deps.onSignal?.(heard(), signal);
@@ -363,6 +453,13 @@ export class ClaudeRuns {
       },
       screen: (screen) => {
         if (!live() || entry.screen === screen) return;
+        // A run of Claude's own leaves the user's answer to a run of their own.
+        if (screen && entry.own) {
+          this.screened = true;
+          this.closeEntry(entry, 'stepped-aside');
+          this.pump();
+          return;
+        }
         entry.screen = screen;
         if (screen) this.deps.onScreen?.(heard(), screen);
         this.deps.onView(this.view());
@@ -384,6 +481,12 @@ export class ClaudeRuns {
       changes: (changes) => {
         if (live()) this.deps.onChanges?.(entry.id, changes);
       },
+      // A job of its own task it finished, which its tab counts.
+      analyzed: (jobId) => {
+        if (!live() || !taskJobs(entry.task).includes(jobId) || entry.analyzed.has(jobId)) return;
+        entry.analyzed.add(jobId);
+        this.deps.onView(this.view());
+      },
       exit: (signal) => this.ended(entry, signal),
     };
   }
@@ -397,7 +500,8 @@ export class ClaudeRuns {
       return;
     }
     entry.phase = signal;
-    this.deps.onSignal?.({ id: entry.id, task: entry.task }, signal);
+    this.ownEnded(entry, 'ended');
+    this.deps.onSignal?.(heardOf(entry), signal);
     this.pump();
   }
 
@@ -410,6 +514,7 @@ export class ClaudeRuns {
     }
     entry.phase = 'failed';
     entry.problem = problem;
+    this.ownEnded(entry, 'ended');
     this.pump();
   }
 
@@ -424,6 +529,9 @@ const hasWork = (entry: Entry) => WORK.includes(entry.phase);
 /** Whether a run is starting: until its first signal, Claude Code may still show its first screens. */
 const isSettingUp = (entry: Entry) => entry.phase === 'starting';
 
+/** A run as the app hears of it. */
+const heardOf = (entry: Entry): RunHeard => ({ id: entry.id, task: entry.task });
+
 function viewOf(entry: Entry): RunView {
   return {
     id: entry.id,
@@ -433,5 +541,6 @@ function viewOf(entry: Entry): RunView {
     screen: entry.screen,
     startedAt: entry.startedAt,
     problem: entry.problem,
+    analyzed: [...entry.analyzed],
   };
 }

@@ -55,7 +55,7 @@ import type {
   UndoneResult,
 } from '../../shared/api.ts';
 import { readShot, saveShot, shotFile } from './shots.ts';
-import type { EditContext, Tracker } from './tracker.ts';
+import type { EditContext, NotedResult, Tracker } from './tracker.ts';
 import { diskWorkspace, watchWorkspace } from './workspace.ts';
 
 /**
@@ -298,6 +298,29 @@ export class JobsService {
     } catch {
       return null;
     }
+  }
+
+  /**
+   * Notes that another job might be this one, as Analyze job found without being sure enough to
+   * merge them, for the user to merge them or not. A pair the user said isn't the same isn't.
+   */
+  noteMaybeSame(jobId: string, otherId: string, why: string | null): NotedResult {
+    const result = this.deps.tracker.noteMaybeSame(jobId, otherId, why, this.context());
+    if (result.ok && result.noted) this.deps.onChange(this.list());
+    return result;
+  }
+
+  /** Keeps the user's word that two jobs aren't the same, so the note that they might be goes. */
+  notSame(jobId: string, otherId: string): EditResult {
+    return this.saved(this.deps.tracker.notSame(jobId, otherId, this.context()));
+  }
+
+  /** Whether the user said two jobs aren't the same, either way round. */
+  saidNotSame(jobId: string, otherId: string): boolean {
+    const rows = this.deps.tracker.rows();
+    const job = rows.find((row) => row.id === jobId);
+    const other = rows.find((row) => row.id === otherId);
+    return Boolean(job && other && this.deps.tracker.saidNotSame(job, other));
   }
 
   /**

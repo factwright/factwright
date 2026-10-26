@@ -138,6 +138,8 @@ export interface RunOptions {
   revision?: BoundRevision | undefined;
   /** The changes the user asked for, which its calls to requested_changes read. */
   changes?: BoundChanges | undefined;
+  /** The jobs its task is on, by their IDs, which its tool calls know as its own. */
+  jobs?: readonly string[] | undefined;
 }
 
 /** What a run needs from the app: where things live, and who answers what it asks the user. */
@@ -185,6 +187,8 @@ export interface RunEvents {
   filed?: (filed: FiledFacts) => void;
   /** What its task changed: nothing as it starts, then once each turn of it ends. */
   changes?: (changes: RunChangesView) => void;
+  /** It finished analyzing one of its task's jobs, by the job's ID. */
+  analyzed?: (jobId: string) => void;
   /** It closed: stopped, by the user or as Claude Code quit, or failed. */
   exit: (signal: 'stopped' | 'failed') => void;
 }
@@ -215,7 +219,7 @@ export async function openRun(
   deps: RunDeps,
   events: RunEvents,
 ): Promise<OpenRun | 'not-ready' | 'failed'> {
-  const { prompt, choose, scope = 'hunt', revision, changes } = options;
+  const { prompt, choose, scope = 'hunt', revision, changes, jobs } = options;
   const launch = await prepareLaunch({
     dataDir: deps.dataDir,
     pluginDir: deps.pluginDir,
@@ -289,6 +293,8 @@ export async function openRun(
       context: { workspace: launch.cwd, templateName: deps.templateName },
       ...(revision && { revision }),
       ...(changes && { changes }),
+      ...(jobs && { jobs }),
+      ...(events.analyzed && { analyzed: events.analyzed }),
     },
   );
   let terminal: IPty;

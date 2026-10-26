@@ -2,16 +2,18 @@ import { randomBytes } from 'node:crypto';
 import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { basename, dirname, join } from 'node:path';
 import { WORKSPACE_PATHS } from '@factwright/core';
+import { JOB_ID } from '../policy.ts';
 
 /**
  * The job hunt's logs, which the skills add a row to as they go: a fit check's verdict, a salary
  * check's estimate, and the employer an unmasked listing hides. Each one's columns, in its
- * table's order, and the ones a row must have.
+ * table's order, and the ones a row must have. A fit check names the job it's for by its ID, so
+ * its score stays with that job, whatever other job has the same company and title.
  */
 export const LOGS = {
   'fit-checks': {
     path: WORKSPACE_PATHS.fitChecks,
-    columns: ['Date', 'Company', 'Role', 'Verdict', 'Score', 'Link', 'Pay', 'Note'],
+    columns: ['Date', 'Company', 'Role', 'Verdict', 'Score', 'Link', 'Pay', 'Note', 'Job'],
     needs: ['company', 'role', 'verdict'],
   },
   'salary-checks': {
@@ -56,9 +58,18 @@ function headingsOf(line: string): string[] {
     .map((cell) => cell.trim().toLowerCase());
 }
 
+/** A table's line with more cells at its end, such as a heading, or its rule under them. */
+function withCells(line: string, cells: readonly string[]): string {
+  const trimmed = line.trimEnd();
+  const open = trimmed.endsWith('|') ? trimmed.slice(0, -1).trimEnd() : trimmed;
+  return `${open} | ${cells.join(' | ')} |`;
+}
+
 /**
  * A log's text with one more row, at the end of its table, in the columns its table has: a log
- * that isn't there, or has no table, gets the table first, with its heading.
+ * that isn't there, or has no table, gets the table first, with its heading. A table from before
+ * the log had a column the row fills, such as the fit checks' Job, gets that column at its end;
+ * the rows before it leave it blank.
  */
 export function withRow(text: string | null, log: LogName, row: Record<string, string>): string {
   const { columns } = LOGS[log];
@@ -74,6 +85,14 @@ export function withRow(text: string | null, log: LogName, row: Record<string, s
     (each, at) => each.trim().startsWith('|') && RULE.test(lines[at + 1] ?? ''),
   );
   if (start < 0) return `${text.trimEnd()}${newline}${newline}${fresh.join(newline)}${newline}`;
+  const had = headingsOf(lines[start] ?? '');
+  const gained = columns.filter(
+    (column) => !had.includes(column.toLowerCase()) && row[column.toLowerCase()],
+  );
+  if (gained.length > 0) {
+    lines[start] = withCells(lines[start] ?? '', gained);
+    lines[start + 1] = withCells(lines[start + 1] ?? '', gained.map(() => '---'));
+  }
   let end = start + 2;
   while (end < lines.length && (lines[end] ?? '').trim().startsWith('|')) end += 1;
   lines.splice(end, 0, rowOf(headingsOf(lines[start] ?? '')));
@@ -109,6 +128,12 @@ export function logRow(log: LogName, given: unknown, today: string): Record<stri
   const score = row.score;
   if (score && !(/^\d{1,3}$/.test(score) && Number(score) <= 100)) {
     throw new Error('Give the score as a whole number from 0 to 100, or leave it out.');
+  }
+  if (row.job !== undefined) {
+    row.job = row.job.replace(/^`|`$/g, '').toLowerCase();
+    if (!JOB_ID.test(row.job)) {
+      throw new Error('Give the job by its id, such as acme-robotics--staff-engineer.');
+    }
   }
   const missing = LOGS[log].needs.filter((column) => !row[column]);
   if (missing.length > 0) throw new Error(`Give the ${missing.join(', ')} for ${log}.`);

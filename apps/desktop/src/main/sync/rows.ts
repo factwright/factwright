@@ -6,10 +6,11 @@ import type { SyncState } from './state.ts';
 
 /**
  * How each tracker table merges when two devices change the same row. A job's links,
- * application questions, the answers the user sent and the questions they asked Claude keep
- * what either device added, its earlier notes keep both texts, and on a clash the later change
- * wins, by when the row changed. A call's notes and how it went keep both too, its people keep
- * whoever either device added, by name, and a note's text keeps both.
+ * application questions, the answers the user sent, the questions they asked Claude and the jobs
+ * Claude noted might be the same keep what either device added, its earlier notes keep both
+ * texts, and on a clash the later change wins, by when the row changed. A call's notes and how it
+ * went keep both too, its people keep whoever either device added, by name, and a note's text
+ * keeps both.
  */
 export const MERGE_RULES: Record<SyncTable, MergeRules> = {
   jobs: {
@@ -23,6 +24,12 @@ export const MERGE_RULES: Record<SyncTable, MergeRules> = {
         return `${questionKey(String(question ?? ''))}#${Number(nth ?? 0)}\u0000${String(text ?? '')}`;
       },
       asks: (ask) => String((ask as { id?: unknown } | null)?.id ?? ''),
+      // The user saying two jobs aren't the same is a note gone and back again, as with the
+      // answers sent, so it stays whatever the other device noted meanwhile.
+      maybe_same: (note) => {
+        const { id, notSame } = (note ?? {}) as Record<string, unknown>;
+        return `${String(id ?? '')}\u0000${notSame === true}`;
+      },
     },
     texts: ['notes'],
     stamp: 'updated_at',

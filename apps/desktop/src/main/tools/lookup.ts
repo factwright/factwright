@@ -26,6 +26,7 @@ import {
   kindNamed,
   localDate,
   matchJobs,
+  type OwnDetails,
   PASS_REASON_LABELS,
   PASS_REASONS,
   type PassReason,
@@ -312,12 +313,34 @@ const MODE_WORDS: Readonly<Record<CallMode, string>> = {
   onsite: 'in person',
 };
 
+/** Each detail the user set, as job_details names it. */
+const OWN_WORDS: Readonly<Record<keyof OwnDetails, string>> = {
+  company: 'company',
+  role: 'role',
+  pay: 'pay',
+  location: 'place',
+};
+
+/**
+ * The details the user set in the job's panel, which win over the posting and which Claude never
+ * changes: "company “HealthEquity”, place “Remote (US)”". Null for none.
+ */
+function ownDetails(own: OwnDetails): string | null {
+  const set = (Object.keys(OWN_WORDS) as (keyof OwnDetails)[]).flatMap((field) => {
+    const value = own[field];
+    return value ? [`${OWN_WORDS[field]} “${value}”`] : [];
+  });
+  return set.length > 0 ? set.join(', ') : null;
+}
+
 /**
  * Everything on file for a job, as Markdown: where it stands and its kind of job, its dates, the
- * user's notes, each call with who it's with and how it went, the job's history, a line for each
- * file on record, the application's questions with what the user actually sent, and the
- * questions they asked Claude about it, then the user's other jobs at the company. The notes and
- * calls can name people, which is the user's own information for their own Claude.
+ * details the user set, the user's notes, each call with who it's with and how it went, the
+ * job's history, the jobs Claude noted might be the same one, a line for each file on record,
+ * the application's questions with what the user actually sent, and the questions they asked
+ * Claude about it, then the user's other jobs at the company. The notes and calls can name
+ * people, which is the user's own information for their own Claude. `lookUp` finds another job by
+ * its ID, to name the ones that might be this one.
  */
 export async function jobDetails(
   job: Job,
@@ -325,6 +348,7 @@ export async function jobDetails(
   today: string,
   kinds: readonly KindName[] = [],
   others: readonly Job[] = [],
+  lookUp: (id: string) => Job | null = () => null,
 ): Promise<string> {
   const { status } = jobProgress(job, today);
   const { asked, shots, posting } = readJobExtras(diskWorkspace(workspace), job.id);
@@ -357,6 +381,11 @@ export async function jobDetails(
       : job.suggestedAsk && `${job.suggestedAsk}, as job.md suggests`,
   );
   add('Where', job.location);
+  add(
+    'The user’s own details',
+    ownDetails(job.own) &&
+      `${ownDetails(job.own)}. They win over the posting: write them as they are, and never change them.`,
+  );
   add('Summary', job.summary);
   add(
     'Next step',
@@ -434,6 +463,29 @@ export async function jobDetails(
     ),
   ].sort();
   if (history.length > 0) out.push('- History:', ...history);
+  // The jobs Claude noted might be this one, while both are on file, and the ones the user said
+  // aren't.
+  const noted = job.maybeSame.flatMap((each) => {
+    const other = lookUp(each.id);
+    return other && other.id !== job.id ? [{ ...each, other }] : [];
+  });
+  const maybe = noted.filter((each) => !each.notSame);
+  const not = noted.filter((each) => each.notSame);
+  if (maybe.length > 0) {
+    out.push(
+      '- Might be the same job, as noted for the user to merge or not:',
+      ...maybe.map(
+        ({ other, on, why }) =>
+          `    ${name(other)} (job ${other.id}), noted ${on}${why ? `: ${why}` : ''}`,
+      ),
+    );
+  }
+  if (not.length > 0) {
+    out.push(
+      '- The user said it isn’t the same job as:',
+      ...not.map(({ other }) => `    ${name(other)} (job ${other.id})`),
+    );
+  }
 
   const files = await catalog(job, workspace, shots);
   if (files.length > 0) {

@@ -1,6 +1,6 @@
 import type { PlanLevels } from './levels.ts';
 import { REVISE_SKILL } from './revision.ts';
-import { HUNT_SKILLS, RUN_SKILLS, type RunTask, THANKS_SKILL } from './runs.ts';
+import { EARLIER_SKILLS, HUNT_SKILLS, RUN_SKILLS, type RunTask, THANKS_SKILL } from './runs.ts';
 
 /**
  * The models a run can use, by Claude Code's names for them. Each name means the newest model
@@ -26,7 +26,7 @@ export const RECOMMENDED_MODELS: Readonly<Record<ModelTask, Model>> = {
   'focused-resume': 'opus',
   'cover-letter': 'opus',
   'projects-page': 'opus',
-  'fit-check': 'opus',
+  'analyze-job': 'opus',
   'salary-check': 'opus',
   'who-to-message': 'opus',
   'interview-prep': 'opus',
@@ -47,7 +47,7 @@ export const PRO_MODELS: Readonly<Record<ModelTask, Model>> = {
   'focused-resume': 'opus',
   'cover-letter': 'opus',
   'projects-page': 'opus',
-  'fit-check': 'sonnet',
+  'analyze-job': 'sonnet',
   'salary-check': 'sonnet',
   'who-to-message': 'sonnet',
   'interview-prep': 'opus',
@@ -81,16 +81,29 @@ export const DEFAULT_MODELS: ModelChoices = { main: null, tasks: {} };
 const isModel = (value: unknown): value is Model =>
   typeof value === 'string' && (MODELS as readonly string[]).includes(value);
 
-/** Model choices from the window or a file, or null when they aren't ones the app knows. */
+/**
+ * A task's name in the window or a file, as the app knows it now: one an earlier version saved,
+ * such as a fit check's, by its name now. Null for one it doesn't know.
+ */
+export function taskNamed(name: string): ModelTask | null {
+  const now = EARLIER_SKILLS[name] ?? name;
+  return (MODEL_TASKS as readonly string[]).includes(now) ? (now as ModelTask) : null;
+}
+
+/**
+ * Model choices from the window or a file, or null when they aren't ones the app knows. A task an
+ * earlier version saved by another name keeps its choice, unless the file has one by its name now.
+ */
 export function parseModels(value: unknown): ModelChoices | null {
   if (typeof value !== 'object' || value === null) return null;
   const { main, tasks } = value as Record<string, unknown>;
   if (main !== null && !isModel(main)) return null;
   if (typeof tasks !== 'object' || tasks === null) return null;
   const chosen: Partial<Record<ModelTask, Model>> = {};
-  for (const [task, model] of Object.entries(tasks)) {
-    if (!(MODEL_TASKS as readonly string[]).includes(task) || !isModel(model)) return null;
-    chosen[task as ModelTask] = model;
+  for (const [name, model] of Object.entries(tasks)) {
+    const task = taskNamed(name);
+    if (!task || !isModel(model)) return null;
+    if (task === name || !(task in chosen)) chosen[task] = model;
   }
   return { main, tasks: chosen };
 }

@@ -1,7 +1,7 @@
 import { effortFor } from '../../shared/effort.ts';
 import { modelFor } from '../../shared/models.ts';
 import { REVISE_SKILL } from '../../shared/revision.ts';
-import { type RunTask, scopeOf } from '../../shared/runs.ts';
+import { type RunTask, scopeOf, taskJobs } from '../../shared/runs.ts';
 import type { Revisions } from '../jobs/revisions.ts';
 import type { Versions } from '../jobs/versions.ts';
 import { runPrompt } from '../policy.ts';
@@ -55,6 +55,7 @@ export function taskPreparer(deps: PrepareDeps): (task: RunTask | null) => Promi
           effort: effortFor(effort, task, levels),
         }),
         scope: scopeOf(task),
+        jobs: taskJobs(task),
         ...(revision && { revision }),
         ...(changes && { changes }),
       },

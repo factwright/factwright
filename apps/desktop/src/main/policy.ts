@@ -10,10 +10,12 @@ import {
   type TemplateChoice,
 } from '../shared/revision.ts';
 import {
+  ANALYZE_SKILL,
   FACTS_SKILL,
   GET_STARTED_SKILL,
   HISTORY_SKILL,
   MONTH,
+  MOST_TO_ANALYZE,
   RUN_SKILLS,
   type RunSkill,
   type RunTask,
@@ -186,6 +188,8 @@ export function parseSearchSources(value: unknown): SearchSources | null {
 export function parseRunTask(value: unknown): RunTask | null {
   if (typeof value !== 'object' || value === null) return null;
   const fields = value as Record<string, unknown>;
+  // Analyzing several jobs in one run.
+  if (fields.jobIds !== undefined) return parseAnalyzeTask(fields);
   // A new version, or the changes the user asked for, on one job.
   if (fields.again !== undefined || fields.changes !== undefined) return parseVersionTask(fields);
   if (fields.skill === REVISE_SKILL) return parseRevision(value);
@@ -270,9 +274,19 @@ export function parseRunTask(value: unknown): RunTask | null {
 }
 
 /**
- * A revision from the window: a job by its ID, a resume's file by its name, and the IDs of the
- * findings to fix, each once, with a choice for the template when one's given.
+ * Analyzing several jobs in one run: their IDs, each once, from one up to as many as one run
+ * takes, and whether Claude started it on its own.
  */
+function parseAnalyzeTask(fields: Record<string, unknown>): RunTask | null {
+  const { skill, jobIds, auto, ...rest } = fields;
+  if (Object.keys(rest).length > 0 || skill !== ANALYZE_SKILL) return null;
+  if (!Array.isArray(jobIds) || jobIds.length === 0 || jobIds.length > MOST_TO_ANALYZE) return null;
+  if (!jobIds.every((id) => typeof id === 'string' && JOB_ID.test(id))) return null;
+  if (new Set(jobIds).size !== jobIds.length) return null;
+  if (auto !== undefined && auto !== true) return null;
+  return { skill, jobIds: [...jobIds] as string[], ...(auto && { auto }) };
+}
+
 /**
  * A new version of a job's resume, letter or Projects page, a quick one of its resume, or changes
  * to its resume or letter.
@@ -296,6 +310,10 @@ function parseVersionTask(fields: Record<string, unknown>): RunTask | null {
   return null;
 }
 
+/**
+ * A revision from the window: a job by its ID, a resume's file by its name, and the IDs of the
+ * findings to fix, each once, with a choice for the template when one's given.
+ */
 function parseRevision(value: object): RunTask | null {
   const { skill, jobId, resume, findings, template, ...rest } = value as Record<string, unknown>;
   if (Object.keys(rest).length > 0 || skill !== REVISE_SKILL) return null;
@@ -354,6 +372,11 @@ export function runPrompt(task: RunTask): string {
     return `/factwright:${task.skill} ${what ? `${what}: ` : ''}${places.join(' · ')}`;
   }
   if ('source' in task) return `/factwright:${task.skill} from ${SOURCES_FOLDER}/${task.source}`;
+  // Several jobs by their IDs, and that Claude started it on its own, in words of the app's own.
+  if ('jobIds' in task) {
+    const own = task.auto ? ' on its own' : '';
+    return `/factwright:${task.skill} jobs ${task.jobIds.join(' ')}${own}`;
+  }
   // The findings by their IDs alone, which hold no posting's words. The run reads the resume
   // and what the findings say with revision_findings.
   if ('findings' in task) {
@@ -391,13 +414,23 @@ const QUICK_RESUME = /^\/(?:factwright:)?focused-resume(?:\s[\s\S]*)?\squick$/;
 export const QUICK_ASKS_NOTHING =
   'A quick resume asks the user nothing, so this wasn’t asked. Go on with the defaults and what’s on file, as the skill’s Quick resume section says, and put what you wanted to ask under What could make it stronger.';
 
+/** Analyzing several jobs in one run, as runPrompt types it or the user types it themselves. */
+const ANALYZE_SEVERAL = /^\/(?:factwright:)?analyze-job\s+jobs\s/;
+
+/** What Claude reads in place of an answer when it asks the user something analyzing several jobs. */
+export const SEVERAL_ASK_NOTHING =
+  'Analyzing several jobs asks the user nothing, so this wasn’t asked. Go on with what’s on file, and put what you wanted to ask in the job’s write-up, under Worth asking you, or say in your reply what’s missing, such as a posting that wouldn’t load.';
+
 /**
  * Why a task asks the user nothing, by its prompt, for Claude to read when it asks anyway: a
- * quick resume's. Null for any other task, which may ask.
+ * quick resume's, or analyzing several jobs, which the user may have started on their way
+ * elsewhere, or Claude on its own. Null for any other task, which may ask.
  */
 export function asksNothing(prompt: unknown): string | null {
   if (typeof prompt !== 'string') return null;
-  return QUICK_RESUME.test(prompt.trim()) ? QUICK_ASKS_NOTHING : null;
+  const typed = prompt.trim();
+  if (QUICK_RESUME.test(typed)) return QUICK_ASKS_NOTHING;
+  return ANALYZE_SEVERAL.test(typed) ? SEVERAL_ASK_NOTHING : null;
 }
 
 /**

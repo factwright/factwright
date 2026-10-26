@@ -1,5 +1,5 @@
 import type { PlanLevels } from './levels.ts';
-import { levelsTask, MODEL_TASKS, type ModelTask } from './models.ts';
+import { levelsTask, type ModelTask, taskNamed } from './models.ts';
 import type { RunTask } from './runs.ts';
 
 /**
@@ -28,7 +28,7 @@ export const RECOMMENDED_EFFORT: Readonly<Record<ModelTask, Effort>> = {
   'focused-resume': 'xhigh',
   'cover-letter': 'xhigh',
   'projects-page': 'xhigh',
-  'fit-check': 'xhigh',
+  'analyze-job': 'xhigh',
   'salary-check': 'xhigh',
   'who-to-message': 'xhigh',
   'interview-prep': 'xhigh',
@@ -50,7 +50,7 @@ export const PRO_EFFORT: Readonly<Record<ModelTask, Effort>> = {
   'focused-resume': 'high',
   'cover-letter': 'high',
   'projects-page': 'high',
-  'fit-check': 'high',
+  'analyze-job': 'high',
   'salary-check': 'medium',
   'who-to-message': 'high',
   'interview-prep': 'high',
@@ -87,16 +87,20 @@ export const DEFAULT_EFFORT: EffortChoices = { main: null, tasks: {} };
 const isEffort = (value: unknown): value is Effort =>
   typeof value === 'string' && (EFFORTS as readonly string[]).includes(value);
 
-/** Effort choices from the window or a file, or null when they aren't ones the app knows. */
+/**
+ * Effort choices from the window or a file, or null when they aren't ones the app knows. A task an
+ * earlier version saved by another name keeps its choice, unless the file has one by its name now.
+ */
 export function parseEffort(value: unknown): EffortChoices | null {
   if (typeof value !== 'object' || value === null) return null;
   const { main, tasks } = value as Record<string, unknown>;
   if (main !== null && !isEffort(main)) return null;
   if (typeof tasks !== 'object' || tasks === null) return null;
   const chosen: Partial<Record<ModelTask, Effort>> = {};
-  for (const [task, effort] of Object.entries(tasks)) {
-    if (!(MODEL_TASKS as readonly string[]).includes(task) || !isEffort(effort)) return null;
-    chosen[task as ModelTask] = effort;
+  for (const [name, effort] of Object.entries(tasks)) {
+    const task = taskNamed(name);
+    if (!task || !isEffort(effort)) return null;
+    if (task === name || !(task in chosen)) chosen[task] = effort;
   }
   return { main, tasks: chosen };
 }
