@@ -228,10 +228,12 @@ export async function saveOnComputer(job: JobToSave): Promise<SaveResult> {
 /**
  * What asking Factwright on this computer can't do, and why, as the panel says it. `unreachable`
  * says the ask never got to Factwright: the browser couldn't start its helper, or it didn't answer.
+ * `missing` says the browser found no Factwright to ask, set up for it.
  */
 export type NotAsked = Extract<InboxAskAnswer, { ok: false }> & {
   message: string;
   unreachable?: true;
+  missing?: true;
 };
 
 /** Why an ask got no answer, in words. */
@@ -273,7 +275,14 @@ export async function askComputer(
   try {
     answer = await send({ type: 'ask', request: JSON.stringify(ask) });
   } catch (error) {
-    return { ok: false, reason: 'failed', message: unreachable(error).message, unreachable: true };
+    const { missing, message } = unreachable(error);
+    return {
+      ok: false,
+      reason: 'failed',
+      message,
+      unreachable: true,
+      ...(missing && { missing: true as const }),
+    };
   }
   const said = (answer ?? {}) as Record<string, unknown>;
   if (said.ok === true && typeof said.did === 'string' && said.did === ask.ask) {

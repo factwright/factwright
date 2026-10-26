@@ -675,10 +675,12 @@ try {
   );
   await new Promise((resolve) => setTimeout(resolve, 600));
   await click(framedButton, 'Fill');
-  await says(framedButton, 'couldn’t find Factwright');
+  // Its note goes in the button's place, in the same frame.
+  const framedNote = await nested(tab, '/frame.html#note');
+  await says(framedNote, 'couldn’t find Factwright');
   check(
     true,
-    'and its Fill button there fills the form in the frame, as it does on the form’s own page',
+    'and its Fill button there fills the form in the frame, as it does on the form’s own page, with its note there',
   );
 
   // Through sync, as on a computer without Factwright: Factwright on another computer synced its
@@ -789,6 +791,15 @@ try {
   await firefox?.close().catch(() => {});
   site.close();
   sync?.close();
+  if (mac) {
+    try {
+      // A Mac gives the folders Firefox makes in its home, such as Library and Downloads, an
+      // access list that lets nothing delete them, which chmod -N takes off, as e2e:firefox does.
+      execFileSync('chmod', ['-R', '-N', work], { stdio: 'ignore' });
+    } catch {
+      // Then the folder stays, as below.
+    }
+  }
   // Firefox may hold its profile a moment after it stops.
   try {
     rmSync(work, { recursive: true, force: true, maxRetries: 10, retryDelay: 300 });

@@ -699,12 +699,22 @@ describe('submitting, on each applicant system’s own pages', () => {
     ['workday-review', 'Submit', true],
   ];
   it.each(cases)('%s: %s', async (name, words, final) => {
-    const html = readFileSync(join(FIXTURES, `${name}.html`), 'utf8');
-    document.documentElement.innerHTML = new DOMParser()
-      .parseFromString(html, 'text/html')
-      .documentElement.innerHTML.replace(/<script[\s\S]*?<\/script>/gi, '')
-      // Without the page's own handlers, whose code the fixtures don't have.
-      .replace(/\son[a-z]+="[^"]*"/gi, '');
+    const page = new DOMParser().parseFromString(
+      readFileSync(join(FIXTURES, `${name}.html`), 'utf8'),
+      'text/html',
+    );
+    // Without the page's own code, which the fixtures don't have: its scripts, and the handlers in
+    // its elements' attributes.
+    for (const each of page.querySelectorAll('script')) each.remove();
+    for (const element of page.querySelectorAll('*')) {
+      for (const { name: attribute } of [...element.attributes]) {
+        if (attribute.toLowerCase().startsWith('on')) element.removeAttribute(attribute);
+      }
+    }
+    document.replaceChild(
+      document.importNode(page.documentElement, true),
+      document.documentElement,
+    );
     script = startScript(() => true, 0);
     await vi.waitFor(() => expect(sentOf('hello')).toHaveLength(1));
     await new Promise((resolve) => setTimeout(resolve, 50));

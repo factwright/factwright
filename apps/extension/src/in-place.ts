@@ -46,8 +46,8 @@ export async function fillInPlace(tab: Tab & { id: number }, at?: FormPlace): Pr
   if (!Array.isArray(ways)) {
     return problem(
       ways.why === 'sync'
-        ? `Filling needs your OK to reach ${serverName(ways.server)}: click Factwright’s button, then Fill this application.`
-        : 'Filling needs your OK to reach Factwright on this computer: click Factwright’s button, then Fill this application.',
+        ? `Factwright needs your OK to reach ${serverName(ways.server)}: click its button, then Fill this application.`
+        : 'Factwright needs your OK first: click its button, then Fill this application.',
     );
   }
   const found = at
@@ -74,10 +74,14 @@ export async function fillInPlace(tab: Tab & { id: number }, at?: FormPlace): Pr
     instead,
   } = await firstAnswer(ways, (each) => planFill(form, shows, each));
   if (!plan.ok || plan.did !== 'fill') {
-    return {
-      ...problem(plan.ok ? 'Factwright didn’t answer. Try again.' : plan.message, found.place),
-      via: way.via,
-    };
+    // A note has two lines: where there's no Factwright to ask, Factwright's button says how to
+    // set it up, in full.
+    const says = !plan.ok
+      ? (plan as { missing?: true }).missing
+        ? 'The extension couldn’t find Factwright on this computer. Click Factwright’s button to set it up.'
+        : plan.message
+      : 'Factwright didn’t answer. Try again.';
+    return { ...problem(says, found.place), via: way.via };
   }
   const filled = new Map<string, FieldFilled>();
   const done = await fillInPasses({
