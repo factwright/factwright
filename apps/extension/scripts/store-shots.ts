@@ -26,6 +26,11 @@ export async function frame(
   name: string,
 ): Promise<void> {
   if (!SHOTS) return;
+  // A PNG says its size at bytes 16 to 23. Shown at `width`, a picture taller than this would be
+  // cut off at the top and bottom of the stores' 800.
+  const tall = (shot.readUInt32BE(20) * width) / shot.readUInt32BE(16);
+  if (tall > 760)
+    throw new Error(`${name} would be ${Math.round(tall)} tall, past the stores' 800.`);
   mkdirSync(SHOTS, { recursive: true });
   // Framed in a browser of its own at 1x, so the image is exactly 1280 by 800, with the extension's
   // pages, taken at 2x, sharp in it.

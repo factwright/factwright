@@ -628,10 +628,10 @@ try {
     );
     await shoot(setup, '5-set');
     await frame(
-      await capture(setup, 'h2:text-is("Account")'),
+      await capture(setup, 'h2:text-is("Filling an application")'),
       620,
       'Save it your way',
-      'From the toolbar, a keyboard shortcut or the right-click menu, from any job site. You choose whether it reads LinkedIn’s postings or saves their links alone.',
+      'From the toolbar, a keyboard shortcut or the right-click menu, from any job site.',
       '5-settings.png',
     );
 
@@ -1511,7 +1511,6 @@ try {
   } catch {
     // A temporary folder left behind does no harm.
   }
-  // Set while framing, which TypeScript can't follow from here.
   await closeFramer();
   await server.close();
   await factwright.close();
