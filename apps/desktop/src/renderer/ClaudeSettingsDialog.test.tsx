@@ -5,7 +5,6 @@ import axe from 'axe-core';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { DEFAULT_EFFORT, type EffortChoices } from '../shared/effort.ts';
 import { DEFAULT_MODELS, type ModelChoices } from '../shared/models.ts';
-import { ASK_FIRST, type ClaudePermissions } from '../shared/permissions.ts';
 import { ClaudeSettingsDialog } from './ClaudeSettingsDialog.tsx';
 
 beforeAll(() => {
@@ -22,13 +21,22 @@ beforeAll(() => {
 afterEach(cleanup);
 
 /** The window's API for these settings, keeping what's chosen. */
-function apiWith(
-  start: { models?: ModelChoices; effort?: EffortChoices; permissions?: ClaudePermissions } = {},
-) {
+function apiWith(start: { models?: ModelChoices; effort?: EffortChoices } = {}) {
   let models = start.models ?? DEFAULT_MODELS;
   let effort = start.effort ?? DEFAULT_EFFORT;
-  let permissions = start.permissions ?? ASK_FIRST;
+  let atOnce = 3;
+  let analyzes = true;
   return {
+    runsAtOnce: vi.fn(async () => atOnce),
+    setRunsAtOnce: vi.fn(async (count: number) => {
+      atOnce = count;
+      return count;
+    }),
+    analyzesNewJobs: vi.fn(async () => analyzes),
+    setAnalyzesNewJobs: vi.fn(async (on: boolean) => {
+      analyzes = on;
+      return on;
+    }),
     claudeModels: vi.fn(async () => models),
     setClaudeModels: vi.fn(async (chosen: ModelChoices) => {
       models = chosen;
@@ -39,26 +47,26 @@ function apiWith(
       effort = chosen;
       return chosen;
     }),
-    claudePermissions: vi.fn(async () => permissions),
-    setClaudePermissions: vi.fn(async (chosen: ClaudePermissions) => {
-      permissions = chosen;
-      return chosen;
-    }),
   };
 }
 
-const box = (name: string) => screen.getByRole('checkbox', { name }) as HTMLInputElement;
 const select = (name: string) => screen.getByRole('combobox', { name }) as HTMLSelectElement;
 
 describe('ClaudeSettingsDialog', () => {
-  it('runs at the recommended levels and asks first, until the user chooses otherwise', async () => {
+  it('runs at the recommended levels until the user chooses otherwise, and says what needs no OK', async () => {
     const { container } = render(<ClaudeSettingsDialog api={apiWith()} onClose={vi.fn()} />);
-    await screen.findByRole('combobox', { name: 'Model for everything' });
+    // The file's first dialog takes longest to draw: nearly half a second, with every package's
+    // tests at once.
+    await screen.findByRole('combobox', { name: 'Model for everything' }, { timeout: 5000 });
     expect(select('Model for everything').value).toBe('');
     expect(select('Effort for everything').value).toBe('');
-    expect(box('Change any file in your job hunt').checked).toBe(false);
-    expect(box('Read any website').checked).toBe(false);
-    expect(screen.getByText(/reads postings on Greenhouse, Lever, Ashby and Gem/)).toBeTruthy();
+    // Nothing to choose about asking: Claude changes files and reads pages, and lists them after.
+    // The one box to tick is Claude analyzing new jobs on its own.
+    const boxes = await screen.findAllByRole('checkbox');
+    expect(boxes.map((box) => box.getAttribute('type'))).toEqual(['checkbox']);
+    expect(screen.getByRole('checkbox', { name: /^Analyze new jobs on their own/ })).toBeTruthy();
+    expect(screen.getByText(/changes your job hunt’s files without asking/)).toBeTruthy();
+    expect(screen.getByText(/lists each file it changed, with Undo/)).toBeTruthy();
     expect((await axe.run(container)).violations).toEqual([]);
   });
 
@@ -129,7 +137,7 @@ describe('ClaudeSettingsDialog', () => {
   });
 
   it('sets one effort for everything, which each task follows unless it has its own', async () => {
-    const api = apiWith({ effort: { main: null, tasks: { 'fit-check': 'low' } } });
+    const api = apiWith({ effort: { main: null, tasks: { 'analyze-job': 'low' } } });
     render(<ClaudeSettingsDialog api={api} onClose={vi.fn()} />);
     await userEvent.selectOptions(
       await screen.findByRole('combobox', { name: 'Effort for everything' }),
@@ -137,17 +145,17 @@ describe('ClaudeSettingsDialog', () => {
     );
     expect(api.setClaudeEffort).toHaveBeenLastCalledWith({
       main: 'max',
-      tasks: { 'fit-check': 'low' },
+      tasks: { 'analyze-job': 'low' },
     });
     expect(screen.getByText('Choose by task').closest('details')?.open).toBe(true);
     expect(within(select('Effort for Salary check')).getAllByRole('option')[0]?.textContent).toBe(
       'Same as everything (Max)',
     );
-    expect(select('Effort for Fit check').value).toBe('low');
+    expect(select('Effort for Analyze job').value).toBe('low');
     await userEvent.selectOptions(select('Effort for everything'), '');
     expect(api.setClaudeEffort).toHaveBeenLastCalledWith({
       main: null,
-      tasks: { 'fit-check': 'low' },
+      tasks: { 'analyze-job': 'low' },
     });
   });
 
@@ -160,19 +168,6 @@ describe('ClaudeSettingsDialog', () => {
     );
     await waitFor(() => expect(select('Model for Find jobs').value).toBe('sonnet'));
     expect(screen.getByText('Choose by task').closest('details')?.open).toBe(true);
-  });
-
-  it('saves each permission as it’s chosen, and explains it for screen readers too', async () => {
-    const api = apiWith();
-    render(<ClaudeSettingsDialog api={api} onClose={vi.fn()} />);
-    const files = await screen.findByRole('checkbox', { name: 'Change any file in your job hunt' });
-    expect(
-      document.getElementById(files.getAttribute('aria-describedby') ?? '')?.textContent,
-    ).toContain('facts, guide and base resumes');
-    await userEvent.click(files);
-    expect(api.setClaudePermissions).toHaveBeenLastCalledWith({ anyFile: true, anySite: false });
-    await userEvent.click(box('Read any website'));
-    expect(api.setClaudePermissions).toHaveBeenLastCalledWith({ anyFile: true, anySite: true });
   });
 
   it('passes on what’s really saved when a choice didn’t save', async () => {
@@ -192,11 +187,14 @@ describe('ClaudeSettingsDialog', () => {
 
   it('says when a choice didn’t save, and shows what’s really saved', async () => {
     const api = apiWith();
-    api.setClaudePermissions.mockRejectedValueOnce(new Error('disk full'));
+    api.setClaudeEffort.mockRejectedValueOnce(new Error('disk full'));
     render(<ClaudeSettingsDialog api={api} onClose={vi.fn()} />);
-    await userEvent.click(await screen.findByRole('checkbox', { name: 'Read any website' }));
+    await userEvent.selectOptions(
+      await screen.findByRole('combobox', { name: 'Effort for everything' }),
+      'high',
+    );
     expect((await screen.findByRole('alert')).textContent).toBe('That didn’t save. Try again.');
-    await waitFor(() => expect(box('Read any website').checked).toBe(false));
+    await waitFor(() => expect(select('Effort for everything').value).toBe(''));
   });
 
   it('recommends Sonnet for the checks and searches on a Pro plan, and Opus for the writing', async () => {
@@ -205,7 +203,7 @@ describe('ClaudeSettingsDialog', () => {
     await userEvent.click(await screen.findByText('Choose by task'));
     const option = (label: string) =>
       within(select(`Model for ${label}`)).getAllByRole('option')[0]?.textContent;
-    expect(option('Fit check')).toBe('Recommended (Sonnet)');
+    expect(option('Analyze job')).toBe('Recommended (Sonnet)');
     expect(option('Find jobs')).toBe('Recommended (Sonnet)');
     expect(option('Tailored resume')).toBe('Recommended (Opus)');
     expect(option('Getting started')).toBe('Recommended (Opus)');
@@ -233,6 +231,49 @@ describe('ClaudeSettingsDialog', () => {
     await screen.findByRole('combobox', { name: 'Model for everything' });
     expect(screen.queryByText(/On a Pro plan/)).toBeNull();
     expect(screen.queryByText(/Every token is billed/)).toBeNull();
+  });
+
+  it('runs three tasks at once until the user picks from one to five', async () => {
+    const api = apiWith();
+    render(<ClaudeSettingsDialog api={api} onClose={vi.fn()} />);
+    const atOnce = (await screen.findByRole('combobox', {
+      name: 'Tasks at once',
+    })) as HTMLSelectElement;
+    expect(atOnce.value).toBe('3');
+    expect([...atOnce.options].map((option) => option.textContent)).toEqual([
+      '1 task',
+      '2 tasks',
+      '3 tasks (recommended)',
+      '4 tasks',
+      '5 tasks',
+    ]);
+    await userEvent.selectOptions(atOnce, '5');
+    expect(api.setRunsAtOnce).toHaveBeenCalledWith(5);
+    await waitFor(() => expect(atOnce.value).toBe('5'));
+    expect(
+      screen.getByText(/Past this many, a task waits in line and starts by itself/),
+    ).toBeTruthy();
+  });
+
+  it('turns Claude analyzing new jobs on its own off, and on again', async () => {
+    const api = apiWith();
+    render(<ClaudeSettingsDialog api={api} onClose={vi.fn()} />);
+    const box = (await screen.findByRole('checkbox', {
+      name: /^Analyze new jobs on their own/,
+    })) as HTMLInputElement;
+    expect(box.checked).toBe(true);
+    expect(box.closest('label')?.textContent).toContain('up to 8 in one run');
+    await userEvent.click(box);
+    expect(api.setAnalyzesNewJobs).toHaveBeenLastCalledWith(false);
+    await waitFor(() => expect(box.checked).toBe(false));
+    await userEvent.click(box);
+    expect(api.setAnalyzesNewJobs).toHaveBeenLastCalledWith(true);
+    await waitFor(() => expect(box.checked).toBe(true));
+    // One that didn't save shows what's really saved.
+    api.setAnalyzesNewJobs.mockRejectedValueOnce(new Error('disk full'));
+    await userEvent.click(box);
+    expect((await screen.findByRole('alert')).textContent).toBe('That didn’t save. Try again.');
+    await waitFor(() => expect(box.checked).toBe(true));
   });
 
   it('closes with Done', async () => {

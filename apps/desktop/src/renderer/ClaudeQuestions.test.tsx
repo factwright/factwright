@@ -77,7 +77,7 @@ function open(result: EditResult = { ok: true }, round = ROUND) {
     <ClaudeQuestions
       api={api}
       round={round}
-      about="Tailored resume · Acme Robotics"
+      about="Acme Robotics · Tailored resume"
       onClose={onClose}
     />,
   );
@@ -89,12 +89,21 @@ const question = (words: string) =>
   screen.getByRole('group', { name: (name) => name.includes(words) });
 const send = () => screen.getByRole('button', { name: /^Send answer/ }) as HTMLButtonElement;
 
+/** An answer as the dialog sends it. */
+const answer = (picks: string[], other = '', note = '', skipped = false) => ({
+  picks,
+  other,
+  note,
+  skipped,
+});
+const skipped = (note = '') => answer([], '', note, true);
+
 describe('ClaudeQuestions', () => {
   it('shows every question at once, from the user’s Claude, with what each option means', async () => {
     const { container } = open();
     const dialog = screen.getByRole('dialog', { name: 'Claude has 2 questions' });
     expect(dialog.textContent).toContain(
-      'From your Claude, working on Tailored resume · Acme Robotics.',
+      'From your Claude, working on Acme Robotics · Tailored resume.',
     );
     const graphql = question('Have you used it');
     expect(within(graphql).getByText('Experience')).toBeTruthy();
@@ -114,6 +123,9 @@ describe('ClaudeQuestions', () => {
     expect(document.activeElement).toBe(
       within(graphql).getByRole('radio', { name: 'Yes, in production' }),
     );
+    // Each question can be skipped.
+    expect(within(graphql).getByRole('button', { name: 'Skip Experience' })).toBeTruthy();
+    expect(within(tools).getByRole('button', { name: 'Skip Tools' })).toBeTruthy();
     expect(send().disabled).toBe(true);
     expect((await axe.run(container)).violations).toEqual([]);
   });
@@ -141,8 +153,8 @@ describe('ClaudeQuestions', () => {
     );
     await userEvent.click(send());
     expect(api.answerClaude).toHaveBeenCalledWith('toolu_1', [
-      { picks: ['Yes, in production'], other: '', note: 'Apollo' },
-      { picks: ['Kafka', 'Kubernetes'], other: 'Nomad', note: '' },
+      answer(['Yes, in production'], '', 'Apollo'),
+      answer(['Kafka', 'Kubernetes'], 'Nomad'),
     ]);
     expect(onClose).toHaveBeenCalled();
   });
@@ -167,14 +179,15 @@ describe('ClaudeQuestions', () => {
     expect(document.activeElement).toBe(
       within(graphql).getByRole('textbox', { name: 'Something else, in your words' }),
     );
+    await userEvent.click(within(question(TOOLS)).getByRole('button', { name: /^Skip/ }));
     await userEvent.click(send());
     expect(api.answerClaude).toHaveBeenLastCalledWith('toolu_1', [
-      { picks: [], other: 'Only reading it', note: '' },
-      { picks: [], other: '', note: '' },
+      answer([], 'Only reading it'),
+      skipped(),
     ]);
   });
 
-  it('sends on Enter only once every question has an answer', async () => {
+  it('sends on Enter only once every question has an answer or a skip', async () => {
     const { api } = open();
     const graphql = question('Have you used it');
     const box = within(graphql).getByRole('textbox', { name: 'Something else, in your words' });
@@ -183,8 +196,8 @@ describe('ClaudeQuestions', () => {
     await userEvent.click(within(question(TOOLS)).getByRole('checkbox', { name: 'Kafka' }));
     await userEvent.type(box, '{Enter}');
     expect(api.answerClaude).toHaveBeenCalledWith('toolu_1', [
-      { picks: [], other: 'Only reading it', note: '' },
-      { picks: ['Kafka'], other: '', note: '' },
+      answer([], 'Only reading it'),
+      answer(['Kafka']),
     ]);
   });
 
@@ -202,17 +215,79 @@ describe('ClaudeQuestions', () => {
     expect(document.activeElement).toBe(box);
   });
 
-  it('says a question left unanswered is skipped, and sends the rest', async () => {
-    const { api } = open();
+  it('waits for an answer or a skip on every question, and tells Claude what was skipped', async () => {
+    const { api, container } = open();
     await userEvent.click(within(question(TOOLS)).getByRole('checkbox', { name: 'Terraform' }));
     expect(
-      screen.getByText(/One question has no answer\. Claude carries on without it\./),
+      screen.getByText('One question has no answer yet. Answer it or skip it to send.'),
     ).toBeTruthy();
+    expect(send().disabled).toBe(true);
+    await userEvent.click(send());
+    expect(api.answerClaude).not.toHaveBeenCalled();
+    const graphql = question('Have you used it');
+    await userEvent.click(within(graphql).getByRole('button', { name: /^Skip/ }));
+    // The question folds to say it's skipped, and the focus goes to the way back.
+    expect(graphql.textContent).toContain('Skipped. Claude hears you skipped it.');
+    expect(within(graphql).queryByRole('radio')).toBeNull();
+    expect(document.activeElement).toBe(
+      within(graphql).getByRole('button', {
+        name: 'Answer it',
+        description: 'Skipped. Claude hears you skipped it.',
+      }),
+    );
+    expect(screen.queryByText(/no answer yet/)).toBeNull();
+    expect((await axe.run(container)).violations).toEqual([]);
     expect(send().disabled).toBe(false);
     await userEvent.click(send());
+    expect(api.answerClaude).toHaveBeenCalledWith('toolu_1', [skipped(), answer(['Terraform'])]);
+  });
+
+  it('says how many questions still need an answer or a skip', async () => {
+    open(
+      { ok: true },
+      {
+        ...ROUND,
+        questions: [
+          ...ROUND.questions,
+          { question: 'Anything else?', header: null, ...CHOICE, kind: 'text', options: [] },
+        ],
+      },
+    );
+    await userEvent.click(within(question(TOOLS)).getByRole('button', { name: /^Skip/ }));
+    expect(
+      screen.getByText('2 questions have no answer yet. Answer or skip each one to send.'),
+    ).toBeTruthy();
+  });
+
+  it('brings a skipped question back as the user left it, to answer after all', async () => {
+    const { api } = open();
+    const graphql = question('Have you used it');
+    await userEvent.click(within(graphql).getByRole('radio', { name: 'Some' }));
+    await userEvent.click(within(graphql).getByRole('button', { name: /^Skip/ }));
+    await userEvent.click(within(question(TOOLS)).getByRole('checkbox', { name: 'Kafka' }));
+    await userEvent.click(within(graphql).getByRole('button', { name: 'Answer it' }));
+    expect(within(graphql).getByRole('radio', { name: 'Some' })).toHaveProperty('checked', true);
+    // The focus goes back to the question's first option.
+    expect(document.activeElement).toBe(
+      within(graphql).getByRole('radio', { name: 'Yes, in production' }),
+    );
+    await userEvent.click(send());
+    expect(api.answerClaude).toHaveBeenCalledWith('toolu_1', [answer(['Some']), answer(['Kafka'])]);
+  });
+
+  it('sends a note with a question skipped, to say why', async () => {
+    const { api } = open();
+    const graphql = question('Have you used it');
+    await userEvent.click(within(graphql).getByRole('button', { name: /^Skip/ }));
+    await userEvent.click(within(graphql).getByRole('button', { name: 'Add a note' }));
+    const note = within(graphql).getByRole('textbox', { name: 'Note for Claude' });
+    expect(note.getAttribute('placeholder')).toBe('Anything Claude should know about skipping it');
+    await userEvent.type(note, 'Ask me after the call');
+    await userEvent.click(within(question(TOOLS)).getByRole('button', { name: /^Skip/ }));
+    await userEvent.click(send());
     expect(api.answerClaude).toHaveBeenCalledWith('toolu_1', [
-      { picks: [], other: '', note: '' },
-      { picks: ['Terraform'], other: '', note: '' },
+      skipped('Ask me after the call'),
+      skipped(),
     ]);
   });
 
@@ -231,8 +306,15 @@ describe('ClaudeQuestions', () => {
   it('carries on from what the user chose before putting the round aside, and keeps each change', async () => {
     const onDraft = vi.fn();
     const draft = [
-      { picks: ['Some'], other: '', otherOn: false, note: 'A course', noting: true },
-      { picks: ['Kafka'], other: '', otherOn: false, note: '', noting: false },
+      {
+        picks: ['Some'],
+        other: '',
+        otherOn: false,
+        note: 'A course',
+        noting: true,
+        skipped: false,
+      },
+      { picks: ['Kafka'], other: '', otherOn: false, note: '', noting: false, skipped: false },
     ];
     render(
       <ClaudeQuestions
@@ -257,7 +339,26 @@ describe('ClaudeQuestions', () => {
     await userEvent.click(within(question(TOOLS)).getByRole('checkbox', { name: 'Terraform' }));
     expect(onDraft).toHaveBeenLastCalledWith([
       draft[0],
-      { picks: ['Kafka', 'Terraform'], other: '', otherOn: false, note: '', noting: false },
+      {
+        picks: ['Kafka', 'Terraform'],
+        other: '',
+        otherOn: false,
+        note: '',
+        noting: false,
+        skipped: false,
+      },
+    ]);
+    await userEvent.click(within(question(TOOLS)).getByRole('button', { name: /^Skip/ }));
+    expect(onDraft).toHaveBeenLastCalledWith([
+      draft[0],
+      {
+        picks: ['Kafka', 'Terraform'],
+        other: '',
+        otherOn: false,
+        note: '',
+        noting: false,
+        skipped: true,
+      },
     ]);
   });
 
@@ -269,6 +370,7 @@ describe('ClaudeQuestions', () => {
     await userEvent.click(
       within(question('Have you used it')).getByRole('radio', { name: 'Some' }),
     );
+    await userEvent.click(within(question(TOOLS)).getByRole('button', { name: /^Skip/ }));
     await userEvent.click(send());
     expect(screen.getByRole('alert').textContent).toBe(
       'Claude isn’t waiting for these answers anymore.',
@@ -324,8 +426,8 @@ describe('ClaudeQuestions', () => {
     await userEvent.type(words, 'Two weeks');
     await userEvent.click(send());
     expect(api.answerClaude).toHaveBeenCalledWith('toolu_3', [
-      { picks: [], other: '3.5', note: '' },
-      { picks: [], other: 'Two weeks', note: '' },
+      answer([], '3.5'),
+      answer([], 'Two weeks'),
     ]);
   });
 
@@ -347,8 +449,72 @@ describe('ClaudeQuestions', () => {
     expect(screen.getByRole('dialog', { name: 'Claude has a question' })).toBeTruthy();
     await userEvent.type(screen.getByRole('textbox', { name: 'Your answer' }), 'Sam');
     await userEvent.click(screen.getByRole('button', { name: 'Send answer' }));
-    expect(api.answerClaude).toHaveBeenCalledWith('toolu_2', [
-      { picks: [], other: 'Sam', note: '' },
-    ]);
+    expect(api.answerClaude).toHaveBeenCalledWith('toolu_2', [answer([], 'Sam')]);
+  });
+
+  it('names the run asking, and which of those waiting it is, with a way to the others', async () => {
+    const go = vi.fn();
+    const api = { answerClaude: vi.fn(async () => ({ ok: true as const })) };
+    const onAnswered = vi.fn();
+    const onClose = vi.fn();
+    const { container } = render(
+      <ClaudeQuestions
+        api={api}
+        round={ROUND}
+        about="Talkiatry · Tailored resume"
+        turn={{ run: 'Talkiatry · Tailored resume', at: 1, of: 3, go }}
+        onAnswered={onAnswered}
+        onClose={onClose}
+      />,
+    );
+    const dialog = screen.getByRole('dialog', { name: 'Claude has 2 questions' });
+    expect(dialog.textContent).toContain('Talkiatry · Tailored resume1 of 3');
+    const previous = within(dialog).getByRole('button', { name: 'Previous' }) as HTMLButtonElement;
+    expect(previous.disabled).toBe(true);
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Next' }));
+    expect(go).toHaveBeenCalledWith(1);
+    expect((await axe.run(container)).violations).toEqual([]);
+    // Answered, it goes on to what waits next, rather than closing.
+    await userEvent.click(
+      within(question('Have you used it')).getByRole('radio', { name: 'Yes, in production' }),
+    );
+    await userEvent.click(within(question(TOOLS)).getByRole('button', { name: 'Skip Tools' }));
+    await userEvent.click(send());
+    expect(api.answerClaude).toHaveBeenCalled();
+    expect(onAnswered).toHaveBeenCalled();
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it('names only the run, with one waiting', () => {
+    render(
+      <ClaudeQuestions
+        api={{ answerClaude: vi.fn() }}
+        round={ROUND}
+        about="Talkiatry · Tailored resume"
+        turn={{ run: 'Talkiatry · Tailored resume', at: 1, of: 1, go: vi.fn() }}
+        onClose={vi.fn()}
+      />,
+    );
+    expect(screen.queryByRole('button', { name: 'Next' })).toBeNull();
+    expect(screen.queryByText('1 of 1')).toBeNull();
+  });
+
+  it('takes the focus to a skipped box’s words once the user answers it after all', async () => {
+    open(
+      { ok: true },
+      {
+        id: 'toolu_4',
+        questions: [
+          { question: 'Anything else?', header: null, ...CHOICE, kind: 'text', options: [] },
+        ],
+      },
+    );
+    const anything = question('Anything else?');
+    await userEvent.click(within(anything).getByRole('button', { name: 'Skip this question' }));
+    expect(within(anything).queryByRole('textbox')).toBeNull();
+    await userEvent.click(within(anything).getByRole('button', { name: 'Answer it' }));
+    expect(document.activeElement).toBe(
+      within(anything).getByRole('textbox', { name: 'Your answer' }),
+    );
   });
 });

@@ -182,13 +182,45 @@ describe('the job application sites', () => {
     expect(sites.length).toBeGreaterThan(15);
     expect(new Set(sites).size).toBe(sites.length);
     for (const site of sites) {
-      // Never every site, any scheme, or a path: a site, as the browser's permissions name one.
-      expect(site).toMatch(/^https:\/\/(\*\.)?[a-z0-9-]+(\.[a-z0-9-]+)+\/\*$/);
+      // Never every site, or any scheme: a site, as the browser's permissions name one, or its
+      // career pages alone, by their path, as SuccessFactors keeps its customers' HR sites beside
+      // them.
+      expect(site).toMatch(
+        /^https:\/\/(\*\.)?[a-z0-9-]+(\.[a-z0-9-]+)+\/(\*|career\*|portalcareer\*|sfcareer\/\*)$/,
+      );
     }
     expect(sites).not.toContain('<all_urls>');
     expect(sites).not.toContain('https://*/*');
-    for (const name of ['Greenhouse', 'Lever', 'Ashby', 'Workday', 'iCIMS', 'SmartRecruiters']) {
+    for (const name of [
+      'Greenhouse',
+      'Lever',
+      'Ashby',
+      'Workday',
+      'iCIMS',
+      'SmartRecruiters',
+      'Taleo',
+      'SuccessFactors',
+    ]) {
       expect(APPLICANT_SYSTEMS.map((system) => system.name)).toContain(name);
+    }
+  });
+
+  it('cover SuccessFactors’ career pages, and never its customers’ own HR pages beside them', () => {
+    for (const page of [
+      'https://career4.successfactors.com/career?company=acmeP&career_ns=job_listing&career_job_req_id=1000',
+      'https://career17.sapsf.com/portalcareer?_s.crb=abc',
+      'https://career5.successfactors.eu/sfcareer/jobreqcareer?jobId=1000&company=acmeP',
+      'https://career-sa20.hr.cloud.sap/careers?company=acmeP&career_job_req_id=1000',
+      'https://career15.sapsf.cn/careers?company=acmeP',
+    ]) {
+      expect(onAnySite(page, jobSites(false))).toBe(true);
+    }
+    for (const page of [
+      'https://performancemanager4.successfactors.com/sf/home',
+      'https://hcm-us20.hr.cloud.sap/xi/ui/pages/empfile',
+      'https://acme.jobs.hr.cloud.sap/job/Denver-Analyst/1400000123/',
+    ]) {
+      expect(onAnySite(page, jobSites(false))).toBe(false);
     }
   });
 
@@ -515,5 +547,21 @@ describe('the frames of a tab, as a careers page shows an applicant system’s f
     browser.granted.delete(CAREERS);
     await stopJobSites();
     expect(await framedSystem(1)).toBeNull();
+  });
+
+  it('names none for a frame that shows a posting, with no form yet, as iCIMS’s does', async () => {
+    browser.granted.add(CAREERS);
+    browser.framed[1] = [
+      'https://careers-healthequity.icims.com/jobs/12345/staff-software-engineer/job?in_iframe=1',
+      'https://careers-acme.icims.com/jobs/search?ss=1&in_iframe=1',
+      'https://jobs.lever.co/acme/7a1c9e40-2b6d-4f1e-9c3a-5d8e0f2b4a71',
+      'https://jobs.ashbyhq.com/acme/1d1f0e3a-9b7c-4c1e-8f2a-3b4c5d6e7f80?embed=js',
+    ];
+    expect(await framedSystem(1)).toBeNull();
+    // Its application, at an address of its own, is a form.
+    browser.framed[1].push(
+      'https://careers-healthequity.icims.com/jobs/12345/staff-software-engineer/candidate?in_iframe=1',
+    );
+    expect(await framedSystem(1)).toBe('iCIMS');
   });
 });

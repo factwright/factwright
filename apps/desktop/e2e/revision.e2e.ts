@@ -68,7 +68,7 @@ async function openRevise() {
   return dialog;
 }
 
-test('refuses a revision it didn’t prepare, and gives each one a run of its own', async () => {
+test('refuses a revision it didn’t prepare, saying so in a run of its own', async () => {
   const task = {
     skill: 'revise-resume',
     jobId: ACME_ID,
@@ -76,21 +76,17 @@ test('refuses a revision it didn’t prepare, and gives each one a run of its ow
     findings: ['term-00000000'],
   };
   type Api = { factwright: FactwrightApi };
-  const started = await opened.window.evaluate(
-    (given) =>
-      (globalThis as unknown as Api).factwright.startClaude(
-        { cols: 80, rows: 24 },
-        given as RunTask,
-      ),
+  const runId = await opened.window.evaluate(
+    (given) => (globalThis as unknown as Api).factwright.startClaude(given as RunTask),
     task,
   );
-  expect(started).toEqual({ ok: false, reason: 'revision' });
-  const asTask = await opened.window.evaluate(
-    (given) => (globalThis as unknown as Api).factwright.runTask(given as RunTask),
-    task,
-  );
-  expect(asTask).toEqual({ ok: false, reason: 'new-run' });
-  await expect(claudePanel()).toHaveCount(0);
+  expect(runId).toMatch(/^run-\d+$/);
+  // Its tab says why it didn't start, and Close puts it away.
+  const panel = claudePanel();
+  await expect(panel.getByRole('status')).toHaveText('Didn’t finish');
+  await expect(panel).toContainText('This revision needs sending again.');
+  await panel.getByRole('button', { name: 'Close' }).click();
+  await expect(panel).toHaveCount(0);
 });
 
 test('sends what the X-ray found for revision, typing only the findings’ IDs', async () => {
@@ -106,7 +102,7 @@ test('sends what the X-ray found for revision, typing only the findings’ IDs',
   await expect(dialog).toHaveCount(0);
 
   const panel = claudePanel();
-  await expect(panel.getByText('Resume revision · Acme Robotics')).toBeVisible();
+  await expect(panel.getByText('Acme Robotics · Resume revision')).toBeVisible();
   // Its question about GraphQL opens in the app's dialog. Answered in the terminal instead, Claude
   // Code asks it there, as it did before the dialog.
   const asks = window.getByRole('dialog', { name: 'Claude has a question' });
@@ -151,7 +147,6 @@ test('sends what the X-ray found for revision, typing only the findings’ IDs',
   });
   expect(kept.before).toMatch(/1 of 3 key terms/);
 
-  await panel.getByRole('button', { name: 'Stop' }).click();
   await panel.getByRole('button', { name: 'Close' }).click();
   await expect(panel).toHaveCount(0);
 });

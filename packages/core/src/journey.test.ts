@@ -9,7 +9,7 @@ import {
   journeys,
 } from './journey.ts';
 import { jobProgress } from './progress.ts';
-import type { Call } from './tracker.ts';
+import { type Call, NO_OWN_DETAILS } from './tracker.ts';
 
 const TODAY = '2026-10-10';
 
@@ -28,6 +28,7 @@ function job(extra: Partial<Job> = {}): Job {
     search: null,
     searches: [],
     kindFound: null,
+    suggestedAsk: null,
     folder: null,
     stage: 'new',
     firstSeen: '2026-09-01',
@@ -54,6 +55,9 @@ function job(extra: Partial<Job> = {}): Job {
     earlierNotes: null,
     archived: false,
     kind: null,
+    payAsk: null,
+    own: NO_OWN_DETAILS,
+    maybeSame: [],
     manual: false,
     calls: [],
     callDocs: [],

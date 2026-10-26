@@ -1,6 +1,6 @@
 import { looksLikeApplication } from './application-form.ts';
 import { ext } from './ext.ts';
-import { BUTTON, BUTTON_CARD, MENU_WIDTH, menuHeight } from './frame-size.ts';
+import { BUTTON, MENU_WIDTH, menuHeight, NOTE } from './frame-size.ts';
 import {
   type FieldMenu,
   type FromScript,
@@ -11,17 +11,28 @@ import {
 } from './job-site-messages.ts';
 import { type FieldAnswer, type FormAnswer, formPage, type PageForm } from './page/form.ts';
 import { readJobPage } from './page/read-job.ts';
-import { type Area, type Box, EDGE, overlaps, placeButton, placeMenu, type Size } from './place.ts';
+import {
+  type Area,
+  type Box,
+  CORNER,
+  EDGE,
+  overlaps,
+  placeButton,
+  placeMenu,
+  type Size,
+} from './place.ts';
 
 /**
  * The extension's script on the job sites you allowed (src/application-sites.ts), and only there.
  * On a page with an application form, it puts a small Fill button in a corner of the window, which
  * fills the form as clicking Fill does. In a field you click or tab into where Factwright has an
- * answer, it shows a menu beside the field with the answers, and when you leave a field with a new
- * answer Profile can keep, it offers to save it. The menu and the button are the extension's own
- * frame, which the page can't read: the script never has an answer but the one you pick, which it
- * puts in the field only then, as typing would. Neither ever covers the page's own controls: where
- * there's no room, the menu doesn't show, and the panel has the same answers.
+ * answer, it shows a menu beside the field with the answers, or for one of the form's own
+ * questions with none, the offer to have your Claude draft them, and when you leave a field with a
+ * new answer Profile can keep, it offers to save it. The menu and the button are the extension's
+ * own frame, which the page can't read: the script never has an answer but the one you pick, which
+ * it puts in the field only then, as typing would. The menu covers none of the page's own controls
+ * where there's room beside its field, and goes just under the field, over the page, where there
+ * isn't.
  * It reads the form as the panel does (page/form.ts), without what's in its fields, and what's in
  * a field only once you've typed in it and left it, for one whose answer Profile keeps, to offer
  * to save it. It never fills a password, never submits, and never clicks a button that would.
@@ -43,8 +54,46 @@ const AROUND = 3;
 const SETTLE_MS = 400;
 const SETTLE_MAX_MS = 2000;
 
-/** How long the Fill button says how filling went, before it's a button again. */
-const CARD_MS = 15_000;
+/**
+ * How long after you submit the form the script watches what the page shows, to say how it went:
+ * longer than a page takes to send an application and say so.
+ */
+const OUTCOME_MS = 60_000;
+
+/** How soon after you press Enter in a form's box the form's being sent counts as yours. */
+const ENTER_MS = 1000;
+
+/**
+ * A one-line box Enter sends its form from, as a browser does: never a box of several lines, a
+ * list or a check box, where Enter does something else.
+ */
+const sendsOnEnter = (target: EventTarget | null): boolean =>
+  target instanceof HTMLInputElement &&
+  /^(text|email|tel|url|search|password|number|date|month|week|time|datetime-local)$/.test(
+    target.type,
+  );
+
+/**
+ * Words on a button that sends an application, as its form's last page's does: "Submit", "Submit
+ * application", "Send application", "Apply", "Apply now", "Finish", or iCIMS's "Submit Profile",
+ * on the first of its pages.
+ */
+const SENDS =
+  /^(submit|send|apply|finish)( (my|your|the|this))?( (job )?application| profile)?( now)?$/i;
+
+/** Words on a button that goes on to another page of an application, as "Save and Continue". */
+const GOES_ON = /^(save (and|&) )?(continue|next)\b|^next( step| page)?$|^proceed\b/i;
+
+/** What may be a button, as a page makes one of its own, as SuccessFactors' Apply is a span. */
+const BUTTONS =
+  'button, input[type="submit"], input[type="button"], input[type="image"], [role="button"]';
+
+/**
+ * What marks the step an application that runs over several pages is on, as the page's form
+ * function knows it (page/form.ts), to tell whether it's the last.
+ */
+const STEP_NOW =
+  '[data-automation-id="progressBarActiveStep"], [aria-current="step"], li.iCIMS_Steps_Current';
 
 /** How long it waits before asking Factwright for answers again, once it couldn't. */
 const AGAIN_MS = 30_000;
@@ -163,9 +212,26 @@ export function startScript(
   let failedAt = 0;
   /** The menu that's open, for one field, by its token. */
   let menu: (Frame & { at: number; token: string; size: Size }) | null = null;
-  let button: (Frame & { card: boolean }) | null = null;
+  let button: Frame | null = null;
   let buttonHidden = false;
-  let cardTimer: ReturnType<typeof setTimeout> | null = null;
+  /**
+   * The note in the Fill button's place, once Factwright's done something on the page, by the
+   * token its frame names, and the page it went on, as it goes once the page goes on; or one to
+   * show once the page has settled.
+   */
+  let note: (Frame & { token: string; on: string; step: string }) | null = null;
+  let noteWanted: string | null = null;
+  /** When you last submitted the form here, or the page you submitted came here, to say how it went. */
+  let submittedAt = 0;
+  /**
+   * The page you submitted here, as it was: its address, its step, and whether it showed an
+   * application form, as Workday's Review doesn't, to tell it from the page it goes on to.
+   */
+  let submittedFrom: { url: string; step: string; form: boolean; said: boolean } | null = null;
+  /** When you last pressed Enter, and where: a form you send that way, rather than its page. */
+  let lastEnter: { at: number; target: EventTarget | null } = { at: 0, target: null };
+  /** What it last said of how a submit went, so it says each change once. */
+  let lastOutcome = '';
   /** The field whose new answer the background will offer to keep, in the next menu. */
   let pendingSave: number | null = null;
   /** The fields you've typed in or picked an answer in, by their keys. */
@@ -239,6 +305,12 @@ export function startScript(
     const before = form;
     form = answer.form;
     elements = seen;
+    // Another page of an application that runs over several, as Workday swaps its own in, or one
+    // loaded anew, as Taleo's next page is: the panel filling it, if it's open, looks at it now, to
+    // offer to fill this one.
+    if (form.step && form.step !== before?.step) {
+      void send({ type: 'job-site', do: 'look', doc });
+    }
     // Another page, or the same with other fields: the background is asked again for its answers.
     const same =
       before !== null &&
@@ -252,9 +324,206 @@ export function startScript(
       if (readAt !== pageUrl()) typed.clear();
       closeMenu();
     }
+    // A note of what was done on the page before goes as it goes on, to another address or another
+    // step, as Workday's pages keep one address.
+    if (note && (note.on !== pageUrl() || note.step !== form.step)) hideNote();
     readAt = pageUrl();
     if (!looksLikeApplication(form) || buttonHidden) removeButton();
     else if (ready) showButton();
+    if (submittedAt && Date.now() - submittedAt < OUTCOME_MS) sayOutcome();
+  }
+
+  // --- What you submit ------------------------------------------------------------------------
+
+  /** Whether an element is a button, or a page's own kind of one, as SmartRecruiters' spl-button. */
+  const isButton = (element: Element) =>
+    element.matches(BUTTONS) || element.localName.endsWith('-button');
+
+  /** A button's words: its own, or a box's that's a button, or what names it. */
+  const wordsOf = (element: Element): string =>
+    (
+      element.textContent?.trim() ||
+      (element as HTMLInputElement).value ||
+      element.getAttribute('aria-label') ||
+      ''
+    )
+      .replace(/\s+/g, ' ')
+      .trim();
+
+  /**
+   * A button's words, or where it has none of its own, as the button inside a page's own kind of
+   * one shows the words it was given, that one's.
+   */
+  const buttonWords = (button: Element): string => {
+    for (let at: Element | null = button; at; ) {
+      const words = wordsOf(at);
+      if (words) return words;
+      const root = at.getRootNode();
+      at = root instanceof ShadowRoot ? root.host : null;
+    }
+    return '';
+  };
+
+  /** The <form> an element is in: its own, or around it, or around the component it's inside. */
+  const formOf = (element: Element): HTMLFormElement | null => {
+    for (let at: Element | null = element; at; ) {
+      const own = (at as Partial<HTMLInputElement>).form ?? at.closest('form');
+      if (own) return own;
+      const root = at.getRootNode();
+      at = root instanceof ShadowRoot ? root.host : null;
+    }
+    return null;
+  };
+
+  /** An element, and each component it's inside, inmost first. */
+  const andHosts = (element: Element): Element[] => {
+    const all = [element];
+    for (let root = element.getRootNode(); root instanceof ShadowRoot; ) {
+      all.push(root.host);
+      root = root.host.getRootNode();
+    }
+    return all;
+  };
+
+  /** Whether one element comes after another on the page, inside components or not. */
+  const follows = (first: Element, later: Element): boolean => {
+    const firsts = andHosts(first);
+    for (const each of andHosts(later)) {
+      const there = firsts.find((one) => one.getRootNode() === each.getRootNode());
+      if (there) {
+        return (
+          there !== each &&
+          Boolean(there.compareDocumentPosition(each) & Node.DOCUMENT_POSITION_FOLLOWING)
+        );
+      }
+    }
+    return false;
+  };
+
+  /** The <form> most of the application's fields are in, or null where they're in none. */
+  const applicationForm = (): HTMLFormElement | null => {
+    const counts = new Map<HTMLFormElement, number>();
+    for (const control of elements.flat()) {
+      const own = formOf(control);
+      if (own) counts.set(own, (counts.get(own) ?? 0) + 1);
+    }
+    let most: HTMLFormElement | null = null;
+    for (const [each, count] of counts)
+      if (count > (most ? (counts.get(most) ?? 0) : 0)) most = each;
+    return most;
+  };
+
+  /**
+   * Whether a button is the application form's own: in the <form> its fields are in, or, where
+   * they're in none, in none either, after the first of them, as the foot of Workday's and
+   * SmartRecruiters' pages is. A posting's Apply above its form, a similar job's below it, or
+   * another form's button, as a search box's or a newsletter's, isn't. A page of an application
+   * with nothing to fill, as Workday's Review, has its buttons.
+   */
+  const ownButton = (button: Element): boolean => {
+    const first = elements.flat()[0];
+    if (!first) return true;
+    const form = applicationForm();
+    const own = formOf(button);
+    return form ? own === form : own === null && follows(first, button);
+  };
+
+  /** Whether the page is its application's last, as its steps show, or it shows none. */
+  const lastStep = (): boolean => {
+    const now = document.querySelector(STEP_NOW);
+    const item = now?.closest('li') ?? now;
+    if (!item) return true;
+    for (let next = item.nextElementSibling; next; next = next.nextElementSibling) {
+      if (next.matches('li, [role="listitem"]')) return false;
+    }
+    return true;
+  };
+
+  /**
+   * You submitted the form, or pressed a page's own button that goes on to the next: what its
+   * fields hold now goes to the background, read as the page has it, before its own code sends
+   * it, with whether the button sends the application, as the last page's does. A button that does
+   * neither, as Add or Upload, says nothing. A page of an application with nothing to fill counts,
+   * as Workday's Review, whose Submit sends it.
+   */
+  function submitting(words: string): void {
+    const asked = form;
+    if (stopped || !asked) return;
+    if (!looksLikeApplication(asked) && !(asked.step && asked.fields.length === 0)) return;
+    const sends = SENDS.test(words);
+    if (!sends && !GOES_ON.test(words)) return;
+    const final = sends && (!asked.step || lastStep());
+    submittedAt = Date.now();
+    submittedFrom = {
+      url: pageUrl(),
+      step: asked.step,
+      form: looksLikeApplication(asked),
+      said: asked.submitted,
+    };
+    lastOutcome = '';
+    const fields = asked.fields.map(({ ref, key }) => ({ ref, key }));
+    void formPage({ do: 'values', fields }, document, location.href).then((read) => {
+      if (read.did !== 'values') return;
+      const job = readJobPage(document, location.href, '');
+      void send({
+        type: 'job-site',
+        do: 'submitting',
+        doc,
+        form: { ...asked, title: asked.title.slice(0, 1000) },
+        job: { company: job.company.slice(0, 500), role: job.title.slice(0, 500) },
+        values: read.values.map((each) => ({ ...each, value: each.value.slice(0, 10_000) })),
+        final,
+      });
+    });
+  }
+
+  /**
+   * Whether the page shows what's wrong with an answer, as a form does that wants another: a field
+   * it says is wrong, or an alert you can see. Not one for screen readers alone, a pixel in size,
+   * as Workday's that a page has loaded.
+   */
+  const errorsShow = (): boolean =>
+    [...document.querySelectorAll('[aria-invalid="true"], [role="alert"]')].some((each) => {
+      if ((each as HTMLElement).checkVisibility?.({ visibilityProperty: true }) === false) {
+        return false;
+      }
+      if (each.matches('[aria-invalid="true"]')) return true;
+      const { width, height } = each.getBoundingClientRect();
+      const words = each.textContent ?? '';
+      return (
+        width > 1 && height > 1 && /\S/.test(words) && !/success|uploaded|saved|thank/i.test(words)
+      );
+    });
+
+  /**
+   * Says how a submit went, as the page shows it now: whether it says the application went in,
+   * whether it shows an application form still, or another page of it, and whether it shows
+   * what's wrong with an answer. Each change once, until it's gone in, or the form's gone.
+   */
+  function sayOutcome(): void {
+    if (!form) return;
+    const shows = looksLikeApplication(form);
+    // Still the page you submitted, as Workday's Review shows until its Submit goes through: it
+    // counts as the form, so it isn't taken as having moved on.
+    const still =
+      submittedFrom !== null &&
+      pageUrl() === submittedFrom.url &&
+      form.step === submittedFrom.step &&
+      (shows || !submittedFrom.form);
+    // Words that it went in count once they're new since you submitted, or the page went on: not
+    // ones it had all along, as "once your application has been submitted, we'll be in touch". On
+    // the page after it, the background weighs them by the submit, as the last page's or not.
+    const says = submittedFrom ? !still || !submittedFrom.said : true;
+    const now = {
+      submitted: form.submitted && says,
+      form: shows || still,
+      errors: errorsShow(),
+    };
+    const said = JSON.stringify(now);
+    if (said === lastOutcome) return;
+    lastOutcome = said;
+    void send({ type: 'job-site', do: 'outcome', doc, ...now });
+    if (now.submitted || !now.form) submittedAt = 0;
   }
 
   /** The field an element is one of, or inside, by its place, or -1. */
@@ -516,13 +785,14 @@ export function startScript(
     // After what you gave the field you left is heard, which may offer to keep it.
     await inTurn(() => Promise.resolve());
     if (stopped || !ready) return;
-    const answers = at !== null ? (menus?.[at]?.answers ?? 0) : 0;
+    // Its answers, or for a question with none, the offer to have your Claude draft them.
+    const info = at !== null ? menus?.[at] : undefined;
+    const answers = (info?.answers ?? 0) > 0 || info?.draft === true;
     const saveAt = pendingSave;
     const tries: Shown[] = [];
-    if (at !== null && answers > 0 && saveAt !== null)
-      tries.push({ at, answers: true, save: true });
+    if (at !== null && answers && saveAt !== null) tries.push({ at, answers: true, save: true });
     if (saveAt !== null) tries.push({ at: saveAt, answers: false, save: true });
-    if (at !== null && answers > 0) tries.push({ at, answers: true, save: false });
+    if (at !== null && answers) tries.push({ at, answers: true, save: false });
     const fits = tries.find((each) => placeFor(each.at, sizeFor(each.answers, each.save)) !== null);
     const field = fits ? form?.fields[fits.at] : null;
     if (!fits || !field) {
@@ -530,7 +800,13 @@ export function startScript(
       return;
     }
     const token = crypto.randomUUID();
-    const said = await ask<{ answers: number; save: boolean; again?: boolean; stop?: boolean }>({
+    const said = await ask<{
+      answers: number;
+      save: boolean;
+      draft?: boolean;
+      again?: boolean;
+      stop?: boolean;
+    }>({
       type: 'job-site',
       do: 'menu',
       ref: field.ref,
@@ -546,14 +822,14 @@ export function startScript(
       if (await plan(true)) await showMenu(at, true);
       return;
     }
-    if (!said || (said.answers === 0 && !said.save)) {
+    if (!said || (said.answers === 0 && !said.save && !said.draft)) {
       closeMenu();
       return;
     }
     if (said.save) pendingSave = null;
     closeMenu();
     // What the background has to show, which is what it was asked for, unless that's changed.
-    const size = sizeFor(said.answers > 0, said.save);
+    const size = sizeFor(said.answers > 0 || said.draft === true, said.save);
     const place = placeFor(fits.at, size);
     if (!place) {
       void ask({ type: 'job-site', do: 'closed', token });
@@ -733,14 +1009,18 @@ export function startScript(
     if (target === element || element.contains(target)) return true;
     let up: Element | null = element;
     for (let level = 0; level < AROUND && up; level++) {
-      up = up.parentElement;
+      // A box around it, or the component it's inside, where the page leaves that open.
+      up = up.parentElement ?? (up.getRootNode() as Partial<ShadowRoot>).host ?? null;
       if (up === target) return true;
     }
     const label = (target instanceof Element ? target : target.parentElement)?.closest('label');
     return label instanceof HTMLLabelElement && label.control === element;
   };
 
-  /** You're in a field: its menu, if Factwright has answers, or the offer to keep a new one. */
+  /**
+   * You're in a field: its menu, if Factwright has answers, or can have your Claude draft them, or
+   * the offer to keep a new one.
+   */
   async function arrived(element: Element): Promise<void> {
     let at = fieldOf(element);
     if (at < 0) {
@@ -757,9 +1037,19 @@ export function startScript(
     await showMenu(at);
   }
 
+  /**
+   * The element the cursor's in, inside a component that keeps its own elements too, where the
+   * page leaves that open, as the page names the component instead.
+   */
+  const focused = (): Element | null => {
+    let now = document.activeElement;
+    while (now?.shadowRoot?.activeElement) now = now.shadowRoot.activeElement;
+    return now;
+  };
+
   /** Whether the cursor is in one of the form's fields. */
   const inAField = () => {
-    const now = document.activeElement;
+    const now = focused();
     return now !== null && fieldOf(now) >= 0;
   };
 
@@ -795,78 +1085,148 @@ export function startScript(
 
   // --- The Fill button ------------------------------------------------------------------------
 
+  /**
+   * Places the Fill button in a corner that covers none of the page's own controls, or the note in
+   * its place, there, or in the bottom right corner, over the page, as where every corner has one.
+   */
   function placeTheButton(): void {
-    if (!button) return;
-    // A page that took it away, as one that builds itself again, gets it back.
-    if (!button.host.isConnected) document.documentElement.append(button.host);
-    const size = button.card ? BUTTON_CARD : BUTTON;
+    // A page that took them away, as one that builds itself again, gets them back.
+    for (const each of [button, note]) {
+      if (each && !each.host.isConnected) document.documentElement.append(each.host);
+    }
     const room = area();
     const covered = [...controlBoxes(), ...(menu ? [boxOf(menu.host)] : [])];
-    put(button, size, room ? placeButton(size, covered, room) : null);
+    if (note) {
+      const width = Math.min(NOTE.width, (room?.width ?? innerWidth) - 2 * CORNER);
+      const size = { width, height: NOTE.height };
+      const corner = room && {
+        left: (room.left ?? 0) + room.width - CORNER - width,
+        top: (room.top ?? 0) + room.height - CORNER - NOTE.height,
+      };
+      put(note, size, room ? (placeButton(size, covered, room) ?? corner) : null);
+      if (button) put(button, BUTTON, null);
+      return;
+    }
+    if (button) put(button, BUTTON, room ? placeButton(BUTTON, covered, room) : null);
   }
 
   function showButton(): void {
-    if (!button) {
-      button = {
-        ...makeFrame(`${ext.runtime.getURL('frame.html')}#button:${doc}`, 'Factwright'),
-        card: false,
-      };
-    }
+    button ??= makeFrame(`${ext.runtime.getURL('frame.html')}#button:${doc}`, 'Factwright');
     placeTheButton();
   }
 
   function removeButton(): void {
-    if (cardTimer) clearTimeout(cardTimer);
-    cardTimer = null;
     button?.host.remove();
     button = null;
   }
 
-  /** The button says how filling went, for a while, then it's a button again. */
-  function showCard(): void {
-    if (!button) return;
-    button.card = true;
+  /** Puts a note in the Fill button's place, by the token its frame names, once the page's settled. */
+  function showNote(token: string): void {
+    if (!ready) {
+      noteWanted = token;
+      return;
+    }
+    noteWanted = null;
+    note?.host.remove();
+    note = {
+      ...makeFrame(`${ext.runtime.getURL('frame.html')}#note:${token}`, 'Factwright'),
+      token,
+      on: pageUrl(),
+      step: form?.step ?? '',
+    };
     placeTheButton();
-    if (cardTimer) clearTimeout(cardTimer);
-    cardTimer = setTimeout(() => {
-      if (!button) return;
-      button.card = false;
-      placeTheButton();
-    }, CARD_MS);
+  }
+
+  /** Takes the note away, or the one with this token, and puts the Fill button back. */
+  function hideNote(token?: string): void {
+    if (!note || (token && note.token !== token)) return;
+    note.host.remove();
+    note = null;
+    placeTheButton();
   }
 
   // --- Listening ------------------------------------------------------------------------------
 
+  /**
+   * The element an event happened at: its target, or inside a component that keeps its own
+   * elements, where the page leaves that open, the element inside it, as the page hears it as the
+   * component itself.
+   */
+  const targetOf = (event: Event): EventTarget | null => event.composedPath?.()[0] ?? event.target;
+
   const onPointer = (event: Event) => {
     if (!yourOwn(event)) return;
-    lastPointer = { at: Date.now(), target: event.composedPath?.()[0] ?? event.target };
+    const target = targetOf(event);
+    lastPointer = { at: Date.now(), target };
+    // A click in the field the cursor's in already opens its menu, as no focus comes with it: as
+    // once you've closed its menu, or it had none in the room there was.
+    const now = focused();
+    const at = now ? fieldOf(now) : -1;
+    if (!now || at < 0 || menu?.at === at || !(target instanceof Node)) return;
+    if (now === target || now.contains(target)) void arrived(now);
+  };
+  /**
+   * A click on one of the form's buttons, as you press its Submit or its Save and Continue, or on
+   * something the page made as one: a click the page made itself isn't yours.
+   */
+  const onClick = (event: Event) => {
+    if (!yourOwn(event)) return;
+    const path = event.composedPath?.() ?? [];
+    const clicked = [targetOf(event), ...path].find(
+      (each): each is Element => each instanceof Element && isButton(each),
+    );
+    if (clicked && !mine.has(clicked) && ownButton(clicked)) submitting(buttonWords(clicked));
+  };
+  /**
+   * The application's form sent as you pressed Enter in one of its boxes, by the button that sends
+   * it, or else its first: one its button's click already said, a moment ago, isn't said again. A
+   * form the page's own code sends, as it can without you, or another form, says nothing.
+   */
+  const onSubmit = (event: Event) => {
+    if (!yourOwn(event) || Date.now() - submittedAt < 1000) return;
+    const sent = event.target;
+    const { at, target } = lastEnter;
+    if (!(sent instanceof HTMLFormElement) || Date.now() - at > ENTER_MS) return;
+    if (!(target instanceof Element) || formOf(target) !== sent) return;
+    if (sent !== applicationForm()) return;
+    const by =
+      (event as SubmitEvent).submitter ??
+      sent.querySelector('button[type="submit"], button:not([type]), input[type="submit"]');
+    submitting(by ? buttonWords(by) : 'Submit');
   };
   const onFocusIn = (event: FocusEvent) => {
-    const target = event.target;
+    const target = targetOf(event);
     if (!(target instanceof Element) || mine.has(target) || target === ownFocus) return;
     if (!yours(target) || (writing !== null && fieldOf(target) === writing)) return;
     void arrived(target);
   };
   const onFocusOut = (event: FocusEvent) => {
-    const target = event.target;
+    const target = targetOf(event);
     if (!(target instanceof Element) || mine.has(target)) return;
+    // On a page of an application that runs over several, the panel filling it reads what you
+    // gave the field now, before the page can go on, as when you press its Save and Continue.
+    if (form?.step && fieldOf(target) >= 0) void send({ type: 'job-site', do: 'look', doc });
     left(target);
     // Into the menu, it stays open; into another field, that field's menu follows; anywhere
     // else, it closes, unless it offers to keep what you gave the field you left.
     setTimeout(() => {
-      if (!menu || document.activeElement === menu.host || inAField()) return;
+      if (!menu || focused() === menu.host || inAField()) return;
       if (pendingSave !== null && pendingSave === menu.at) return;
       closeMenu();
     }, 0);
   };
   const onTyped = (event: Event) => {
-    if (!yourOwn(event) || !(event.target instanceof Element)) return;
-    const field = form?.fields[fieldOf(event.target)];
+    const target = targetOf(event);
+    if (!yourOwn(event) || !(target instanceof Element)) return;
+    const field = form?.fields[fieldOf(target)];
     if (field) typed.add(field.key);
   };
   const onKey = (event: KeyboardEvent) => {
     if (!yourOwn(event)) return;
     if (event.key === 'Tab') lastTab = Date.now();
+    if (event.key === 'Enter' && sendsOnEnter(targetOf(event))) {
+      lastEnter = { at: Date.now(), target: targetOf(event) };
+    }
     if (!menu) return;
     if (event.key === 'Escape') {
       closeMenu();
@@ -874,7 +1234,7 @@ export function startScript(
     }
     // Down from a box of words goes into the menu, as it does in a browser's own suggestions. A
     // number's or a date's box, or one that offers its own choices, keeps the key for itself.
-    const target = event.target;
+    const target = targetOf(event);
     if (
       event.key === 'ArrowDown' &&
       target instanceof HTMLInputElement &&
@@ -958,7 +1318,16 @@ export function startScript(
     const ancestors = (location as { ancestorOrigins?: DOMStringList }).ancestorOrigins;
     const opener = framed && document.referrer ? [document.referrer.slice(0, MOST_URL)] : [];
     const around = (ancestors ? Array.from(ancestors) : opener).slice(0, MOST_AROUND);
-    return ask<{ allowed: boolean }>({ type: 'job-site', do: 'hello', doc, around });
+    // On the page after one you submitted, the background asks how it went.
+    return ask<{ allowed: boolean; watch?: boolean }>({
+      type: 'job-site',
+      do: 'hello',
+      doc,
+      around,
+    }).then((said) => {
+      if (said?.watch) submittedAt = Date.now();
+      return said;
+    });
   };
   /** The page is going: the background forgets it, unless the browser keeps it to come back to. */
   const onHide = () => {
@@ -1014,8 +1383,10 @@ export function startScript(
       const at = menu?.at;
       closeMenu();
       if (message.refocus && at !== undefined) refocus(at);
-    } else if (message.do === 'button') {
-      if (message.size === 'card') showCard();
+    } else if (message.do === 'note') {
+      showNote(message.token);
+    } else if (message.do === 'unnote') {
+      hideNote(message.token);
     } else if (message.do === 'hide-button') {
       buttonHidden = true;
       removeButton();
@@ -1033,9 +1404,12 @@ export function startScript(
     if (settle) clearTimeout(settle);
     if (restyled) clearTimeout(restyled);
     removeButton();
+    hideNote();
     menu?.host.remove();
     menu = null;
     removeEventListener('pointerdown', onPointer, true);
+    removeEventListener('click', onClick, true);
+    removeEventListener('submit', onSubmit, true);
     removeEventListener('keydown', onKey, true);
     removeEventListener('focusin', onFocusIn, true);
     removeEventListener('focusout', onFocusOut, true);
@@ -1056,6 +1430,8 @@ export function startScript(
 
   const script: Script = { stop };
   addEventListener('pointerdown', onPointer, true);
+  addEventListener('click', onClick, true);
+  addEventListener('submit', onSubmit, true);
   addEventListener('keydown', onKey, true);
   addEventListener('focusin', onFocusIn, true);
   addEventListener('focusout', onFocusOut, true);
@@ -1089,6 +1465,7 @@ export function startScript(
     ready = true;
     keepFollowing();
     await look();
+    if (noteWanted) showNote(noteWanted);
   });
   return script;
 }

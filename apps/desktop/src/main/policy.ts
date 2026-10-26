@@ -1,5 +1,5 @@
 import { join, normalize, resolve, sep } from 'node:path';
-import { ASK_ID, CALL_ID, FOCUS_ID, KIND_ID } from '@factwright/core';
+import { ASK_ID, CALL_ID, FOCUS_ID, type Job, KIND_ID } from '@factwright/core';
 import type { TerminalSize } from '../shared/api.ts';
 import {
   FINDING_ID,
@@ -10,10 +10,12 @@ import {
   type TemplateChoice,
 } from '../shared/revision.ts';
 import {
+  ANALYZE_SKILL,
   FACTS_SKILL,
   GET_STARTED_SKILL,
   HISTORY_SKILL,
   MONTH,
+  MOST_TO_ANALYZE,
   RUN_SKILLS,
   type RunSkill,
   type RunTask,
@@ -95,6 +97,30 @@ export function openableFile(workspace: string, path: string): string | null {
   return file.startsWith(base + sep) ? file : null;
 }
 
+/**
+ * One of a job's own files the window may save a copy of, or show where it's kept: a resume, cover
+ * letter or Projects page the job lists, inside the workspace. Anything else, an earlier version
+ * included, is null.
+ */
+export function listedFile(workspace: string, job: Job | null, path: unknown): string | null {
+  if (!job || typeof path !== 'string') return null;
+  const files = [...job.files, ...job.letters, ...job.projectPages];
+  return files.some((file) => file.path === path) ? openableFile(workspace, path) : null;
+}
+
+/**
+ * Why a copy of one of a job's files didn't save where the user picked, by the error's code, in
+ * words to act on: a file of that name there is open, as Windows locks it, there's no room, or the
+ * folder can't be written to.
+ */
+export function copyProblem(code: string | undefined): string {
+  if (code === 'EBUSY') {
+    return 'A file of that name is open there in another app. Close it, or pick another name.';
+  }
+  if (code === 'ENOSPC') return 'There isn’t room for it there. Pick another place.';
+  return 'That folder can’t be written to. Pick another one.';
+}
+
 /** The most a PDF may weigh for the window to preview it. Resumes are far smaller. */
 export const MAX_PREVIEW_BYTES = 20_000_000;
 
@@ -162,6 +188,8 @@ export function parseSearchSources(value: unknown): SearchSources | null {
 export function parseRunTask(value: unknown): RunTask | null {
   if (typeof value !== 'object' || value === null) return null;
   const fields = value as Record<string, unknown>;
+  // Analyzing several jobs in one run.
+  if (fields.jobIds !== undefined) return parseAnalyzeTask(fields);
   // A new version, or the changes the user asked for, on one job.
   if (fields.again !== undefined || fields.changes !== undefined) return parseVersionTask(fields);
   if (fields.skill === REVISE_SKILL) return parseRevision(value);
@@ -176,11 +204,19 @@ export function parseRunTask(value: unknown): RunTask | null {
       JOB_ID.test(jobId);
     return valid ? { skill, jobId, form } : null;
   }
-  const { skill, jobId, mode, askId, source, sources, callId, practice, ...rest } = value as Record<
-    string,
-    unknown
-  >;
+  const { skill, jobId, mode, askId, source, sources, callId, practice, quick, ...rest } =
+    value as Record<string, unknown>;
   if (Object.keys(rest).length > 0) return null;
+  // A quick resume, which asks nothing.
+  if (quick !== undefined) {
+    const others = [mode, askId, source, sources, callId, practice].every(
+      (field) => field === undefined,
+    );
+    const valid = others && quick === true && skill === 'focused-resume';
+    return valid && typeof jobId === 'string' && JOB_ID.test(jobId)
+      ? { skill, jobId, quick }
+      : null;
+  }
   // Prep for one of a job's calls, or practice for it, or thank-you notes after it.
   if (callId !== undefined || practice !== undefined) {
     const others = [mode, askId, source, sources].every((field) => field === undefined);
@@ -238,14 +274,31 @@ export function parseRunTask(value: unknown): RunTask | null {
 }
 
 /**
- * A revision from the window: a job by its ID, a resume's file by its name, and the IDs of the
- * findings to fix, each once, with a choice for the template when one's given.
+ * Analyzing several jobs in one run: their IDs, each once, from one up to as many as one run
+ * takes, and whether Claude started it on its own.
  */
-/** A new version of a job's resume, letter or Projects page, or changes to its resume or letter. */
+function parseAnalyzeTask(fields: Record<string, unknown>): RunTask | null {
+  const { skill, jobIds, auto, ...rest } = fields;
+  if (Object.keys(rest).length > 0 || skill !== ANALYZE_SKILL) return null;
+  if (!Array.isArray(jobIds) || jobIds.length === 0 || jobIds.length > MOST_TO_ANALYZE) return null;
+  if (!jobIds.every((id) => typeof id === 'string' && JOB_ID.test(id))) return null;
+  if (new Set(jobIds).size !== jobIds.length) return null;
+  if (auto !== undefined && auto !== true) return null;
+  return { skill, jobIds: [...jobIds] as string[], ...(auto && { auto }) };
+}
+
+/**
+ * A new version of a job's resume, letter or Projects page, a quick one of its resume, or changes
+ * to its resume or letter.
+ */
 function parseVersionTask(fields: Record<string, unknown>): RunTask | null {
-  const { skill, jobId, again, changes, ...rest } = fields;
+  const { skill, jobId, again, changes, quick, ...rest } = fields;
   if (Object.keys(rest).length > 0) return null;
   if (typeof jobId !== 'string' || !JOB_ID.test(jobId)) return null;
+  if (quick !== undefined) {
+    const valid = quick === true && again === true && changes === undefined;
+    return valid && skill === 'focused-resume' ? { skill, jobId, again, quick } : null;
+  }
   if (again === true && changes === undefined) {
     return (VERSION_SKILLS as readonly unknown[]).includes(skill)
       ? { skill: skill as VersionSkill, jobId, again }
@@ -257,6 +310,10 @@ function parseVersionTask(fields: Record<string, unknown>): RunTask | null {
   return null;
 }
 
+/**
+ * A revision from the window: a job by its ID, a resume's file by its name, and the IDs of the
+ * findings to fix, each once, with a choice for the template when one's given.
+ */
 function parseRevision(value: object): RunTask | null {
   const { skill, jobId, resume, findings, template, ...rest } = value as Record<string, unknown>;
   if (Object.keys(rest).length > 0 || skill !== REVISE_SKILL) return null;
@@ -315,6 +372,11 @@ export function runPrompt(task: RunTask): string {
     return `/factwright:${task.skill} ${what ? `${what}: ` : ''}${places.join(' · ')}`;
   }
   if ('source' in task) return `/factwright:${task.skill} from ${SOURCES_FOLDER}/${task.source}`;
+  // Several jobs by their IDs, and that Claude started it on its own, in words of the app's own.
+  if ('jobIds' in task) {
+    const own = task.auto ? ' on its own' : '';
+    return `/factwright:${task.skill} jobs ${task.jobIds.join(' ')}${own}`;
+  }
   // The findings by their IDs alone, which hold no posting's words. The run reads the resume
   // and what the findings say with revision_findings.
   if ('findings' in task) {
@@ -322,7 +384,12 @@ export function runPrompt(task: RunTask): string {
     return `/factwright:${task.skill} job ${task.jobId} findings ${task.findings.join(' ')}${template}`;
   }
   // Which one, by a word of the app's own: the run reads the user's changes with
-  // requested_changes, and a new version's job_details says the app kept the one before.
+  // requested_changes, and a new version's job_details says the app kept the one before. A
+  // quick resume, which asks nothing, says so last.
+  if ('quick' in task) {
+    const version = 'again' in task && task.again ? ' new version' : '';
+    return `/factwright:${task.skill} job ${task.jobId}${version} quick`;
+  }
   if ('again' in task) return `/factwright:${task.skill} job ${task.jobId} new version`;
   if ('changes' in task) return `/factwright:${task.skill} job ${task.jobId} changes`;
   if ('askId' in task) return `/factwright:ask job ${task.jobId} question ${task.askId}`;
@@ -335,4 +402,72 @@ export function runPrompt(task: RunTask): string {
   if ('jobId' in task) return `/factwright:${task.skill} job ${task.jobId}`;
   const mode = 'mode' in task ? task.mode : undefined;
   return mode ? `/factwright:${task.skill} ${MODE_WORDS[mode]}` : `/factwright:${task.skill}`;
+}
+
+/**
+ * A quick resume's prompt: the tailored resume's command, ending with "quick", as runPrompt types
+ * it or as the user types it themselves.
+ */
+const QUICK_RESUME = /^\/(?:factwright:)?focused-resume(?:\s[\s\S]*)?\squick$/;
+
+/** What Claude reads in place of an answer when it asks the user something in a quick resume. */
+export const QUICK_ASKS_NOTHING =
+  'A quick resume asks the user nothing, so this wasn’t asked. Go on with the defaults and what’s on file, as the skill’s Quick resume section says, and put what you wanted to ask under What could make it stronger.';
+
+/** Analyzing several jobs in one run, as runPrompt types it or the user types it themselves. */
+const ANALYZE_SEVERAL = /^\/(?:factwright:)?analyze-job\s+jobs\s/;
+
+/** What Claude reads in place of an answer when it asks the user something analyzing several jobs. */
+export const SEVERAL_ASK_NOTHING =
+  'Analyzing several jobs asks the user nothing, so this wasn’t asked. Go on with what’s on file, and put what you wanted to ask in the job’s write-up, under Worth asking you, or say in your reply what’s missing, such as a posting that wouldn’t load.';
+
+/**
+ * What Claude Code reads in place of the user's OK when it asks for one analyzing several jobs, for
+ * a call that then never runs.
+ */
+export const SEVERAL_PERMITS_NOTHING =
+  'Analyzing several jobs asks the user nothing, so this wasn’t asked, and the call didn’t run. Go on without it, with Factwright’s tools and what’s on file, and say in the job’s line what’s missing.';
+
+/**
+ * Why a task asks the user nothing, by its prompt, for Claude to read when it asks anyway: a
+ * quick resume's, or analyzing several jobs, which goes on while the user does other things, or
+ * which Claude started on its own. Null for any other task, which may ask.
+ */
+export function asksNothing(prompt: unknown): string | null {
+  if (typeof prompt !== 'string') return null;
+  const typed = prompt.trim();
+  if (QUICK_RESUME.test(typed)) return QUICK_ASKS_NOTHING;
+  return ANALYZE_SEVERAL.test(typed) ? SEVERAL_ASK_NOTHING : null;
+}
+
+/**
+ * Why a task turns away Claude Code's permission prompts too, by its prompt: analyzing several
+ * jobs, which goes on while the user does other things, or which Claude started on its own. Null
+ * for any other task, whose prompts the user answers.
+ */
+export function permitsNothing(prompt: unknown): string | null {
+  return typeof prompt === 'string' && ANALYZE_SEVERAL.test(prompt.trim())
+    ? SEVERAL_PERMITS_NOTHING
+    : null;
+}
+
+/** Claude Code's word that a task it ran in the background is back, which comes as a prompt. */
+const TASK_NOTIFICATION = /<task-notification[\s>]/;
+
+/**
+ * Why the task at hand asks the user nothing, once another hook comes from its run: a prompt
+ * sent, the app's or one the user typed, starts another task, which asks nothing only if its
+ * prompt says so, by the same rule. A helper Claude ran in the background reporting back, which
+ * Claude Code sends as a prompt too, is part of the same task, as is any other hook.
+ */
+export function asksNothingAfter(
+  reason: string | null,
+  event: unknown,
+  rule: (prompt: unknown) => string | null = asksNothing,
+): string | null {
+  if (typeof event !== 'object' || event === null) return reason;
+  const fields = event as Record<string, unknown>;
+  if (fields.hook_event_name !== 'UserPromptSubmit') return reason;
+  if (typeof fields.prompt === 'string' && TASK_NOTIFICATION.test(fields.prompt)) return reason;
+  return rule(fields.prompt);
 }

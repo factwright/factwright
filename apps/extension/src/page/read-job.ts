@@ -57,6 +57,16 @@ export function readJobPage(
   /** Query parameters that only track where a click came from (@factwright/core's links.ts). */
   const TRACKING_PARAM =
     /^(utm_|ref$|src$|source$|from$|tk$|trk|rjptk|xpse|xfps|xkcb|gh_src|lever-)/i;
+  /**
+   * What iCIMS's career sites add to a page's address to show it in their frame, and the address
+   * of the page around it then takes: its size and the visitor's time zone, which name nothing.
+   */
+  const ICIMS_FRAME_PARAM =
+    /^(in_iframe|mobile|width|height|bga|needsRedirect|jan1offset|jun1offset)$/i;
+  const ICIMS = /(^|\.)icims\.com$/i;
+  /** Whether a query's part, by its name, is no part of a page's address on a site. */
+  const dropped = (name: string, host: string) =>
+    TRACKING_PARAM.test(name) || (ICIMS.test(host) && ICIMS_FRAME_PARAM.test(name));
   /** Job boards and applicant systems, which are never the company a job is with. */
   const BOARDS =
     /^(linkedin|indeed|glassdoor|ziprecruiter|monster|wellfound|angellist|dice|simplyhired|careerbuilder|built ?in|hired|otta|welcome to the jungle|greenhouse|lever|workday|ashby|smartrecruiters|jobvite|icims)(\.com)?$/i;
@@ -81,6 +91,35 @@ export function readJobPage(
   ]);
   /** A page's own parts around its content, left out of its main text. */
   const AROUND = new Set(['NAV', 'HEADER', 'FOOTER', 'ASIDE', 'FORM']);
+  /**
+   * What a form asks you to fill in, as the form's own function counts its fields (page/form.ts):
+   * boxes, lists and boxes to tick, and what a site builds them of, as a list that's a button. A
+   * site's search box, a slider, and a box that can't be changed, as one to copy a link from,
+   * aren't.
+   */
+  const FIELDS = [
+    'input:not([type="hidden"]):not([type="submit"]):not([type="button"]):not([type="reset"]):not([type="image"]):not([type="search"]):not([type="range"]):not([readonly]):not([disabled])',
+    'select:not([disabled])',
+    'textarea:not([readonly]):not([disabled])',
+    '[contenteditable="true"]',
+    '[role="textbox"]',
+    '[role="combobox"]',
+    '[role="radiogroup"]',
+    '[role="radio"]',
+    '[role="checkbox"]',
+    '[role="switch"]',
+    'button[aria-haspopup="listbox"]',
+    '[role="button"][aria-haspopup="listbox"]',
+  ].join(', ');
+  /** The fewest questions an application form asks: fewer are a box or two on a page. */
+  const FORM_QUESTIONS = 3;
+  /**
+   * What marks the page of an application that runs over several, as the form's own function
+   * finds it (page/form.ts): Workday's progress bar, iCIMS's and Taleo's steps, or any marked as
+   * the current step.
+   */
+  const STEP_NOW =
+    '[data-automation-id="progressBarActiveStep"], [aria-current="step"], li.iCIMS_Steps_Current, .datatrain-focus .datatrain-wagon';
   /** Elements that start a new line or paragraph. */
   const BLOCKS = new Set([
     'P',
@@ -107,14 +146,27 @@ export function readJobPage(
     'HR',
   ]);
 
+  /** The sites SuccessFactors' career pages are on, by its data centers' names. */
+  const SUCCESSFACTORS = /(^|\.)(successfactors\.(com|eu)|sapsf\.(com|eu|cn)|hr\.cloud\.sap)$/;
+
   /** Each big job site's own places for the posting and its details, newest layouts first. */
   const SITES: {
     host: RegExp;
     posting: string[];
     title: string[];
+    /** Where it shows the pay, for a site whose job data has none, such as Lever's salary range. */
+    pay?: string[];
+    /** Words its heading puts around a job's title, which aren't the title's. */
+    aroundTitle?: RegExp;
+    /** The job's title in the tab's title, for pages that show it nowhere else. */
+    titleInTitle?: RegExp;
+    /** The job's title in the page's words, as a banner says it, for pages with no heading for it. */
+    titleInPage?: RegExp;
     company: string[];
     /** The company in the tab's title, for a site that shows its name nowhere else as text. */
     companyInTitle?: RegExp;
+    /** The company in the site's own name, for a site that names it nowhere else. */
+    companyInHost?: RegExp;
     location: string[];
   }[] = [
     {
@@ -182,6 +234,8 @@ export function readJobPage(
       host: /(^|\.)lever\.co$/,
       posting: ['[data-qa="job-description"]', '.posting-page .content', '.section-wrapper'],
       title: ['.posting-headline h2'],
+      // Its job data has no pay: its salary section says it, as "$161,000 - $245,000 a year".
+      pay: ['[data-qa="salary-range"] > div'],
       company: [],
       location: ['.posting-categories .location', '.posting-category.location'],
     },
@@ -221,9 +275,50 @@ export function readJobPage(
         '.job-sections',
         '[itemprop="description"]',
       ],
-      title: ['.job-title'],
+      title: ['.job-title', '[data-test="topbar-job-title"]'],
       company: [],
-      location: ['.job-detail'],
+      // Its application names the company in the tab's title, page by page: "Easy apply - Robotics
+      // Engineer - Acme", then "Preliminary questions - Robotics Engineer - Acme".
+      companyInTitle: /^(?:easy apply|preliminary questions|assessment) - .+ - (.+)$/i,
+      location: ['.job-detail', '[data-test="topbar-location"]'],
+    },
+    {
+      // iCIMS's career portals, each a company's own at icims.com, as "careers-acme". Each shows
+      // its pages in a frame of a page of its own, which is only the company's branding: the
+      // posting's page, in the frame, has the job's title, where it is and the posting, and its
+      // application's pages name the job only in the tab's title, "Candidate Profile - Robotics
+      // Engineer". The company is only in the portal's name.
+      host: /(^|\.)icims\.com$/,
+      posting: ['.iCIMS_JobPage .iCIMS_JobContent'],
+      title: ['.iCIMS_JobPage h1.iCIMS_Header'],
+      titleInTitle: /^(?:.+ - )?(?:candidate profile|basic information) - (.+)$/i,
+      company: [],
+      companyInHost: /^(?:[a-z0-9]+-)*([a-z0-9]+)\.icims\.com$/i,
+      location: [
+        '.iCIMS_JobPage .iCIMS_JobHeaderTag:has(.glyphicons-map-marker) .iCIMS_JobHeaderData',
+      ],
+    },
+    {
+      // Taleo's career sections, each at a company's own name at taleo.net: each step of its
+      // application names the job only in its banner, "Applying for: Data Analyst (Job Number:
+      // 2600123)", and the company only in the site's name.
+      host: /(^|\.)taleo\.net$/,
+      posting: [],
+      title: [],
+      titleInPage: /\bApplying for:\s*(.+?)\s*\(Job Number:/i,
+      company: [],
+      companyInHost: /^([a-z0-9]+)\.taleo\.net$/i,
+      location: [],
+    },
+    {
+      // SuccessFactors' career pages, where its applications are: its heading says the job, with
+      // its requisition's number, "Data Analyst (1042)", or "Career Opportunities: …" before it.
+      host: SUCCESSFACTORS,
+      posting: ['.joqReqDescription'],
+      title: ['#pageTitle_ h1', '#jobAppPageTitle h1', '.pagetitle h1'],
+      aroundTitle: /^career opportunities:\s*(apply for\s+)?|\s*\([\w-]{1,40}\)$/gi,
+      company: [],
+      location: [],
     },
   ];
 
@@ -255,11 +350,11 @@ export function readJobPage(
           : [decoded(pair.slice(0, at)), decoded(pair.slice(at + 1))];
       });
   /** An address's query without its tracking, and the rest of it as it was. */
-  const untracked = (search: string) => {
+  const untracked = (search: string, host: string) => {
     const kept = search
       .replace(/^\?/, '')
       .split('&')
-      .filter((pair) => pair && !TRACKING_PARAM.test(decoded(pair.split('=', 1)[0] ?? '')));
+      .filter((pair) => pair && !dropped(decoded(pair.split('=', 1)[0] ?? ''), host));
     return kept.length > 0 ? `?${kept.join('&')}` : '';
   };
 
@@ -271,9 +366,14 @@ export function readJobPage(
 
   /**
    * An element's text as lines and paragraphs, with list items as "- " lines, leaving out the
-   * elements named in `skip`. It reads the page as it is: nothing in it is copied or changed.
+   * elements named in `skip`, and the elements in `leaveOut`. It reads the page as it is: nothing
+   * in it is copied or changed.
    */
-  function textOf(root: Node, skip: ReadonlySet<string> = new Set()): string {
+  function textOf(
+    root: Node,
+    skip: ReadonlySet<string> = new Set(),
+    leaveOut: ReadonlySet<Element> = new Set(),
+  ): string {
     const parts: string[] = [];
     const visit = (node: Node) => {
       if (node.nodeType === 3) {
@@ -283,7 +383,7 @@ export function readJobPage(
       if (node.nodeType !== 1) return;
       const element = node as Element;
       const tag = element.tagName.toUpperCase();
-      if (SKIPPED.has(tag) || skip.has(tag) || hidden(element)) return;
+      if (SKIPPED.has(tag) || skip.has(tag) || leaveOut.has(element) || hidden(element)) return;
       if (tag === 'BR') {
         parts.push('\n');
         return;
@@ -317,6 +417,49 @@ export function readJobPage(
         .replace(/^(- .*)\n\n(?=- )/gm, '$1\n')
         .trim()
     );
+  }
+
+  /**
+   * The questions a form asks inside an element, each with its fields: radio buttons and boxes to
+   * tick that share a name ask one. What the element's text leaves out doesn't count: a field the
+   * page hides, or inside an element it hides, as a closed dialog's, or inside the elements `skip`
+   * names, as a form element. Nor does a field inside another, as a list's own box, part of it.
+   */
+  function questionsIn(root: Element, skip: ReadonlySet<string>): Element[][] {
+    const fields = Array.from(root.querySelectorAll(FIELDS));
+    const isField = new Set(fields);
+    const asked = new Map<string, Element[]>();
+    for (const [at, field] of fields.entries()) {
+      let left = hidden(field);
+      for (let up = field.parentElement; up && up !== root && !left; up = up.parentElement) {
+        left = isField.has(up) || skip.has(up.tagName.toUpperCase()) || hidden(up);
+      }
+      if (left) continue;
+      const name = field.getAttribute('name');
+      const key =
+        /^(radio|checkbox)$/i.test(field.getAttribute('type') ?? '') && name
+          ? `name ${name}`
+          : `field ${at}`;
+      const same = asked.get(key);
+      if (same) same.push(field);
+      else asked.set(key, [field]);
+    }
+    return Array.from(asked.values());
+  }
+
+  /**
+   * An application form built without a form element, as a site's components can be, inside an
+   * element: the smallest element that holds all its questions, which may be the element itself.
+   * Null where it asks none, or only a box or two, as a menu's box to tick or a newsletter's.
+   */
+  function applicationIn(root: Element, skip: ReadonlySet<string>): Element | null {
+    const questions = questionsIn(root, skip);
+    if (questions.length < FORM_QUESTIONS) return null;
+    let around: Element = questions[0]?.[0]?.parentElement ?? root;
+    for (const field of questions.flat()) {
+      while (around !== root && !around.contains(field)) around = around.parentElement ?? root;
+    }
+    return around;
   }
 
   /** Markup, such as a posting's description in the page's job data, as text. */
@@ -424,6 +567,8 @@ export function readJobPage(
     };
   }
 
+  /** What a site puts in its job data for a part it doesn't know, as iCIMS's "UNAVAILABLE". */
+  const UNKNOWN = /^(unavailable|unknown|n\/a|null|undefined)$/i;
   /** Where a posting's job is, from its job data. */
   function placeOf(posting: Record<string, unknown>): string {
     const places = (
@@ -436,7 +581,7 @@ export function readJobPage(
         const parts = address as Record<string, unknown>;
         return [parts.addressLocality, parts.addressRegion, nameOf(parts.addressCountry)]
           .map(nameOf)
-          .filter(Boolean)
+          .filter((part) => part && !UNKNOWN.test(part))
           .join(', ');
       })
       .filter(Boolean);
@@ -499,7 +644,17 @@ export function readJobPage(
       const key = param('vjk') ?? param('jk');
       if (key && /^[\w-]+$/.test(key)) return `https://${url.hostname}/viewjob?jk=${key}`;
     }
-    url.search = untracked(url.search);
+    // SuccessFactors' application, once you've signed in, is at your session's address, which
+    // names neither the company nor the job: its form keeps both, which make the posting's own.
+    if (SUCCESSFACTORS.test(host)) {
+      const kept = (id: string) => (doc.getElementById(id) as HTMLInputElement | null)?.value ?? '';
+      const company = kept('career_company');
+      const job = kept('career_job_req_id');
+      if (/^[\w-]{1,40}$/.test(company) && /^[\w-]{1,40}$/.test(job)) {
+        return `https://${url.hostname}/sfcareer/jobreqcareer?jobId=${job}&company=${company}`;
+      }
+    }
+    url.search = untracked(url.search, host);
     // A link's "#:~:text=…", which only highlights words on the page, is no part of its address.
     const hash = url.hash.replace(/:~:.*$/s, '');
     url.hash = /^#!?\//.test(hash) ? hash : '';
@@ -532,10 +687,11 @@ export function readJobPage(
       // address.
       const hash = url.hash.replace(/:~:.*$/s, '').replace(/^#$/, '');
       const route = /^#!?\/./.test(hash) ? hash.replace(/\/+$/, '').toLowerCase() : '';
+      const host = url.hostname.replace(/^www\./, '').toLowerCase();
       return {
-        host: url.hostname.replace(/^www\./, '').toLowerCase(),
+        host,
         segments: url.pathname.toLowerCase().split('/').filter(Boolean),
-        query: queryOf(url.search).filter(([key]) => !TRACKING_PARAM.test(key)),
+        query: queryOf(url.search).filter(([key]) => !dropped(key, host)),
         route,
         /** A place on the page, such as "#job-2", which some pages of several jobs use. */
         anchor: route ? '' : hash.toLowerCase(),
@@ -597,7 +753,12 @@ export function readJobPage(
     first(selectors ?? [], (element) => oneLine(textOf(element)));
   /** Indeed's title ends with words only screen readers hear. */
   const JOB_POST = /\s*-\s*job post\s*$/i;
-  const shownTitle = fromSite(known?.title).replace(JOB_POST, '');
+  const shownTitle =
+    fromSite(known?.title)
+      .replace(JOB_POST, '')
+      .replace(known?.aroundTitle ?? JOB_POST, '') ||
+    oneLine(known?.titleInTitle?.exec(oneLine(doc.title).slice(0, 500))?.[1]) ||
+    oneLine(known?.titleInPage?.exec(oneLine(doc.body?.textContent ?? '').slice(0, 5000))?.[1]);
 
   /** A posting's title, as text: "R&amp;D Engineer" is "R&D Engineer". */
   const titleOf = (posting: Record<string, unknown>) =>
@@ -683,8 +844,12 @@ export function readJobPage(
   const shown = postings.filter(showsTitle);
   const data = here.length === 1 ? here[0] : shown.length === 1 ? shown[0] : undefined;
 
-  /** A site's name, unless it's a job board's or an applicant system's, which no job is with. */
-  const notBoard = (name: string) => (BOARDS.test(name.trim()) ? '' : name);
+  /**
+   * A site's name, unless it's a job board's or an applicant system's, which no job is with, or
+   * only says it's a careers site, as iCIMS's "careers".
+   */
+  const notBoard = (name: string) =>
+    BOARDS.test(name.trim()) || /^(careers?|jobs?)$/i.test(name.trim()) ? '' : name;
   // A Hacker News post's text, and the company and title its first line names, which are all a
   // post has: never the tab's title, which is only the post's first words.
   const postText = post ? textOf(post.text) : '';
@@ -704,20 +869,34 @@ export function readJobPage(
       fromSite(known?.company) ||
       // A tab's title is short: one that isn't is read only as far as any title goes.
       oneLine(known?.companyInTitle?.exec(oneLine(doc.title).slice(0, 500))?.[1]) ||
-      notBoard(meta('og:site_name'));
+      notBoard(meta('og:site_name')) ||
+      ((name) => name.charAt(0).toUpperCase() + name.slice(1))(
+        known?.companyInHost?.exec(site)?.[1] ?? '',
+      );
 
   const selection = oneLine(selected).length >= MIN_SELECTION ? selected.trim() : '';
   const described = data?.description ? textOfMarkup(String(data.description)) : '';
-  const onSite = post ? postText : first(known?.posting ?? [], (element) => textOf(element));
-  // The page's main text, without its navigation, headers, footers and forms. Never LinkedIn's,
-  // where anything but the job's own posting, such as messages, isn't the job's.
+  // Where the job site shows its posting, unless what's there is its application form, as Ashby's
+  // is on its application's tab.
+  const onSite = post
+    ? postText
+    : first(known?.posting ?? [], (element) =>
+        questionsIn(element, new Set()).length >= FORM_QUESTIONS ? '' : textOf(element),
+      );
+  // The page's main text, without its navigation, headers, footers and forms, and without an
+  // application form built without a form element, or none where that's all there is. None on a
+  // page of an application that runs over several, which never shows the posting. Never
+  // LinkedIn's, where anything but the job's own posting, such as messages, isn't the job's.
   const main = () => {
-    if (linkedIn) return '';
+    if (linkedIn || doc.querySelector(STEP_NOW)) return '';
     const root =
       doc.querySelector('main, [role="main"], article') ??
       doc.querySelector('#content') ??
       doc.body;
-    return root ? textOf(root, AROUND) : '';
+    if (!root) return '';
+    const form = applicationIn(root, AROUND);
+    if (form === root) return '';
+    return textOf(root, AROUND, form ? new Set([form]) : new Set());
   };
 
   let posting = '';
@@ -737,6 +916,8 @@ export function readJobPage(
     source = posting ? 'main' : 'page';
   }
 
+  /** What the job site shows as the pay, when it's short enough to be only that. */
+  const shownPay = fromSite(known?.pay);
   return {
     url: jobUrl(),
     pageUrl: href,
@@ -745,7 +926,7 @@ export function readJobPage(
     title,
     company,
     location: (data && placeOf(data)) || fromSite(known?.location),
-    pay: data ? payOf(data) : '',
+    pay: (data && payOf(data)) || (shownPay.length <= 200 && /\d/.test(shownPay) ? shownPay : ''),
     employment: data ? employmentOf(data.employmentType) : '',
     posted: oneLine(data?.datePosted).slice(0, 10),
     posting: posting.slice(0, MAX_POSTING),

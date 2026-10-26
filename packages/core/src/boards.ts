@@ -88,6 +88,28 @@ export function boardPostingId(address: string): string | null {
   return segments(url)[1] ?? null;
 }
 
+/**
+ * A Workable posting's ID, its shortcode, which names it across Workable, the same on its
+ * application: "apply.workable.com/acme/j/1B6E0A1710/" and "…/j/1B6E0A1710/apply" alike, Workable's
+ * short link, "apply.workable.com/j/1B6E0A1710", and a company's own name at workable.com, as
+ * "acme.workable.com/j/1B6E0A1710". Null for a company's whole board, as "apply.workable.com/acme",
+ * or a link that isn't on Workable.
+ */
+export function workablePostingId(address: string): string | null {
+  let url: URL;
+  try {
+    url = new URL(address);
+  } catch {
+    return null;
+  }
+  if (!/(^|\.)workable\.com$/.test(url.hostname.toLowerCase())) return null;
+  const parts = segments(url);
+  // "j" first, or after the company's name.
+  const at = parts.indexOf('j');
+  const id = at === 0 || at === 1 ? parts[at + 1] : undefined;
+  return id && /^[A-Za-z0-9]{1,40}$/.test(id) ? id : null;
+}
+
 /** Where the applicant system lists every open job on the board, as JSON. */
 export function boardRequest(source: BoardSource): string {
   const board = encodeURIComponent(source.board);

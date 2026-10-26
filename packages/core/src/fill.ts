@@ -25,7 +25,7 @@ import {
   type WorkHistory,
   yearOf,
 } from './history.ts';
-import { parsePay } from './pay.ts';
+import { parsePay, payBand } from './pay.ts';
 
 /**
  * Answering an application form from what's on file, field by field: Profile first, then the
@@ -60,6 +60,8 @@ export interface ForApplications {
   over18: '' | 'yes' | 'no';
   /** What to say to "How did you hear about us?" when where you found the job doesn't say. */
   howHeard: string;
+  /** Why you're leaving your job, or why you left your last one, in your own words. */
+  leaving: string;
 }
 
 /**
@@ -101,6 +103,7 @@ export const NO_APPLICATIONS: ForApplications = {
   sponsorship: '',
   over18: '',
   howHeard: '',
+  leaving: '',
 };
 
 export const NO_EQUAL_OPPORTUNITY: EqualOpportunity = {
@@ -146,6 +149,18 @@ export interface ResumeOnFile {
   summary: string;
 }
 
+/**
+ * The pay to ask for at a job: your own for it, or else your Claude's suggestion for it, or else
+ * your target for its kind of job, as Profile keeps it.
+ */
+export interface PayAsk {
+  /** As you or your Claude put it, such as "$185,000". */
+  text: string;
+  from: 'you' | 'claude' | 'target';
+  /** For a target, the kind of job it's for, when you want more than one, such as "Developer". */
+  kind: string | null;
+}
+
 /** An answer you sent before, with whose application it was in. */
 export interface SentBefore {
   question: string;
@@ -175,8 +190,8 @@ export interface OnFile {
   /** When you can start, as you put it, such as "two weeks' notice". */
   start: string;
   relocate: '' | 'no' | 'maybe' | 'yes';
-  /** The pay you're after, as you put it, such as "$150,000". */
-  targetPay: string;
+  /** The pay to ask for at this job, as payAskFor finds it, or null when there's none. */
+  pay: PayAsk | null;
   /** What the job's own resume, or your newest, says of you, or null when you have none yet. */
   resume: ResumeOnFile | null;
   /** Profile's work history and education, for forms that ask for each job and school. */
@@ -450,6 +465,19 @@ function schoolAt(onFile: OnFile, nth: number): (School & Said) | null {
   };
 }
 
+/**
+ * How many jobs and schools on file a form that asks for each one can take, one to a part:
+ * Profile's work history, then the resume's, past what the history lists, as each part takes the
+ * next. The extension adds a part for each on a form with a button that adds another, as
+ * Workday's My Experience has, when you choose to.
+ */
+export function blocksOnFile(onFile: OnFile): { jobs: number; schools: number } {
+  return {
+    jobs: Math.max(positionsOf(onFile.history).length, onFile.resume?.positions.length ?? 0),
+    schools: Math.max(onFile.history.schools.length, onFile.resume?.education.length ?? 0),
+  };
+}
+
 /** The months, by the words a resume may use for them. */
 const MONTH_WORDS = [
   'jan',
@@ -491,6 +519,8 @@ function dateReply(kind: FieldKind, field: FormField, date: string, said: Said):
   const question = plain(`${field.question} ${field.hint}`);
   const month = /\bmonth\b/.test(question);
   const year = /\byear\b/.test(question);
+  // A date's day, as iCIMS asks it beside the month and year, which a job's dates never say.
+  if (!month && !year && /\bday\b/.test(question)) return left(kind, 'pick');
   const reply = (words: string[]): FieldReply =>
     words.some(Boolean) ? { ...fromProfile(kind, field, ...words), ...said } : left(kind, 'unset');
   if (date === 'present') {
@@ -514,7 +544,9 @@ function dateReply(kind: FieldKind, field: FormField, date: string, said: Said):
 
 /**
  * Factwright's answers for a form's fields, in order: each part of the form for a job or a
- * school takes the next one, newest first, as a form asks for one job, then another.
+ * school takes the next one, newest first, as a form asks for one job, then another. A part the
+ * form numbers itself, as "Experience 3", takes that one: the ones before it are on the form
+ * already, as SmartRecruiters lists the jobs you saved, and only shows a part to fill for the next.
  */
 export function answerForm(fields: readonly FormField[], onFile: OnFile): FieldReply[] {
   const asked = new Map<string, number>();
@@ -526,7 +558,10 @@ export function answerForm(fields: readonly FormField[], onFile: OnFile): FieldR
     const question = plain(field.question);
     const piece = /\bmonth\b/.test(question) ? 'month' : /\byear\b/.test(question) ? 'year' : '';
     const key = `${part}:${kind}:${piece}`;
-    const nth = asked.get(key) ?? 0;
+    const numbered = Number(
+      /\b(\d{1,2})$/.exec(plain(field.section?.split(' › ').at(-1) ?? ''))?.[1],
+    );
+    const nth = Math.max(asked.get(key) ?? 0, numbered > 0 ? numbered - 1 : 0);
     asked.set(key, nth + 1);
     return answerField(field, onFile, nth);
   });
@@ -804,12 +839,128 @@ function linkOrHandle(
 }
 
 /** Pay as one amount a year, for a box that takes a number, or null when it isn't one, clearly. */
-function yearlyPay(field: FormField, targetPay: string): number | null {
+function yearlyPay(field: FormField, ask: string): number | null {
   // By the hour, week or month, or in thousands, a number says something else.
   const other = /\b(hour|hourly|hr|week|weekly|month|monthly|day|daily|thousands?|in k)\b/;
-  if (other.test(plain(`${field.question} ${field.hint} ${targetPay}`))) return null;
-  const pay = parsePay(targetPay);
+  if (other.test(plain(`${field.question} ${field.hint} ${ask}`))) return null;
+  const pay = parsePay(ask);
   return pay && pay.min === pay.max ? pay.min : null;
+}
+
+/** The codes of currencies other than dollars, as pay may name them. */
+const CURRENCY_CODES =
+  /\b(eur|gbp|inr|jpy|cny|rmb|cad|aud|nzd|sgd|hkd|chf|sek|nok|dkk|pln|mxn|brl|zar)\b/;
+
+/** Dollars of other countries, by the letters before their sign, as "CA$" or "A$". */
+const OTHER_DOLLARS: Readonly<Record<string, string>> = {
+  ca: 'cad',
+  c: 'cad',
+  au: 'aud',
+  a: 'aud',
+  nz: 'nzd',
+  hk: 'hkd',
+  sg: 'sgd',
+  s: 'sgd',
+  mx: 'mxn',
+};
+
+/** The currency a pay names, by its sign or code, or "" for US dollars, or none named. */
+function currencyOf(text: string): string {
+  const signs: Record<string, string> = { '€': 'eur', '£': 'gbp', '₹': 'inr', '¥': 'jpy' };
+  const sign = /[€£₹¥]/.exec(text)?.[0];
+  if (sign) return signs[sign] ?? '';
+  const dollars = /\b(ca|c|au|a|nz|hk|sg|s|mx)\$/.exec(text.toLowerCase())?.[1];
+  if (dollars) return OTHER_DOLLARS[dollars] ?? '';
+  return CURRENCY_CODES.exec(text.toLowerCase())?.[1] ?? '';
+}
+
+/**
+ * The option whose band holds the pay to ask for, as "$150,000 - $199,999" holds $185,000, and
+ * all of it, for an ask that's a range. Where two bands hold it, as "$100k-$150k" and
+ * "$150k-$200k" both hold $150,000, the higher, as an ask is the least you'd want, and of two that
+ * start alike, as "$150k+" and "$150k-$199k", the narrower. Null when none holds it, or the
+ * options are in another currency than the ask.
+ */
+function payOption(options: readonly string[], ask: string): string | null {
+  const wanted = parsePay(ask);
+  // An ask with no amount, as "Negotiable", takes the option with the same words.
+  if (!wanted) return options.find((option) => plain(option) === plain(ask)) ?? null;
+  const held = options.flatMap((option) => {
+    const band = payBand(option);
+    return band &&
+      currencyOf(option) === currencyOf(ask) &&
+      band.min <= wanted.min &&
+      wanted.max <= band.max
+      ? [{ option, band }]
+      : [];
+  });
+  return held.sort((a, b) => b.band.min - a.band.min || a.band.max - b.band.max)[0]?.option ?? null;
+}
+
+/** Where the pay to ask for came from, as a reply says it. */
+function paySaid(pay: PayAsk): Pick<FieldReply, 'source' | 'from'> {
+  if (pay.from === 'you') return { source: 'job', from: 'Your ask for this job' };
+  if (pay.from === 'claude') {
+    return { source: 'claude', from: 'Your Claude’s suggestion for this job' };
+  }
+  return { source: 'profile', ...(pay.kind && { from: `Your target for ${pay.kind} jobs` }) };
+}
+
+/**
+ * Pay, as the field takes it: the ask as it's written for a box to type in, one yearly amount for
+ * a box that takes a number, and for a choice, the option whose band holds it.
+ */
+function payReply(field: FormField, pay: PayAsk | null): FieldReply {
+  if (!pay?.text.trim()) return left('pay', 'unset');
+  const said = paySaid(pay);
+  if (choosing(field)) {
+    const option = payOption(field.options, pay.text);
+    return option ? { kind: 'pay', pick: [option], exact: true, ...said } : left('pay', 'pick');
+  }
+  if (field.control !== 'number') return { kind: 'pay', text: pay.text, ...said };
+  const yearly = yearlyPay(field, pay.text);
+  return yearly ? { kind: 'pay', text: String(yearly), ...said } : left('pay', 'unset');
+}
+
+/**
+ * Why you're leaving, from Profile, as the field takes it: your words for a box, or the option
+ * that says them. What you sent before and your Claude's draft for this job go beside it, for the
+ * field menus to offer, and where Profile has nothing that fits, they answer it, as they answer a
+ * form's own question. Profile's answer is about the job you hold now, or held last, so in the
+ * parts of a form for each job, only the first, the newest, takes it.
+ */
+function leavingReply(field: FormField, onFile: OnFile, nth: number): FieldReply {
+  if (fieldPart(field) === 'job' && nth > 0) return left('leaving', 'new');
+  const asked: FieldReply = { ...ownQuestion(field, onFile), kind: 'leaving' };
+  const mine = onFile.applications.leaving.trim();
+  const option = choosing(field)
+    ? field.options.find((each) => plain(each) === plain(mine))
+    : undefined;
+  const profile: FieldReply | null = !mine
+    ? null
+    : option
+      ? { kind: 'leaving', pick: [option], exact: true, source: 'profile' }
+      : !choosing(field) && (!field.limit || mine.length <= field.limit)
+        ? { kind: 'leaving', text: mine, source: 'profile' }
+        : null;
+  if (!profile) {
+    // What's on file for the question, or your Claude's reason it's yours.
+    if (asked.source !== 'you' || asked.from) return asked;
+    return left('leaving', mine && choosing(field) ? 'pick' : 'unset');
+  }
+  if (asked.source === 'you') return profile;
+  const words = (reply: OtherAnswer) => plain(reply.text ?? reply.pick?.join(' ') ?? '');
+  const { kind: _, others: more = [], ...first } = asked;
+  const said = new Set([words(profile)]);
+  const others = [first, ...more]
+    .filter((each) => {
+      const these = words(each);
+      if (said.has(these)) return false;
+      said.add(these);
+      return true;
+    })
+    .slice(0, MOST_OTHERS);
+  return others.length > 0 ? { ...profile, others } : profile;
 }
 
 /**
@@ -835,6 +986,9 @@ export function answerField(field: FormField, onFile: OnFile, nth = 0): FieldRep
     const picks = (EQUAL_OPPORTUNITY_PICKS[kind] as Record<string, string[]>)[answer] ?? [];
     return { kind, pick: picks, source: 'profile' };
   }
+  // Factwright never ticks a box of its own: one that says what Profile knows, as Workday's "I
+  // have a preferred name", is yours to tick.
+  if (field.control === 'check') return left(kind, 'pick');
   const resume = onFile.resume;
   const theirs = nameParts(resume?.name ?? '');
   const theirPlace = placeParts(resume?.location ?? '');
@@ -1045,12 +1199,10 @@ export function answerField(field: FormField, onFile: OnFile, nth = 0): FieldRep
         : fromProfile(kind, field, onFile.start);
     case 'how-heard':
       return heardFrom(field, onFile);
-    case 'pay': {
-      if (!onFile.targetPay || choosing(field)) return left(kind, 'unset');
-      if (field.control !== 'number') return { kind, text: onFile.targetPay, source: 'profile' };
-      const yearly = yearlyPay(field, onFile.targetPay);
-      return yearly ? { kind, text: String(yearly), source: 'profile' } : left(kind, 'unset');
-    }
+    case 'pay':
+      return payReply(field, onFile.pay);
+    case 'leaving':
+      return leavingReply(field, onFile, nth);
     case 'resume':
       return onFile.files.resume
         ? { kind, file: 'resume', source: 'job', from: onFile.files.resume }
@@ -1089,6 +1241,7 @@ export const REMEMBERED_KINDS = [
   'website',
   'start-date',
   'how-heard',
+  'leaving',
   'gender',
   'hispanic',
   'race',

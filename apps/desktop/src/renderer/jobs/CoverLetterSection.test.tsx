@@ -7,7 +7,7 @@ import { afterEach, describe, expect, it, type Mock, vi } from 'vitest';
 import type { FactwrightApi } from '../../shared/api.ts';
 import type { RunTask } from '../../shared/runs.ts';
 import { CoverLetterPart } from './CoverLetterSection.tsx';
-import type { RunControls } from './RunActions.tsx';
+import { type RunControls, runControlsFor } from './RunActions.tsx';
 import { sampleJob } from './sample-jobs.ts';
 
 const TODAY = localDate();
@@ -50,17 +50,21 @@ function apiStub(letter: string | undefined = LETTER) {
     jobDocs: vi.fn(async () => ({ letter })),
     copyText: vi.fn(async () => ({ ok: true }) as const),
     openFile: vi.fn(async () => ({ ok: true }) as const),
+    downloadFile: vi.fn(async () => ({ ok: true, saved: true }) as const),
+    showFile: vi.fn(async () => ({ ok: true }) as const),
     keepVersion: vi.fn(async () => ({ ok: true }) as const),
+    platform: 'darwin',
   } as unknown as FactwrightApi & {
     copyText: Mock<FactwrightApi['copyText']>;
     openFile: Mock<FactwrightApi['openFile']>;
+    downloadFile: Mock<FactwrightApi['downloadFile']>;
+    showFile: Mock<FactwrightApi['showFile']>;
   };
 }
 
+/** The job panel's run controls, with Claude at work on a task, or on none. */
 const controls = (task: RunTask | null = null): RunControls => ({
-  phase: task ? 'working' : 'idle',
-  task,
-  start: vi.fn(),
+  ...runControlsFor(task ? [{ id: 'run-1', task, phase: 'working' }] : [], vi.fn(), vi.fn()),
   show: vi.fn(),
 });
 
@@ -136,6 +140,36 @@ describe('CoverLetterPart', () => {
     );
     expect(api.openFile).toHaveBeenCalledWith('applications/acme/AlexRiveraCoverLetter_Acme.docx');
     expect(screen.getByRole('alert').textContent).toBe('That file isn’t there anymore.');
+  });
+
+  it('saves a copy of a file where the user picks, or shows it in Finder, and says when it can’t', async () => {
+    const api = apiStub();
+    render(<CoverLetterPart job={job} api={api} today={TODAY} run={controls()} />);
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Download AlexRiveraCoverLetter_Acme.pdf' }),
+    );
+    expect(api.downloadFile).toHaveBeenCalledWith(
+      job.id,
+      'applications/acme/AlexRiveraCoverLetter_Acme.pdf',
+    );
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Show AlexRiveraCoverLetter_Acme.docx in Finder' }),
+    );
+    expect(api.showFile).toHaveBeenCalledWith(
+      job.id,
+      'applications/acme/AlexRiveraCoverLetter_Acme.docx',
+    );
+    expect(screen.queryByRole('alert')).toBeNull();
+    api.downloadFile.mockResolvedValueOnce({
+      ok: false,
+      message: 'That folder can’t be written to. Pick another one.',
+    });
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Download AlexRiveraCoverLetter_Acme.docx' }),
+    );
+    expect((await screen.findByRole('alert')).textContent).toBe(
+      'That folder can’t be written to. Pick another one.',
+    );
   });
 
   it('shows the files alone for a letter the user made, and the button to write one without', async () => {

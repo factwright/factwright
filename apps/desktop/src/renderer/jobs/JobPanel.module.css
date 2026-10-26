@@ -32,20 +32,7 @@
   margin: 0 auto;
 }
 
-.empty {
-  display: grid;
-  place-items: center;
-}
-
-.placeholder {
-  max-width: 220px;
-  margin: 0;
-  color: var(--fw-muted);
-  font-size: var(--fw-text-md);
-  text-align: center;
-}
-
-/* Over the list when the window is narrow, and only once a job is picked. */
+/* Over the list when the window is narrow. */
 @container work (max-width: 980px) {
   .panel {
     position: absolute;
@@ -58,10 +45,6 @@
   .panel.expanded {
     width: 100%;
     box-shadow: none;
-  }
-
-  .empty {
-    display: none;
   }
 }
 
@@ -149,6 +132,22 @@
   gap: 2px;
   color: var(--fw-accent-text);
   font-weight: 550;
+}
+
+/* Edit details, as a link after the job's place, pay and posting. */
+.editDetails {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--fw-accent-text);
+  font: inherit;
+  font-weight: 550;
+  cursor: pointer;
+}
+
+.editDetails:hover {
+  text-decoration: underline;
 }
 
 .badges {

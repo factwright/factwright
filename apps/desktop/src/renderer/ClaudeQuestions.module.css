@@ -178,9 +178,16 @@
   margin-top: var(--fw-space-2);
 }
 
-.addNote {
-  align-self: flex-start;
+/* Under each question: Add a note, and Skip, quieter, beside it. */
+.links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--fw-space-4);
   margin-top: var(--fw-space-2);
+}
+
+.link,
+.skip {
   padding: 2px 0;
   border: 0;
   background: none;
@@ -190,8 +197,23 @@
   cursor: pointer;
 }
 
-.addNote:hover {
+.skip {
+  color: var(--fw-muted);
+}
+
+.link:hover,
+.skip:hover {
   text-decoration: underline;
+}
+
+/* A question skipped folds to a line that says so, with a way to answer it after all. */
+.skipped {
+  margin: 0;
+  padding: 9px 14px;
+  border: 1px dashed var(--fw-border);
+  border-radius: var(--fw-radius-lg);
+  color: var(--fw-muted);
+  font-size: 13px;
 }
 
 /*

@@ -8,6 +8,7 @@ import {
   type JobDocs,
   type JobStatus,
   localDate,
+  NO_OWN_DETAILS,
   type Note,
   type OutreachDraft,
   type SavedForm,
@@ -186,6 +187,7 @@ export function sampleJob(base: Partial<Job> & Pick<Job, 'id' | 'company' | 'rol
     search: null,
     searches: [HN_RUN],
     kindFound: null,
+    suggestedAsk: null,
     folder: null,
     stage: 'new',
     firstSeen: day(-24),
@@ -212,6 +214,9 @@ export function sampleJob(base: Partial<Job> & Pick<Job, 'id' | 'company' | 'rol
     earlierNotes: null,
     archived: false,
     kind: null,
+    payAsk: null,
+    own: NO_OWN_DETAILS,
+    maybeSame: [],
     manual: false,
     calls: [],
     callDocs: [],
@@ -220,6 +225,78 @@ export function sampleJob(base: Partial<Job> & Pick<Job, 'id' | 'company' | 'rol
     docKinds: [],
     ...base,
   };
+}
+
+/**
+ * The jobs saved from the browser today and yesterday, which Claude hasn't analyzed yet, as the
+ * New view shows them: "Not checked yet" in their Fit column. The first was read from an
+ * applicant system's frame, so its company came out as the career site's blog.
+ */
+export const SAVED_TODAY = [
+  [
+    'larkspur-benefits-blog--staff-software-engineer',
+    'Larkspur Benefits blog',
+    'Staff Software Engineer',
+    'https://careers-larkspur.icims.com/jobs/4821/job',
+    null,
+  ],
+  [
+    'juniper-care--senior-software-engineer-platform',
+    'Juniper Care',
+    'Senior Software Engineer, Platform',
+    'https://jobs.ashbyhq.com/junipercare/5f8a',
+    '$170k–$200k',
+  ],
+  [
+    'northbeam-analytics--staff-engineer',
+    'Northbeam Analytics',
+    'Staff Engineer',
+    'https://boards.greenhouse.io/northbeam/jobs/7712',
+    null,
+  ],
+  [
+    'coastline-credit-union--senior-software-engineer',
+    'Coastline Credit Union',
+    'Senior Software Engineer',
+    'https://coastline.wd5.myworkdayjobs.com/careers/job/R-1182',
+    '$140k–$165k',
+  ],
+  [
+    'mosaic-health--principal-engineer-data',
+    'Mosaic Health',
+    'Principal Engineer, Data',
+    'https://jobs.lever.co/mosaichealth/3c1e',
+    null,
+  ],
+  [
+    'brightline-rail--software-engineer-iii',
+    'Brightline Rail',
+    'Software Engineer III',
+    'https://jobs.smartrecruiters.com/BrightlineRail/7440',
+    null,
+  ],
+] as const;
+
+/** A sample job saved from the browser that Claude hasn't analyzed yet. */
+function savedToday([id, company, role, link, pay]: (typeof SAVED_TODAY)[number], at: number): Job {
+  const range = pay?.match(/\$(\d+)k–\$(\d+)k/);
+  return sampleJob({
+    id,
+    company,
+    role,
+    link,
+    links: [{ url: link, label: 'Posting' }],
+    location: null,
+    pay: range ? listed(Number(range[1]), Number(range[2])) : null,
+    source: 'Added by hand',
+    searches: [],
+    manual: true,
+    status: 'new',
+    statusOn: day(at < 3 ? 0 : -1),
+    firstSeen: day(at < 3 ? 0 : -1),
+    lastActivity: day(at < 3 ? 0 : -1),
+    statusLog: [{ id: `${id}-saved`, status: 'new', at: day(at < 3 ? 0 : -1) }],
+  });
 }
 
 const listed = (min: number, max: number) => ({
@@ -241,6 +318,7 @@ export function sampleJobs(): Job[] {
       role: 'Senior Software Engineer, Platform',
       location: 'Hybrid, Seattle',
       pay: listed(175, 205),
+      suggestedAsk: '$200,000',
       stage: 'review',
       fit: { verdict: 'Strong', score: 86, date: day(-20) },
       fitReport: {
@@ -430,6 +508,8 @@ export function sampleJobs(): Job[] {
       company: 'Lumen Health',
       role: 'Senior Full-Stack Engineer',
       pay: listed(160, 190),
+      payAsk: '$185,000',
+      suggestedAsk: '$180,000',
       stage: 'review',
       fit: { verdict: 'Good', score: 72, date: day(-6) },
       sentiment: sentiment(
@@ -702,6 +782,59 @@ export function sampleJobs(): Job[] {
     }),
   ];
 }
+
+/**
+ * Jobs for checking Analyze job by eye, with ?jobs=saved: the ones saved from the browser today and
+ * yesterday, not checked yet, and a job Analyze job found might be another one a search found,
+ * without being sure.
+ */
+export function sampleSaved(): Job[] {
+  return [
+    ...SAVED_TODAY.map(savedToday),
+    sampleJob({
+      id: KEELSON,
+      company: 'Keelson AI',
+      role: 'AI Software Engineer, Staff/Principal',
+      links: [{ url: 'https://apply.workable.com/keelson/j/1B6E0A1710/', label: 'Posting' }],
+      pay: listed(185, 230),
+      stage: 'review',
+      fit: { verdict: 'Good', score: 72, date: day(-1) },
+      summary: 'Agents for industrial data, with a Python and Go stack',
+      firstSeen: day(-2),
+      lastActivity: day(-1),
+      maybeSame: [
+        {
+          id: KEELSON_TOO,
+          why: 'The same team and level. The other names the platform, and its link is LinkedIn’s.',
+          on: day(-1),
+          notSame: false,
+        },
+      ],
+    }),
+    sampleJob({
+      id: KEELSON_TOO,
+      company: 'Keelson AI',
+      role: 'Staff AI Platform Engineer',
+      links: [{ url: 'https://www.linkedin.com/jobs/view/4088123456', label: 'LinkedIn' }],
+      source: LINKEDIN_RUN.source,
+      searches: [LINKEDIN_RUN],
+      search: {
+        source: LINKEDIN_RUN.source,
+        date: LINKEDIN_RUN.date,
+        tier: 'good',
+        score: 68,
+        detail: { ...NO_DETAIL, pick: 'An AI platform for plant data' },
+        again: false,
+      },
+      firstSeen: LINKEDIN_RUN.date,
+      lastActivity: LINKEDIN_RUN.date,
+    }),
+  ];
+}
+
+/** The job Analyze job found might be the same as another, and that other. */
+export const KEELSON = 'keelson-ai--ai-software-engineer-staff-principal';
+const KEELSON_TOO = 'keelson-ai--staff-ai-platform-engineer';
 
 /**
  * The same job as the Quarry Labs sample's, which a search found under a shorter name and another

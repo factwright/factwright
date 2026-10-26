@@ -81,6 +81,25 @@ describe('each browser’s manifest', () => {
     expect(forTests.optional_host_permissions).toEqual(['https://*/*', 'http://localhost/*']);
   });
 
+  it('tells Firefox what it hands on, your details included, since it fills forms', () => {
+    const declared = (
+      manifest('firefox', '0.3.0').browser_specific_settings as {
+        gecko: { data_collection_permissions: Record<string, string[]> };
+      }
+    ).gecko.data_collection_permissions;
+    // All required, so Firefox shows each at install, and asks people with 0.2.0 for the new one
+    // before it updates them. Nothing optional, which about:addons would say is shared with the
+    // developer, where it goes only to your own sync account or Factwright on this computer.
+    expect(declared).toEqual({
+      required: [
+        'browsingActivity',
+        'websiteContent',
+        'authenticationInfo',
+        'personallyIdentifyingInfo',
+      ],
+    });
+  });
+
   it('has the Firefox ID Factwright’s helper lets reach it', () => {
     const gecko = (
       manifest('firefox', '0.2.0').browser_specific_settings as {

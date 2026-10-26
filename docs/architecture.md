@@ -28,7 +28,7 @@ Starting Claude on getting started gets the workspace ready for it first: the ap
 ## Your Claude Code
 Factwright doesn't have an AI of its own. It launches the Claude Code you installed and signed in to, unmodified, in a real terminal you can watch and type into. It loads Factwright's skills and tools for that session only, through Claude Code's own command-line flags, and never changes your Claude settings.
 
-When you click **Run** on a job, the app starts a session in your workspace and sends the command, such as a fit check or a tailored resume. When Claude needs to ask you something, the app shows the questions in a dialog of its own and hands your answers back to Claude Code through its question hook, so you never have to answer in the terminal, though you can. Claude Code's permission prompts get a dialog too, answered through its PermissionRequest hook, and anything only the terminal can answer gets the terminal outlined, with a note pointing to it. Claude Code hooks tell the app when a run finishes or is waiting on you.
+When you click **Run** on a job, the app starts a session in your workspace and sends the command, such as Analyze job or a tailored resume. When Claude needs to ask you something, the app shows the questions in a dialog of its own and hands your answers back to Claude Code through its question hook, so you never have to answer in the terminal, though you can. Claude Code's permission prompts get a dialog too, answered through its PermissionRequest hook, and anything only the terminal can answer gets the terminal outlined, with a note pointing to it. Claude Code hooks tell the app when a run finishes or is waiting on you, and what Claude is doing: each step, its to-do list and its helpers, which the run's bar shows as it works.
 
 ## Tools for Claude
 Claude doesn't get a shell. Instead, the app gives it a small set of tools over MCP, which it serves itself, on this computer, while a run is live ([`apps/desktop/src/main/tools`](../apps/desktop/src/main/tools)):
@@ -38,7 +38,7 @@ Claude doesn't get a shell. Instead, the app gives it a small set of tools over 
 - read a web page, and save a job posting word for word
 - build a resume as a PDF or Word file, with how it fits the pages
 
-The skills ([`plugin`](../plugin)) tell Claude how to use them for each task, such as a fit check or interview prep.
+The skills ([`plugin`](../plugin)) tell Claude how to use them for each task, such as Analyze job or interview prep.
 
 ## The workspace
 Claude works on plain files in a folder on your computer:

@@ -339,7 +339,9 @@ export class SyncEngine {
       return put(theirs);
     }
     if (!theirs) {
-      // Deleted there, changed here: this one stays, and goes back up.
+      // Deleted there, changed here: this one stays, and goes back up. A row kept whole, such as
+      // a claim on a job, goes, as the other device left it.
+      if (MERGE_RULES[table].whole) return put(null);
       save('', true);
       return true;
     }

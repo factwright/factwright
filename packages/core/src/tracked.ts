@@ -2,8 +2,10 @@ import { ASK_ID, questionKey } from './answers.ts';
 import { isIsoDate } from './dates.ts';
 import type { CallDoc } from './extras.ts';
 import { type CollectedJob, type Job, type JobPay, type KnownJob, mergedTargets } from './jobs.ts';
+import { companyKey } from './keys.ts';
 import { KIND_ID } from './kinds.ts';
 import type { Link } from './links.ts';
+import { JOB_LIMITS } from './new-job.ts';
 import { parsePay } from './pay.ts';
 import type { JobDocKind } from './records.ts';
 import {
@@ -14,7 +16,9 @@ import {
   CALL_STATES,
   type Call,
   type CallPerson,
+  type MaybeSame,
   type Note,
+  type OwnDetails,
   PASS_REASONS,
   readStatus,
   type SentAnswer,
@@ -38,6 +42,12 @@ export interface TrackedRow extends TrackerFields {
   firstSeen: string | null;
   /** For a job the user merged into another, that job's ID. It's no longer listed on its own. */
   mergedInto: string | null;
+  /**
+   * Its folder under applications/, as the app last found it, so a browser filling a form through
+   * sync knows which folder is the job's without reading every folder. None for a job without
+   * one, or a row from an app before it kept them.
+   */
+  folder: string | null;
 }
 
 /** A row of the tracker as SQLite keeps it, on this computer or synced from another. */
@@ -48,6 +58,14 @@ const required = (value: unknown) => (typeof value === 'string' ? value : '');
 
 /** A job's ID, as the app makes them. */
 const JOB_ID = /^[a-z0-9][a-z0-9-]{0,199}$/;
+
+/** A folder's name, as one folder in a path: no slash, and never "." or "..". */
+const isFolderName = (value: unknown): value is string =>
+  typeof value === 'string' &&
+  value.length <= 255 &&
+  /^[^/\\]+$/.test(value) &&
+  value !== '.' &&
+  value !== '..';
 
 function isOneOf<T extends string>(list: readonly T[], value: unknown): value is T {
   return typeof value === 'string' && (list as readonly string[]).includes(value);
@@ -104,6 +122,38 @@ function sentOf(json: unknown): SentAnswer[] {
   return [...kept.values()];
 }
 
+/** A detail the user set, trimmed, or null for none, or for one past what the field takes. */
+const ownText = (value: unknown, most: number): string | null =>
+  typeof value === 'string' && value.length <= most ? value.trim() || null : null;
+
+/** The details the user set in a job's panel, from its row. */
+const ownOf = (row: StoredRow): OwnDetails => ({
+  company: ownText(row.own_company, JOB_LIMITS.company),
+  role: ownText(row.own_role, JOB_LIMITS.role),
+  pay: ownText(row.own_pay, JOB_LIMITS.pay),
+  location: ownText(row.own_location, JOB_LIMITS.location),
+});
+
+/** As long as your Claude's line on why two jobs might be the same may be. */
+export const MAYBE_SAME_WHY = 200;
+
+/**
+ * The jobs your Claude noted might be the same as this one, leaving out any that don't read: each
+ * once, by the other job's ID, the latest note standing.
+ */
+function maybeSameOf(json: unknown): MaybeSame[] {
+  const kept = new Map<string, MaybeSame>();
+  for (const item of listOf(json)) {
+    const { id, why, on, notSame } = (item ?? {}) as StoredRow;
+    if (typeof id !== 'string' || !JOB_ID.test(id) || !isIsoDate(on)) continue;
+    const known = kept.get(id);
+    // The user's word that they aren't the same stands, whichever device said it.
+    const said = notSame === true || known?.notSame === true;
+    kept.set(id, { id, why: ownText(why, MAYBE_SAME_WHY), on, notSame: said });
+  }
+  return [...kept.values()];
+}
+
 /** The questions the user asked Claude, leaving out any that don't read. */
 const asksOf = (json: unknown): Ask[] =>
   listOf(json).flatMap((item) => {
@@ -129,6 +179,7 @@ export function trackedRow(row: StoredRow): TrackedRow {
     firstSeen: text(row.first_seen),
     mergedInto:
       typeof row.merged_into === 'string' && JOB_ID.test(row.merged_into) ? row.merged_into : null,
+    folder: isFolderName(row.folder) ? row.folder : null,
     status: readStatus(row.status),
     statusOn: text(row.status_on),
     backOn: isIsoDate(row.back_on) ? row.back_on : null,
@@ -142,18 +193,28 @@ export function trackedRow(row: StoredRow): TrackedRow {
     earlierNotes: text(row.notes),
     archived: row.archived === 1,
     kind: typeof row.kind === 'string' && KIND_ID.test(row.kind) ? row.kind : null,
+    payAsk:
+      typeof row.pay_ask === 'string' && row.pay_ask.length <= JOB_LIMITS.pay
+        ? row.pay_ask.trim() || null
+        : null,
+    own: ownOf(row),
+    maybeSame: maybeSameOf(row.maybe_same),
   };
 }
 
-/** Every job the tracker knows, so the skills' records keep joining the same job. */
+/**
+ * Every job the tracker knows, so the skills' records keep joining the same job: by what it's
+ * called in its row, and by the company and role the user gave it, which work after that names.
+ */
 export const knownJobsOf = (rows: readonly TrackedRow[]): KnownJob[] =>
-  rows.map(({ id, company, companyKey, role, links, mergedInto }) => ({
+  rows.map(({ id, company, companyKey, role, links, mergedInto, own }) => ({
     id,
     company,
     companyKey,
     role,
     links,
     mergedInto,
+    ...((own.company || own.role) && { own: { company: own.company, role: own.role } }),
   }));
 
 /** The people on a call, leaving out any without a name. */
@@ -240,22 +301,27 @@ const ADDED_BY_HAND = 'Added by hand';
 
 /** Whether the user has tracked anything about a job, so it stays listed after its files go. */
 function isTracked(row: TrackedRow, kept: number): boolean {
-  const { manual, archived, status, appliedOn, nextAction, nextOn, earlierNotes, kind } = row;
+  const { manual, archived, status, appliedOn, nextAction, nextOn, earlierNotes, kind, payAsk } =
+    row;
   return (
     manual ||
     archived ||
     kept > 0 ||
     [row.questions, row.sent, row.asks].some((list) => list.length > 0) ||
-    [status, appliedOn, nextAction, nextOn, earlierNotes, kind].some(Boolean)
+    [status, appliedOn, nextAction, nextOn, earlierNotes, kind, payAsk].some(Boolean) ||
+    Object.values(row.own).some(Boolean)
   );
 }
 
-/** The pay the user typed for a job they added by hand. */
-function typedPay(row: TrackedRow): JobPay | null {
-  if (!row.payText) return null;
-  const range = parsePay(row.payText);
-  return { text: row.payText, min: range?.min ?? null, max: range?.max ?? null, source: 'listed' };
+/** A job's pay from text: the pay the user typed when they added it by hand, or gave it since. */
+function payFrom(text: string, source: JobPay['source']): JobPay {
+  const range = parsePay(text);
+  return { text, min: range?.min ?? null, max: range?.max ?? null, source };
 }
+
+/** The pay the user typed for a job they added by hand. */
+const typedPay = (row: TrackedRow): JobPay | null =>
+  row.payText ? payFrom(row.payText, 'listed') : null;
 
 /**
  * A job as the app shows it: its tracker row, plus what the workspace says when it has files.
@@ -278,8 +344,23 @@ function assemble(row: TrackedRow, found: CollectedJob | undefined, kept: Kept):
     earlierNotes: row.earlierNotes,
     archived: row.archived,
     kind: row.kind,
+    payAsk: row.payAsk,
+    own: row.own,
+    maybeSame: row.maybeSame,
     manual: row.manual,
     ...kept,
+  };
+  // The details the user set win over what the posting and Claude's work say.
+  const { own } = row;
+  const ownPay = own.pay ? payFrom(own.pay, 'own') : null;
+  const yours = {
+    ...(own.company && {
+      company: own.company,
+      companyKey: companyKey(own.company) || row.companyKey,
+    }),
+    ...(own.role && { role: own.role }),
+    ...(ownPay && { pay: ownPay }),
+    ...(own.location && { location: own.location }),
   };
   if (found) {
     const { docs, ...job } = found;
@@ -300,6 +381,7 @@ function assemble(row: TrackedRow, found: CollectedJob | undefined, kept: Kept):
       pay: job.pay ?? typedPay(row),
       source: row.manual ? ADDED_BY_HAND : job.source,
       docKinds: Object.keys(docs) as JobDocKind[],
+      ...yours,
     };
   }
   return {
@@ -316,6 +398,7 @@ function assemble(row: TrackedRow, found: CollectedJob | undefined, kept: Kept):
     search: null,
     searches: [],
     kindFound: null,
+    suggestedAsk: null,
     folder: null,
     stage: asked ? 'review' : 'new',
     firstSeen: row.firstSeen,
@@ -331,6 +414,7 @@ function assemble(row: TrackedRow, found: CollectedJob | undefined, kept: Kept):
     outreach: [],
     docKinds: [],
     ...tracking,
+    ...yours,
   };
 }
 

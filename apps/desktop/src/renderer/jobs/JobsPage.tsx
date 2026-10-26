@@ -8,6 +8,7 @@ import { BulkBar, type Moved } from './BulkBar.tsx';
 import { FiltersPanel } from './FiltersPanel.tsx';
 import { JobList } from './JobList.tsx';
 import styles from './JobsPage.module.css';
+import type { TaskState } from './RunActions.tsx';
 import {
   type FoundOption,
   filterCount,
@@ -139,6 +140,10 @@ export interface JobsPageProps {
   onOpenJourney: () => void;
   /** Opens getting started, for a user who hasn't told Factwright about themselves yet. */
   onGetStarted?: (() => void) | undefined;
+  /** Whether Claude is on a task for a job now, or has one in line for it, if either. */
+  claudeOn?: (jobId: string) => TaskState | null;
+  /** Has Claude analyze the jobs picked, in one run, once Claude Code is ready. */
+  onAnalyze?: ((jobIds: string[]) => void) | undefined;
 }
 
 /**
@@ -385,6 +390,7 @@ export function JobsPage(props: JobsPageProps) {
                 }
                 selectedId={props.selectedId}
                 onSelect={props.onSelect}
+                {...(props.claudeOn && { claudeOn: props.claudeOn })}
                 picks={{
                   picked: picks.ids,
                   label: JOB_VIEW_LABELS[filter.view],
@@ -445,6 +451,13 @@ export function JobsPage(props: JobsPageProps) {
               backToList.current = fromBar;
               setMoved(null);
             }}
+            onAnalyze={
+              props.onAnalyze &&
+              ((jobIds) => {
+                props.onAnalyze?.(jobIds);
+                picks.clear();
+              })
+            }
           />
         </>
       )}

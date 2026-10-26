@@ -6,14 +6,24 @@
 // holds. The equal-opportunity answer, which Factwright keeps on its computer alone, is left for
 // you. The form's new question is left with the job, which Factwright then has, for your Claude,
 // a stand-in here, whose draft, once it syncs, fills in at the next Fill. Mark as applied marks
-// the job Applied in Factwright, with what was sent. The job application sites' menus and Fill
-// button answer from sync too, and offer to keep nothing. Nothing the extension read is left in
-// its storage. Nothing is submitted, and nothing leaves this computer.
+// the job Applied in Factwright, with what was sent, and Save keeps a new answer in Profile, but
+// never the equal-opportunity one, which never syncs. The job application sites' menus and Fill
+// button answer from sync too, and offer to keep nothing. A Workday application fills through sync
+// a page at a time, with a part added for each job in the synced work history. Nothing the
+// extension read is left in its storage. Nothing is submitted, and nothing leaves this computer.
 // `pnpm --filter @factwright/extension e2e:sync-fill` (it needs Playwright's Chromium, as `e2e`
 // does). With `-- --shots <folder>`, it saves the panel and the filled form there as pictures.
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
@@ -21,7 +31,8 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { startServer, type TestServer } from '@factwright/server/testing';
 import { type BrowserContext, chromium, type Page } from '@playwright/test';
-import { LEVER_LOOKS_UP, withOwnCode } from './sites-own-code.ts';
+import { jobAtTop } from './e2e-fill-systems.ts';
+import { LEVER_LOOKS_UP, withOwnCode, workdayCode } from './sites-own-code.ts';
 import { FOLDER, PDF, syncedHunt } from './synced-hunt.ts';
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
@@ -46,16 +57,61 @@ const FORM_PATH = '/northwind/7a1c9e40-2b6d-4f1e-9c3a-5d8e0f2b4a71/apply';
 /** The form's own question that nothing on file answers, for your Claude. */
 const OWN_QUESTION = 'Have you ever been previously employed by Northwind Labs?';
 
-/** A site on this computer, the sync server's, with the application form. */
+/**
+ * A Workday application, at its own address, as its pages are built from Workday's markup, with
+ * its own code acted out: it runs over several pages in the tab, the next ones from here.
+ */
+const WORKDAY_PATH =
+  '/larkspur/job/Denver-CO/Senior-Product-Manager_R2026-0147/apply/applyManually';
+const WORKDAY_PAGES = '/workday-pages/';
+const WORKDAY_STEPS = ['my-information', 'my-experience'];
+
+/** Your work history, as Profile keeps it: three positions at two companies, and two schools. */
+const WORK_HISTORY = {
+  jobs: [
+    {
+      company: 'Tidewater Analytics',
+      location: 'Denver, CO',
+      positions: [
+        { title: 'Director of Product', start: '2023-04', end: 'present', summary: '' },
+        { title: 'Senior Product Manager', start: '2021-03', end: '2023-04', summary: '' },
+      ],
+    },
+    {
+      company: 'Fernway',
+      location: 'Boulder, CO',
+      positions: [{ title: 'Product Manager', start: '2018-06', end: '2021-03', summary: '' }],
+    },
+  ],
+  schools: [
+    { school: 'CU Boulder', degree: 'B.S.', field: 'Computer Science', start: '2013', end: '2017' },
+    { school: 'Denver East High School', degree: '', field: '', start: '2009', end: '2013' },
+  ],
+};
+
+/** A site on this computer, the sync server's, with the application forms. */
 async function site() {
-  const lever = withOwnCode(
-    readFileSync(join(FIXTURES, 'lever-application.html'), 'utf8'),
-    LEVER_LOOKS_UP,
-  );
+  const pages: Record<string, string> = {
+    [FORM_PATH]: withOwnCode(
+      readFileSync(join(FIXTURES, 'lever-application.html'), 'utf8'),
+      LEVER_LOOKS_UP,
+    ),
+    [WORKDAY_PATH]: withOwnCode(
+      readFileSync(join(FIXTURES, 'workday-my-information.html'), 'utf8'),
+      workdayCode(WORKDAY_PAGES),
+    ),
+    ...Object.fromEntries(
+      WORKDAY_STEPS.map((step) => [
+        `${WORKDAY_PAGES}workday-${step}.html`,
+        readFileSync(join(FIXTURES, `workday-${step}.html`), 'utf8'),
+      ]),
+    ),
+  };
   const server = createServer((request, response) => {
-    if (request.url === FORM_PATH) {
+    const page = pages[request.url ?? ''];
+    if (page) {
       response.writeHead(200, { 'content-type': 'text/html' });
-      response.end(lever);
+      response.end(page);
       return;
     }
     response.writeHead(404, { 'content-type': 'text/html' });
@@ -157,8 +213,8 @@ try {
   );
   if (!formTab) throw new Error('No tab with the form.');
   const formTabAt = { ...formTab, url: form, title: await page.title() };
-  /** The panel, as clicking Fill this application opens it beside the form's tab. */
-  const panelOn = async (): Promise<Page> => {
+  /** The panel, as clicking Fill this application opens it beside a form's tab. */
+  const panelOn = async (tabAt: typeof formTabAt = formTabAt): Promise<Page> => {
     const panel = await context.newPage();
     panel.on('pageerror', (error) => errors.push(error.message));
     await panel.setViewportSize({ width: 380, height: 900 });
@@ -182,7 +238,7 @@ try {
           ? Promise.resolve(false)
           : request(asked);
       };
-    }, formTabAt);
+    }, tabAt);
     await panel.goto(`chrome-extension://${id}/sidepanel.html`);
     return panel;
   };
@@ -208,7 +264,7 @@ try {
     'the panel fills from your job hunt, through sync, and says so',
   );
   check(
-    (await panel.getByText('Senior Product Manager, Data at Northwind Labs').count()) === 1,
+    (await jobAtTop(panel, 'Senior Product Manager, Data', 'Northwind Labs')) === 1,
     'it finds the job the form is for, by its posting, as Factwright would',
   );
   check((await value('name')) === 'Ana María Ruiz', 'it fills the name from the synced Profile');
@@ -229,7 +285,7 @@ try {
       [...((input as HTMLInputElement).files ?? [])].map((file) => `${file.name} ${file.size}`),
     );
   check(
-    uploaded.length === 1 && uploaded[0] === `Ana María Ruiz - Resume.pdf ${PDF.length}`,
+    uploaded.length === 1 && uploaded[0] === `AnaRuizResume10202026_Northwind.pdf ${PDF.length}`,
     'it uploads the job’s own resume, whole, from what sync holds',
   );
   check(
@@ -310,14 +366,55 @@ try {
 
   // Then you'd submit the form on the site, and Mark as applied.
   await page.locator('input[name="phone"]').fill('(720) 555-0199');
+  await page.getByLabel('Woman', { exact: true }).first().check();
   await panel.getByRole('button', { name: 'Mark as applied' }).click();
   await panel.getByText('Marked applied.').waitFor({ timeout: 30_000 });
+  const savePhone = panel.getByRole('button', { name: /^Save your answer to Phone/ });
   check(
-    (await panel.getByText('Keep for next time?').count()) === 0,
-    'through sync, it offers to keep nothing new in Profile',
+    (await panel.getByText('Keep for next time?').count()) === 1 && (await savePhone.count()) === 1,
+    'through sync, it offers to keep your new phone number in Profile',
   );
+  check(
+    (await panel.getByRole('button', { name: /^Save your answer to .*gender/i }).count()) === 0 &&
+      (await panel.getByText(/never in sync, so they aren’t offered here/).count()) === 1,
+    'but never your equal-opportunity answer, which never syncs, and it says why',
+  );
+  await savePhone.click();
+  await panel.getByText('Saved', { exact: true }).waitFor({ timeout: 30_000 });
+  await hunt.sync();
+  const profileFile = join(hunt.workspace, 'about-me', 'answers.json');
+  const answers = JSON.parse(readFileSync(profileFile, 'utf8')) as {
+    you: { phone?: string; email?: string; location?: string };
+  };
+  check(
+    answers.you.phone === '(720) 555-0199' && answers.you.email === 'ana@example.com',
+    'Factwright on the computer has the new phone number in Profile, once it syncs',
+  );
+  // Meanwhile, you change where you live in Profile, in Factwright on the computer.
+  writeFileSync(
+    profileFile,
+    `${JSON.stringify({ ...answers, you: { ...answers.you, location: 'Boulder, CO' } }, null, 2)}\n`,
+  );
+  await hunt.sync();
+  await panel.getByRole('button', { name: /^Save your answer to Current location/ }).click();
+  await panel.getByText('Kept beside Profile').waitFor({ timeout: 30_000 });
   await shoot(panel, 'sync-4-applied');
   await hunt.sync();
+  const copies = readdirSync(join(hunt.workspace, 'about-me')).filter((name) =>
+    /^answers \(Factwright in .+\)\.json$/.test(name),
+  );
+  const copy = copies[0]
+    ? (JSON.parse(readFileSync(join(hunt.workspace, 'about-me', copies[0]), 'utf8')) as {
+        you?: { location?: string };
+      })
+    : null;
+  check(
+    (JSON.parse(readFileSync(profileFile, 'utf8')) as typeof answers).you.location ===
+      'Boulder, CO' &&
+      copies.length === 1 &&
+      copy?.you?.location === 'Denver, Colorado, United States',
+    'an answer Factwright changed since the form was filled stays, and yours is kept beside it',
+  );
   const applied = hunt.jobs.job(job?.id ?? '');
   check(
     applied?.status === 'applied' && applied.appliedOn !== null,
@@ -399,6 +496,72 @@ try {
     'and leaving a field with a new answer offers nothing to keep',
   );
 
+  // A Workday application, which runs over several pages in one tab, through sync: each page you
+  // go on to fills the way the first did, and My Experience offers a part for each job in your
+  // work history, once it syncs.
+  writeFileSync(
+    join(hunt.workspace, 'about-me', 'history.json'),
+    `${JSON.stringify(WORK_HISTORY, null, 2)}\n`,
+  );
+  await hunt.sync();
+  const workday = await context.newPage();
+  workday.on('pageerror', (error) => errors.push(error.message));
+  const workdayAt = `${local.origin}${WORKDAY_PATH}`;
+  await workday.goto(workdayAt);
+  await workday.bringToFront();
+  const [workdayTab] = await setup.evaluate(
+    (url) =>
+      (
+        globalThis as unknown as {
+          chrome: { tabs: { query(query: object): Promise<{ id: number; windowId: number }[]> } };
+        }
+      ).chrome.tabs.query({ url }),
+    workdayAt,
+  );
+  if (!workdayTab) throw new Error('No tab with the Workday application.');
+  const workdayPanel = await panelOn({
+    ...workdayTab,
+    url: workdayAt,
+    title: await workday.title(),
+  });
+  /** What's in one of the Workday page's boxes, by its id. */
+  const typedIn = (boxId: string) =>
+    workday.locator(`[id="${boxId}"]`).evaluate((input) => (input as HTMLInputElement).value);
+  /** What's in a box of one of Workday's parts, by the part's heading's id and the box's name. */
+  const inPart = (part: string, name: string) =>
+    workday
+      .locator(`[aria-labelledby="${part}"] [name="${name}"]`)
+      .evaluate((input) => (input as HTMLInputElement).value);
+  const throughSync = async () =>
+    (await workdayPanel.getByText('From your job hunt, through sync.').count()) === 1;
+  await workdayPanel.getByText(/^Filled \d+ of \d+ fields/).waitFor({ timeout: 60_000 });
+  check(
+    (await throughSync()) && (await typedIn('name--legalName--firstName')) === 'Ana María',
+    'a Workday application fills through sync too, from its first page',
+  );
+  await workday.getByRole('button', { name: 'Save and Continue', exact: true }).click();
+  await workdayPanel
+    .getByText('The application is on My Experience now', { exact: false })
+    .waitFor({ timeout: 20_000 });
+  await workdayPanel.getByRole('button', { name: 'Fill this page', exact: true }).click();
+  await workdayPanel.getByText(/^Filled \d+ of \d+ fields/).waitFor({ timeout: 60_000 });
+  check(
+    (await throughSync()) &&
+      (await typedIn('workExperience-225--companyName')) === 'Tidewater Analytics',
+    'Fill this page, on the page it went on to, fills it through sync the same way',
+  );
+  await workdayPanel
+    .getByRole('button', { name: 'Add 2 for your other jobs', exact: true })
+    .click();
+  await workdayPanel.getByText(/^Filled \d+ of \d+ fields/).waitFor({ timeout: 60_000 });
+  check(
+    (await throughSync()) && (await inPart('Work-Experience-3-panel', 'companyName')) === 'Fernway',
+    'it offers a part for each job in your synced work history, and fills each new one through sync',
+  );
+  await shoot(workdayPanel, 'sync-6-workday');
+  await workdayPanel.close();
+  await workday.close();
+
   // Nothing it read is left in its storage: only the sign-in and the keys, which can't be read.
   const stored = await setup.evaluate(async () => {
     const api = (
@@ -429,7 +592,7 @@ try {
     };
   });
   check(
-    !/Tidewater|Ana Mar|ana@example\.com|Northwind|anaruiz/.test(stored.storage) &&
+    !/Tidewater|Fernway|Ana Mar|ana@example\.com|Northwind|anaruiz/.test(stored.storage) &&
       JSON.stringify(stored.databases) === '["save-to-factwright"]' &&
       stored.records === 1 &&
       JSON.stringify(stored.account) === '["email","keys","server","token","user"]' &&

@@ -13,7 +13,7 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { dirname, join, relative, resolve, sep } from 'node:path';
-import { type Bytes, isSyncPath, LIMITS } from '@factwright/sync';
+import { type Bytes, conflictCopyPath as copyPath, isSyncPath, LIMITS } from '@factwright/sync';
 
 /** A file in the workspace, as sync sees it on disk. */
 export interface LocalFile {
@@ -136,24 +136,13 @@ export function removeSyncFile(root: string, path: string): void {
   }
 }
 
-const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-
 /**
  * Where to keep this computer's copy of a file another device changed at the same time, such
  * as "notes (Sam’s MacBook Pro, Oct 12).md" beside "notes.md". A number keeps it unique.
  */
 export function conflictCopyPath(root: string, path: string, device: string, when: Date): string {
-  const slash = path.lastIndexOf('/');
-  const folder = path.slice(0, slash + 1);
-  const name = path.slice(slash + 1);
-  const dot = name.lastIndexOf('.');
-  const stem = dot > 0 ? name.slice(0, dot) : name;
-  const extension = dot > 0 ? name.slice(dot) : '';
-  const label = `${device}, ${MONTHS[when.getMonth()]} ${when.getDate()}`;
-  for (let n = 1; ; n++) {
-    const candidate = `${folder}${stem} (${label}${n > 1 ? ` ${n}` : ''})${extension}`;
+  return copyPath(path, device, when, (candidate) => {
     const full = inside(root, candidate);
-    if (full && !existsSync(full)) return candidate;
-    if (!full) return `${folder}${stem} (conflict ${n})${extension}`;
-  }
+    return full ? !existsSync(full) : null;
+  });
 }

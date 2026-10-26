@@ -1,7 +1,7 @@
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { type Call, type CallDoc, callStart, type Job } from '@factwright/core';
+import { type Call, type CallDoc, callStart, type Job, NO_OWN_DETAILS } from '@factwright/core';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { settled } from './claude/save.ts';
 import { type CallReminder, CallReminders, reminderFor } from './reminders.ts';
@@ -66,6 +66,7 @@ function job(extra: Partial<Job> = {}): Job {
     search: null,
     searches: [],
     kindFound: null,
+    suggestedAsk: null,
     folder: null,
     stage: 'review',
     firstSeen: '2026-10-01',
@@ -92,6 +93,9 @@ function job(extra: Partial<Job> = {}): Job {
     earlierNotes: null,
     archived: false,
     kind: null,
+    payAsk: null,
+    own: NO_OWN_DETAILS,
+    maybeSame: [],
     manual: false,
     calls: [call()],
     callDocs: [],

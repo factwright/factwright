@@ -69,7 +69,7 @@ export {
   unlock,
   type WrittenSecret,
 } from './keys.ts';
-export { type MergeRules, mergeRows, mergeText, sameRow } from './merge.ts';
+export { conflictCopyPath, type MergeRules, mergeRows, mergeText, sameRow } from './merge.ts';
 export {
   type AccountInfo,
   API,

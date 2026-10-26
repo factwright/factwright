@@ -5,7 +5,7 @@ import type { RunTask } from '../../shared/runs.ts';
 import type { DocVersion } from '../../shared/versions.ts';
 import { ClaudeButton, isRunning } from './ClaudeButton.tsx';
 import styles from './CoverLetter.module.css';
-import { FileRow } from './JobFiles.tsx';
+import { FileRow, fileActions } from './JobFiles.tsx';
 import panel from './JobPanel.module.css';
 import { Part, Placeholder } from './PanelSection.tsx';
 import { ResumePreview } from './ResumePreview.tsx';
@@ -114,10 +114,7 @@ export function ProjectsPagePart({
       ? `${count} project${count === 1 ? '' : 's'}, as ${SHAPES[outline.shape]}`
       : null;
 
-  const open = async (path: string) => {
-    const result = await api.openFile(path);
-    setProblem(result.ok ? null : result.message);
-  };
+  const actions = fileActions(api, job.id, setProblem);
 
   return (
     <Part
@@ -149,7 +146,7 @@ export function ProjectsPagePart({
               file={file}
               today={today}
               onPreview={setPreview}
-              onOpen={open}
+              actions={actions}
             />
           ))}
         </ul>
@@ -168,7 +165,9 @@ export function ProjectsPagePart({
           {problem}
         </p>
       )}
-      {preview && <ResumePreview file={preview} api={api} onClose={() => setPreview(null)} />}
+      {preview && (
+        <ResumePreview file={preview} api={api} job={job} onClose={() => setPreview(null)} />
+      )}
     </Part>
   );
 }

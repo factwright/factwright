@@ -4,11 +4,10 @@ import { cleanup, render, screen, waitFor, within } from '@testing-library/react
 import userEvent from '@testing-library/user-event';
 import axe from 'axe-core';
 import { afterEach, beforeAll, describe, expect, it, type Mock, vi } from 'vitest';
-import type { FactwrightApi, JobExtras } from '../../shared/api.ts';
+import type { FactwrightApi, JobExtras, RunPhase } from '../../shared/api.ts';
 import type { RunTask } from '../../shared/runs.ts';
-import type { RunPhase } from '../useClaudeRun.ts';
 import { AskDialog, AskSection } from './AskSection.tsx';
-import type { RunControls } from './RunActions.tsx';
+import { type RunControls, runControlsFor } from './RunActions.tsx';
 import { sampleJob } from './sample-jobs.ts';
 
 const TODAY = localDate();
@@ -57,8 +56,10 @@ function apiStub(
   };
 }
 
-function controls(phase: RunPhase = 'idle', task: RunTask | null = null): RunControls {
-  return { phase, task, start: vi.fn(), show: vi.fn() };
+/** The job panel's run controls, with a run of a task in a phase, or none. */
+function controls(phase: RunPhase | null = null, task: RunTask | null = null): RunControls {
+  const runs = phase && task ? [{ id: 'run-1', task, phase }] : [];
+  return { ...runControlsFor(runs, vi.fn(), vi.fn()), show: vi.fn() };
 }
 
 /** The dialog a question is asked in, from the row of Claude's skills, and what it calls. */
@@ -154,7 +155,7 @@ describe('AskSection', () => {
       askId: '2026-10-12-whats-their-stack',
     });
     cleanup();
-    // While Claude answers one, another waits.
+    // While Claude answers one, another can be asked, and waits in line for it.
     render(
       <AskSection
         job={job}
@@ -165,7 +166,7 @@ describe('AskSection', () => {
     );
     expect(
       (screen.getByRole('button', { name: 'Ask a question' }) as HTMLButtonElement).disabled,
-    ).toBe(true);
+    ).toBe(false);
     cleanup();
     const shown = render(
       <AskSection job={{ ...job, asks: [ASK] }} api={apiStub()} run={controls()} today={TODAY} />,

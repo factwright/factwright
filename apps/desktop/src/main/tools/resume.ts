@@ -35,6 +35,8 @@ export interface BuildResumeDeps {
   /** The jobs on file, to keep a resume that was sent. */
   jobs: () => readonly Job[];
   now?: () => Date;
+  /** Hears each file's path just before it's written, so the app can keep it as it was. */
+  keep?: ((path: string) => void) | undefined;
 }
 
 export async function readText(path: string): Promise<string | null> {
@@ -209,6 +211,7 @@ export async function buildResume(
       );
     }
     const printed = await deps.printer.print(html);
+    deps.keep?.(join(dir, `${name}.pdf`));
     await writeFile(join(dir, `${name}.pdf`), printed.pdf);
     const fill = printed.lastFill === null ? '' : `, the last one ${printed.lastFill}% full`;
     report.push(
@@ -218,7 +221,9 @@ export async function buildResume(
       problems.push(`The PDF runs to ${printed.pages} pages; the most is ${maxPages}.`);
   }
   if (files.some((file) => file.endsWith('.docx'))) {
-    await writeFile(join(dir, `${name}.docx`), Buffer.from(await docxFile(resume, template)));
+    const docx = Buffer.from(await docxFile(resume, template));
+    deps.keep?.(join(dir, `${name}.docx`));
+    await writeFile(join(dir, `${name}.docx`), docx);
     report.push(
       `Built ${where}/${name}.docx. Word lays it out itself, so its page count can differ from the PDF’s.`,
     );

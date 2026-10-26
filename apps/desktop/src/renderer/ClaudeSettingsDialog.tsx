@@ -1,4 +1,4 @@
-import { Button, Checkbox, Dialog, DialogActions, Select } from '@factwright/ui';
+import { Button, Dialog, DialogActions, Select } from '@factwright/ui';
 import { Fragment, useEffect, useId, useState } from 'react';
 import type { FactwrightApi } from '../shared/api.ts';
 import {
@@ -17,7 +17,7 @@ import {
   type ModelTask,
   modelWithout,
 } from '../shared/models.ts';
-import type { ClaudePermissions } from '../shared/permissions.ts';
+import { ANALYZE_ON_ITS_OWN, AT_ONCE } from '../shared/runs.ts';
 import styles from './ClaudeSettingsDialog.module.css';
 import { RUN_ACTIONS } from './jobs/RunActions.tsx';
 
@@ -38,9 +38,17 @@ type SettingsApi = Pick<
   | 'setClaudeModels'
   | 'claudeEffort'
   | 'setClaudeEffort'
-  | 'claudePermissions'
-  | 'setClaudePermissions'
+  | 'runsAtOnce'
+  | 'setRunsAtOnce'
+  | 'analyzesNewJobs'
+  | 'setAnalyzesNewJobs'
 >;
+
+/** How many tasks may run at once, as the setting offers them. */
+const AT_ONCE_CHOICES = Array.from(
+  { length: AT_ONCE.most - AT_ONCE.least + 1 },
+  (_, at) => AT_ONCE.least + at,
+);
 
 /** A task's own choice, or none to go back to what everything uses. */
 function choose<T extends string>(
@@ -54,8 +62,8 @@ function choose<T extends string>(
 
 /**
  * How Claude works on the job hunt: which model it runs on and how hard it thinks, for
- * everything and for each task, and what it may do without asking. Each choice saves as it's
- * made.
+ * everything and for each task, how many tasks it runs at once, whether it analyzes new jobs on
+ * its own, and what it does without asking. Each choice saves as it's made.
  */
 export function ClaudeSettingsDialog({
   api,
@@ -76,23 +84,22 @@ export function ClaudeSettingsDialog({
   const suggested = planLevels(plan, method);
   const [models, setModels] = useState<ModelChoices | null>(null);
   const [effort, setEffort] = useState<EffortChoices | null>(null);
-  const [permissions, setPermissions] = useState<ClaudePermissions | null>(null);
+  const [atOnce, setAtOnce] = useState<number | null>(null);
+  const [analyzes, setAnalyzes] = useState<boolean | null>(null);
   const [byTask, setByTask] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
   const modelsHeading = useId();
+  const atOnceHeading = useId();
   const askingHeading = useId();
-  const filesHint = useId();
-  const sitesHint = useId();
 
   useEffect(() => {
-    void Promise.all([api.claudeModels(), api.claudeEffort(), api.claudePermissions()]).then(
-      ([chosen, levels, allowed]) => {
-        setModels(chosen);
-        setEffort(levels);
-        setPermissions(allowed);
-        setByTask(Object.keys({ ...chosen.tasks, ...levels.tasks }).length > 0);
-      },
-    );
+    void Promise.all([api.claudeModels(), api.claudeEffort()]).then(([chosen, levels]) => {
+      setModels(chosen);
+      setEffort(levels);
+      setByTask(Object.keys({ ...chosen.tasks, ...levels.tasks }).length > 0);
+    });
+    void api.runsAtOnce().then(setAtOnce, () => setAtOnce(AT_ONCE.usual));
+    void api.analyzesNewJobs().then(setAnalyzes, () => setAnalyzes(true));
   }, [api]);
 
   const failed = () => setProblem('That didn’t save. Try again.');
@@ -127,14 +134,25 @@ export function ClaudeSettingsDialog({
     }
   };
 
-  const changePermissions = async (next: ClaudePermissions) => {
-    setPermissions(next);
+  const changeAtOnce = async (next: number) => {
+    setAtOnce(next);
     try {
-      setPermissions(await api.setClaudePermissions(next));
+      setAtOnce(await api.setRunsAtOnce(next));
       setProblem(null);
     } catch {
       failed();
-      setPermissions(await api.claudePermissions());
+      setAtOnce(await api.runsAtOnce().catch(() => AT_ONCE.usual));
+    }
+  };
+
+  const changeAnalyzes = async (on: boolean) => {
+    setAnalyzes(on);
+    try {
+      setAnalyzes(await api.setAnalyzesNewJobs(on));
+      setProblem(null);
+    } catch {
+      failed();
+      setAnalyzes(await api.analyzesNewJobs().catch(() => !on));
     }
   };
 
@@ -169,7 +187,7 @@ export function ClaudeSettingsDialog({
                   ? 'Every token is billed with an API key, a Console account or a cloud provider.'
                   : 'On a Pro plan, limits are the tightest.'}
               </strong>{' '}
-              So recommended runs fit checks, salary checks, job searches and who to message on
+              So recommended runs analyzing jobs, salary checks, job searches and who to message on
               Sonnet, which uses less, and keeps Opus for the writing, with High effort or lower.
             </p>
           )}
@@ -249,57 +267,69 @@ export function ClaudeSettingsDialog({
           </details>
         </section>
       )}
-      {permissions && (
-        <section aria-labelledby={askingHeading} className={styles.section}>
-          <h3 id={askingHeading} className={styles.heading}>
-            Without asking
+      {atOnce !== null && (
+        <section aria-labelledby={atOnceHeading} className={styles.section}>
+          <h3 id={atOnceHeading} className={styles.heading}>
+            Tasks at once
           </h3>
           <p className={styles.lead}>
-            Claude works only in your job hunt, and can’t run programs on your computer. It always
-            searches the web, reads postings on Greenhouse, Lever, Ashby and Gem, and saves its work
-            in your jobs’ folders, job searches and outreach drafts without asking.
+            Each task runs in a Claude of its own, in a tab of Claude’s panel, side by side with the
+            others. Past this many, a task waits in line and starts by itself. Two tasks on one job
+            never run at once. More at once uses your plan faster.
           </p>
-          <div className={styles.options}>
-            <div>
-              <Checkbox
-                label="Change any file in your job hunt"
-                checked={permissions.anyFile}
-                aria-describedby={filesHint}
-                onChange={(event) =>
-                  void changePermissions({ ...permissions, anyFile: event.target.checked })
-                }
-              />
-              <p id={filesHint} className={styles.hint}>
-                Including your facts, guide and base resumes, which every resume and answer is built
-                from. When this is off, Claude asks before changing them.
-              </p>
-            </div>
-            <div>
-              <Checkbox
-                label="Read any website"
-                checked={permissions.anySite}
-                aria-describedby={sitesHint}
-                onChange={(event) =>
-                  void changePermissions({ ...permissions, anySite: event.target.checked })
-                }
-              />
-              <p id={sitesHint} className={styles.hint}>
-                When this is off, Claude asks before reading other sites, such as a company’s
-                careers page. A job post could try to trick Claude into sending your details to a
-                site, and asking lets you catch it.
-              </p>
-            </div>
+          <div className={styles.grid}>
+            <span className={styles.row}>Run at once</span>
+            <Select
+              aria-label="Tasks at once"
+              value={String(atOnce)}
+              onChange={(event) => void changeAtOnce(Number(event.target.value))}
+            >
+              {AT_ONCE_CHOICES.map((count) => (
+                <option key={count} value={count}>
+                  {count === 1 ? '1 task' : `${count} tasks`}
+                  {count === AT_ONCE.usual ? ' (recommended)' : ''}
+                </option>
+              ))}
+            </Select>
           </div>
+          {analyzes !== null && (
+            <label className={styles.check}>
+              <input
+                type="checkbox"
+                checked={analyzes}
+                onChange={(event) => void changeAnalyzes(event.target.checked)}
+              />
+              <span className={styles.checkText}>
+                <span className={styles.checkName}>Analyze new jobs on their own</span>
+                <span className={styles.checkAbout}>
+                  When Claude is free, it analyzes the jobs you saved since, up to{' '}
+                  {ANALYZE_ON_ITS_OWN} in one run. It steps aside for any task you start.
+                </span>
+              </span>
+            </label>
+          )}
         </section>
       )}
+      <section aria-labelledby={askingHeading} className={styles.section}>
+        <h3 id={askingHeading} className={styles.heading}>
+          Without asking
+        </h3>
+        <p className={styles.lead}>
+          Claude works only in your job hunt, and can’t run programs on your computer. It searches
+          the web, reads web pages and changes your job hunt’s files without asking. It never reads
+          LinkedIn. Your facts change only through Factwright’s fact tools, which take only what you
+          answered Claude. Once a task is done, Claude’s panel lists each file it changed, with
+          Undo, and the pages it read.
+        </p>
+      </section>
       {problem && (
         <p className={styles.problem} role="alert">
           {problem}
         </p>
       )}
       <p className={styles.note}>
-        Changes apply the next time Claude starts, or when a task needs another model or more effort
-        than Claude is open with.
+        A model or effort you change applies from the next task, as each task starts a Claude of its
+        own.
       </p>
       <DialogActions>
         <Button variant="primary" onClick={onClose}>

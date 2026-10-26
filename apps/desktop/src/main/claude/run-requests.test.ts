@@ -41,28 +41,44 @@ describe('following the run that drafts a form’s questions', () => {
     const drafts = new FormDrafts(() => 0);
     expect(drafts.state('acme--staff', false)).toEqual({ drafting: false, waiting: false });
     drafts.started('acme--staff');
-    // A run that makes way for the new one stops first, which isn't the drafts' end.
-    drafts.heard('stopped');
+    // A run drafting another job's form, side by side, says nothing of this one.
+    drafts.heard('working', 'globex--pm');
+    drafts.heard('done', 'globex--pm');
     expect(drafts.state('acme--staff', false)).toEqual({ drafting: true, waiting: false });
     expect(drafts.state('globex--pm', false)).toEqual({ drafting: false, waiting: false });
-    drafts.heard('working');
-    drafts.heard('needs-answer');
+    drafts.heard('working', 'acme--staff');
+    drafts.heard('needs-answer', 'acme--staff');
     expect(drafts.state('acme--staff', false)).toEqual({ drafting: true, waiting: true });
-    drafts.heard('working');
+    drafts.heard('working', 'acme--staff');
     // A question in the window waits on the user too.
     expect(drafts.state('acme--staff', true)).toEqual({ drafting: true, waiting: true });
-    drafts.heard('done');
+    drafts.heard('done', 'acme--staff');
     expect(drafts.state('acme--staff', false)).toEqual({ drafting: false, waiting: false });
+  });
+
+  it('follows two jobs’ drafts side by side, each on its own', () => {
+    const drafts = new FormDrafts(() => 0);
+    drafts.started('acme--staff');
+    drafts.heard('working', 'acme--staff');
+    drafts.started('globex--pm');
+    drafts.heard('needs-answer', 'globex--pm');
+    expect(drafts.state('acme--staff', false)).toEqual({ drafting: true, waiting: false });
+    expect(drafts.state('globex--pm', false)).toEqual({ drafting: true, waiting: true });
+    drafts.heard('done', 'acme--staff');
+    expect(drafts.state('acme--staff', false).drafting).toBe(false);
+    expect(drafts.state('globex--pm', false).drafting).toBe(true);
   });
 
   it('waits on the user to trust the workspace, and ends when the run fails or never starts', () => {
     let now = 0;
     const drafts = new FormDrafts(() => now);
     drafts.started('acme--staff');
-    drafts.waitsOnYou();
+    drafts.waitsOnYou('globex--pm');
+    expect(drafts.state('acme--staff', false)).toEqual({ drafting: true, waiting: false });
+    drafts.waitsOnYou('acme--staff');
     now = 10 * 60 * 1000;
     expect(drafts.state('acme--staff', false)).toEqual({ drafting: true, waiting: true });
-    drafts.heard('failed');
+    drafts.heard('failed', 'acme--staff');
     expect(drafts.state('acme--staff', false).drafting).toBe(false);
     // One the window said it started, which never got to work.
     drafts.started('acme--staff');

@@ -1,11 +1,13 @@
+import type { RunPhase, RunView } from '../../shared/api.ts';
 import {
+  ANALYZE_SKILL,
   type RunRequestAnswer,
   type RunSkill,
   type RunTask,
   taskCall,
   taskJob,
+  taskJobs,
 } from '../../shared/runs.ts';
-import type { RunPhase } from '../useClaudeRun.ts';
 
 /** What each skill does for a job, as its panel offers it, in the approved order. */
 export const RUN_ACTIONS: readonly { skill: RunSkill; label: string; why: string }[] = [
@@ -24,7 +26,11 @@ export const RUN_ACTIONS: readonly { skill: RunSkill; label: string; why: string
     label: 'Projects page',
     why: 'Your projects in depth, on one page, for jobs where they help',
   },
-  { skill: 'fit-check', label: 'Fit check', why: 'Score the job against your fact bank' },
+  {
+    skill: 'analyze-job',
+    label: 'Analyze job',
+    why: 'Its posting and details, a duplicate, the fit and the pay to ask for',
+  },
   {
     skill: 'salary-check',
     label: 'Salary check',
@@ -47,38 +53,104 @@ export const RUN_ACTIONS: readonly { skill: RunSkill; label: string; why: string
   },
 ];
 
+/** While a run has work going, its task's buttons say Claude is on it. */
+export const BUSY: readonly RunPhase[] = ['starting', 'working', 'needs-answer'];
+
+/** Where a task stands for Claude: it has a run going now, or it waits in line for one. */
+export type TaskState = 'running' | 'in-line';
+
 /** What the job's panel needs from Claude's panel to start and follow runs. */
 export interface RunControls {
-  phase: RunPhase;
-  task: RunTask | null;
+  /** Where a task stands, or null when it has no run going and isn't in line. */
+  stateOf: (task: RunTask) => TaskState | null;
+  /** Every task Claude has going or waiting in line on a job, and where each stands. */
+  tasksOn: (jobId: string) => readonly { task: RunTask; state: TaskState }[];
+  /**
+   * Starts a task in a run of its own, or puts it in line for its turn, behind any other task on
+   * the same job.
+   */
   start: (task: RunTask) => void;
-  /** Brings Claude's panel back, such as when its run is clicked again. */
-  show: () => void;
+  /** Brings a task's tab forward in Claude's panel, such as when its button is clicked again. */
+  show: (task: RunTask) => void;
 }
 
-/** While Claude is busy, other runs wait. */
-export const BUSY: readonly RunPhase[] = ['starting', 'working', 'needs-answer'];
+/**
+ * The job panel's run controls, from Claude's runs: each task by where it stands, going now or
+ * waiting in line for its turn. A run that's done, stopped or failed has nothing going.
+ */
+export function runControlsFor(
+  runs: readonly Pick<RunView, 'id' | 'task' | 'phase'>[],
+  start: (task: RunTask) => void,
+  show: (runId: string | undefined) => void,
+): RunControls {
+  const coming = runs.flatMap((run) =>
+    run.task && (run.phase === 'in-line' || BUSY.includes(run.phase))
+      ? [{ id: run.id, task: run.task, state: run.phase === 'in-line' ? 'in-line' : 'running' }]
+      : [],
+  ) as { id: string; task: RunTask; state: TaskState }[];
+  return {
+    stateOf: (task) => coming.find((run) => isSameRun(run.task, task))?.state ?? null,
+    tasksOn: (jobId) =>
+      coming
+        .filter((run) => taskJobs(run.task).includes(jobId))
+        .map(({ task, state }) => ({ task, state })),
+    start,
+    // The run going now, or waiting, for the task, or else the last one there was for it.
+    show: (task) =>
+      show(
+        (
+          coming.find((run) => isSameRun(run.task, task)) ??
+          runs.findLast((run) => run.task !== null && isSameRun(run.task, task))
+        )?.id,
+      ),
+  };
+}
 
 /**
  * Whether a run the app asks for starts now, as when the browser extension asks for drafts of a
- * form's questions: only once Claude Code is ready, and while Claude isn't busy.
+ * form's questions: only once Claude Code is ready, and while it can start without waiting in line.
  */
-export const requestedRun = (ready: boolean, phase: RunPhase): RunRequestAnswer =>
-  !ready ? 'not-ready' : BUSY.includes(phase) ? 'busy' : 'started';
+export const requestedRun = (ready: boolean, startsNow: boolean): RunRequestAnswer =>
+  !ready ? 'not-ready' : startsNow ? 'started' : 'busy';
 
-/** Whether a run is this one: the same skill, on the same job and call. */
-export const isSameRun = (task: RunTask | null, run: RunTask) =>
-  task?.skill === run.skill && taskJob(task) === taskJob(run) && taskCall(task) === taskCall(run);
+/** Whether a task is practice for a call, rather than prep for it. */
+const practices = (task: RunTask | null) => Boolean(task && 'practice' in task && task.practice);
 
 /**
- * Where a task stands for its button: running now, or waiting while Claude does another, or
- * until Claude Code is ready.
+ * Whether a run is this one: the same skill, on the same job and call, and practice for a call
+ * only as practice. A quick resume is its job's tailored resume, made another way, and a run
+ * analyzing several jobs analyzes each of them.
+ */
+export const isSameRun = (task: RunTask | null, run: RunTask) =>
+  task?.skill === run.skill &&
+  (taskJob(task) === taskJob(run) || analyzesIt(task, run) || analyzesIt(run, task)) &&
+  taskCall(task) === taskCall(run) &&
+  practices(task) === practices(run);
+
+/** Whether a run analyzing several jobs analyzes the one job another task is on. */
+const analyzesIt = (several: RunTask | null, one: RunTask | null) =>
+  several?.skill === ANALYZE_SKILL &&
+  'jobIds' in several &&
+  taskJob(one) !== null &&
+  taskJobs(several).includes(taskJob(one) as string);
+
+/**
+ * Where a task stands for its button: running now, or waiting in line for its turn, or until
+ * Claude Code is ready. A task that changes the job's files before its run starts, such as keeping
+ * the version before a new one, waits while Claude has another task going on the job, or in line
+ * for it (`alone`).
  */
 export function runState(
   run: RunControls | undefined,
   task: RunTask,
-): { running: boolean; disabled: boolean } {
-  const busy = run ? BUSY.includes(run.phase) : false;
-  const running = Boolean(run && busy && isSameRun(run.task, task));
-  return { running, disabled: !run || (busy && !running) };
+  alone = false,
+): { running: boolean; inLine: boolean; disabled: boolean } {
+  const state = run ? run.stateOf(task) : null;
+  const jobId = taskJob(task);
+  const jobBusy = Boolean(run && jobId && run.tasksOn(jobId).length > 0);
+  return {
+    running: state === 'running',
+    inLine: state === 'in-line',
+    disabled: !run || (alone && state === null && jobBusy),
+  };
 }

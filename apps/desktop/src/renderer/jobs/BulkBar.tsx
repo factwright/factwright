@@ -6,7 +6,7 @@ import {
   shortDate,
 } from '@factwright/core';
 import { Button, IconButton, JOB_STATUS_DISPLAY, Select } from '@factwright/ui';
-import { X } from 'lucide-react';
+import { Sparkles, X } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import type { EditResult, FactwrightApi, JobChanges } from '../../shared/api.ts';
 import styles from './BulkBar.module.css';
@@ -44,7 +44,8 @@ function shared<T>(rows: readonly JobRow[], value: (row: JobRow) => T | null): T
 /**
  * Moves the jobs picked in the list, all at once, under the list: to a quick choice before
  * applying, or to any status. Then it asks what can follow, such as why they were passed, with
- * a way to undo the move. Its count is read aloud as it changes.
+ * a way to undo the move. Analyze has Claude analyze the jobs picked, in one run, once Claude Code
+ * is ready. Its count is read aloud as it changes.
  */
 export function BulkBar({
   view,
@@ -56,6 +57,7 @@ export function BulkBar({
   onMoved,
   onClear,
   onDone,
+  onAnalyze,
 }: {
   view: JobView;
   /** The rows picked, as the list shows them. */
@@ -70,6 +72,8 @@ export function BulkBar({
   onClear: () => void;
   /** Closes the bar. Says whether the keyboard's focus was in it, to put it back in the list. */
   onDone: (fromBar: boolean) => void;
+  /** Has Claude analyze the jobs picked, in one run, or undefined while Claude isn't ready. */
+  onAnalyze?: ((jobIds: string[]) => void) | undefined;
 }) {
   const [problem, setProblem] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -164,6 +168,16 @@ export function BulkBar({
         </span>
         {selecting ? (
           <>
+            {onAnalyze && (
+              <Button
+                size="sm"
+                icon={<Sparkles size={14} aria-hidden="true" />}
+                disabled={busy}
+                onClick={() => onAnalyze(picked.map((row) => row.job.id))}
+              >
+                Analyze
+              </Button>
+            )}
             {SORTING.includes(view) &&
               // The views before applying are named for their statuses, which aren't offered.
               SORT_MOVES.filter((each) => each.status !== view).map((each) => (

@@ -16,7 +16,7 @@ import {
   visibleRows,
   withKnownKind,
 } from './rows.ts';
-import { sampleJobs } from './sample-jobs.ts';
+import { sampleJob, sampleJobs } from './sample-jobs.ts';
 
 const TODAY = localDate();
 const rows = jobRows(sampleJobs(), TODAY);
@@ -195,6 +195,37 @@ describe('sorting', () => {
     const order = ['urgent', 'action', 'info', 'none'];
     expect(levels).toEqual([...levels].sort((a, b) => order.indexOf(a) - order.indexOf(b)));
     expect(levels[0]).toBe('urgent');
+  });
+
+  it('puts the newest found or saved first, a day’s jobs by their newest activity, and a job with no day last', () => {
+    const daysAgo = (days: number) => localDate(new Date(Date.now() - days * 86_400_000));
+    const added = jobRows(
+      [
+        sampleJob({ id: 'older--dev', company: 'Older', role: 'Dev', firstSeen: daysAgo(9) }),
+        sampleJob({ id: 'unknown--dev', company: 'Unknown', role: 'Dev', firstSeen: null }),
+        sampleJob({ id: 'newest--dev', company: 'Newest', role: 'Dev', firstSeen: daysAgo(1) }),
+        sampleJob({
+          id: 'busier--dev',
+          company: 'Busier',
+          role: 'Dev',
+          firstSeen: daysAgo(9),
+          lastActivity: daysAgo(2),
+        }),
+      ],
+      TODAY,
+    );
+    expect(companies(visibleRows(added, ALL, { by: 'added', reversed: false }))).toEqual([
+      'Newest',
+      'Busier',
+      'Older',
+      'Unknown',
+    ]);
+    expect(companies(visibleRows(added, ALL, { by: 'added', reversed: true }))).toEqual([
+      'Busier',
+      'Older',
+      'Newest',
+      'Unknown',
+    ]);
   });
 });
 

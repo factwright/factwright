@@ -3,8 +3,10 @@ export {
   type Asked,
   answeredClaimText,
   answerSource,
+  type ClaimCorrection,
   type ClaimOrigin,
   claimOrigin,
+  correctedClaimText,
   oneLine,
   type SharedKind,
 } from './answered.ts';
@@ -28,6 +30,7 @@ export {
   boardSource,
   boardSystem,
   readBoard,
+  workablePostingId,
 } from './boards.ts';
 export { callInvite, callInviteName, callStart, callTitle, isClockTime } from './calendar.ts';
 export { US_STATES } from './countries.ts';
@@ -87,6 +90,7 @@ export {
   type AnswerSource,
   answerField,
   answerForm,
+  blocksOnFile,
   datedAs,
   type EqualOpportunity,
   type FieldReply,
@@ -100,6 +104,7 @@ export {
   NO_PRIVATE,
   type OnFile,
   type OtherAnswer,
+  type PayAsk,
   REMEMBERED_KINDS,
   type RememberedKind,
   type ResumeOnFile,
@@ -221,6 +226,7 @@ export {
   SAVE_HELPER,
   SAVED_POSTING_LIMIT,
   type SavedJob,
+  type SentUndo,
 } from './inbox.ts';
 export { type Invite, type InviteOptions, MAX_INVITE_LENGTH, readInvite } from './invite.ts';
 export {
@@ -289,6 +295,7 @@ export {
 export {
   type CompanyName,
   companyMatch,
+  hasOwnPosting,
   isTitled,
   type JobIdentity,
   type JobMatch,
@@ -299,6 +306,9 @@ export {
   postingKey,
   postingSite,
   readTitle,
+  type SavedHow,
+  sameJob,
+  savedJobFor,
   type TitleFit,
   type TitleWords,
   titleFit,
@@ -316,25 +326,34 @@ export {
   askedJob,
   formJob,
   foundOn,
+  isSyncedAnswer,
   jobPdfs,
+  type KindTarget,
+  keptLength,
+  kindTargetsIn,
   MOST_QUESTIONS,
   NO_CONTACT,
   onFileJob,
   PROFILE_FILES,
   type ProfileContact,
   type ProfileForForms,
+  payAskFor,
+  profileAnswer,
   profileForForms,
   type ResumeShape,
   readContact,
   readForApplications,
   resumeDetails,
+  SYNCED_ANSWERS,
+  type SyncedAnswerKind,
   sentAnswersOf,
   sentBefore,
   uploadName,
   withFormQuestions,
+  withProfileAnswers,
   withSentAnswers,
 } from './on-file.ts';
-export { type PayRange, parsePay } from './pay.ts';
+export { type PayRange, parsePay, payBand } from './pay.ts';
 export {
   decodeEntities,
   htmlToText,
@@ -384,6 +403,8 @@ export {
   viewOf,
 } from './progress.ts';
 export {
+  folderFiles,
+  folderJobId,
   JOB_DOCS,
   type JobDocKind,
   type JobDocs,
@@ -409,6 +430,7 @@ export {
   changeOrder,
   jobList,
   knownJobsOf,
+  MAYBE_SAME_WHY,
   noteOrder,
   type StoredRow,
   type TrackedItems,
@@ -437,7 +459,10 @@ export {
   JOB_STATUSES,
   type JobStage,
   type JobStatus,
+  type MaybeSame,
+  NO_OWN_DETAILS,
   type Note,
+  type OwnDetails,
   PASS_REASON_LABELS,
   PASS_REASONS,
   type PassReason,

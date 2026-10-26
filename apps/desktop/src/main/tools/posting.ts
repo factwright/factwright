@@ -1,6 +1,7 @@
 import { access, mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import {
+  folderJobId,
   JOB_EXTRAS,
   localDate,
   normalizeUrl,
@@ -12,7 +13,7 @@ import {
   type SavedPosting,
   WORKSPACE_PATHS,
 } from '@factwright/core';
-import { FetchRefused, fetchPublic } from './safe-fetch.ts';
+import { FetchRefused, fetchPublic, linkProblem } from './safe-fetch.ts';
 
 /** Less text than this means the page needs a browser or a sign-in to show the posting. */
 const MIN_POSTING_LENGTH = 400;
@@ -27,10 +28,19 @@ export const FOLDER_NAME = /^[\w][\w.-]{0,119}$/;
 export interface FetchDeps {
   /**
    * Fetches a public page or API within a time limit, in milliseconds, and a size limit, in
-   * bytes, when it's given. Tests pass their own.
+   * bytes, when it's given, telling `onRedirect` each address a redirect sends it to before it
+   * goes there. Tests pass their own.
    */
-  fetch?: (url: string, json: boolean, limitMs: number, maxBytes?: number) => Promise<unknown>;
+  fetch?: (
+    url: string,
+    json: boolean,
+    limitMs: number,
+    maxBytes?: number,
+    onRedirect?: (url: string) => void,
+  ) => Promise<unknown>;
   now?: () => Date;
+  /** Hears each address a redirect sends a fetch to, before it goes there. */
+  onRedirect?: ((url: string) => void) | undefined;
 }
 
 type Fetch = (url: string, json: boolean, maxBytes?: number) => Promise<unknown>;
@@ -43,6 +53,7 @@ export function fetchInTime(deps: FetchDeps): Fetch {
   return async (address, json, maxBytes) => {
     const left = giveUpAt - clock().getTime();
     if (left <= 0) throw new Error('the site took too long to answer');
+    if (deps.onRedirect) return fetch(address, json, left, maxBytes, deps.onRedirect);
     return maxBytes === undefined
       ? fetch(address, json, left)
       : fetch(address, json, left, maxBytes);
@@ -120,6 +131,8 @@ export class ReadCache {
 export interface ReadDeps extends FetchDeps {
   /** What was read, for save_posting. */
   cache: ReadCache;
+  /** Hears each page read, by its address, for the task's card. */
+  onRead?: ((url: string) => void) | undefined;
 }
 
 /**
@@ -139,11 +152,15 @@ export async function readLink(
     return `“${url}” isn’t a link.`;
   }
   if (deps.feedsOnly && !isFeedPosting(parsed.href)) {
-    return `${parsed.href} isn’t a posting on Greenhouse, Lever, Ashby or Gem. Read it with read_page, which asks the user first, or use job_board for a company’s whole board.`;
+    return `${parsed.href} isn’t a posting on Greenhouse, Lever, Ashby or Gem. Read it with read_page, or use job_board for a company’s whole board.`;
   }
+  // Each page a request goes to is noted for the task's card before it goes, so one that fails,
+  // or redirects somewhere else, is noted too. One the fetch turns away outright never goes.
+  if (!linkProblem(parsed)) deps.onRead?.(parsed.href);
   let page: Posting | null;
   try {
-    page = await readFrom(parsed.href, fetchInTime(deps), deps.feedsOnly);
+    const fetch = fetchInTime({ ...deps, ...(deps.onRead && { onRedirect: deps.onRead }) });
+    page = await readFrom(parsed.href, fetch, deps.feedsOnly);
   } catch (error) {
     return error instanceof FetchRefused
       ? `Not read: ${reasonOf(error)}`
@@ -151,7 +168,7 @@ export async function readLink(
   }
   if (!page?.text.trim()) {
     return deps.feedsOnly
-      ? `The applicant system has no posting at ${parsed.href}. It may have closed: check with job_board, or read the link with read_page, which asks the user first.`
+      ? `The applicant system has no posting at ${parsed.href}. It may have closed: check with job_board, or read the link with read_page.`
       : `${parsed.href} had no text to read, so it probably needs a browser or a sign-in.`;
   }
   deps.cache.remember(parsed.href, page, (deps.now?.() ?? new Date()).getTime());
@@ -172,6 +189,57 @@ export async function readLink(
 
 export interface SavePostingDeps extends ReadDeps {
   workspace: string;
+  /** Hears the posting's path just before it's saved, so the app can note it's new. */
+  keep?: ((path: string) => void) | undefined;
+  /** A job on file, by its ID: the job kept, for one merged into another. Null for none. */
+  job?: ((jobId: string) => JobLinks | null) | undefined;
+  /** Every job on file, with its links. */
+  jobs?: (() => readonly JobLinks[]) | undefined;
+}
+
+/** A job on file, by its ID, with its links. */
+interface JobLinks {
+  id: string;
+  links: readonly { url: string }[];
+}
+
+/**
+ * Why a job's folder is another job's, or null when nothing says so. Two jobs with the same
+ * company and title make the same folder name, as two runs analyzing them at once both can, so the
+ * second must never take the first's folder for its own: the folder's job.md names the job it's
+ * for, and before that's written, its posting came from the other job's link. A link no job on
+ * file has, such as a role's own that its board's listing led to, says nothing.
+ */
+async function anotherJobsFolder(
+  folder: string,
+  url: string,
+  jobId: string,
+  deps: SavePostingDeps,
+): Promise<string | null> {
+  const job = deps.job?.(jobId);
+  if (!job) return null;
+  const dir = join(deps.workspace, WORKSPACE_PATHS.jobs, folder);
+  const notes = await readFile(join(dir, 'job.md'), 'utf8').catch(() => null);
+  const named = notes === null ? null : folderJobId(notes);
+  if (named) {
+    return (deps.job?.(named)?.id ?? named) === job.id
+      ? null
+      : `${folder} is another job’s folder: its job.md is for ${named}.`;
+  }
+  const posting = await readFile(join(dir, 'posting.md'), 'utf8').catch(() => null);
+  const source = posting === null ? null : readSavedPosting('posting.md', posting).source;
+  if (!source || !URL.canParse(source)) return null;
+  const from = normalizeUrl(source);
+  const ours = [url, ...job.links.map((link) => link.url)].map(normalizeUrl);
+  if (ours.includes(from)) return null;
+  const theirs = deps
+    .jobs?.()
+    .find(
+      (other) => other.id !== job.id && other.links.some((link) => normalizeUrl(link.url) === from),
+    );
+  return theirs
+    ? `${folder} is another job’s folder: its posting came from ${source}, the link of ${theirs.id}.`
+    : null;
 }
 
 /** A job's ID as the extension and Add job make them: lowercase letters, digits and hyphens. */
@@ -220,7 +288,8 @@ export async function savedFromBrowser(
  * or read_posting read from the link in this run, or reads a posting on Greenhouse, Lever, Ashby
  * or Gem from its public feed. It never reaches another
  * site, so it needs no OK from the user. A posting already saved there is kept, since it's the
- * one the user saw. Says, in words for Claude, what happened.
+ * one the user saw, unless the folder is another job's, which it says. Says, in words for Claude,
+ * what happened.
  */
 export async function savePosting(
   url: string,
@@ -241,8 +310,18 @@ export async function savePosting(
   }
   const dir = join(deps.workspace, WORKSPACE_PATHS.jobs, folder);
   const file = join(dir, 'posting.md');
-  const kept = `Kept the posting already saved in ${saved}.`;
-  if (await exists(file)) return kept;
+  // Another job's folder is left to it, and in this job's own, a posting there already is kept.
+  const theirs = async () =>
+    jobId ? await anotherJobsFolder(folder, parsed.href, jobId, deps) : null;
+  const notSaved = (why: string) =>
+    `Not saved: ${why} Use a folder of this job’s own, ${folder}-2 or the next number that’s free, and save the posting there.`;
+  const kept = async () => {
+    const why = await theirs();
+    return why ? notSaved(why) : `Kept the posting already saved in ${saved}.`;
+  };
+  if (await exists(file)) return kept();
+  const why = await theirs();
+  if (why) return notSaved(why);
 
   // The posting as the user saw it, saved from their browser, comes first, and needs no reading:
   // a LinkedIn job's posting gets to its folder this way, as Factwright's tools never read LinkedIn.
@@ -252,7 +331,7 @@ export async function savePosting(
     : deps.cache.recall(parsed.href, (deps.now?.() ?? new Date()).getTime());
   if (!posting) {
     if (!isFeedPosting(parsed.href)) {
-      return `Nothing read from ${parsed.href} yet. Read it with read_page first, which asks the user, then save it.`;
+      return `Nothing read from ${parsed.href} yet. Read it with read_page first, then save it.`;
     }
     try {
       posting = await readFrom(parsed.href, fetchInTime(deps), true);
@@ -280,11 +359,12 @@ export async function savePosting(
     '',
   ].join('\n');
   await mkdir(dir, { recursive: true });
+  deps.keep?.(file);
   try {
     // Never over a file that turned up meanwhile, nor through a link in its place.
     await writeFile(file, body, { flag: 'wx' });
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'EEXIST') return kept;
+    if ((error as NodeJS.ErrnoException).code === 'EEXIST') return kept();
     throw error;
   }
   return `Saved ${saved} (${posting.text.length} characters, via ${posting.via}).`;

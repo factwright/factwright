@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en-US">
+  <head>
+    <meta charset="utf-8" />
+    <title>Career Opportunities: Sign In</title>
+  </head>
+  <body class="careerSite coreCSB body">
+    <div id="outershell" class="outershell">
+      <div id="header" class="custom-header" role="banner"><a href="https://careers.copperline.example/" class="brand">Copperline Utilities careers</a></div>
+      <div id="innershell" class="innershell">
+        <div id="rmkContent" tabindex="-1" class="content" role="main">
+          <form id="careerform" name="careerform" action="/career?_s.crb=sample" method="POST" accept-charset="UTF-8" autocomplete="off">
+            <input type="hidden" id="career_company" name="career_company" value="copperlineP" />
+            <input type="hidden" id="career_job_req_id" name="career_job_req_id" value="1042" />
+            <div role="region" aria-label="Career Opportunities:Sign In ">
+              <div class="modal">
+                <div class="sfpanel_wrapper">
+                  <div class="page_title page_accessible_title" id="signInTitleContainer"><h1>Career Opportunities: Sign In</h1></div>
+                  <div class="round sfpanel">
+                    <div class="bd">
+                      <div class="content extLoginFormContent">
+                        <input type="hidden" id="career_ns" name="career_ns" value="job_application" />
+                        <input type="hidden" id="loginFlowRequired" name="loginFlowRequired" value="true" />
+                        <div class="bottomLink">
+                          <h2 class="haveAnAccount">Already have an account?</h2>
+                          <p>Enter your email address and password (Credentials are case sensitive).</p>
+                          <div class="requiredMessage"><span class="required requiredAccessible">*</span> indicates a required field.</div>
+                        </div>
+                        <table role="presentation" class="axial noborder bottomspace table table-condensed">
+                          <tr>
+                            <td class="com-sm-4 trHeader"><label for="username" title="Required">Email Address: <span class="required requiredAccessible" aria-hidden="true">*</span></label></td>
+                            <td>
+                              <input type="text" name="username" id="username" value="" size="30" aria-label="Email Address:" aria-invalid="false" aria-describedby="signIn_EmailError" aria-required="true" maxlength="99" autocomplete="username" />
+                              <span id="signIn_EmailError" class="rcmValidationMsgArea" style="display: none" aria-live="assertive"></span>
+                            </td>
+                          </tr>
+                          <tr>
+                            <td class="com-sm-4 trHeader"><label for="password" title="Required">Password: <span class="required requiredAccessible" aria-hidden="true">*</span></label></td>
+                            <td>
+                              <div style="display: flex">
+                                <input type="password" name="password" id="password" aria-label="Password:" aria-describedby="signIn_PasswordError" aria-required="true" maxlength="99" autocomplete="current-password" />
+                                <input type="button" title="Show Password" name="show_button" value="Show" id="show_button" />
+                              </div>
+                              <span id="signIn_PasswordError" class="rcmValidationMsgArea" style="display: none" aria-live="assertive"></span>
+                            </td>
+                          </tr>
+                          <tr>
+                            <td></td>
+                            <td class="button_row mobileApplyButtonRow">
+                              <span class="aquabtn active"><span><button>Sign In</button></span></span>
+                              <span><a href="/career?company=copperlineP&amp;login_ns=forgot_pwd&amp;career_ns=job_application&amp;career_job_req_id=1042">Forgot your password?</a></span>
+                            </td>
+                          </tr>
+                        </table>
+                        <h2 class="haveAnAccount">Not a registered user yet?</h2>
+                        <div class="bottomLink"><a href="/career?company=copperlineP&amp;login_ns=register&amp;career_ns=job_application&amp;career_job_req_id=1042">Create an account</a> <span>to apply for our career opportunities.</span></div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>

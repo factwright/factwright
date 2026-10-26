@@ -107,6 +107,8 @@ export type FieldKind =
   | 'how-heard'
   | 'pay'
   | 'over-18'
+  // Why you're leaving your job, or why you left your last one.
+  | 'leaving'
   // Equal-opportunity questions: only from what you set in Profile, and never shown to Claude.
   | 'gender'
   | 'hispanic'
@@ -183,21 +185,26 @@ const AUTOCOMPLETE: Record<string, FieldKind> = {
 
 /**
  * Words that ask for what's never filled: passwords and codes, payment details, ID numbers, and
- * birthdays. A PIN code, as India's postal codes are called, is a postal code.
+ * birthdays, and a box only a robot would fill, as a page's trap for bots, such as Workday's
+ * "This input is for robots only", or one that says only "Leave this field blank". A PIN code, as
+ * India's postal codes are called, is a postal code.
  */
 const NEVER =
-  /\b(password|passcode|passphrase|social security|ssn|social insurance|sin number|national (id|identity|insurance)( number| card)?|(government|state)( issued)? id|id (number|no|card number)|identification (number|no)|passport (number|no|num|id|details)|drivers? licen[cs]e (number|no|id)|tax (id|number|file)|tin|itin|nhs number|medicare number|card number|credit card|debit card|cvv|cvc|security (code|question|answer)|secret (question|answer)|pin(?! ?code)|verification code|one time (code|password)|expiry date|expiration date|date of birth|birth ?date|birthday|dob|(year|month|day|place|country|city) of birth|birth (year|place|country)|bank account|account number|routing number|iban|swift|sort code|mothers maiden)\b|^(passport|id)$/;
+  /\b(robots? only|if you( a)?re (a )?human|password|passcode|passphrase|social security|ssn|social insurance|sin number|national (id|identity|insurance)( number| card)?|(government|state)( issued)? id|id (number|no|card number)|identification (number|no)|passport (number|no|num|id|details)|drivers? licen[cs]e (number|no|id)|tax (id|number|file)|tin|itin|nhs number|medicare number|card number|credit card|debit card|cvv|cvc|security (code|question|answer)|secret (question|answer)|pin(?! ?code)|verification code|one time (code|password)|expiry date|expiration date|date of birth|birth ?date|birthday|dob|(year|month|day|place|country|city) of birth|birth (year|place|country)|bank account|account number|routing number|iban|swift|sort code|mothers maiden)\b|^(passport|id)$|^(please )?leave this (field |box |input )?(blank|empty)$|^(choose |create |pick )?(a |your )?(user ?name|login|login name|login id|user id)$/;
 
-/** Words a single checkbox asks you to agree to something with, as "I agree to the terms" does. */
+/**
+ * Words a single checkbox asks you to agree to something with, as "I agree to the terms" does, or
+ * to declare something true, as SmartRecruiters' declarations do.
+ */
 const AGREE =
-  /\b(agree|consent|acknowledge|accept|certify|confirm|understand|terms|privacy|authori[sz]e)\b/;
+  /\b(agree|consent|acknowledge|accept|certify|confirm|understand|terms|privacy|authori[sz]e|declare)\b/;
 
 /**
  * The same asked any other way: by a choice, as "Do you acknowledge our privacy notice?" asks it,
  * or by typing your name as a signature. Agreeing is yours to do, whatever you said before.
  */
 const CONSENT =
-  /\b(i|you|do you|we) (hereby )?(agree|consent|acknowledge|certify|attest|accept the)\b|\bconsent\b|\backnowledg(e|es|ed|ement)\b|\battest(ation)?\b|\bterms (and conditions|of (use|service|employment))\b|\bprivacy (policy|notice|statement)\b|\b(applicant|candidate|recruitment) privacy\b|\bdata (processing|retention|protection)\b|\bgdpr\b|\b(e ?)?signature\b|\bsign (here|below)\b|\b(keep|retain|store) (your|my) (data|information|details|application)\b/;
+  /\b(i|you|do you|we) (hereby )?(agree|consent|acknowledge|certify|attest|accept the|declare)\b|\bconsent\b|\backnowledg(e|es|ed|ement)\b|\battest(ation)?\b|\bterms (and conditions|of (use|service|employment))\b|\bprivacy (policy|notice|statement)\b|\b(applicant|candidate|recruitment) privacy\b|\bdata (processing|retention|protection)\b|\bgdpr\b|\b(e ?)?signature\b|\bsign (here|below)\b|\b(keep|retain|store) (your|my) (data|information|details|application)\b/;
 
 /** Words that ask whether you may work somewhere. */
 const AUTHORIZED =
@@ -206,6 +213,41 @@ const AUTHORIZED =
 /** Words that ask whether you can work without sponsorship, which is asking it the other way round. */
 export const WITHOUT_SPONSORSHIP =
   /\bwithout (the need for |needing |requiring |any )*(visa |employer |company )?sponsor/;
+
+/**
+ * What comes after "leave" or "leaving" in a question about your job: nothing more, another
+ * question, or the job itself, "your current position", never "the military" or "gaps".
+ */
+const JOB_AFTER = String.raw`(?=$| or\b| and\b| (your|the|this|my|that) ((current|last|previous|prior|most recent|present|former) )?(job|role|position|employer|company|organi[sz]ation|team|work)\b)`;
+
+/** A new job of no one company's, as "Why are you looking for a new role?" asks it. */
+const NEW_ROLE = String.raw`(for )?(a |an )?(new|another|different) (role|job|position|opportunity|opportunities|challenge|employer|company)\b(?! (at|with|like|in)\b)`;
+
+/**
+ * Words that ask why you're leaving your job, or why you left your last one: "Reason for leaving",
+ * "Why are you looking for a new role?", "Please explain why you are leaving your current
+ * employer", but never "Why are you looking for a position at Acme?" or "What led you to consider
+ * a role here?", which ask why the job.
+ */
+const LEAVING = new RegExp(
+  [
+    String.raw`\breason( s|s)? (for|of) (your |my )?(leaving|departure|wanting to (leave|change|move on)|(job )?change|changing (jobs?|roles?|employers?|companies|positions?)|(looking|seeking|searching) for (a )?(new|another|change)|considering (a )?(new|change))\b`,
+    String.raw`\bleaving reasons?\b`,
+    String.raw`\bwhy (are|did|do|would|have|were) you (want(ed)? to |wish(ed)? to |plan(ning)? to |decide(d)? to |choose to |chose to |thinking (of|about) |considering |interested in |looking to )?(leave|leaving|left)${JOB_AFTER}`,
+    String.raw`\bwhy (you are|youre|you re|you were|you have|youve|you)( (looking|planning|wanting|hoping|deciding|want|wish|decided|chose|plan) to)? (leave|leaving|left)${JOB_AFTER}`,
+    String.raw`\bwhy (are|do) you (want to |wish to )?(change|changing|move|moving|switch|switching) (jobs?|roles?|employers?|companies|positions?)\b`,
+    String.raw`\bwhy are you (currently |now )?(looking|searching|seeking|job hunting|on the job market)(?=$| ${NEW_ROLE}| to (leave|change|move on|switch|make a (change|move))\b| elsewhere\b| for a change\b)`,
+    String.raw`\bwhat (prompted|made|led|motivated|caused|is motivating|is prompting) you( to)? (leave|start looking|look for (a |an )?(new|another|different) (role|job|position|opportunity|opportunities))\b`,
+  ].join('|'),
+);
+
+/**
+ * Words that ask why, and words about leaving: together, a question about leaving your job, never
+ * where you work now, as "Describe your departure from your current employer". Leaving alone
+ * isn't, as "Current company (leave blank if none)".
+ */
+const ASKS_WHY = /\b(why|reasons?|explain|describe)\b/;
+const ABOUT_LEAVING = /\b(leave|leaving|left|departure|departing)\b/;
 
 /**
  * Rules that say what a field asks, by its question, in order: the first that fits is it. Each
@@ -284,7 +326,8 @@ const RULES: { kind: FieldKind; words: RegExp; also?: RegExp; not?: RegExp }[] =
     kind: 'pay',
     words:
       /\b(salary|compensation|pay|wage|rate) (expectations?|requirements?|range|desired|requested)\b|\b(desired|expected|target|minimum|requested) (base )?(salary|compensation|pay|wage|rate)\b|\bsalary\b|\bcompensation\b/,
-    not: /\b(history|current salary|prior|previous)\b/,
+    // What you're paid now, or were, isn't what you'd ask for.
+    not: /\b(history|prior|previous|past)\b|\bcurrent (base |annual |total |yearly )?(salary|compensation|pay|wage|rate|package)\b|\b(currently|presently) (earn|make|paid)\b/,
   },
   // Cover letters, to type or upload.
   { kind: 'cover-letter', words: /\b(cover|motivation(al)?) letter\b/ },
@@ -383,10 +426,11 @@ const RULES: { kind: FieldKind; words: RegExp; also?: RegExp; not?: RegExp }[] =
     words: /\be ?mail\b/,
     not: /\b(referr|reference|manager|recruiter|emergency|contact person)/,
   },
+  // The kind of phone, or its extension, as Workday asks them beside the number, isn't the number.
   {
     kind: 'phone',
     words: /\b(phone|mobile|cell ?phone|cell|telephone|tel)\b/,
-    not: /\b(referr|reference|manager|recruiter|emergency|screen|interview)/,
+    not: /\b(referr|reference|manager|recruiter|emergency|screen|interview)|\b(device|type|extension|ext)\b/,
   },
   // Where you live, an apartment or suite apart from the street.
   {
@@ -409,7 +453,7 @@ const RULES: { kind: FieldKind; words: RegExp; also?: RegExp; not?: RegExp }[] =
   {
     kind: 'country',
     words:
-      /^country( of residence)?$|\bwhat country\b|\bwhich country (do you|are you)\b|\bcountry (are you|do you) (based|live|reside)\b/,
+      /^country( or region| region)?( of residence)?$|\bwhat country\b|\bwhich country (do you|are you)\b|\bcountry (are you|do you) (based|live|reside)\b/,
     not: /\b(authori[sz]ed|eligible|citizen|passport)\b/,
   },
   {
@@ -427,7 +471,7 @@ const NAMES: { kind: FieldKind; name: RegExp }[] = [
   { kind: 'last-name', name: /\b(last ?name|lname|surname|family ?name)\b/ },
   { kind: 'preferred-name', name: /\bpreferred ?name\b/ },
   { kind: 'email', name: /\be ?mail\b/ },
-  { kind: 'phone', name: /\b(phone|mobile|tel)\b/ },
+  { kind: 'phone', name: /\b(phone|mobile|tel)\b(?!.*\b(device|type|extension|ext)\b)/ },
   { kind: 'linkedin', name: /\blinked ?in\b/ },
   { kind: 'github', name: /\bgit ?hub\b/ },
   { kind: 'website', name: /\b(portfolio|website)\b/ },
@@ -436,23 +480,117 @@ const NAMES: { kind: FieldKind; name: RegExp }[] = [
   { kind: 'cover-letter', name: /\bcover ?letter\b/ },
   { kind: 'gender', name: /^gender\b/ },
   { kind: 'hispanic', name: /^hispanic/ },
-  { kind: 'race', name: /^race\b/ },
+  { kind: 'race', name: /^(race|ethnicit)/ },
   { kind: 'veteran', name: /^veteran/ },
-  { kind: 'disability', name: /^disability/ },
+  // Workday's Self Identify names the form's own language "disabilityForm": that's no answer.
+  { kind: 'disability', name: /^disabilit(y|ies)\b(?! form)/ },
   { kind: 'school', name: /\b(school|university|college)\b/ },
   { kind: 'degree', name: /\bdegree\b/ },
   { kind: 'discipline', name: /\b(discipline|major)\b/ },
   { kind: 'full-name', name: /^(name|full ?name|systemfield name)\b/ },
   { kind: 'location', name: /^(location|candidate location)\b/ },
+  { kind: 'leaving', name: /\breasons? ?for ?leaving\b/ },
 ];
 
-/** The part of a form that asks for each job you held, by its heading, such as "Employment 2". */
-const JOB_PART =
-  /^(your |my )?(employment|employment history|employment information|work experience|work history|professional experience|experience|previous employment|job history)( \d{1,2})?( optional)?$/;
+/**
+ * The equal-opportunity question a choice's options say it asks, when its words don't, as a
+ * self-identification form's "Please check one of the boxes below:" asks about a disability by its
+ * options alone: two or more of its options answer that question, and only it. Each is matched as
+ * the option says it, in lowercase: a race is the whole option, or what comes before its brackets
+ * or a dash, as "Asian (Not Hispanic or Latino)", never "Asian communities".
+ */
+const SELF_ID_OPTIONS: { kind: EqualOpportunityKind; option: RegExp }[] = [
+  {
+    kind: 'disability',
+    option:
+      /\bi (do not |don['’]?t )?have (a )?disabilit(y|ies)\b|\b(had|have had) (a disability|one) in the past\b/,
+  },
+  {
+    kind: 'veteran',
+    option: /\b(protected veterans?|i am not a veteran|not a veteran|veterans? listed above)\b/,
+  },
+  {
+    kind: 'race',
+    option:
+      /^(american indian or alaska(n)? native|asian|black or african american|hispanic or latin[oax]|native hawaiian or (other )?pacific islander|two or more races|white)\s*($|[(:,–—-])/,
+  },
+  {
+    kind: 'gender',
+    option: /^(male|female|man|woman|men|women|non[- ]?binary)\s*($|[(:,–—-])/,
+  },
+];
 
-/** The part that asks for each school, by its heading. */
+/**
+ * Words that only say how to answer, as "Please check one of the boxes below:" or "Select all that
+ * apply" do, and leave what a choice asks to its options.
+ */
+const HOW_TO_ANSWER =
+  /^((please )?(check|select|choose|pick|tick|mark)( (one|all|any|each|an?))?( (of|from))?( the)?( (boxes|box|options?|items?|answers?|choices?|following))?( (below|that apply|which apply|listed( below)?))?)?$/;
+
+/**
+ * A part of a form for self-identification, by its name: Workday's Voluntary Disclosures and Self
+ * Identify, or an equal-opportunity or demographic part.
+ */
+const SELF_ID_PART =
+  /\b(voluntary (self )?(disclosures?|identification|demographic)|self identif(y|ication)|equal (employment )?opportunit(y|ies)|eeoc?|demographics?|diversity)\b/;
+
+/** Whether a field is in a part of the form for self-identification. */
+const inSelfIdPart = (field: Pick<FormField, 'section'>) =>
+  (field.section ?? '')
+    .split(' › ')
+    .map(plain)
+    .some((part) => SELF_ID_PART.test(part));
+
+/**
+ * The equal-opportunity question a choice's options say it asks, or null: only for a question
+ * nothing else tells, whose words only say how to answer, or that's in a part of the form for
+ * self-identification, and never one whose words make it something else, as "Do you require an
+ * accommodation?" isn't about a disability, whatever its options say.
+ */
+function selfIdByOptions(field: FieldToTell, question: string): EqualOpportunityKind | null {
+  if (!HOW_TO_ANSWER.test(question) && !inSelfIdPart(field)) return null;
+  const said = (field.options ?? []).map((each) => each.toLowerCase().trim());
+  const kind =
+    SELF_ID_OPTIONS.find(({ option }) => said.filter((each) => option.test(each)).length >= 2)
+      ?.kind ?? null;
+  if (!kind || RULES.some((rule) => rule.kind === kind && rule.not?.test(question))) return null;
+  return kind;
+}
+
+/** A field's names and ids, as compared: "personalInfoUS--veteranStatus" is "personal info us veteran status". */
+const allNames = (name: string) => plain(name.replace(/([a-z])([A-Z])/g, '$1 $2'));
+
+/** What a name says after "--" when it only says which one it is: a number, or "select". */
+const WHICH_ONE =
+  /^((\d+|select|input|value|option|choice|field|answer|dropdown|radio|checkbox|text)( |$))*$/;
+
+/**
+ * A field's own names, as compared, without the part of the form a name says it's in first, as
+ * Workday's "personalInfoUS--veteranStatus" puts it before "--": "veteran status". A name that
+ * says only which one it is after "--", as "gender--0" or "race--select" does, keeps what's
+ * before.
+ */
+const ownNames = (name: string) =>
+  allNames(
+    name
+      .split(/\s+/)
+      .map((each) => {
+        const own = each.split('--').at(-1) ?? each;
+        return WHICH_ONE.test(allNames(own)) ? each : own;
+      })
+      .join(' '),
+  );
+
+/**
+ * The part of a form that asks for each job you held, by its heading, such as "Employment 2", or
+ * SuccessFactors' "Outside Work Experience" and iCIMS's "Current Employment".
+ */
+const JOB_PART =
+  /^(your |my )?(employment|employment history|employment information|current employment|((outside|previous|prior|past|relevant) )?work experience|work history|professional experience|experience|previous employment|job history)( \d{1,2})?( optional)?$/;
+
+/** The part that asks for each school, by its heading, as SuccessFactors' "Formal Education". */
 const SCHOOL_PART =
-  /^(your |my )?(education|education history|educational background|academic background|academic history|schools?|degrees?)( \d{1,2})?( optional)?$/;
+  /^(your |my )?((formal|college|higher) )?(education|education history|educational background|academic background|academic history|schools?|degrees?)( \d{1,2})?( optional)?$/;
 
 /** A part that asks about someone else, by its heading: a reference, or who to call in an emergency. */
 const OTHER_PART =
@@ -468,25 +606,34 @@ const JOB_FIELDS: [FieldKind, RegExp][] = [
     'current-company',
     /^(company|company name|employer|employer name|organi[sz]ation|organi[sz]ation name)$/,
   ],
-  ['current-title', /^(title|job title|position|position title|role|job role)$/],
-  ['job-start', /^(start|from)\b|\bstart (date|month|year)\b|\bdate (started|from)\b/],
-  ['job-end', /^(end|to|until)\b|\bend (date|month|year)\b|\bdate (ended|to)\b/],
-  ['job-location', /^(location|city|job location|work location)$/],
+  ['current-title', /^(title|job title|position|position title|role|job role|job function)$/],
+  [
+    'job-start',
+    /^(start|from|begin)\b|\b(start|begin) (date|month|year)\b|\bdate (started|from|begin)\b/,
+  ],
+  ['job-end', /^(end|to|until)\b|\bend (date|month|year)\b|\bdate (ended|to|end)\b/],
+  ['job-location', /^(location|city|job location|work location|office location)$/],
   [
     'job-summary',
-    /^(description|role description|job description|responsibilities|duties|summary|what did you do)$/,
+    /^(description|role description|job description|responsibility|responsibilities|duties|summary|what did you do)$/,
   ],
 ];
 
 /** What each field in a part for schools asks. */
 const SCHOOL_FIELDS: [FieldKind, RegExp][] = [
   ['school', /\b(school|university|college|institution)( name)?$/],
-  ['discipline', /\b(field of study|major|discipline|area of study|concentration)\b/],
-  ['degree', /^(degree|degree type|degree level|qualification)$/],
-  ['edu-start', /^(start|from)\b|\bstart (date|month|year)\b/],
-  ['graduation', /^(end|to|until)\b|\bend (date|month|year)\b|\bgraduat/],
+  [
+    'discipline',
+    /\b(field of study|major|discipline|area of study|concentration|branch of study)\b|^program(me)?$/,
+  ],
+  [
+    'degree',
+    /^(degree|degree type|degree level|qualification|education level|study level|level of education)$/,
+  ],
+  ['edu-start', /^(start|from|begin)\b|\b(start|begin) (date|month|year)\b|\bdate begin\b/],
+  ['graduation', /^(end|to|until)\b|\bend (date|month|year)\b|\bdate end\b|\bgraduat/],
   ['gpa', /\bgpa\b|\bgrade point average\b/],
-  ['edu-location', /^(location|city)$/],
+  ['edu-location', /^(location|city|school location|institution location)$/],
 ];
 
 /**
@@ -525,13 +672,61 @@ function partKind(field: Omit<FormField, 'options' | 'required' | 'limit'>): Fie
   return rules.find(([, words]) => words.test(question))?.[0] ?? null;
 }
 
+/** A field as what it asks is told: its options, when it has them, tell more. */
+type FieldToTell = Omit<FormField, 'options' | 'required' | 'limit'> & {
+  options?: readonly string[];
+};
+
+/** The kinds that ask your name. */
+const YOUR_NAME = new Set<FieldKind>(['full-name', 'first-name', 'last-name']);
+
+/** A part of a form where your name signs it, as Taleo's eSignature: "eSignature", "Signature". */
+const SIGNING_PART = /\b(e ?signatures?|signatures?)\b/;
+
+/** Whether a field is in a part of the form where your name signs it. */
+const inSigningPart = (field: Pick<FormField, 'section'>) =>
+  (field.section ?? '')
+    .split(' › ')
+    .map(plain)
+    .some((part) => SIGNING_PART.test(part));
+
+/** The kinds that ask where you live. */
+const WHERE_YOU_LIVE = new Set<FieldKind>([
+  'street',
+  'street-2',
+  'city',
+  'region',
+  'postal-code',
+  'country',
+  'location',
+]);
+
 /**
- * What a field asks for, by its type, the browser's words for it, its question and its name. A
- * field it can't tell is a question of the form's own. One that asks for a password, payment
- * details, an ID number or a date of birth is never filled, whatever else it says, and one that
- * asks you to agree to something is yours to answer, however it asks.
+ * What a field asks for, by its type, the browser's words for it, its question, its options and
+ * its name. A field it can't tell is a question of the form's own, or, in a part of the form for
+ * self-identification, a personal one. One that asks for a password, payment details, an ID number
+ * or a date of birth is never filled, whatever else it says, and one that asks you to agree to
+ * something is yours to answer, however it asks: a box among several that agrees, and your name
+ * where it signs a self-identification form, as the "Name" beside the date it's signed on the US
+ * government's disability form does. Options that answer an equal-opportunity question make one
+ * that says nothing else one.
  */
-export function fieldKind(field: Omit<FormField, 'options' | 'required' | 'limit'>): FieldKind {
+export function fieldKind(field: FieldToTell): FieldKind {
+  const kind = kindAsked(field);
+  // Your name where it signs the form, a self-identification form or an application's eSignature.
+  if (YOUR_NAME.has(kind) && (inSelfIdPart(field) || inSigningPart(field))) return 'consent';
+  // Where a job or a school was, in its part, as iCIMS asks a job's country, is never your home.
+  if (WHERE_YOU_LIVE.has(kind) && fieldPart(field)) return 'question';
+  // A box for paragraphs never takes a title or a company, as "Tell us about your current role"
+  // asks for more than its name.
+  if (field.control === 'long' && (kind === 'current-title' || kind === 'current-company')) {
+    return 'question';
+  }
+  return kind;
+}
+
+/** What a field asks for, as fieldKind says, before your name signs anything. */
+function kindAsked(field: FieldToTell): FieldKind {
   const question = plain(field.question);
   const said = `${question} ${plain(field.hint)}`;
   const type = field.type.toLowerCase();
@@ -541,15 +736,44 @@ export function fieldKind(field: Omit<FormField, 'options' | 'required' | 'limit
   if (NEVER.test(question)) return 'never';
   if (field.control === 'file') {
     if (/\b(cover|motivation(al)?) letter\b/.test(said)) return 'cover-letter';
+    // A box that only says how to add a file is the part's it's in, as SmartRecruiters' Resume.
+    const part = plain((field.section ?? '').split(' › ').at(-1) ?? '');
     if (
       /\b(resume|cv|curriculum vitae)\b/.test(said) ||
-      /\b(resume|cv)\b/.test(plain(field.name))
+      /\b(resume|cv)\b/.test(plain(field.name)) ||
+      (question === '' && /^(resume|cv|resume cv|cv resume)$/.test(part))
     ) {
       return 'resume';
     }
     return 'question';
   }
   if (field.control === 'check' && AGREE.test(question)) return 'consent';
+  // A box that signs you up for emails or alerts, as Taleo's for new jobs does, is no address.
+  if (
+    field.control === 'check' &&
+    /\b(e ?mails?|notifications?|notify|alerts?|newsletters?|text messages?|sms)\b/.test(question)
+  ) {
+    return 'question';
+  }
+  // Which of your phones to call, as Taleo's Preferred Phone list asks, is no number.
+  if (
+    (field.control === 'choice' || field.control === 'combo') &&
+    /\bpreferred (phone|contact|method)\b/.test(question)
+  ) {
+    return 'question';
+  }
+  // A box among several that agrees to something is yours to tick too, as "I agree to a
+  // background check" is under "Please confirm the following:".
+  if (
+    field.control === 'choices' &&
+    (field.options ?? []).map(plain).some((each) => AGREE.test(each) || CONSENT.test(each))
+  ) {
+    return 'consent';
+  }
+  // Why you're leaving, before where you work now, as "Reason for leaving your current position"
+  // isn't asking your title, in a part for each job too, as iCIMS asks it of each. Agreeing to
+  // anything about it is still yours to do.
+  if (LEAVING.test(question) && !CONSENT.test(question)) return 'leaving';
   // In a part of the form for each job or school, "Start date" and "Location" are its own.
   const inPart = partKind(field);
   if (inPart) return inPart;
@@ -561,7 +785,10 @@ export function fieldKind(field: Omit<FormField, 'options' | 'required' | 'limit
   if (type === 'email') return 'email';
   if (type === 'tel') return 'phone';
   if (CONSENT.test(question)) return 'consent';
+  // A question about why you're leaving never asks where you work now, however it's worded.
+  const whyLeaving = ASKS_WHY.test(question) && ABOUT_LEAVING.test(question);
   for (const rule of RULES) {
+    if (whyLeaving && (rule.kind === 'current-company' || rule.kind === 'current-title')) continue;
     if (
       rule.words.test(question) &&
       rule.also?.test(question) !== false &&
@@ -572,10 +799,15 @@ export function fieldKind(field: Omit<FormField, 'options' | 'required' | 'limit
       return rule.kind;
     }
   }
-  const name = plain(field.name.replace(/([a-z])([A-Z])/g, '$1 $2'));
+  const byOptions = selfIdByOptions(field, question);
+  if (byOptions) return byOptions;
+  const name = ownNames(field.name);
   for (const each of NAMES) {
     if (each.name.test(name))
       return each.kind === 'resume' || each.kind === 'cover-letter' ? 'question' : each.kind;
   }
+  // In a part for self-identification, as Workday's Voluntary Disclosures, a question it can't
+  // tell is one only you answer: never a question of the form's own, to keep or to draft.
+  if (inSelfIdPart(field)) return 'personal';
   return 'question';
 }

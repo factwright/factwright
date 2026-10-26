@@ -1,6 +1,7 @@
 import type { FieldReply, InboxAsk } from '@factwright/core';
 import { describe, expect, it } from 'vitest';
 import {
+  answerSource,
   askedFields,
   draftable,
   fieldsToRead,
@@ -15,6 +16,7 @@ import {
 } from '../src/fill.ts';
 import type { FillWay } from '../src/fill-way.ts';
 import type { FieldValue, PageField, PageForm } from '../src/page/form.ts';
+import { adderPart, partsOf } from '../src/several-pages.ts';
 
 /** Factwright on this computer, as the extension asks it: what it was asked, and its answers. */
 const computer = { asked: [] as unknown[], answers: [] as unknown[] };
@@ -52,6 +54,8 @@ const form = (fields: PageField[]): PageForm => ({
   title: 'Job Application for Account Executive at Harbor & Pine',
   fields,
   submitted: false,
+  step: '',
+  adders: [],
 });
 
 const values = (fields: PageField[], texts: string[]): FieldValue[] =>
@@ -129,6 +133,56 @@ describe('what Factwright puts in a form', () => {
     ]);
   });
 
+  it('replaces what’s there, on one page or several, and fills only what’s empty once asked', () => {
+    const fields = [field('Email', { ref: 0 }), field('Phone', { ref: 1 })];
+    const replies: FieldReply[] = [
+      { kind: 'email', text: 'ana@example.com', source: 'profile' },
+      { kind: 'phone', text: '(303) 555-0142', source: 'profile' },
+    ];
+    // Workday's My Information, which Workday may have filled in from your resume.
+    const workday = { ...form(fields), step: 'My Information' };
+    expect(fillAnswers(workday, replies, {}).map((answer) => answer.ifEmpty)).toEqual([
+      undefined,
+      undefined,
+    ]);
+    expect(fillAnswers(form(fields), replies, {}).map((answer) => answer.ifEmpty)).toEqual([
+      undefined,
+      undefined,
+    ]);
+    expect(fillAnswers(form(fields), replies, {}, true).every((answer) => answer.ifEmpty)).toBe(
+      true,
+    );
+  });
+
+  it('says the part for a job or school each answer is in, and which name the part', () => {
+    const job = (question: string, n: number) =>
+      field(question, { section: `My Experience › Work Experience ${n}` });
+    const fields = [
+      job('Job Title', 1),
+      job('Company', 1),
+      job('Company', 2),
+      field('School or University', { section: 'Education 1' }),
+      field('Email'),
+    ];
+    const replies: FieldReply[] = [
+      { kind: 'current-title', text: 'Senior Product Manager', source: 'profile' },
+      { kind: 'current-company', text: 'Tidewater Analytics', source: 'profile' },
+      { kind: 'current-company', text: 'Fernway', source: 'profile' },
+      { kind: 'school', text: 'CU Boulder', source: 'profile' },
+      { kind: 'email', text: 'ana@example.com', source: 'profile' },
+    ];
+    const workday = { ...form(fields), step: 'My Experience' };
+    expect(
+      fillAnswers(workday, replies, {}).map(({ part, names }) => [part, names ?? false]),
+    ).toEqual([
+      ['My Experience › Work Experience 1', false],
+      ['My Experience › Work Experience 1', true],
+      ['My Experience › Work Experience 2', true],
+      ['Education 1', true],
+      [undefined, false],
+    ]);
+  });
+
   it('leaves a file it couldn’t fetch for you', () => {
     const fields = [field('Resume', { ref: 0, control: 'file', type: 'file' })];
     expect(
@@ -165,6 +219,17 @@ describe('what you sent', () => {
     ]);
     expect(sentAnswers(form(fields), replies, typed)).toEqual([
       { question: 'Why do you want to join Harbor & Pine?', text: 'Gear that lasts.' },
+    ]);
+    // Why you're leaving, as you put it for this job, to say the same in its interviews.
+    const leaving = [field('Why are you leaving?', { ref: 0, control: 'long' })];
+    expect(
+      sentAnswers(
+        form(leaving),
+        [{ kind: 'leaving', text: 'A bigger scale.', source: 'profile' }],
+        values(leaving, ['A bigger scale, on a team that ships tools.']),
+      ),
+    ).toEqual([
+      { question: 'Why are you leaving?', text: 'A bigger scale, on a team that ships tools.' },
     ]);
   });
 
@@ -254,6 +319,52 @@ describe('answers to keep', () => {
       ['gender', 'Female', true],
     ]);
   });
+
+  it('offers why you’re leaving in a few sentences, where the rest take a line', () => {
+    const fields = [
+      field('Why are you leaving?', { ref: 0, control: 'long' }),
+      field('Pronouns', { ref: 1 }),
+    ];
+    const replies: FieldReply[] = [
+      { kind: 'leaving', source: 'you', left: 'unset' },
+      { kind: 'pronouns', source: 'you', left: 'unset' },
+    ];
+    const leaving = `I want a bigger platform. ${'And more. '.repeat(40)}`.trim();
+    const typed = values(fields, [leaving, 'x'.repeat(201)]);
+    expect(newAnswers(form(fields), replies, typed).map(({ kind, text }) => [kind, text])).toEqual([
+      ['leaving', leaving],
+    ]);
+  });
+});
+
+describe('where an answer came from', () => {
+  it('names the pay you ask for at a job, and the job’s other answers as before', () => {
+    expect(
+      answerSource({
+        kind: 'pay',
+        text: '$185,000',
+        source: 'job',
+        from: 'Your ask for this job',
+      }),
+    ).toBe('Your ask for this job');
+    expect(
+      answerSource({
+        kind: 'pay',
+        text: '$180,000',
+        source: 'claude',
+        from: 'Your Claude’s suggestion for this job',
+      }),
+    ).toBe('Your Claude’s suggestion for this job');
+    expect(answerSource({ kind: 'pay', text: '$170,000', source: 'profile' })).toBe('From Profile');
+    expect(
+      answerSource({
+        kind: 'cover-letter-text',
+        text: 'Dear Acme,',
+        source: 'job',
+        from: 'The job’s cover letter',
+      }),
+    ).toBe('From the job');
+  });
 });
 
 describe('where Factwright fills', () => {
@@ -277,6 +388,69 @@ describe('where Factwright fills', () => {
         form([field('First'), field('Last'), field('Resume', { control: 'file', type: 'file' })]),
       ),
     ).toBe(true);
+  });
+
+  it('offers to fill each page of an application that runs over several, but not its sign-in', () => {
+    const page = (step: string, fields: PageField[]) => ({ ...form(fields), step });
+    // Workday's Voluntary Disclosures: no file, no email, but a page of the application.
+    expect(
+      looksLikeApplication(page('Voluntary Disclosures', [field('Gender', { control: 'combo' })])),
+    ).toBe(true);
+    // Its Review has nothing to fill.
+    expect(looksLikeApplication(page('Review', []))).toBe(false);
+    // Making an account to apply with, or signing in: yours to do, with a password.
+    const account = [
+      field('Email Address', { type: 'email' }),
+      field('Password', { type: 'password' }),
+      field('Verify New Password', { type: 'password' }),
+      field('I agree to the terms', { control: 'check', type: 'checkbox' }),
+    ];
+    expect(looksLikeApplication(form(account))).toBe(false);
+    // An application that asks you to make a password along the way is still one.
+    expect(
+      looksLikeApplication(form([...account, field('Full name'), field('Phone', { type: 'tel' })])),
+    ).toBe(true);
+  });
+});
+
+describe('a form’s parts for each job and school', () => {
+  /** One of Workday's Work Experience parts, as its fields read. */
+  const job = (n: number) =>
+    ['Job Title', 'Company', 'Location', 'From Month', 'From Year'].map((question) =>
+      field(question, { section: `My Experience › Work Experience ${n}` }),
+    );
+  const school = (n: number) =>
+    ['School or University', 'Degree', 'Field of Study'].map((question) =>
+      field(question, { section: `My Experience › Education ${n}`, control: 'combo' }),
+    );
+
+  it('counts the parts a form has for jobs and schools', () => {
+    const page = form([
+      ...job(1),
+      ...job(2),
+      ...school(1),
+      field('LinkedIn', { section: 'My Experience' }),
+    ]);
+    expect([partsOf(page, 'job'), partsOf(page, 'school')]).toEqual([2, 1]);
+    expect(partsOf(form([field('Email')]), 'job')).toBe(0);
+    // Greenhouse's names each job's part the same: one for each title it asks.
+    const greenhouse = form(
+      [0, 1, 2].flatMap((n) => [
+        field('Company name', { section: 'Employment', name: `employment_company_${n}` }),
+        field('Title', { section: 'Employment', name: `employment_title_${n}` }),
+      ]),
+    );
+    expect(partsOf(greenhouse, 'job')).toBe(3);
+  });
+
+  it('knows which part a button that adds one adds to, by the part it’s in itself', () => {
+    expect(adderPart({ section: 'My Experience › Work Experience', words: 'Add Another' })).toBe(
+      'job',
+    );
+    expect(adderPart({ section: 'Education', words: 'Add' })).toBe('school');
+    // Websites, inside My Experience, is neither.
+    expect(adderPart({ section: 'My Experience › Websites', words: 'Add' })).toBeNull();
+    expect(adderPart({ section: 'Languages', words: 'Add' })).toBeNull();
   });
 });
 
@@ -344,6 +518,30 @@ describe('what your Claude can draft', () => {
     ]);
     expect(draftable(form(fields), replies, filled).map((each) => each.question)).toEqual([
       'Why Harbor & Pine?',
+    ]);
+  });
+
+  it('is never a box for part of a date, as a self-identification form’s date to sign it', () => {
+    const fields = [
+      'Date Month',
+      'Date Day',
+      'Date Year',
+      'What year did you start coding?',
+      'How many hours can you work per day',
+    ].map((question, ref) => field(question, { ref, control: 'number' }));
+    // In words, a question that ends in a part of a date is a question of the form's own.
+    fields.push(field('What would you most like to learn this year', { ref: 5, control: 'long' }));
+    const left = { kind: 'question', source: 'you', left: 'new' } as const;
+    expect(
+      draftable(
+        form(fields),
+        fields.map(() => left),
+        new Map(),
+      ).map((each) => each.question),
+    ).toEqual([
+      'What year did you start coding?',
+      'How many hours can you work per day',
+      'What would you most like to learn this year',
     ]);
   });
 });

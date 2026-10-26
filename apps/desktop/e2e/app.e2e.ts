@@ -1,4 +1,12 @@
-import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { join } from 'node:path';
 import { expect, test } from '@playwright/test';
 // pdf.js's build for Node, as the ATS X-ray's tests read PDFs.
@@ -48,11 +56,18 @@ const pickView = (name: RegExp) =>
     .filter({ has: opened.window.getByRole('radio', { name }) })
     .click();
 
-/** Closes Claude's panel once its run is done, ready for the next. */
+/**
+ * Closes Claude's panel once its runs are done, ready for the next: Close quits a run's Claude
+ * Code and closes its tab in one click, and the panel goes with the last. Each task has a run of
+ * its own, so a test with two leaves two. Stop is only for a run that's still going.
+ */
 async function closeRun() {
   const panel = claudePanel();
-  await panel.getByRole('button', { name: 'Stop' }).click();
-  await panel.getByRole('button', { name: 'Close' }).click();
+  const tabs = await panel.getByRole('tab').count();
+  for (let left = Math.max(tabs, 1); left > 0; left -= 1) {
+    await panel.getByRole('button', { name: 'Close' }).click();
+    if (left > 1) await expect(panel.getByRole('tab')).not.toHaveCount(left);
+  }
   await expect(panel).toHaveCount(0);
 }
 
@@ -131,6 +146,100 @@ test('scrolls only its panes, never the window, however far the list runs', asyn
   await pickView(/^To review/);
 });
 
+/** The jobs list's first heading, and the box that scrolls the list sideways, in the page. */
+const LIST = `(() => {
+  const job = document.querySelector('button[aria-label="Sort by job"]');
+  let box = job.parentElement;
+  while (getComputedStyle(box).overflowX !== 'auto') box = box.parentElement;
+  return { job, box };
+})()`;
+
+test('keeps every column’s heading, scrolling the list sideways beside a job with the names pinned', async () => {
+  const { window } = opened;
+  await pickView(/^All/);
+  // No job picked, no job's panel: the list has the room.
+  await expect(window.getByRole('complementary', { name: 'Job details' })).toHaveCount(0);
+  const headings = ['job', 'status', 'fit', 'pay', 'next step', 'added'];
+  for (const heading of headings) {
+    await expect(window.getByRole('button', { name: `Sort by ${heading}` })).toBeAttached();
+  }
+  await window.getByRole('button', { name: /^Acme Robotics/ }).click();
+  await expect(jobPanel()).toBeVisible();
+  // Every heading is still there, and the list scrolls sideways to them, with a fade at its edge.
+  for (const heading of headings) {
+    await expect(window.getByRole('button', { name: `Sort by ${heading}` })).toBeAttached();
+  }
+  /**
+   * Where the list stands, as it scrolls: the job column's heading and a job's name in it, the
+   * next heading, and the last heading's right edge.
+   */
+  const where = () =>
+    window.evaluate<{
+      scrolls: boolean;
+      more: boolean;
+      job: number;
+      name: number;
+      status: number;
+      added: number;
+      right: number;
+    }>(
+      `(() => {
+        const { job, box } = ${LIST};
+        const left = (element) => Math.round(element.getBoundingClientRect().left);
+        const added = document.querySelector('[aria-label^="Sort by added"], [aria-label^="Added,"]');
+        const row = [...document.querySelectorAll('ul[aria-label="Jobs"] button')].find((each) =>
+          each.textContent.startsWith('Acme Robotics'),
+        );
+        return {
+          scrolls: box.scrollWidth > box.clientWidth,
+          more: box.parentElement.hasAttribute('data-more'),
+          job: left(job),
+          name: left(row.firstElementChild),
+          status: left(document.querySelector('button[aria-label="Sort by status"]')),
+          added: Math.round(added.getBoundingClientRect().right),
+          right: Math.round(box.getBoundingClientRect().right),
+        };
+      })()`,
+    );
+  const before = await where();
+  expect(before).toMatchObject({ scrolls: true, more: true });
+  expect(before.added).toBeGreaterThan(before.right);
+  await window.evaluate(`(() => {
+    const { box } = ${LIST};
+    box.scrollTo({ left: box.scrollWidth });
+  })()`);
+  // Scrolled to the end, the jobs' names stay where they were, and the last column is in view.
+  await expect.poll(async () => (await where()).more).toBe(false);
+  const after = await where();
+  expect(after.status).toBeLessThan(before.status);
+  expect(after.job).toBe(before.job);
+  expect(after.name).toBe(before.name);
+  expect(after.added).toBeLessThanOrEqual(after.right);
+  // Added sorts the list by the day each job was found or saved, newest first. In a narrow
+  // window the job's panel is over the list, so it closes first.
+  await jobPanel().getByRole('button', { name: 'Close details' }).click();
+  /** The day each job in the list was added, in the list's order, as times. */
+  const days = async () =>
+    (await window.getByRole('list', { name: 'Jobs' }).getByRole('button').allTextContents()).map(
+      (text) => {
+        const [, month, day, year] = /Added (\w{3}) (\d{1,2})(?:, (\d{4}))?$/.exec(text) ?? [];
+        return Date.parse(`${month} ${day}, ${year ?? new Date().getFullYear()}`);
+      },
+    );
+  await window.getByRole('button', { name: 'Sort by added' }).click();
+  await expect(window.getByRole('button', { name: 'Added, sorted newest first' })).toBeVisible();
+  const newest = await days();
+  expect(new Set(newest).size).toBeGreaterThan(1);
+  expect(newest).toEqual([...newest].sort((a, b) => b - a));
+  await window.getByRole('button', { name: 'Added, sorted newest first' }).click();
+  await expect(window.getByRole('button', { name: 'Added, sorted oldest first' })).toBeVisible();
+  expect(await days()).toEqual([...newest].sort((a, b) => a - b));
+  // Back to the newest activity first, as the other tests expect.
+  await window.getByRole('button', { name: 'Added, sorted oldest first' }).click();
+  await expect(window.getByRole('button', { name: 'Sort by added' })).toBeVisible();
+  await pickView(/^To review/);
+});
+
 test('checks its setup with Claude Code quietly, and it passes', async () => {
   await expect
     .poll(
@@ -174,6 +283,75 @@ test('previews a resume’s pages', async () => {
   await dialog.getByRole('button', { name: 'Done' }).click();
 });
 
+// The save dialog and Finder are stood in for, so nothing opens on the screen of whoever runs the
+// tests: the dialog picks a file in the test's own folder, and showing a file is only noted.
+test('saves a copy of a resume where the user picks, and shows it where it’s kept', async () => {
+  const { app, window } = opened;
+  const resume = join(dataDir, 'workspace', ...ACME_FOLDER.split('/'), ACME_RESUME);
+  const copy = join(dataDir, 'saved', ACME_RESUME);
+  mkdirSync(join(dataDir, 'saved'), { recursive: true });
+  await app.evaluate(({ dialog, shell }, to) => {
+    const noted = globalThis as unknown as {
+      suggested: string[];
+      shown: string[];
+      real: { save: typeof dialog.showSaveDialog; show: typeof shell.showItemInFolder };
+    };
+    noted.suggested = [];
+    noted.shown = [];
+    noted.real = { save: dialog.showSaveDialog, show: shell.showItemInFolder };
+    dialog.showSaveDialog = (async (...args: unknown[]) => {
+      noted.suggested.push((args.at(-1) as { defaultPath?: string }).defaultPath ?? '');
+      return { canceled: false, filePath: to };
+    }) as typeof dialog.showSaveDialog;
+    shell.showItemInFolder = (path: string) => {
+      noted.shown.push(path);
+    };
+  }, copy);
+  const noted = () =>
+    app.evaluate(() => {
+      const { suggested, shown } = globalThis as unknown as {
+        suggested: string[];
+        shown: string[];
+      };
+      return { suggested, shown };
+    });
+  await window.getByRole('button', { name: `Download ${ACME_RESUME}` }).click();
+  await expect.poll(() => existsSync(copy)).toBe(true);
+  expect(readFileSync(copy).equals(readFileSync(resume))).toBe(true);
+  // The dialog suggests the file's own name.
+  expect((await noted()).suggested).toEqual([expect.stringMatching(new RegExp(`${ACME_RESUME}$`))]);
+  const shown =
+    process.platform === 'darwin'
+      ? `Show ${ACME_RESUME} in Finder`
+      : `Show ${ACME_RESUME} in its folder`;
+  await window.getByRole('button', { name: shown }).click();
+  // On a Mac, the app knows the tests' folder by its real path, under /private.
+  await expect
+    .poll(async () => (await noted()).shown.map((path) => realpathSync(path)))
+    .toEqual([realpathSync(resume)]);
+  // Only a file the job lists: nothing else in the workspace, and nothing outside it.
+  for (const path of ['facts/profile.md', `${ACME_FOLDER}/job.md`, '../tracker.db']) {
+    const refused = await window.evaluate(
+      ([job, file]) =>
+        (
+          globalThis as unknown as {
+            factwright: { downloadFile: (job: string, file: string) => Promise<unknown> };
+          }
+        ).factwright.downloadFile(job ?? '', file ?? ''),
+      [ACME_ID, path],
+    );
+    expect(refused).toEqual({ ok: false, message: 'That file isn’t in your workspace anymore.' });
+  }
+  expect((await noted()).suggested).toHaveLength(1);
+  await app.evaluate(({ dialog, shell }) => {
+    const { real } = globalThis as unknown as {
+      real: { save: typeof dialog.showSaveDialog; show: typeof shell.showItemInFolder };
+    };
+    dialog.showSaveDialog = real.save;
+    shell.showItemInFolder = real.show;
+  });
+});
+
 test('X-rays a resume as applicant systems read it, its PDF and its Word file', async () => {
   const { window } = opened;
   await window.getByRole('button', { name: `ATS X-ray of ${ACME_RESUME}` }).click();
@@ -212,6 +390,20 @@ test('writes a cover letter, and shows it to read, copy, preview and open', asyn
   expect(await terminalText(window)).toContain(`/factwright:cover-letter job ${ACME_ID}`);
   await expect.poll(() => terminalStart(window)).toContain('opus · xhigh effort');
   expect(await terminalLines(window)).toContain('in the Classic template: 1 page');
+  // Its card lists each file the task made, by Claude's own edit or through the tool that built
+  // the letter, each with Undo.
+  const changed = claudePanel().getByRole('list', { name: 'Files Claude changed' });
+  await expect(changed.getByRole('listitem')).toHaveCount(3);
+  for (const file of [
+    'cover-letter.json',
+    'AlexRiveraCoverLetter10142026_Acme.pdf',
+    'AlexRiveraCoverLetter10142026_Acme.docx',
+  ]) {
+    await expect(
+      claudePanel().getByRole('button', { name: `Undo ${ACME_FOLDER}/${file}` }),
+    ).toBeVisible();
+  }
+  await expect(changed).toContainText('New · PDF');
   await closeRun();
 
   const letter = jobPanel().getByRole('region', { name: 'Cover letter', exact: true });
@@ -369,7 +561,10 @@ test('answers a question about the job, and keeps the answer with it', async () 
   // Asked again, Claude answers it again, in place of the first answer.
   await asked.getByRole('button', { name: 'Ask again' }).click();
   await expect(asked.getByText('A short screen, from the stand-in Claude. Again.')).toBeVisible();
+  // Asked again, it's a task of its own, in a run of its own, beside the first one.
+  await expect(claudePanel().getByRole('tab')).toHaveCount(2);
   expect(await terminalText(window)).toMatch(/\/factwright:ask job \S+ question 20\d\d-/);
+  await closeRun();
 });
 
 test('adds a call with who it’s with, preps for it, and keeps the prep sheet with the call', async () => {
@@ -395,7 +590,7 @@ test('adds a call with who it’s with, preps for it, and keeps the prep sheet w
   );
 
   await calls.getByRole('button', { name: 'Call prep for the recruiter screen' }).click();
-  // The question's run is done already, so the bar saying what the prep made is what tells it's done.
+  // The bar saying what the prep made is what tells it's done.
   await expect(claudePanel()).toContainText(
     'Your prep sheet for the recruiter screen at Acme Robotics is ready.',
   );
@@ -463,7 +658,9 @@ test('keeps a picture pasted into Claude’s panel with the run’s job, for Cla
     const blob = await new Promise((done) => canvas.toBlob(done, 'image/png'));
     const pasted = new DataTransfer();
     pasted.items.add(new File([blob], 'image.png', { type: 'image/png' }));
-    const input = document.querySelector('section[aria-label="Claude"] .xterm-helper-textarea');
+    const input = document.querySelector(
+      'section[aria-label="Claude"] [data-shown] .xterm-helper-textarea',
+    );
     input.focus();
     input.dispatchEvent(
       new ClipboardEvent('paste', { clipboardData: pasted, bubbles: true, cancelable: true }),
@@ -479,48 +676,65 @@ test('keeps a picture pasted into Claude’s panel with the run’s job, for Cla
       }
     })
     .toEqual([expect.stringMatching(/^pasted-\d{4}-\d{2}-\d{2}-\d{6}-1\.png$/)]);
-  await claudePanel().locator('.xterm-helper-textarea').press('Enter');
+  await claudePanel().locator('[data-shown] .xterm-helper-textarea').press('Enter');
   await expect.poll(() => terminalText(window)).toContain('pasted-');
   await closeRun();
 });
 
-test('asks the user’s OK in a dialog, and saves to their profile only once they allow it', async () => {
+test('saves to the user’s profile without asking, and lists each change, with View and Undo', async () => {
   const { window } = opened;
+  const panel = claudePanel();
   // Done with Acme. In a narrow window, a job's details cover the page's buttons.
   await window.getByRole('button', { name: 'Close details' }).click();
-  await window.getByRole('button', { name: 'Find jobs' }).click();
-  await window
-    .getByRole('dialog', { name: 'Find jobs' })
-    .getByRole('button', { name: /^Search/ })
-    .click();
-  const panel = claudePanel();
-  await expect(panel.getByRole('status').first()).toHaveText('Done');
-  // The user types into Claude's work, once it shows.
-  await showWork(window);
-  const typing = panel.locator('.xterm-helper-textarea');
-  const ask = async () => {
-    await typing.pressSequentially('save my notice period');
-    await typing.press('Enter');
-    return window.getByRole('dialog', { name: 'Let Claude save this to your profile?' });
+  const search = async () => {
+    await window.getByRole('button', { name: 'Find jobs' }).click();
+    await window
+      .getByRole('dialog', { name: 'Find jobs' })
+      .getByRole('button', { name: /^Search/ })
+      .click();
+    await expect(panel.getByRole('status').first()).toHaveText('Done');
   };
-  // Allowed, it's saved.
-  const first = await ask();
-  await expect(first).toContainText('When you can start');
-  await expect(first).toContainText('Two weeks’ notice');
-  await expect(panel.getByRole('status').first()).toHaveText('Needs your answer');
-  await first.getByRole('button', { name: 'Allow', exact: true }).click();
-  await expect(first).toHaveCount(0);
-  await expect.poll(() => terminalText(window)).toContain('Saved to the user’s profile');
-  await expect(panel.getByRole('status').first()).not.toHaveText('Needs your answer');
-  // Said no to, with a note, it isn't, and Claude hears why.
-  const second = await ask();
-  await second.getByRole('button', { name: 'Tell Claude why not' }).click();
-  await second.getByRole('textbox', { name: 'Note for Claude' }).fill('I said a month');
-  await second.getByRole('button', { name: 'Don’t allow' }).click();
-  await expect(second).toHaveCount(0);
+  // The user types into Claude's work, once it shows.
+  const say = async (words: string) => {
+    await showWork(window);
+    const typing = panel.locator('[data-shown] .xterm-helper-textarea');
+    await typing.pressSequentially(words);
+    await typing.press('Enter');
+  };
+  const answers = () =>
+    JSON.parse(readFileSync(join(dataDir, 'workspace', 'about-me', 'answers.json'), 'utf8'));
+  const changed = panel.getByRole('list', { name: 'Files Claude changed' });
+  await search();
+  await say('save my notice period');
+  // Saved without asking: no dialog, and Claude never waits on the user.
   await expect
     .poll(() => terminalText(window))
-    .toContain('Not saved: The user said no, in Factwright, and added: I said a month');
+    .toContain('Saved to the user’s profile: When they can start: Two weeks’ notice.');
+  await expect(panel.getByRole('status').first()).toHaveText('Done');
+  await expect(window.getByRole('dialog')).toHaveCount(0);
+  expect(answers().start).toBe('Two weeks’ notice');
+  await expect(changed).toContainText('answers.json');
+  await expect(changed).toContainText('New');
+  // The next task is a run of its own, whose card starts again, with what it changed.
+  await closeRun();
+  await search();
+  await expect(changed).toHaveCount(0);
+  // The user interrupts this one, so no Stop hook comes: the card lists what it changed once the
+  // run reads as done.
+  await say('save a month of notice, then interrupt');
+  await expect.poll(() => answers().start).toBe('One month’s notice');
+  await expect(panel.getByRole('status').first()).toHaveText('Done');
+  await expect(changed).toContainText('answers.json');
+  // View shows it before and after, a line at a time.
+  await panel.getByRole('button', { name: 'View about-me/answers.json' }).click();
+  const view = window.getByRole('dialog', { name: 'What changed in answers.json' });
+  await expect(view.getByRole('list')).toContainText('Taken out:   "start": "Two weeks’ notice"');
+  await expect(view.getByRole('list')).toContainText('Added:   "start": "One month’s notice"');
+  await view.getByRole('button', { name: 'Done' }).click();
+  // Undo puts it back as it was before the task.
+  await panel.getByRole('button', { name: 'Undo about-me/answers.json' }).click();
+  await expect(changed).toContainText('Undone');
+  expect(answers().start).toBe('Two weeks’ notice');
   await closeRun();
 });
 
@@ -769,6 +983,34 @@ test('reads and changes the fact bank: a fact’s words, verifying one, and a ne
   await expect(window.getByRole('heading', { name: 'Jobs' })).toBeVisible();
 });
 
+test('makes a quick resume, typing only the job and the app’s own word, and asks nothing', async () => {
+  const { window } = opened;
+  await window
+    .getByRole('navigation', { name: 'Main' })
+    .getByRole('button', { name: /^Jobs/ })
+    .click();
+  await pickView(/^All/);
+  await window.getByRole('button', { name: /^Tidewater Analytics/ }).click();
+  await jobPanel()
+    .getByRole('region', { name: 'Resumes and cover letters' })
+    .getByRole('button', { name: 'Quick resume' })
+    .click();
+  const panel = claudePanel();
+  await expect(panel).toContainText('Tidewater Analytics · Quick resume');
+  await expect(panel.getByRole('status').first()).toHaveText('Done');
+  // No questions: no dialog, and the stand-in says it asked nothing.
+  await expect(window.getByRole('dialog')).toHaveCount(0);
+  expect(await terminalLines(window)).toMatch(
+    /\/factwright:focused-resume job tidewater-analytics--\S+ quick/,
+  );
+  expect(await terminalLines(window)).toContain('from verified facts only: no questions.');
+  // Its question anyway, as when the skill's words slip, is turned away, saying why.
+  expect(await terminalLines(window)).toContain(
+    'Not asked: A quick resume asks the user nothing, so this wasn’t asked.',
+  );
+  await closeRun();
+});
+
 test('saves what the user answers while Claude tailors a resume, unverified, and nothing planted', async () => {
   const { window } = opened;
   const facts = join(dataDir, 'workspace', 'facts');
@@ -790,7 +1032,7 @@ test('saves what the user answers while Claude tailors a resume, unverified, and
   // terminal. Put aside, the round waits in Claude's panel.
   const asks = window.getByRole('dialog', { name: 'Claude has 2 questions' });
   await expect(asks).toContainText(
-    'From your Claude, working on Tailored resume · Tidewater Analytics.',
+    'From your Claude, working on Tidewater Analytics · Tailored resume.',
   );
   // The user says yes to one, puts the round aside, and comes back to it as they left it.
   const graphql = asks
@@ -853,6 +1095,28 @@ test('saves what the user answers while Claude tailors a resume, unverified, and
   await closeRun();
 });
 
+test('keeps the pay to ask for at a job, in the user’s words, after a restart', async () => {
+  const { window } = opened;
+  await window
+    .getByRole('navigation', { name: 'Main' })
+    .getByRole('button', { name: /^Jobs/ })
+    .click();
+  await pickView(/^All/);
+  await window.getByRole('button', { name: /^Acme Robotics/ }).click();
+  const fit = () => jobPanel().getByRole('region', { name: 'Fit' });
+  // No target in Profile yet, so none until they give the job one.
+  await expect(fit()).toContainText('Pay to ask for: none yet');
+  await fit().getByRole('button', { name: 'Set it: the pay to ask for at Acme Robotics' }).click();
+  await fit().getByRole('textbox', { name: 'Pay to ask for at Acme Robotics' }).fill('$200,000');
+  await fit().getByRole('button', { name: 'Save' }).click();
+  await expect(fit()).toContainText('Pay to ask for: $200,000, your own');
+  await opened.app.close();
+  opened = await openApp(dataDir);
+  await pickView(/^All/);
+  await opened.window.getByRole('button', { name: /^Acme Robotics/ }).click();
+  await expect(fit()).toContainText('Pay to ask for: $200,000, your own');
+});
+
 test('keeps everything tracked after a restart', async () => {
   await opened.app.close();
   opened = await openApp(dataDir);
@@ -903,7 +1167,7 @@ test('explains the first run’s question about trusting the workspace', async (
   // The terminal is outlined, as the place to answer.
   const outlined = panel.locator('[class*="attention"]');
   await expect(outlined).toHaveCount(1);
-  await panel.locator('.xterm-helper-textarea').press('Enter');
+  await panel.locator('[data-shown] .xterm-helper-textarea').press('Enter');
   await expect(panel.getByRole('note')).toHaveCount(0);
   await expect(outlined).toHaveCount(0);
   await expect(panel.getByRole('status')).toHaveText('Done');
@@ -919,10 +1183,10 @@ test('suits Claude’s levels to a Pro plan, once Claude Code signs in on one', 
   await expect(levels).toHaveAccessibleName('Claude’s levels: Opus · High. Lighter for 4 tasks.');
   await levels.hover();
   await expect(window.getByRole('tooltip')).toContainText('Best on your Pro plan');
-  // A fit check is one of the routine tasks, which start on Sonnet with Pro's levels.
+  // Analyze job is one of the routine tasks, which start on Sonnet with Pro's levels.
   await pickView(/^All/);
   await window.getByRole('button', { name: /^Acme Robotics/ }).click();
-  await jobPanel().getByRole('button', { name: 'Check again' }).click();
+  await jobPanel().getByRole('button', { name: 'Analyze again' }).click();
   await expect(claudePanel().getByRole('status')).toHaveText('Done');
   expect(await terminalText(window)).toContain('sonnet · high effort');
   await closeRun();
@@ -977,11 +1241,23 @@ test('explains Claude Code’s first-run screens when the app leaves them, and c
   await expect(panel.getByRole('note')).toContainText('Press Enter on each one');
   await expect(panel.getByRole('status')).toHaveText('Needs your answer');
   await expect(panel.locator('[class*="attention"]')).toHaveCount(1);
-  // With the panel open, the card has nothing to open, and other runs wait.
+  // With the panel open, the card has nothing to open. Another task waits in line until Claude
+  // Code is past these screens, so they're answered once, not in every run.
   await expect(card.getByRole('button', { name: 'Open Claude’s panel' })).toHaveCount(0);
-  const findJobs = window.getByRole('button', { name: 'Find jobs' });
-  await expect(findJobs).toBeDisabled();
-  const terminal = panel.locator('.xterm-helper-textarea');
+  await window.getByRole('button', { name: 'Find jobs' }).click();
+  await window
+    .getByRole('dialog', { name: 'Find jobs' })
+    .getByRole('button', { name: /^Search/ })
+    .click();
+  const search = panel.getByRole('tab', { name: /^Job search/ });
+  await expect(search).toContainText('in line');
+  await expect(panel).toContainText(
+    'Waits for Claude Code to get going in another tab, then starts.',
+  );
+  // Back in the first run's tab, its work opens for the screen only its terminal takes.
+  await panel.getByRole('tab', { name: /^Claude/ }).click();
+  await expect(panel.getByRole('button', { name: 'Hide Claude’s work' })).toBeVisible();
+  const terminal = panel.locator('[data-shown] .xterm-helper-textarea');
   await terminal.press('Enter');
   // The next screen says so too, until it's answered.
   await expect.poll(() => terminalText(window)).toContain('Security notes:');
@@ -989,9 +1265,13 @@ test('explains Claude Code’s first-run screens when the app leaves them, and c
   await terminal.press('Enter');
   await expect(panel.getByRole('note')).toHaveCount(0);
   await expect.poll(() => terminalText(window)).toContain("Factwright's tools");
-  // Past them, it waits for what the user types, and isn't in the way of another run.
+  // Past them, it waits for what the user types, and the search starts by itself, with no first
+  // screens of its own.
   await expect(panel.getByRole('status')).toHaveText('Ready');
-  await expect(findJobs).toBeEnabled();
+  await expect(search).toContainText('done');
+  await search.click();
+  await expect.poll(() => terminalText(window)).toContain('/factwright:job-search');
+  expect(await terminalText(window)).not.toContain('Security notes:');
   // Claude Code noted them done itself, and the check passes now.
   expect(JSON.parse(readFileSync(join(claude, '.claude.json'), 'utf8'))).toEqual({
     hasCompletedOnboarding: true,

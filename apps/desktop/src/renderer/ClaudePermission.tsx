@@ -8,6 +8,7 @@ import {
   type PermissionAsk,
 } from '../shared/permission-asks.ts';
 import styles from './ClaudePermission.module.css';
+import { type DialogTurn, TurnLine } from './DialogTurn.tsx';
 
 /** The dialog's title: what Claude wants to do, as a question for the user. */
 function titleOf(ask: PermissionAsk): string {
@@ -20,8 +21,6 @@ function titleOf(ask: PermissionAsk): string {
       return ask.outside
         ? 'Let Claude read a file outside your job hunt?'
         : 'Let Claude read a file?';
-    case 'page':
-      return 'Let Claude read a web page?';
     case 'profile':
       return 'Let Claude save this to your profile?';
     case 'template':
@@ -104,17 +103,6 @@ function Details({ ask }: { ask: PermissionAsk }) {
           </p>
         </>
       );
-    case 'page':
-      return (
-        <>
-          <p className={styles.url}>{ask.url}</p>
-          <p className={styles.note}>
-            Reading it sends the page’s address to <strong>{ask.host}</strong>. A job post could try
-            to steer Claude into sending your details to a site in a link, so check it’s an address
-            you expect.
-          </p>
-        </>
-      );
     case 'profile':
       return (
         <>
@@ -169,12 +157,22 @@ export function ClaudePermission({
   api,
   ask,
   about,
+  turn,
+  onAnswered,
   onClose,
 }: {
   api: Pick<FactwrightApi, 'answerPermission'>;
   ask: PermissionAsk;
-  /** What the run is for, such as "Tailored resume · Acme Robotics", or null for a plain run. */
+  /** What the run is for, such as "Acme Robotics · Tailored resume", or null for a plain run. */
   about: string | null;
+  /** With runs side by side, the run asking, and which of those waiting this is. */
+  turn?: DialogTurn | undefined;
+  /**
+   * Hears that the answer reached Claude Code, or was left to the terminal, which takes the
+   * dialog on to what's waiting next. Without it, the dialog closes.
+   */
+  onAnswered?: (inTerminal: boolean) => void;
+  /** Hears that the user put the prompt aside, or the dialog closed. */
   onClose: () => void;
 }) {
   const [noting, setNoting] = useState(false);
@@ -196,8 +194,9 @@ export function ClaudePermission({
       message: 'Your answer didn’t reach Claude Code. Try again.',
     }));
     setSending(false);
-    if (result.ok) close();
-    else setProblem(result.message);
+    if (!result.ok) setProblem(result.message);
+    else if (onAnswered) onAnswered(answer === 'terminal');
+    else close();
   };
   return (
     <Dialog
@@ -207,6 +206,7 @@ export function ClaudePermission({
           ? `Claude Code asks, as your Claude works on ${about}.`
           : 'Claude Code asks, as your Claude works.'
       }
+      above={turn && <TurnLine turn={turn} />}
       size="lg"
       onClose={onClose}
     >

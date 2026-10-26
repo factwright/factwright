@@ -48,7 +48,15 @@ const POSTING = `<html><body><main><h1>Staff Engineer</h1><p>${'Build the tools 
 let root: string;
 let tracker: Tracker;
 let jobs: JobsService;
-let fetch: Mock<(url: string, json: boolean, limitMs: number) => Promise<unknown>>;
+let fetch: Mock<
+  (
+    url: string,
+    json: boolean,
+    limitMs: number,
+    maxBytes?: number,
+    onRedirect?: (url: string) => void,
+  ) => Promise<unknown>
+>;
 let tools: McpTool[];
 let templates: TemplateLibrary;
 let facts: FactBankFiles;
@@ -121,6 +129,34 @@ beforeEach(() => {
 afterEach(() => {
   tracker.close();
   rmSync(root, { recursive: true, force: true });
+});
+
+describe('log_check', () => {
+  it('names the job a fit check is for, and tells the run it finished that job', async () => {
+    const analyzed = vi.fn();
+    const call = { ...newCall('hunt'), analyzed };
+    const row = { company: 'Acme Robotics', role: 'Staff Engineer', verdict: 'Strong', score: 82 };
+    await tool('log_check').run(
+      { log: 'fit-checks', row: { ...row, job: 'acme-robotics--staff-engineer' } },
+      call,
+    );
+    expect(analyzed).toHaveBeenCalledWith('acme-robotics--staff-engineer');
+    const log = readFileSync(join(root, 'searches', 'fit-checks.md'), 'utf8');
+    expect(log).toContain('| Strong | 82 |  |  |  | acme-robotics--staff-engineer |');
+    // A job that isn't on file is a mistake to fix, not a row to write.
+    await expect(
+      tool('log_check').run({ log: 'fit-checks', row: { ...row, job: 'gone--job' } }, call),
+    ).rejects.toThrow('Nothing on file for gone--job.');
+    // A salary check counts nothing.
+    await tool('log_check').run(
+      {
+        log: 'salary-checks',
+        row: { company: 'Acme Robotics', role: 'Staff Engineer', estimate: '$200k' },
+      },
+      call,
+    );
+    expect(analyzed).toHaveBeenCalledOnce();
+  });
 });
 
 it('gives revision_findings only to the run started for the revision', async () => {
@@ -422,6 +458,34 @@ describe('a call’s prep sheet and thank-you notes', () => {
 });
 
 describe('job_details', () => {
+  it('gives the details the user set, and the jobs Claude noted might be the same', async () => {
+    const id = 'acme-robotics--staff-engineer';
+    jobs.updateJob(id, { company: 'Acme', location: 'Remote (US)' });
+    const twin = jobs.addJob({
+      company: 'Acme',
+      role: 'Staff Engineer II',
+      link: 'https://x.example/2',
+    });
+    const third = jobs.addJob({ company: 'Acme', role: 'Platform Lead' });
+    if (!twin.ok || !third.ok) throw new Error('not added');
+    jobs.noteMaybeSame(id, twin.jobId, 'Same team');
+    jobs.noteMaybeSame(id, third.jobId, null);
+    jobs.notSame(id, third.jobId);
+    const answer = await tool('job_details').run({ job: id });
+    expect(answer).toContain('## Acme, Staff Engineer');
+    expect(answer).toContain(
+      '- The user’s own details: company “Acme”, place “Remote (US)”. They win over the posting: use them as they are, and never change them. job.md keeps what the posting says, which the app shows again if the user empties theirs.',
+    );
+    expect(answer).toContain(
+      [
+        '- Might be the same job, as noted for the user to merge or not:',
+        `    Acme, Staff Engineer II (job ${twin.jobId}), noted 2026-10-11: Same team`,
+        '- The user said it isn’t the same job as:',
+        `    Acme, Platform Lead (job ${third.jobId})`,
+      ].join('\n'),
+    );
+  });
+
   it('gives everything on file, including the user’s notes, calls and folder', async () => {
     const id = 'acme-robotics--staff-engineer';
     jobs.updateJob(id, {
@@ -459,6 +523,21 @@ describe('job_details', () => {
     expect(answer).toContain('    2026-10-14 10:30  Recruiter screen: scheduled · call ');
     expect(answer).toContain('    2026-10-11  The user marked it Screen');
     expect(answer).not.toContain('### Other jobs at');
+    expect(answer).not.toContain('Pay to ask for');
+  });
+
+  it('gives the pay to ask for: the user’s own, which wins over a suggestion in job.md', async () => {
+    const id = 'acme-robotics--staff-engineer';
+    const notes = join(root, 'applications', FOLDER, 'job.md');
+    writeFileSync(notes, `${readFileSync(notes, 'utf8')}\n- **Pay to ask for:** $185,000\n`);
+    jobs.read();
+    expect(await tool('job_details').run({ job: id })).toContain(
+      '- Pay to ask for: $185,000, as job.md suggests',
+    );
+    jobs.updateJob(id, { payAsk: '$195,000' });
+    expect(await tool('job_details').run({ job: id })).toContain(
+      '- Pay to ask for: $195,000, the user’s own, which wins over any in job.md',
+    );
   });
 
   it('names the user’s other jobs at the company, for their calls and notes', async () => {
@@ -784,6 +863,7 @@ describe('about_you', () => {
         pronouns: 'she/her',
         countries: ['United States', 'Canada'],
         sponsorship: 'later',
+        leaving: 'I want a bigger platform.\nAnd a shorter commute.',
       },
     };
     const answer = await tool('about_you').run({});
@@ -791,6 +871,7 @@ describe('about_you', () => {
       '- Pronouns: she/her',
       '- Countries they can work in without a visa: United States; Canada',
       '- Visa sponsorship: Not now, but later',
+      '- Why they’re leaving their job, or left their last one: I want a bigger platform.\n    And a shorter commute.',
     ]) {
       expect(answer).toContain(line);
     }
@@ -1093,7 +1174,7 @@ describe('read_posting', () => {
 
   it('sends any other link to read_page, without fetching it', async () => {
     expect(await tool('read_posting').run({ url: 'https://acme.example/jobs/staff' })).toBe(
-      'https://acme.example/jobs/staff isn’t a posting on Greenhouse, Lever, Ashby or Gem. Read it with read_page, which asks the user first, or use job_board for a company’s whole board.',
+      'https://acme.example/jobs/staff isn’t a posting on Greenhouse, Lever, Ashby or Gem. Read it with read_page, or use job_board for a company’s whole board.',
     );
     expect(fetch).not.toHaveBeenCalled();
   });
@@ -1158,6 +1239,29 @@ describe('read_page', () => {
     );
     expect(fetch.mock.calls).toEqual([[ASHBY_FEED, true, 15_000]]);
   });
+
+  it('notes each page for the task’s card before it goes, where redirects send it, and failures', async () => {
+    const pages: string[] = [];
+    const call = { ...newCall('hunt'), read: (url: string) => pages.push(url) };
+    fetch.mockImplementation(async (_url, _json, _limitMs, _maxBytes, onRedirect) => {
+      onRedirect?.('https://careers.acme.example/staff');
+      return POSTING;
+    });
+    expect(await tool('read_page').run({ url: 'https://acme.example/jobs/staff' }, call)).toContain(
+      'read via the web page',
+    );
+    // A page that doesn't load was still asked for.
+    fetch.mockRejectedValue(new Error('acme.example answered 404'));
+    await tool('read_page').run({ url: 'https://acme.example/gone' }, call);
+    // A link the fetch turns away never goes, so it isn't one read.
+    await tool('read_page').run({ url: 'http://acme.example/' }, call);
+    await tool('read_page').run({ url: 'https://www.linkedin.com/jobs/view/1' }, call);
+    expect(pages).toEqual([
+      'https://acme.example/jobs/staff',
+      'https://careers.acme.example/staff',
+      'https://acme.example/gone',
+    ]);
+  });
 });
 
 describe('save_posting', () => {
@@ -1193,7 +1297,7 @@ describe('save_posting', () => {
     expect(
       await tool('save_posting').run({ url: 'https://acme.example/jobs/staff', folder: FOLDER }),
     ).toBe(
-      'Nothing read from https://acme.example/jobs/staff yet. Read it with read_page first, which asks the user, then save it.',
+      'Nothing read from https://acme.example/jobs/staff yet. Read it with read_page first, then save it.',
     );
     fetch.mockResolvedValue({ jobs: [] });
     expect(await tool('save_posting').run({ url: ASHBY, folder: FOLDER })).toMatch(
@@ -1273,6 +1377,44 @@ describe('save_posting', () => {
     expect(readFileSync(file, 'utf8')).toContain('pasted by the user');
   });
 
+  it('leaves another job’s folder to it, though it has the same company and title', async () => {
+    const job = 'acme-robotics--staff-engineer';
+    const notes = join(root, 'applications', FOLDER, 'job.md');
+    const posting = join(root, 'applications', FOLDER, 'posting.md');
+    const heading = `# Acme Robotics: Staff Engineer\n\n- **Apply:** Ashby ${ASHBY}\n`;
+    const theirs = 'https://boards.example.com/acme/other';
+    const leftAlone = (why: string) =>
+      `Not saved: ${FOLDER} is another job’s folder: ${why}. Use a folder of this job’s own, ${FOLDER}-2 or the next number that’s free, and save the posting there.`;
+    const kept = `Kept the posting already saved in applications/${FOLDER}/posting.md.`;
+    // Its twin is on file too, saved from another posting.
+    const twin = jobs.addJob({ company: 'Acme Robotics', role: 'Staff Engineer', link: theirs });
+    if (!twin.ok) throw new Error(twin.message);
+    // Another run, analyzing the twin, saved its posting here first.
+    writeFileSync(posting, `# Job posting\n\n- **Source:** ${theirs}\n\n---\n\nTheirs.\n`);
+    expect(await tool('save_posting').run({ url: ASHBY, folder: FOLDER, job })).toBe(
+      leftAlone(`its posting came from ${theirs}, the link of ${twin.jobId}`),
+    );
+    // Once the twin's job.md is written, that names the job it's for.
+    rmSync(posting);
+    writeFileSync(notes, `${heading}- **Job ID:** acme-robotics--staff-engineer-2\n`);
+    expect(await tool('save_posting').run({ url: ASHBY, folder: FOLDER, job })).toBe(
+      leftAlone('its job.md is for acme-robotics--staff-engineer-2'),
+    );
+    expect(fetch).not.toHaveBeenCalled();
+    // The job's own folder keeps its posting, from any of its links, and so does a call that
+    // doesn't name the job, as before.
+    writeFileSync(posting, `# Job posting\n\n- **Source:** ${theirs}\n`);
+    writeFileSync(notes, `${heading}- **Job ID:** ${job}\n`);
+    expect(await tool('save_posting').run({ url: ASHBY, folder: FOLDER, job })).toBe(kept);
+    writeFileSync(notes, heading);
+    expect(await tool('save_posting').run({ url: theirs, folder: FOLDER, job })).toBe(kept);
+    expect(await tool('save_posting').run({ url: ASHBY, folder: FOLDER })).toBe(kept);
+    // A folder from before Job ID lines, whose posting came from a link no job has, such as the
+    // role's own that its board's listing led to, is the job's own still.
+    writeFileSync(posting, '# Job posting\n\n- **Source:** https://jobs.ashbyhq.com/acme/role\n');
+    expect(await tool('save_posting').run({ url: ASHBY, folder: FOLDER, job })).toBe(kept);
+  });
+
   it('refuses unsafe fetches, and folders outside the job folders', async () => {
     fetch.mockRejectedValue(new FetchRefused('That site isn’t public.'));
     expect(await tool('save_posting').run({ url: ASHBY, folder: FOLDER })).toBe(
@@ -1323,6 +1465,20 @@ describe('build_resume', () => {
     expect(printed).toContain('@font-face{font-family:"Selawik";font-weight:400;');
     expect(printed).not.toContain('"Caladea"');
     expect(printer.measure.mock.calls[0]?.[0]).toBe(printed);
+  });
+
+  it('tells the task each file it’s about to write, so the app can keep it as it was', async () => {
+    writeResume(resume);
+    const keep = vi.fn();
+    const read = vi.fn();
+    const call = { ...newCall('hunt'), keep, read };
+    await tool('build_resume').run({ folder: FOLDER, format: 'both' }, call);
+    expect(keep.mock.calls.map(([path]) => path)).toEqual([
+      folder('AlexRiveraResume10112026_Acme.pdf'),
+      folder('AlexRiveraResume10112026_Acme.docx'),
+    ]);
+    // Without a task, as in a test of its own, it builds all the same.
+    expect(await tool('build_resume').run({ folder: FOLDER })).toContain('Checks: clean.');
   });
 
   it('turns away a project the user keeps private, by its name, but not one they show', async () => {
@@ -2058,7 +2214,7 @@ describe('the template tools', () => {
     // One of the user's, from before this run.
     await tool('save_template').run({ id: 'theirs', template: file() });
     expect(await save('theirs', { name: 'Mine now' }, true)).toBe(
-      'Not saved: templates/theirs.json is one of the user’s templates from before this run, which this run can’t replace. Save yours under an ID of its own. The user can change theirs in a run that asks first.',
+      'Not saved: templates/theirs.json is one of the user’s templates from before this run, which this run can’t replace. Save yours under an ID of its own: another run can change theirs.',
     );
     expect(await save('mine')).toContain('Saved templates/mine.json');
     expect(await save('mine', { name: 'Mine, wider' }, true)).toContain(

@@ -54,6 +54,7 @@ describe('isJobLink', () => {
     'https://jobs.ashbyhq.com/acme/1b2c3d4e',
     'https://boards.greenhouse.io/acme/jobs/123',
     'https://acme.com/careers?job=42',
+    'https://jobs.smartrecruiters.com/oneclick-ui/company/Acme/publication/3f6c2a10-1b2c',
   ])('treats %s as one job', (url) => {
     expect(isJobLink(url)).toBe(true);
   });
@@ -63,6 +64,8 @@ describe('isJobLink', () => {
     'https://acme.com/careers',
     'https://news.ycombinator.com/item?id=123',
     'https://www.linkedin.com/company/acme/jobs',
+    'https://www.linkedin.com/company/acme/',
+    'https://www.indeed.com/cmp/Acme/reviews?fcountry=US',
   ])('treats %s as a page that can list several jobs', (url) => {
     expect(isJobLink(url)).toBe(false);
   });

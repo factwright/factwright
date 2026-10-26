@@ -1,5 +1,20 @@
+import type { FromRun } from '../../shared/api.ts';
+
 /** How many things can wait on the user at once, past which the oldest goes to the terminal. */
 const MAX_WAITING = 10;
+
+/** How many things have come in to wait on the user, from every run, of every kind. */
+let order = 0;
+
+/**
+ * Something one of Claude's runs waits on the user for, such as a round of questions, marked with
+ * the run and its place in the order they all came in, to take them in turn. Its ID is the run's
+ * own, so two runs' never meet.
+ */
+export function fromRun<T extends { id: string }>(runId: string, item: T): T & FromRun {
+  order += 1;
+  return { ...item, id: `${runId}/${item.id}`, runId, since: order };
+}
 
 /** Something waiting on the user, with what settles it. */
 interface Waiting<T, R> {
@@ -8,17 +23,18 @@ interface Waiting<T, R> {
 }
 
 /**
- * What Claude Code is waiting on the user to answer in the app, oldest first, such as a round of
- * Claude's questions or a permission prompt, which the window shows one at a time. Each waits until
- * the user answers it, sends it to the terminal, or Claude Code stops waiting, as when the user
- * interrupts the run or answers in the terminal, the hook's time runs out, or the run ends.
+ * What Claude Code is waiting on the user to answer in the app, oldest first, from every run,
+ * such as rounds of Claude's questions or permission prompts, which the window takes in turn.
+ * Each waits until the user answers it, sends it to the terminal, or Claude Code stops waiting,
+ * as when the user interrupts the run or answers in the terminal, the hook's time runs out, or the
+ * run ends.
  */
-export class Desk<T extends { id: string }, R> {
+export class Desk<T extends { id: string; runId?: string }, R> {
   private readonly waiting: Waiting<T, R>[] = [];
-  private readonly show: (item: T | null) => void;
+  private readonly show: (items: T[]) => void;
 
-  /** `show` hears what the window should show, or null once nothing is waiting. */
-  constructor(show: (item: T | null) => void) {
+  /** `show` hears everything waiting, oldest first, each time that changes. */
+  constructor(show: (items: T[]) => void) {
     this.show = show;
   }
 
@@ -36,11 +52,10 @@ export class Desk<T extends { id: string }, R> {
           if (settled) return;
           settled = true;
           signal.removeEventListener('abort', stopped);
-          const shown = this.current();
           const at = this.waiting.indexOf(entry);
           if (at >= 0) this.waiting.splice(at, 1);
           resolve(reply);
-          if (this.current() !== shown) this.show(this.current());
+          if (at >= 0) this.show(this.items());
         },
       };
       const stopped = () => entry.settle(null);
@@ -49,13 +64,23 @@ export class Desk<T extends { id: string }, R> {
       this.waiting.find((each) => each.item.id === item.id)?.settle(null);
       this.waiting.push(entry);
       while (this.waiting.length > MAX_WAITING) this.waiting[0]?.settle(null);
-      if (this.current() === item) this.show(item);
+      this.show(this.items());
     });
   }
 
-  /** What the window shows: the oldest thing waiting, or null. */
+  /** Everything waiting, oldest first. */
+  items(): T[] {
+    return this.waiting.map((each) => each.item);
+  }
+
+  /** The oldest thing waiting, or null. */
   current(): T | null {
     return this.waiting[0]?.item ?? null;
+  }
+
+  /** Whether anything from one run is waiting. */
+  waitsFor(runId: string): boolean {
+    return this.waiting.some((each) => each.item.runId === runId);
   }
 
   /** Something that's waiting, by its ID, or null. */

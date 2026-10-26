@@ -1,10 +1,10 @@
-/* The pay, with its source, or the button that estimates it. */
+/* The pay, with its source, or the button that estimates it, and the pay to ask for under it. */
 .pay {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 6px 12px;
-  margin: 0 0 var(--fw-space-4);
+  margin: 0 0 var(--fw-space-2);
   font-size: var(--fw-text-sm);
 }
 

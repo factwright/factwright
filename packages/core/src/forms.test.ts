@@ -171,6 +171,9 @@ describe('what a field asks for', () => {
         ['How did you hear about this job?', { control: 'choice' }],
         ['What are your salary expectations?'],
         ['Desired compensation', { control: 'number', type: 'number' }],
+        ['What is your current base salary?', { control: 'choice' }],
+        ['Current compensation'],
+        ['What do you currently earn?'],
         ['Are you at least 18 years of age?', { control: 'choice' }],
       ]),
     ).toEqual([
@@ -182,7 +185,145 @@ describe('what a field asks for', () => {
       'how-heard',
       'pay',
       'pay',
+      // What you're paid now isn't what you'd ask for.
+      'question',
+      'question',
+      'question',
       'over-18',
+    ]);
+  });
+
+  it('knows why you’re leaving, before where you work now, however a form asks it', () => {
+    const leaving = [
+      'Reason for leaving',
+      'Reasons for Leaving',
+      'Reason for leaving your current position',
+      'What is your reason for leaving your current employer?',
+      'What’s your reason for leaving?',
+      'Why are you leaving?',
+      'Why are you leaving your current job?',
+      'Why did you leave?',
+      'Why did you leave your last job?',
+      'Why did you leave, or why are you leaving, your most recent position?',
+      'Why are you looking?',
+      'Why are you looking for a new role?',
+      'Why are you currently looking for new opportunities?',
+      'Why are you looking to leave your current role?',
+      'Why are you seeking a new position?',
+      'Reason for wanting to change',
+      'Reason for wanting to change jobs',
+      'Why do you want to leave your current employer?',
+      'Why are you considering leaving your current role?',
+      'Why do you want to change jobs?',
+      'What prompted you to look for a new role?',
+      'What made you start looking?',
+      'Leaving reason',
+      'Reason(s) for leaving current employer',
+      'Please explain why you are leaving your current employer',
+      'Tell us why you’re leaving your current role',
+      'Briefly describe why you are leaving your current position',
+      'Why did you leave or are you leaving your most recent employer?',
+    ];
+    for (const control of ['text', 'long'] as const) {
+      expect(kinds(leaving.map((question) => [question, { control }]))).toEqual(
+        leaving.map(() => 'leaving'),
+      );
+    }
+    // Asked of each job in a part of the form for them, as iCIMS asks it, and by its name alone.
+    expect(fieldKind({ ...field('Reason for Leaving'), section: 'Work Experience 2' })).toBe(
+      'leaving',
+    );
+    expect(
+      fieldKind({ ...field('Reason for leaving your current position'), section: 'Employment' }),
+    ).toBe('leaving');
+    expect(fieldKind(field('', { name: 'reasonForLeaving' }))).toBe('leaving');
+    // What isn't: why the job, what you're after, when you'd leave, where you work now.
+    expect(
+      kinds([
+        ['Why are you interested in this role?', { control: 'long' }],
+        ['Why are you looking at Harbor & Pine?', { control: 'long' }],
+        ['Why are you looking to join our team?', { control: 'long' }],
+        ['What are you looking for in your next role?', { control: 'long' }],
+        ['What prompted you to apply?', { control: 'long' }],
+        ['Reason for applying'],
+        ['When are you leaving your current job?'],
+        ['Do you plan on leaving the area?', { control: 'choice' }],
+        ['Have you taken a leave of absence?', { control: 'choice' }],
+        ['Why do you want to move to Denver?'],
+        [
+          'Do you consent to us asking your current employer about your reason for leaving?',
+          { control: 'choice' },
+        ],
+        ['Current employer'],
+        ['Current job title'],
+      ]),
+    ).toEqual([
+      'question',
+      'question',
+      'question',
+      'question',
+      'question',
+      'question',
+      'question',
+      'question',
+      'question',
+      'question',
+      'consent',
+      'current-company',
+      'current-title',
+    ]);
+    // Why the job, asked in words close to it, and leaving something other than a job.
+    expect(
+      kinds(
+        [
+          'Why are you seeking employment with Harbor & Pine?',
+          'Why are you looking for a position at Harbor & Pine?',
+          'Why are you looking for a new role at Harbor & Pine?',
+          'Why are you searching for a role like this one?',
+          'What led you to consider a role at Harbor & Pine?',
+          'What motivated you to seek out this role?',
+          'Why did you leave the military?',
+          'Why have you left gaps in your employment?',
+        ].map((question) => [question, { control: 'long' }]),
+      ),
+    ).toEqual(Array(8).fill('question'));
+  });
+
+  it('never takes a question about why you’re leaving as asking your title or company', () => {
+    expect(
+      kinds([
+        ['Describe your departure from your current employer'],
+        ['Explain why your current position is ending, if you have left'],
+        ['Current company (leave blank if none)'],
+        ['Current or most recent employer, if you have left'],
+      ]),
+    ).toEqual(['question', 'question', 'current-company', 'current-company']);
+  });
+
+  it('tells why you’re leaving as fast in a question a page made to be slow', () => {
+    for (const question of [
+      'why are you '.repeat(20_000),
+      'reason for '.repeat(20_000),
+      'what prompted you to '.repeat(10_000),
+    ]) {
+      const start = Date.now();
+      fieldKind(field(question, { control: 'long' }));
+      expect(Date.now() - start).toBeLessThan(1000);
+    }
+  });
+
+  it('never takes a box for paragraphs as asking your title or company', () => {
+    expect(
+      kinds([
+        ['Tell us about your current role', { control: 'long' }],
+        ['Current company', { control: 'long' }],
+        ['Most recent position', { control: 'long' }],
+        ['Organization', { control: 'long', autocomplete: 'organization' }],
+      ]),
+    ).toEqual(['question', 'question', 'question', 'question']);
+    expect(kinds([['Current company'], ['Most recent position']])).toEqual([
+      'current-company',
+      'current-title',
     ]);
   });
 
@@ -257,6 +398,158 @@ describe('what a field asks for', () => {
     ).toEqual(['personal', 'question', 'personal', 'question', 'personal']);
   });
 
+  it('takes an equal-opportunity question by its options, or Workday’s names, whatever it says', () => {
+    const asked = (
+      question: string,
+      more: { options?: string[]; name?: string; section?: string },
+    ) => fieldKind({ ...field(question, { control: 'choices', name: more.name }), ...more });
+    // Workday's Self Identify asks about a disability with boxes, as "Please check one".
+    expect(
+      asked('Please check one of the boxes below:', {
+        options: [
+          'Yes, I have a disability, or have had one in the past',
+          'No, I do not have a disability and have not had one in the past',
+          'I do not want to answer',
+        ],
+      }),
+    ).toBe('disability');
+    expect(
+      asked('Please select all that apply.', {
+        options: [
+          'American Indian or Alaska Native (United States of America)',
+          'Asian (United States of America)',
+          'Black or African American (United States of America)',
+        ],
+      }),
+    ).toBe('race');
+    expect(
+      asked('Please select one of the options below:', {
+        options: ['I AM NOT A VETERAN', 'I IDENTIFY AS A VETERAN, JUST NOT A PROTECTED VETERAN'],
+      }),
+    ).toBe('veteran');
+    // A dropdown shows no options until it's open: Workday names each one.
+    for (const [name, kind] of [
+      ['veteranStatus personalInfoUS--veteranStatus', 'veteran'],
+      ['ethnicity personalInfoUS--ethnicity', 'race'],
+      ['hispanicOrLatino personalInfoUS--hispanicOrLatino', 'hispanic'],
+      ['gender personalInfoUS--gender', 'gender'],
+    ] as const) {
+      expect(asked('Please select one of the options below:', { name })).toBe(kind);
+    }
+    // What a part of the form names first, before "--", isn't the field's own name.
+    expect(
+      fieldKind(
+        field('Date Month', {
+          control: 'number',
+          name: 'selfIdentifiedDisabilityData--dateSignedOn-dateSectionMonth-input',
+        }),
+      ),
+    ).toBe('question');
+    // A name that says only which one it is after "--" says what it asks before.
+    expect(asked('Please select one of the options below:', { name: 'gender--0' })).toBe('gender');
+    expect(asked('Please select one of the options below:', { name: 'race--select' })).toBe('race');
+    // Options that only happen to name one aren't enough.
+    expect(asked('Which colors do you like?', { options: ['White', 'Blue'] })).toBe('question');
+  });
+
+  it('never lets options make a question that says what it asks an equal-opportunity one', () => {
+    const asked = (question: string, options: string[], section = '') =>
+      fieldKind({ ...field(question, { control: 'choice' }), options, section });
+    // Its words make it something else, whatever its options say, in any part of the form.
+    for (const section of ['', 'Voluntary Disclosures']) {
+      expect(
+        asked(
+          'Are you the spouse of a protected veteran?',
+          [
+            'Yes, I am the spouse of a protected veteran',
+            'No, I am not the spouse of a protected veteran',
+          ],
+          section,
+        ),
+      ).toBe('personal');
+      expect(
+        asked(
+          'Do you require a reasonable accommodation to take part in the hiring process?',
+          ['Yes, I have a disability and need an accommodation', 'No, I do not have a disability'],
+          section,
+        ),
+      ).toBe('personal');
+    }
+    // Options that name races, as communities, ask no one's race.
+    const served = [
+      'Black or African American communities',
+      'American Indian or Alaska Native communities',
+      'Asian communities',
+    ];
+    expect(asked('Which populations have you worked with?', served)).toBe('question');
+    expect(asked('Please select all that apply.', served)).toBe('question');
+    // A question that asks something of its own keeps it, outside a part for self-identification.
+    expect(asked('Which of these teams would you like to coach?', ['Men', 'Women', 'Mixed'])).toBe(
+      'question',
+    );
+  });
+
+  it('leaves boxes that agree to something, among several, for you to tick', () => {
+    const boxes = (question: string, options: string[]) =>
+      fieldKind({ ...field(question, { control: 'choices' }), options });
+    expect(
+      boxes('Please confirm the following:', [
+        'I certify that the information I have given is true',
+        'I agree to a background check',
+      ]),
+    ).toBe('consent');
+    expect(
+      boxes('Please select all that apply.', [
+        'Remote',
+        'I have read the Applicant Privacy Notice',
+      ]),
+    ).toBe('consent');
+    // Boxes that agree to nothing are a question of the form's own.
+    expect(boxes('Which shifts can you work?', ['Mornings', 'Evenings', 'Weekends'])).toBe(
+      'question',
+    );
+  });
+
+  it('keeps what it can’t tell in a part for self-identification for you, never to keep or draft', () => {
+    const inPart = (question: string, section: string, control: FieldControl = 'combo') =>
+      fieldKind({ ...field(question, { control }), section });
+    expect(
+      inPart('Please select one of the options below:', 'Voluntary Demographic Information'),
+    ).toBe('personal');
+    expect(inPart('Date Month', 'Self Identify', 'number')).toBe('personal');
+    expect(inPart('Language', 'Voluntary Self-Identification of Disability')).toBe('personal');
+    // Your name there signs the form, as the disability form's "Name" beside its date does:
+    // that's yours to do, as agreeing to the terms is.
+    expect(inPart('Name', 'Self Identify', 'text')).toBe('consent');
+    expect(inPart('Name', 'My Information › Legal Name', 'text')).toBe('full-name');
+    expect(
+      inPart(
+        'Yes, I have read and consent to the terms and conditions',
+        'Voluntary Disclosures',
+        'check',
+      ),
+    ).toBe('consent');
+    // Elsewhere, a question of the form's own.
+    expect(inPart('How much travel are you open to?', 'Application Questions', 'choice')).toBe(
+      'question',
+    );
+  });
+
+  it('never fills a box only robots would, as a page’s trap for bots', () => {
+    expect(
+      kinds([
+        [
+          'Enter website. This input is for robots only, do not enter if you’re human.',
+          { name: 'website' },
+        ],
+        ['Leave this field blank'],
+        ['If you are human, leave this field blank.'],
+        // A field you may leave blank isn't a trap.
+        ['Middle name (leave it blank if you have none)'],
+      ]),
+    ).toEqual(['never', 'never', 'never', 'middle-name']);
+  });
+
   it('tells working where you are from working without sponsorship', () => {
     expect(
       kinds([
@@ -282,10 +575,26 @@ describe('what a field asks for', () => {
         ['Which of these do you agree to?', { control: 'choices', type: 'checkbox' }],
         ['Type your full name as your signature'],
         ['May we keep your information for future roles?', { control: 'long' }],
+        [
+          'I declare that the information in this application is true and complete.',
+          { control: 'check', type: 'checkbox' },
+        ],
+        ['Do you declare that you have read the notice above?', { control: 'choice' }],
       ]),
-    ).toEqual(Array(7).fill('consent'));
+    ).toEqual(Array(9).fill('consent'));
     // Confirming your email isn't agreeing to anything.
     expect(kinds([['Confirm email', { type: 'email' }]])).toEqual(['email']);
+    // Nor is a box for new jobs by email, nor a list of which phone to call, your address or number.
+    expect(
+      kinds([
+        [
+          'Send an email notification whenever a new position matching this profile is posted.',
+          { control: 'check', type: 'checkbox' },
+        ],
+        ['Preferred Phone', { control: 'choice' }],
+        ['Preferred Phone Number'],
+      ]),
+    ).toEqual(['question', 'question', 'phone']);
   });
 
   it('keeps someone else’s name, email and phone apart from yours', () => {
@@ -346,8 +655,32 @@ describe('what a field asks for', () => {
         ['Apartment, suite, etc.'],
         ['Country code', { control: 'combo' }],
         ['Address line 1'],
+        // Workday asks the kind of phone, its country's code and its extension beside the number,
+        // each with a name that says phone.
+        ['Phone Device Type', { control: 'combo', name: 'phoneNumber--phoneType' }],
+        ['Country Phone Code', { control: 'combo', name: 'phoneNumber--countryPhoneCode' }],
+        ['Phone Number', { name: 'phoneNumber--phoneNumber' }],
+        ['Phone Extension', { name: 'phoneNumber--extension' }],
+        ['Country/Region', { control: 'combo', name: 'country country--country' }],
+        [
+          'Language',
+          { control: 'combo', name: 'disabilityForm selfIdentifiedDisabilityData--disabilityForm' },
+        ],
       ]),
-    ).toEqual(['middle-name', 'street-2', 'street-2', 'phone-country', 'street']);
+    ).toEqual([
+      'middle-name',
+      'street-2',
+      'street-2',
+      'phone-country',
+      'street',
+      'question',
+      'phone-country',
+      'phone',
+      'question',
+      'country',
+      // Self Identify's language, which Workday names "disabilityForm", asks no one's disability.
+      'question',
+    ]);
   });
 
   it('knows what a part of the form for each job or school asks, by its heading or name', () => {
@@ -397,6 +730,66 @@ describe('what a field asks for', () => {
     expect(inPart('Location', 'Work experience › Education')).toBe('edu-location');
     // A heading that only mentions employment isn't a part for each job.
     expect(inPart('Location', 'Previous Harbor & Pine Employment')).toBe('location');
+  });
+
+  it('knows the parts for jobs and schools as iCIMS, Taleo, SuccessFactors and SmartRecruiters name them', () => {
+    const inPart = (question: string, section: string, more: { control?: FieldControl } = {}) =>
+      fieldKind({ ...field(question, more), section });
+    // SuccessFactors' rows, its own words.
+    expect(
+      ['Company Name', 'Job Title', 'Date Begin', 'End Date', 'Location'].map((question) =>
+        inPart(question, 'Outside Work Experience'),
+      ),
+    ).toEqual(['current-company', 'current-title', 'job-start', 'job-end', 'job-location']);
+    expect(
+      ['School', 'Degree', 'Major', 'Date Begin', 'End Date'].map((question) =>
+        inPart(question, 'Formal Education'),
+      ),
+    ).toEqual(['school', 'degree', 'discipline', 'edu-start', 'graduation']);
+    // Taleo's: a job's title is its "Job Function", and a school's field its "Program".
+    expect(
+      ['Employer', 'Job Function', 'Responsibility'].map((question) =>
+        inPart(question, 'Work Experience 1'),
+      ),
+    ).toEqual(['current-company', 'current-title', 'job-summary']);
+    expect(inPart('Current Employer', 'Work Experience 1', { control: 'check' })).toBe(
+      'job-current',
+    );
+    expect(inPart('Program', 'Education 1')).toBe('discipline');
+    // iCIMS's, numbered as "(1)", where a job's country and state are where it was, not your home.
+    expect(
+      ['Employer', 'Start Date Month', 'Country', 'State', 'Postal Code', 'City'].map((question) =>
+        inPart(question, 'Work Experience › Professional Experience (1)'),
+      ),
+    ).toEqual(['current-company', 'job-start', 'question', 'question', 'question', 'job-location']);
+    expect(inPart('School', 'College Education (1)')).toBe('school');
+    expect(inPart('Company', 'Current Employment')).toBe('current-company');
+    // SmartRecruiters' editor for each job and school.
+    expect(
+      ['Title', 'Company', 'Office location', 'From', 'To'].map((question) =>
+        inPart(question, 'Experience 2'),
+      ),
+    ).toEqual(['current-title', 'current-company', 'job-location', 'job-start', 'job-end']);
+    expect(inPart('School location', 'Education 1')).toBe('edu-location');
+    // Your own address, outside those parts, is yours.
+    expect(inPart('Country', 'Addresses (1)')).toBe('country');
+  });
+
+  it('leaves a user name and your name where it signs the application for you', () => {
+    expect(
+      ['Login', 'User Name', 'Choose a username'].map((each) => fieldKind(field(each))),
+    ).toEqual(['never', 'never', 'never']);
+    expect(fieldKind({ ...field('Full Name'), section: 'eSignature' })).toBe('consent');
+    expect(fieldKind({ ...field('Full Name'), section: 'Personal Information' })).toBe('full-name');
+  });
+
+  it('takes a box to add a file in a part for your resume as your resume', () => {
+    const file = (question: string, section: string) =>
+      fieldKind({ ...field(question, { control: 'file' }), section });
+    expect(file('', 'Resume')).toBe('resume');
+    expect(file('', 'Easy Apply › Resume/CV')).toBe('resume');
+    expect(file('', 'Portfolio')).toBe('question');
+    expect(file('Cover letter', 'Resume')).toBe('cover-letter');
   });
 
   it('never takes a reference’s or an emergency contact’s name and phone for yours', () => {

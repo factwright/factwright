@@ -5,15 +5,19 @@
 // stand-in here, and the panel fills its drafts in once it's done. Once the form is done, Mark as
 // applied records what was sent, marks the job Applied, and offers to keep a new answer in
 // Profile. Then the job application sites: turned on from the panel, they put a Fill button on
-// the form, which opens Chromium's side panel and fills it, and menus in its fields, whose answers
-// go in a field only once you pick one, and which offer to keep a new answer you typed. A company's
-// careers page on another site that shows the form in a frame gets them in the frame, where the
-// panel fills it, and Lever's location box gets the place it suggests. Turned off in setup,
-// they're gone. On a form with fields you can't see, as a page's traps for bots, it reads only
-// those you can. Nothing is submitted, and nothing leaves this computer.
+// the form, which fills it in its page and says so in a note whose Details opens Chromium's side
+// panel, and menus in its fields, whose answers go in a field only once you pick one, which offer
+// to keep a new answer you typed, and Draft with Claude. A company's careers page on another site
+// that shows the form in a frame gets them in the frame, and Lever's location box gets the place
+// it suggests. A Greenhouse form you submit, on a page served here, marks its job Applied, with
+// Undo. Turned off in setup, they're gone, and Fill from the popup still fills the form in its
+// page, with a note whose Details opens the side panel. On a form with fields you can't see, as a
+// page's traps for bots, it reads only those you can. Nothing real is submitted, and nothing
+// leaves this computer.
 // `pnpm --filter @factwright/extension e2e:fill` (it needs Playwright's Chromium, as `e2e` does,
 // and a C compiler, for the helper). With `-- --shots <folder>`, it saves the panel and the filled
-// form there as pictures, to look over a change.
+// form there as pictures, to look over a change, and with `-- --screenshots`, it draws the stores'
+// screenshot of the panel, into store/screenshots.
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import {
@@ -37,6 +41,7 @@ import {
   NO_EQUAL_OPPORTUNITY,
   NO_HISTORY,
   SAVE_HELPER,
+  type WorkHistory,
 } from '@factwright/core';
 import { type BrowserContext, chromium, type Page } from '@playwright/test';
 import { PrivateAnswers } from '../../desktop/src/main/about/private.ts';
@@ -46,7 +51,15 @@ import { JobsService } from '../../desktop/src/main/jobs/service.ts';
 import { Tracker } from '../../desktop/src/main/jobs/tracker.ts';
 import { type AboutYou, applyChanges, NO_ANSWERS } from '../../desktop/src/shared/about.ts';
 import { PRIVATE_FILE } from '../../desktop/src/shared/private.ts';
-import { LEVER_LOOKS_UP, withOwnCode } from './sites-own-code.ts';
+import {
+  fillSystems,
+  jobAtTop,
+  type SystemsSite,
+  systemsJobs,
+  systemsSite,
+} from './e2e-fill-systems.ts';
+import { LEVER_LOOKS_UP, withOwnCode, workdayCode } from './sites-own-code.ts';
+import { closeFramer, DRAWING, frame } from './store-shots.ts';
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
 const DESKTOP = fileURLToPath(new URL('../../desktop', import.meta.url));
@@ -68,6 +81,14 @@ const unpackedId = (folder: string) =>
 /** The job's application, as Lever shows its form, served on this computer. */
 const FORM_PATH = '/northwind/7a1c9e40-2b6d-4f1e-9c3a-5d8e0f2b4a71/apply';
 
+/**
+ * A Greenhouse application, for a job you haven't applied to, at its own address, which sends
+ * itself back there with what's in it, as its form's own submit: the page then says it went in.
+ */
+const GREENHOUSE_PATH = '/harborpine/jobs/5426468004';
+const THANKS =
+  '<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Harbor &amp; Pine Outfitters</title></head><body><main><h1>Thank you for applying to Harbor &amp; Pine Outfitters!</h1><p>We’ll be in touch.</p></main></body></html>';
+
 /** A form with fields you can't see, and the questions of the ones you can. */
 const TRAPS_PATH = '/fernway/apply';
 const SEEN = ['Full name', 'Are you willing to relocate?', 'Country', 'City'];
@@ -78,19 +99,62 @@ const CAREERS_PATH = '/careers/northwind';
 /** A careers page on the form's own site, which shows it in a frame too, and could read it. */
 const SAME_SITE_PATH = '/careers/same-site';
 
-/** A site on this computer: the application forms, and "Not found" for anything else. */
-async function site() {
+/**
+ * A Workday application, at its own address, as its pages are built from Workday's markup, with
+ * its own code acted out: it runs over several pages in the tab, the next ones from here.
+ */
+const WORKDAY_PATH =
+  '/larkspur/job/Denver-CO/Senior-Product-Manager_R2026-0147/apply/applyManually';
+const WORKDAY_PAGES = '/workday-pages/';
+const WORKDAY_STEPS = [
+  'my-information',
+  'my-experience',
+  'application-questions',
+  'voluntary-disclosures',
+  'self-identify',
+  'review',
+];
+
+/**
+ * A site on this computer: the application forms, the other applicant systems' pages and their
+ * applications whose pages load anew (`systems`), and "Not found" for anything else.
+ */
+async function site(systems: SystemsSite) {
+  const { flows } = systems;
   const lever = readFileSync(join(FIXTURES, 'lever-application.html'), 'utf8');
   const pages: Record<string, Buffer> = {
+    ...systems.pages,
     [FORM_PATH]: Buffer.from(withOwnCode(lever, LEVER_LOOKS_UP)),
     [TRAPS_PATH]: readFileSync(join(FIXTURES, 'hidden-fields.html')),
+    [GREENHOUSE_PATH]: readFileSync(join(FIXTURES, 'greenhouse-application.html')),
+    [WORKDAY_PATH]: Buffer.from(
+      withOwnCode(
+        readFileSync(join(FIXTURES, 'workday-my-information.html'), 'utf8'),
+        workdayCode(WORKDAY_PAGES),
+      ),
+    ),
+    ...Object.fromEntries(
+      WORKDAY_STEPS.map((step) => [
+        `${WORKDAY_PAGES}workday-${step}.html`,
+        readFileSync(join(FIXTURES, `workday-${step}.html`)),
+      ]),
+    ),
   };
   let requests = 0;
-  const server = createServer((request, response) => {
+  const server = createServer(async (request, response) => {
+    for (const flow of flows) {
+      if (await flow.serve(request, response)) return;
+    }
     const page = pages[request.url ?? ''];
     if (page) {
       response.writeHead(200, { 'content-type': 'text/html' });
       response.end(page);
+      return;
+    }
+    // Greenhouse's application, sent: the page after says it went in.
+    if (request.url?.startsWith(`${GREENHOUSE_PATH}?`)) {
+      response.writeHead(200, { 'content-type': 'text/html' });
+      response.end(THANKS);
       return;
     }
     // The browser asks every site for its icon itself.
@@ -124,7 +188,8 @@ async function site() {
 const work = mkdtempSync(join(tmpdir(), 'fw-fill-'));
 const contexts: BrowserContext[] = [];
 let failed = false;
-const local = await site();
+const systems = systemsSite(FIXTURES);
+const local = await site(systems);
 const extension = join(ROOT, 'dist', 'chrome');
 try {
   // Built for this computer's site as its sync server, which it may reach, so the panel may read
@@ -184,6 +249,41 @@ try {
     createRequire(join(DESKTOP, 'package.json')).resolve('@factwright/xray/fixtures/engineer.pdf'),
   );
   writeFileSync(join(folder, 'AnaRuizResume10202026_Northwind.pdf'), pdf);
+  // The Workday job, found on LinkedIn, with its application's address on Workday.
+  const workdayFolder = join(
+    workspace,
+    'applications',
+    '2026-10-21-larkspur-energy-senior-product-manager',
+  );
+  mkdirSync(workdayFolder, { recursive: true });
+  writeFileSync(
+    join(workdayFolder, 'job.md'),
+    [
+      '# Larkspur Energy: Senior Product Manager',
+      '',
+      '- **Date:** 2026-10-21',
+      '- **Apply:** LinkedIn https://www.linkedin.com/jobs/view/4099999999/',
+      `- **Links:** Workday ${local.origin}${WORKDAY_PATH}`,
+    ].join('\n'),
+  );
+  // The other applicant systems' jobs, each with its application's address.
+  systemsJobs(workspace, local.origin);
+  // A job on Greenhouse you haven't applied to, with its resume.
+  const harborFolder = join(
+    workspace,
+    'applications',
+    '2026-10-25-harbor-pine-outfitters-account-executive-mid-market',
+  );
+  mkdirSync(harborFolder, { recursive: true });
+  writeFileSync(
+    join(harborFolder, 'job.md'),
+    [
+      '# Harbor & Pine Outfitters: Account Executive, Mid-Market',
+      '',
+      '- **Date:** 2026-10-25',
+      `- **Apply:** Greenhouse ${local.origin}${GREENHOUSE_PATH}`,
+    ].join('\n'),
+  );
   const tracker = new Tracker(join(home, 'tracker.db'));
   const jobs = new JobsService({ workspace, tracker, onChange: () => {} });
   jobs.read();
@@ -207,8 +307,10 @@ try {
       countries: ['United States'],
     },
   };
+  /** Profile's work history: none, until the Workday application, which asks for each job. */
+  let history: WorkHistory = NO_HISTORY;
   const aboutStore = {
-    history: () => NO_HISTORY,
+    history: () => history,
     answers: () => about,
     saveAnswers: (changes: Parameters<typeof applyChanges>[1]) => {
       about = applyChanges(about, changes);
@@ -223,13 +325,14 @@ try {
   const drafts = {
     start: async (jobId: string) => {
       const asked = jobs.savedForm(jobId)?.questions ?? [];
+      const job = jobs.job(jobId);
       drafting = true;
       setTimeout(() => {
         const choices = asked.filter((each) => each.options.length > 0);
         writeFileSync(
-          join(folder, 'answers.md'),
+          join(job?.folder ? join(workspace, 'applications', job.folder) : folder, 'answers.md'),
           [
-            '# Application questions: Northwind Labs, Senior Product Manager, Data',
+            `# Application questions: ${job?.company}, ${job?.role}`,
             '',
             ...asked
               .filter((each) => each.options.length === 0)
@@ -359,11 +462,30 @@ try {
     await panel.goto(`chrome-extension://${id}/sidepanel.html`);
     return panel;
   };
-  /** A picture of a page, whole, or as the window shows it, with the extension's frame on it. */
+  /**
+   * A picture of a page, whole, or as the window shows it, with the extension's frame on it, light
+   * and dark.
+   */
   const shoot = async (page: Page, name: string, fullPage = true) => {
     if (!SHOTS) return;
     mkdirSync(SHOTS, { recursive: true });
-    await page.screenshot({ path: join(SHOTS, `${name}.png`), fullPage });
+    for (const colorScheme of ['light', 'dark'] as const) {
+      await page.emulateMedia({ colorScheme });
+      await page.waitForTimeout(200);
+      await page.screenshot({ path: join(SHOTS, `${name}-${colorScheme}.png`), fullPage });
+    }
+    await page.emulateMedia({ colorScheme: null });
+  };
+  /** A picture of part of a page, light, as the stores' screenshots show the extension. */
+  const lightShot = async (
+    page: Page,
+    clip: { x: number; y: number; width: number; height: number },
+  ): Promise<Buffer> => {
+    await page.emulateMedia({ colorScheme: 'light' });
+    await page.waitForTimeout(300);
+    const shot = await page.screenshot({ clip });
+    await page.emulateMedia({ colorScheme: null });
+    return shot;
   };
 
   // With Factwright closed, the panel says to open it, and fills nothing.
@@ -381,7 +503,7 @@ try {
   const said = (await panel.getByRole('status').first().textContent()) ?? '';
   console.log(`  ${said}`);
   check(
-    (await panel.getByText('Senior Product Manager, Data at Northwind Labs').count()) === 1,
+    (await jobAtTop(panel, 'Senior Product Manager, Data', 'Northwind Labs')) === 1,
     'the panel finds the job the form is for, by its posting',
   );
   const value = (selector: string) =>
@@ -406,8 +528,8 @@ try {
       [...((input as HTMLInputElement).files ?? [])].map((file) => `${file.name} ${file.size}`),
     );
   check(
-    uploaded.length === 1 && uploaded[0] === `Ana María Ruiz - Resume.pdf ${pdf.length}`,
-    'it uploads the job’s own resume, whole, under a plain name',
+    uploaded.length === 1 && uploaded[0] === `AnaRuizResume10202026_Northwind.pdf ${pdf.length}`,
+    'it uploads the job’s own resume, whole, under its own name',
   );
   const checked = (label: string) =>
     form
@@ -424,6 +546,18 @@ try {
   );
   await shoot(panel, 'fill-1-panel');
   await shoot(form, 'fill-2-form');
+  if (DRAWING) {
+    // The panel's top, down to where it says it never submits a form, for a store's picture.
+    const never = await panel.getByText('Factwright never submits a form').boundingBox();
+    if (!never) throw new Error('The panel doesn’t say it never submits a form.');
+    await frame(
+      await lightShot(panel, { x: 0, y: 0, width: 380, height: never.y + never.height + 10 }),
+      380,
+      'Every answer, and where it came from',
+      'Click Fill, and it fills the form where you are. Details shows what needs you first, then each answer it filled and where it came from.',
+      '2-fill.png',
+    );
+  }
 
   // Your Claude drafts the form's own questions that nothing on file answers, and the panel
   // fills each draft in once it's done.
@@ -492,8 +626,8 @@ try {
   );
   await offering.close();
 
-  /** The extension's frame on the form, its Fill button or a menu, once it shows `words`. */
-  const frameOn = async (mode: 'button' | 'menu', words = '', ms = 20_000, on = form) => {
+  /** The extension's frame on the form, its Fill button, a menu or a note, once it shows `words`. */
+  const frameOn = async (mode: 'button' | 'menu' | 'note', words = '', ms = 20_000, on = form) => {
     const until = Date.now() + ms;
     for (;;) {
       for (const frame of on.frames()) {
@@ -502,15 +636,14 @@ try {
           .locator('body')
           .innerText()
           .catch(() => '');
-        if (
-          (await frame
-            .locator('button')
-            .count()
-            .catch(() => 0)) > 0 &&
-          text.includes(words)
-        ) {
-          return frame;
-        }
+        // Drawn: with the words asked for, or else with its buttons.
+        const drawn = words
+          ? text.includes(words)
+          : (await frame
+              .locator('button')
+              .count()
+              .catch(() => 0)) > 0;
+        if (drawn) return frame;
       }
       if (Date.now() > until) throw new Error(`No ${mode} frame on the form with ${words}.`);
       await on.waitForTimeout(100);
@@ -553,18 +686,43 @@ try {
     'its script is registered for the job application sites, and never LinkedIn or Indeed',
   );
 
-  // The Fill button opens Chromium's side panel, which fills the form, as Fill does.
+  // The Fill button fills the form in its page, and a note in its place says how it went.
   await form.reload();
   await form.bringToFront();
   const fillButton = await frameOn('button');
   check((await fieldValue('email')) === '', 'a form loaded again is empty');
   await shoot(form, 'fill-4-button', false);
+  const panels = context.pages().length;
   await press(fillButton.getByRole('button', { name: 'Fill', exact: true }));
   await waitForValue('email', 'ana@example.com');
   check(
-    (await fieldValue('name')) === 'Ana María Ruiz',
-    'its Fill button opens the side panel, which fills the form',
+    (await fieldValue('name')) === 'Ana María Ruiz' && context.pages().length === panels,
+    'its Fill button fills the form in its page, with no panel',
   );
+  const filledNote = await frameOn('note', 'Factwright filled');
+  const noteWords = (await filledNote.locator('body').innerText()).replace(/\s+/g, ' ');
+  console.log(`  ${noteWords}`);
+  check(
+    /^Factwright filled \d+ fields( · \d+ need you)? Details/.test(noteWords) &&
+      (await filledNote.getByRole('button', { name: 'Details' }).count()) === 1,
+    'and a note on the page says how many it filled, and how many need you, with Details',
+  );
+  await shoot(form, 'fill-4b-note', false);
+  // Details opens the panel, which shows that fill as it was, without filling it again.
+  await form.locator('input[name="email"]').fill('mine@example.com');
+  const shown = await panelOn();
+  await shown.getByText(/^Filled \d+ of \d+ fields/).waitFor({ timeout: 40_000 });
+  check(
+    (await fieldValue('email')) === 'mine@example.com' &&
+      (await shown.locator('details.group summary').first().textContent())?.startsWith(
+        'Filled · ',
+      ) === true &&
+      (await shown.locator('.card.job').textContent())?.includes('Senior Product Manager, Data') ===
+        true,
+    'the panel shows the fill as it was, the job at the top and Filled folded away, and fills nothing over what you typed since',
+  );
+  await shoot(shown, 'fill-4c-panel');
+  await shown.close();
 
   // A field's menu offers Factwright's answer, and puts it in the field only once you pick it.
   await form.reload();
@@ -697,8 +855,10 @@ try {
   check(
     (await framedValue('name')) === 'Ana María Ruiz' &&
       (await framedValue('email')) === 'ana@example.com',
-    'its Fill button opens the side panel, which fills the form in the frame',
+    'its Fill button fills the form in the frame, in its page',
   );
+  await frameOn('note', 'Factwright filled', 20_000, careers);
+  check(true, 'and its note goes in the part of the frame that shows');
   check(
     !(await careers.content()).includes('ana@example.com'),
     'and the careers page around it never has an answer',
@@ -766,6 +926,380 @@ try {
   );
   await besideCareers.close();
 
+  // Workday's application, which runs over several pages in one tab. Profile's work history has
+  // three positions at two companies, and two schools, and Workday's own code is acted out on its
+  // pages, as they're built from Workday's markup.
+  history = {
+    jobs: [
+      {
+        company: 'Tidewater Analytics',
+        location: 'Denver, CO',
+        positions: [
+          { title: 'Director of Product', start: '2023-04', end: 'present', summary: '' },
+          { title: 'Senior Product Manager', start: '2021-03', end: '2023-04', summary: '' },
+        ],
+      },
+      {
+        company: 'Fernway',
+        location: 'Boulder, CO',
+        positions: [{ title: 'Product Manager', start: '2018-06', end: '2021-03', summary: '' }],
+      },
+    ],
+    schools: [
+      {
+        school: 'CU Boulder',
+        degree: 'B.S.',
+        field: 'Computer Science',
+        start: '2013',
+        end: '2017',
+      },
+      { school: 'Denver East High School', degree: '', field: '', start: '2009', end: '2013' },
+    ],
+  };
+  about = {
+    ...about,
+    applications: { ...about.applications, howHeard: 'LinkedIn', sponsorship: 'no' },
+  };
+  kept.save({ street: '1420 Larimer St', postalCode: '80202' });
+  const workday = await context.newPage();
+  workday.on('pageerror', (error) => errors.push(error.message));
+  await workday.goto(`${local.origin}${WORKDAY_PATH}`);
+  await workday.bringToFront();
+  const workdayTab = (
+    await setup.evaluate(
+      (url) =>
+        (
+          globalThis as unknown as {
+            chrome: { tabs: { query(query: object): Promise<{ id: number; windowId: number }[]> } };
+          }
+        ).chrome.tabs.query({ url }),
+      `${local.origin}${WORKDAY_PATH}`,
+    )
+  )[0];
+  if (!workdayTab) throw new Error('No tab with the Workday application.');
+  await frameOn('button', '', 20_000, workday);
+  check(true, 'a page of Workday’s application gets the Fill button, with no file or email on it');
+  const workdayPanel = await panelOn({
+    id: workdayTab.id,
+    windowId: workdayTab.windowId,
+    url: `${local.origin}${WORKDAY_PATH}`,
+    title: await workday.title(),
+  });
+  /** What's in one of the Workday page's boxes, by its id. */
+  const typedIn = (id: string) =>
+    workday.locator(`[id="${id}"]`).evaluate((input) => (input as HTMLInputElement).value);
+  /** What one of its dropdowns shows, by its id. */
+  const shows = (id: string) =>
+    workday.locator(`[id="${id}"]`).evaluate((button) => button.textContent?.trim() ?? '');
+  /** What a date's part shows beside its box, by the part's id, as Workday shows what's typed. */
+  const dateShows = (id: string) =>
+    workday.locator(`[id="${id}-display"]`).evaluate((each) => each.textContent?.trim() ?? '');
+  /** What's in a box of one of Workday's parts, by the part's heading's id and the box's name. */
+  const inPart = (panel: string, name: string) =>
+    workday
+      .locator(`[aria-labelledby="${panel}"] [name="${name}"]`)
+      .evaluate((input) => (input as HTMLInputElement).value);
+  /** What one of its lists you search keeps, as pills, by the box's id. */
+  const pills = (id: string) =>
+    workday
+      .locator(`[id="${id}"]`)
+      .evaluate((input) =>
+        [
+          ...(input
+            .closest('[data-automation-id="multiselectInputContainer"]')
+            ?.querySelectorAll('[data-automation-id="selectedItem"]') ?? []),
+        ]
+          .map((pill) => pill.textContent?.trim() ?? '')
+          .join(', '),
+      );
+  /** Presses Workday's own Save and Continue, as you would, and waits for the panel's offer. */
+  const nextPage = async (step: string) => {
+    await workday.getByRole('button', { name: 'Save and Continue', exact: true }).click();
+    await workdayPanel
+      .getByText(`The application is on ${step} now`, { exact: false })
+      .waitFor({ timeout: 20_000 });
+  };
+  /** Fills the page the application's on, from the panel's offer, and waits until it's done. */
+  const fillThisPage = async () => {
+    await workdayPanel.getByRole('button', { name: 'Fill this page', exact: true }).click();
+    await workdayPanel.getByText(/^Filled \d+ of \d+ fields/).waitFor({ timeout: 40_000 });
+  };
+  await workdayPanel.getByText(/^Filled \d+ of \d+ fields/).waitFor({ timeout: 40_000 });
+  check(
+    (await jobAtTop(workdayPanel, 'Senior Product Manager', 'Larkspur Energy')) === 1,
+    'the panel finds the Workday job by its application’s address',
+  );
+  check(
+    (await typedIn('name--legalName--firstName')) === 'Ana María' &&
+      (await typedIn('name--legalName--lastName')) === 'Ruiz' &&
+      (await typedIn('address--addressLine1')) === '1420 Larimer St' &&
+      (await typedIn('address--postalCode')) === '80202' &&
+      (await typedIn('phoneNumber--phoneNumber')) === about.you.phone,
+    'it fills My Information’s boxes, the address after Workday puts it in again for the country',
+  );
+  check(
+    (await shows('country--country')) === 'United States of America' &&
+      (await shows('address--countryRegion')) === 'Colorado',
+    'and picks from Workday’s dropdowns, Country and State',
+  );
+  check(
+    (await pills('source--source')) === 'LinkedIn',
+    'and from How Did You Hear About Us?, through its groups, as typing LinkedIn finds nothing there',
+  );
+  check(
+    (await pills('phoneNumber--countryPhoneCode')) === 'United States of America (+1)',
+    'and leaves Country Phone Code as Workday picked it',
+  );
+  await shoot(workdayPanel, 'fill-9-workday-panel');
+  await shoot(workday, 'fill-10-workday-my-information');
+
+  // Workday's own Save and Continue, pressed as you would: the panel offers to fill the next page,
+  // as the script on the page tells it, and the Fill button stays on it.
+  await nextPage('My Experience');
+  await frameOn('button', '', 20_000, workday);
+  check(
+    (await workdayPanel.getByRole('button', { name: 'Fill again', exact: true }).count()) === 0,
+    'Save and Continue brings My Experience in, and the panel offers to fill it, not the page before',
+  );
+  // Workday filled the first job's title from the resume, as Autofill with Resume does.
+  await workday.locator('[id="workExperience-225--jobTitle"]').fill('Sr. PM');
+  await fillThisPage();
+  check(
+    (await typedIn('workExperience-225--jobTitle')) === 'Director of Product' &&
+      (await typedIn('workExperience-225--companyName')) === 'Tidewater Analytics' &&
+      (await dateShows('workExperience-225--startDate-dateSectionMonth')) === '04' &&
+      (await dateShows('workExperience-225--startDate-dateSectionYear')) === '2023',
+    'the first Work Experience takes your newest job, its dates typed a key at a time, in place of what Workday filled',
+  );
+  check(
+    (await typedIn('education-247--schoolName')) === 'CU Boulder' &&
+      (await shows('education-247--degree')) === 'Bachelors' &&
+      (await pills('education-247--fieldOfStudy')) === 'Computer Science',
+    'and the first Education your newest school, its degree, by its own name, and its field',
+  );
+  await workdayPanel
+    .getByRole('button', { name: 'Add 2 for your other jobs', exact: true })
+    .click();
+  await workdayPanel.getByText(/^Filled \d+ of \d+ fields/).waitFor({ timeout: 40_000 });
+  check(
+    (await inPart('Work-Experience-2-panel', 'jobTitle')) === 'Senior Product Manager' &&
+      (await inPart('Work-Experience-3-panel', 'jobTitle')) === 'Product Manager' &&
+      (await inPart('Work-Experience-3-panel', 'companyName')) === 'Fernway' &&
+      (await typedIn('workExperience-225--jobTitle')) === 'Director of Product',
+    'Add for your other jobs presses Workday’s Add Another, and fills each new part with the next job',
+  );
+  await workdayPanel
+    .getByRole('button', { name: 'Add 1 for your other school', exact: true })
+    .click();
+  await workdayPanel.getByText(/^Filled \d+ of \d+ fields/).waitFor({ timeout: 40_000 });
+  check(
+    (await inPart('Education-2-panel', 'schoolName')) === 'Denver East High School',
+    'and for your other school',
+  );
+  await shoot(workday, 'fill-11-workday-my-experience');
+
+  await nextPage('Application Questions');
+  await fillThisPage();
+  check(
+    (await shows('primaryQuestionnaire--a1f3c2e0b9d84e5f9a7c6b5d')) === 'Yes' &&
+      (await shows('primaryQuestionnaire--b2e4d3f1c0e95f6a0b8d7c6e')) === 'No',
+    'Application Questions: whether you can work here, and need sponsorship, from Profile',
+  );
+  // You answer the form's own question, as you would, and press Save and Continue straight
+  // after: the panel reads it as you leave its box, before the page goes on.
+  const why = 'Larkspur’s grid work is what I want to build next.';
+  await workday.locator('[id="primaryQuestionnaire--c3f5e4a2d1f06a7b1c9e8d7f"]').fill(why);
+
+  await nextPage('Voluntary Disclosures');
+  await fillThisPage();
+  const ticked = (selector: string) =>
+    workday
+      .locator(selector)
+      .evaluateAll((boxes) => boxes.filter((box) => (box as HTMLInputElement).checked).length);
+  check(
+    (await shows('personalInfoUS--gender')) === 'Female' &&
+      (await shows('personalInfoUS--veteranStatus')) === 'Select One' &&
+      (await ticked('input[id$="-ethnicityMulti"]')) === 0 &&
+      (await ticked('[id="termsAndConditions--acceptTermsAndAgreements"]')) === 0,
+    'Voluntary Disclosures: only the answer you set in Profile, and never its terms box',
+  );
+  await nextPage('Self Identify');
+  await fillThisPage();
+  check(
+    (await typedIn('selfIdentifiedDisabilityData--name')) === '' &&
+      (await ticked('input[id$="-disabilityStatus"]')) === 0,
+    'Self Identify: all yours, even your name, which signs it',
+  );
+  await workday.getByRole('button', { name: 'Save and Continue', exact: true }).click();
+  await workdayPanel
+    .getByText('The application is on Review now, with nothing to fill', { exact: false })
+    .waitFor({ timeout: 20_000 });
+  check(true, 'on Review, with nothing to fill, the panel says to check it and submit it yourself');
+  const pressed = await workday.evaluate(() => {
+    const page = globalThis as unknown as { workdaySubmits?: number; workdayNexts?: number };
+    return { submits: page.workdaySubmits, nexts: page.workdayNexts };
+  });
+  check(
+    pressed.submits === 0 && pressed.nexts === 5,
+    'Factwright never pressed Save and Continue or Submit: only you did, five times',
+  );
+  await workdayPanel.getByRole('button', { name: 'Mark as applied' }).click();
+  await workdayPanel.getByText('Marked applied.').waitFor({ timeout: 20_000 });
+  const appliedWorkday = jobs.list().jobs.find((each) => each.company === 'Larkspur Energy');
+  check(
+    appliedWorkday?.status === 'applied' &&
+      appliedWorkday.sent.some(
+        (each) =>
+          each.question === 'Why do you want to work at Larkspur Energy?' && each.text === why,
+      ),
+    'Mark as applied keeps what you sent on Application Questions, pages back, typed just before Save and Continue',
+  );
+  await workdayPanel.close();
+  await workday.close();
+
+  // SmartRecruiters', SuccessFactors', iCIMS's and Taleo's applications, each a page at a time.
+  await fillSystems({
+    context,
+    origin: local.origin,
+    site: systems,
+    tabOf: async (page) => {
+      const url = page.url();
+      const tabs = await setup.evaluate(() =>
+        (
+          globalThis as unknown as {
+            chrome: {
+              tabs: {
+                query(query: object): Promise<{ id: number; windowId: number; url: string }[]>;
+              };
+            };
+          }
+        ).chrome.tabs.query({}),
+      );
+      const tab = tabs.find((each) => each.url === url);
+      if (!tab) throw new Error(`No tab with ${url}.`);
+      return { id: tab.id, windowId: tab.windowId, url, title: await page.title() };
+    },
+    panelOn,
+    check,
+    phone: () => about.you.phone,
+    errors,
+    shoot,
+  });
+
+  // Greenhouse's application, for a job you haven't applied to: Fill fills it in its page, and its
+  // note's Details opens Chromium's side panel. A question nothing on file answers offers Draft
+  // with Claude in its menu. Then you submit it, as you would, and the page after says it went in:
+  // the job's marked Applied, with what you sent, and a note there offers Undo.
+  const harbor = await context.newPage();
+  harbor.on('pageerror', (error) => errors.push(error.message));
+  await harbor.goto(`${local.origin}${GREENHOUSE_PATH}`);
+  await harbor.bringToFront();
+  const harborButton = await frameOn('button', '', 20_000, harbor);
+  await press(harborButton.getByRole('button', { name: 'Fill', exact: true }), harbor);
+  const harborNote = await frameOn('note', 'Factwright filled', 60_000, harbor);
+  check(
+    (await harbor.locator('#email').inputValue()) === 'ana@example.com',
+    'Fill fills a Greenhouse application in its page, with its note',
+  );
+  await shoot(harbor, 'fill-12-note', false);
+  /** The extension's side panels open now, as Chromium counts them. */
+  const sidePanels = () =>
+    setup.evaluate(
+      async () =>
+        (
+          await (
+            globalThis as unknown as {
+              chrome: { runtime: { getContexts(filter: object): Promise<unknown[]> } };
+            }
+          ).chrome.runtime.getContexts({ contextTypes: ['SIDE_PANEL'] })
+        ).length,
+    );
+  const panelsBefore = await sidePanels();
+  await press(harborNote.getByRole('button', { name: 'Details' }), harbor);
+  const until5 = Date.now() + 10_000;
+  while ((await sidePanels()) <= panelsBefore) {
+    if (Date.now() > until5) throw new Error('Details didn’t open the side panel.');
+    await harbor.waitForTimeout(100);
+  }
+  check(true, 'the note’s Details opens Chromium’s side panel, from your click on it');
+  // The panel, as Details shows it: the fill as it was, what needs you, then what it filled.
+  if (SHOTS) {
+    const harborTab = (
+      await setup.evaluate(
+        (url) =>
+          (
+            globalThis as unknown as {
+              chrome: {
+                tabs: { query(query: object): Promise<{ id: number; windowId: number }[]> };
+              };
+            }
+          ).chrome.tabs.query({ url }),
+        `${local.origin}${GREENHOUSE_PATH}`,
+      )
+    )[0];
+    if (harborTab) {
+      const details = await panelOn({
+        id: harborTab.id,
+        windowId: harborTab.windowId,
+        url: `${local.origin}${GREENHOUSE_PATH}`,
+        title: await harbor.title(),
+      });
+      await details.getByText(/^Filled \d+ of \d+ fields/).waitFor({ timeout: 40_000 });
+      await details.locator('details.group summary').first().click();
+      await details.locator('details.group .field').first().hover();
+      await shoot(details, 'fill-12b-panel');
+      await details.close();
+    }
+  }
+  const whyJoin = harbor.locator('#question_12497120004');
+  await whyJoin.click();
+  const draftMenu = await frameOn('menu', 'Draft with Claude', 30_000, harbor);
+  await shoot(harbor, 'fill-13-menu-draft', false);
+  await press(draftMenu.getByRole('button', { name: /^Draft with Claude/ }), harbor);
+  await frameOn('menu', 'Drafting…', 20_000, harbor);
+  await shoot(harbor, 'fill-14-menu-drafting', false);
+  const draftedMenu = await frameOn('menu', 'Drafted by the stand-in.', 60_000, harbor);
+  check(
+    (await whyJoin.inputValue()) === '' &&
+      (await draftedMenu.getByText('Your Claude’s draft for this job').count()) === 1,
+    'Draft with Claude in a question’s menu has your Claude draft the form’s open questions, and the menu offers its draft',
+  );
+  await shoot(harbor, 'fill-15-menu-drafted', false);
+  await press(draftedMenu.getByRole('button', { name: /Drafted by the stand-in/ }), harbor);
+  const until6 = Date.now() + 10_000;
+  while ((await whyJoin.inputValue()) !== 'Drafted by the stand-in.') {
+    if (Date.now() > until6) throw new Error('The draft never went in its field.');
+    await harbor.waitForTimeout(100);
+  }
+  check(true, 'and it goes in the field once you pick it');
+  // You submit it, as you would: Greenhouse's own code checks it, which a test's page doesn't.
+  await harbor.evaluate(() => {
+    (document.getElementById('application-form') as HTMLFormElement).noValidate = true;
+  });
+  const harborJob = () =>
+    jobs.list().jobs.find((each) => each.company === 'Harbor & Pine Outfitters');
+  check(harborJob()?.status !== 'applied', 'the Greenhouse job isn’t applied to yet');
+  await harbor.getByRole('button', { name: 'Submit application' }).click();
+  const appliedNote = await frameOn('note', 'Marked applied', 30_000, harbor);
+  check(
+    harborJob()?.status === 'applied' &&
+      harborJob()?.sent.some(
+        (each) =>
+          each.question === 'Why do you want to join Harbor & Pine?' &&
+          each.text === 'Drafted by the stand-in.',
+      ) === true,
+    'once the page says it went in, the job is marked Applied, with what you sent for its own question',
+  );
+  await shoot(harbor, 'fill-16-applied', false);
+  await press(appliedNote.getByRole('button', { name: 'Undo' }), harbor);
+  await frameOn('note', 'Not applied', 20_000, harbor);
+  check(
+    harborJob()?.status !== 'applied' && (harborJob()?.sent.length ?? 0) > 0,
+    'Undo takes that back, and keeps what you sent with the job',
+  );
+  await shoot(harbor, 'fill-17-undone', false);
+  await harbor.close();
+
   // Turned off in setup, the Fill button and the menus are gone, there and then.
   await setup.reload();
   await setup.getByRole('button', { name: 'Turn off', exact: true }).click();
@@ -787,6 +1321,32 @@ try {
   check(
     left.length === 0 && !form.frames().some((each) => each.url().includes('/frame.html')),
     'turned off in setup, its script is unregistered, and its button and menus are gone',
+  );
+  // As on any site you haven't allowed, Fill from the popup fills the form in its page, with a note
+  // the background puts there, as no script's there, and its Details opens the side panel too.
+  await form.bringToFront();
+  await setup.evaluate(
+    (tab) =>
+      (
+        globalThis as unknown as {
+          chrome: { runtime: { sendMessage(message: unknown): Promise<unknown> } };
+        }
+      ).chrome.runtime.sendMessage({ type: 'fill', tab }),
+    formTabAt,
+  );
+  const offNote = await frameOn('note', 'Factwright filled', 60_000);
+  check(
+    (await fieldValue('email')) === 'ana@example.com',
+    'off the job application sites, Fill from the popup fills the form in its page, with its note',
+  );
+  // The window's side panel may be open still, from Greenhouse's: the browser opening it from this
+  // click, rather than refusing, is what the note says nothing more for.
+  await press(offNote.getByRole('button', { name: 'Details' }));
+  await form.waitForTimeout(1500);
+  check(
+    (await sidePanels()) > 0 &&
+      !(await offNote.locator('body').innerText()).includes('click Factwright’s button'),
+    'and its note’s Details opens Chromium’s side panel there too, from your click',
   );
 
   // The built form function, as the panel sends it into a page, on a form with traps for bots.
@@ -822,6 +1382,7 @@ try {
   console.error(error);
 } finally {
   for (const context of contexts) await context.close().catch(() => {});
+  await closeFramer().catch(() => {});
   local.close();
   try {
     rmSync(work, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });

@@ -50,6 +50,12 @@ describe('runOutcome', () => {
       text: 'Your tailored resume for Acme Robotics is ready.',
       place: { jobId: acme.id, section: 'files' },
     });
+    expect(
+      outcome({ skill: 'focused-resume', jobId: acme.id, quick: true }, (job) => ({
+        ...job,
+        files: [...job.files, pdf('AlexRiveraResume_Acme.pdf')],
+      }))?.text,
+    ).toBe('Your quick resume for Acme Robotics is ready.');
     // Built again in place, it's new too.
     const lumen = named('Lumen Health');
     expect(
@@ -74,7 +80,7 @@ describe('runOutcome', () => {
 
   it('says nothing is ready when the job is as it was, such as when Claude stopped to ask', () => {
     expect(outcome({ skill: 'focused-resume', jobId: acme.id })).toBeNull();
-    expect(outcome({ skill: 'fit-check', jobId: acme.id })).toBeNull();
+    expect(outcome({ skill: 'analyze-job', jobId: acme.id })).toBeNull();
     // A job that's gone has nothing to show.
     expect(
       runOutcome(
@@ -85,14 +91,14 @@ describe('runOutcome', () => {
     ).toBeNull();
   });
 
-  it('gives a fit check’s score, as its badge says it', () => {
+  it('gives an analyzed job’s score, as its badge says it', () => {
     expect(
-      outcome({ skill: 'fit-check', jobId: acme.id }, (job) => ({
+      outcome({ skill: 'analyze-job', jobId: acme.id }, (job) => ({
         ...job,
         fit: { verdict: 'Strong fit', score: 86, date: TODAY },
       })),
     ).toEqual({
-      text: 'The fit check for Acme Robotics is done: 86, Strong.',
+      text: 'Acme Robotics is analyzed: 86, Strong.',
       place: { jobId: acme.id, section: 'fit' },
     });
   });
@@ -178,6 +184,39 @@ describe('runOutcome', () => {
     expect(runOutcome(before, [], [])).toBeNull();
   });
 
+  it('says how many of several jobs are analyzed, in To review', () => {
+    const [first, second, third] = jobs.filter((job) => job.fit === null);
+    if (!first || !second || !third) throw new Error('No sample jobs without a fit check');
+    const task: RunTask = { skill: 'analyze-job', jobIds: [first.id, second.id, third.id] };
+    const before = runBefore(task, jobRows(jobs, TODAY));
+    const analyzed = (...ids: string[]) =>
+      jobRows(
+        jobs.map((job) =>
+          ids.includes(job.id) ? { ...job, fit: { verdict: 'Good', score: 70, date: TODAY } } : job,
+        ),
+        TODAY,
+      );
+    expect(runOutcome(before, analyzed(), [])).toBeNull();
+    expect(runOutcome(before, analyzed(first.id, third.id), [])).toEqual({
+      text: '2 of 3 jobs are analyzed.',
+      place: { view: 'review' },
+    });
+    expect(runOutcome(before, analyzed(first.id, second.id, third.id), [])?.text).toBe(
+      'All 3 jobs are analyzed.',
+    );
+    const own = runBefore({ ...task, auto: true }, jobRows(jobs, TODAY));
+    expect(runOutcome(own, analyzed(first.id, second.id, third.id), [])?.text).toBe(
+      'All 3 new jobs are analyzed.',
+    );
+    // One merged into another of them is off the list, and its tab counts it done.
+    const merged = analyzed(first.id, third.id).filter(({ job }) => job.id !== second.id);
+    expect(runOutcome(before, merged, [], [first.id, second.id, third.id])?.text).toBe(
+      'All 3 jobs are analyzed.',
+    );
+    const partly = analyzed(first.id).filter(({ job }) => job.id !== second.id);
+    expect(runOutcome(before, partly, [], [second.id])?.text).toBe('2 of 3 jobs are analyzed.');
+  });
+
   it('says nothing of a run with no task, such as one the user typed into', () => {
     expect(runOutcome(runBefore(null, jobRows(jobs, TODAY)), jobRows(jobs, TODAY), [])).toBeNull();
   });
@@ -186,7 +225,7 @@ describe('runOutcome', () => {
 describe('makesSomething', () => {
   it('tells the tasks that make something to show from those that talk it through', () => {
     expect(makesSomething({ skill: 'focused-resume', jobId: 'a' })).toBe(true);
-    expect(makesSomething({ skill: 'fit-check', jobId: 'a' })).toBe(true);
+    expect(makesSomething({ skill: 'analyze-job', jobId: 'a' })).toBe(true);
     expect(makesSomething({ skill: 'interview-prep', jobId: 'a', callId: 'c' })).toBe(true);
     expect(
       makesSomething({ skill: 'interview-prep', jobId: 'a', callId: 'c', practice: true }),

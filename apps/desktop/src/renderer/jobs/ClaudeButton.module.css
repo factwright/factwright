@@ -9,6 +9,17 @@
   font-weight: 600;
 }
 
+/* Waiting in line for its turn, in place of its button. It starts by itself. */
+.inLine {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 30px;
+  color: var(--fw-muted);
+  font-size: 13px;
+  font-weight: 600;
+}
+
 .spin {
   flex: none;
   animation: spin 1.2s linear infinite;

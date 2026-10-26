@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { type PageJob, readJobPage } from '../src/page/read-job.ts';
-import { companyFromAddress, needsChecking, toSave } from '../src/tab-job.ts';
+import { companyFromAddress, looksLikeJob, needsChecking, toSave } from '../src/tab-job.ts';
 
 // The fixtures are job sites' pages as Chromium and Firefox showed them on 2026-10-16, when the
 // built extension read real ones: the same elements, classes and attributes, with the words made
@@ -251,5 +251,108 @@ describe('SmartRecruiters', () => {
     expect(job.posting).toBe(
       'Company Description\n\nFernway Group builds tools for engineers in 40 countries.\n\nJob Description\n\n- Build the models behind our search.\n\nQualifications\n\nThree years of Python.',
     );
+  });
+});
+
+describe('every job site’s page here', () => {
+  it('looks like a job’s, so the popup fills in what it read', () => {
+    for (const [name, href] of [
+      ['indeed-viewjob.html', 'https://www.indeed.com/viewjob?jk=a1b2c3d4e5&from=serp'],
+      ['indeed-search.html', 'https://www.indeed.com/jobs?q=data+analyst&vjk=a1b2c3d4e5'],
+      [
+        'linkedin-public-search.html',
+        'https://www.linkedin.com/jobs/search?keywords=Software%20Engineer&currentJobId=4012345678',
+      ],
+      ['hacker-news-post.html', 'https://news.ycombinator.com/item?id=41000002'],
+      // A whole thread, read as a page, which the popup leaves for you to pick a post from.
+      ['hacker-news-thread.html', 'https://news.ycombinator.com/item?id=41000001'],
+      [
+        'greenhouse-job.html',
+        'https://job-boards.greenhouse.io/harborpineoutfitters/jobs/4461450008',
+      ],
+      [
+        'workday-job.html',
+        'https://northwind.wd5.myworkdayjobs.com/en-US/NorthwindCareers/job/US-TX-Austin/Senior-Systems-Engineer----Platform_JR2025315',
+      ],
+      [
+        'smartrecruiters-job.html',
+        'https://jobs.smartrecruiters.com/FernwayGroup/744000155993379-software-engineer-ai',
+      ],
+    ] as const) {
+      expect(looksLikeJob(readJobPage(fixture(name), href, ''), null), name).toBe(true);
+    }
+  });
+});
+
+describe('Lever', () => {
+  const LEVER = 'https://jobs.lever.co/harborpine/4f1c2b7e-6a1d-4f0e-9c2b-7d3e5a8b1c90';
+
+  it('reads the pay its salary section shows, as its job data has none', () => {
+    const job = readJobPage(fixture('lever-job.html'), `${LEVER}?lever-source=LinkedIn`, '');
+    expect(job).toMatchObject<Partial<PageJob>>({
+      url: LEVER,
+      title: 'Senior Product Manager, Data',
+      company: 'Harbor & Pine',
+      location: 'Denver, CO',
+      pay: '$161,000 - $245,000 a year',
+      employment: 'Full-time',
+      posted: '2026-10-06',
+      source: 'structured',
+    });
+    expect(toSave(job).pay).toBe('$161,000 - $245,000 a year');
+    expect(quickSave(job)).toBeNull();
+  });
+
+  it('takes the pay from the posting’s words where it has no salary section', () => {
+    const page = fixture('lever-job.html');
+    page.querySelector('[data-qa="salary-range"]')?.remove();
+    const job = readJobPage(page, LEVER, '');
+    expect(job.pay).toBe('');
+    const posting = `${job.posting}\n\n$161,000 - $245,000 a year`;
+    expect(toSave({ ...job, posting }).pay).toBe('$161,000–$245,000 a year');
+  });
+});
+
+describe('iCIMS', () => {
+  const FRAME =
+    'https://careers-larkspurhealth.icims.com/jobs/8341/staff-software-engineer/job?in_iframe=1';
+
+  it('reads its frame’s posting from the frame’s own job data, and the pay from the posting', () => {
+    const job = readJobPage(fixture('icims-posting.html'), FRAME, '');
+    expect(job).toMatchObject<Partial<PageJob>>({
+      url: 'https://careers-larkspurhealth.icims.com/jobs/8341/staff-software-engineer/job',
+      title: 'Staff Software Engineer',
+      company: 'Larkspur Health',
+      location: 'Remote, US',
+      employment: 'Full time',
+      posted: '2026-10-09',
+      source: 'structured',
+    });
+    expect(job.posting).toContain('Salary Range\n\n$144000.00 To $237500.00 / year');
+    expect(toSave(job).pay).toBe('$144,000–$237,500 a year');
+  });
+
+  it('reads its frame’s posting by its layout, where it has no job data', () => {
+    const page = fixture('icims-posting.html');
+    page.querySelector('script[type="application/ld+json"]')?.remove();
+    const job = readJobPage(page, FRAME, '');
+    expect(job).toMatchObject<Partial<PageJob>>({
+      title: 'Staff Software Engineer',
+      // The portal's name, never its "careers".
+      company: 'Larkspurhealth',
+      location: 'US-Remote',
+      source: 'page',
+    });
+    expect(job.posting).toContain('Larkspur Health is rebuilding how its members sign in');
+    expect(toSave(job).pay).toBe('$144,000–$237,500 a year');
+  });
+
+  it('finds only the company’s branding on the page around the frame, which reading it fixes', () => {
+    const job = readJobPage(
+      fixture('icims-wrapper.html'),
+      'https://careers-larkspurhealth.icims.com/jobs/8341/staff-software-engineer/job',
+      '',
+    );
+    expect(job).toMatchObject({ title: 'Larkspur Health blog', location: '', pay: '' });
   });
 });

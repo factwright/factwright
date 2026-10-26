@@ -1,8 +1,11 @@
 import { companyKey, roleKey, slug } from './keys.ts';
 import type { JobStatus } from './tracker.ts';
 
-/** The longest text each of a new job's fields takes, as the app's Add job dialog stops at. */
-export const JOB_LIMITS = { company: 200, role: 300, link: 2000, pay: 200 } as const;
+/**
+ * The longest text each of a job's fields takes, as the app's Add job dialog stops at, and its
+ * Edit details: its company, role, link, pay and where it's worked.
+ */
+export const JOB_LIMITS = { company: 200, role: 300, link: 2000, pay: 200, location: 200 } as const;
 
 /** How long each half of a job's ID gets, so the ID fits in a folder's name on every computer. */
 const ID_PARTS = { company: 60, role: 80 } as const;
@@ -102,6 +105,13 @@ export function newJobRows(job: {
       pass_reason: null,
       kind: null,
       merged_into: null,
+      folder: null,
+      pay_ask: null,
+      own_company: null,
+      own_role: null,
+      own_pay: null,
+      own_location: null,
+      maybe_same: '[]',
     },
     status: { id: job.statusId, job_id: job.id, status: job.status, at: job.today },
   };

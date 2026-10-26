@@ -7,7 +7,7 @@ import { afterEach, describe, expect, it, type Mock, vi } from 'vitest';
 import type { FactwrightApi } from '../../shared/api.ts';
 import type { RunTask } from '../../shared/runs.ts';
 import { ProjectsPagePart, readPageOutline } from './ProjectsPageSection.tsx';
-import type { RunControls } from './RunActions.tsx';
+import { type RunControls, runControlsFor } from './RunActions.tsx';
 import { sampleJob } from './sample-jobs.ts';
 
 const TODAY = localDate();
@@ -41,7 +41,14 @@ function apiStub(projects: string | undefined = PAGE) {
   return {
     jobDocs: vi.fn(async () => ({ projects })),
     openFile: vi.fn(async () => ({ ok: true }) as const),
-  } as unknown as FactwrightApi & { openFile: Mock<FactwrightApi['openFile']> };
+    downloadFile: vi.fn(async () => ({ ok: true, saved: true }) as const),
+    showFile: vi.fn(async () => ({ ok: true }) as const),
+    platform: 'win32',
+  } as unknown as FactwrightApi & {
+    openFile: Mock<FactwrightApi['openFile']>;
+    downloadFile: Mock<FactwrightApi['downloadFile']>;
+    showFile: Mock<FactwrightApi['showFile']>;
+  };
 }
 
 describe('readPageOutline', () => {
@@ -62,10 +69,9 @@ describe('readPageOutline', () => {
   });
 });
 
+/** The job panel's run controls, with Claude at work on a task, or on none. */
 const controls = (task: RunTask | null = null): RunControls => ({
-  phase: task ? 'working' : 'idle',
-  task,
-  start: vi.fn(),
+  ...runControlsFor(task ? [{ id: 'run-1', task, phase: 'working' }] : [], vi.fn(), vi.fn()),
   show: vi.fn(),
 });
 
@@ -85,6 +91,23 @@ describe('ProjectsPagePart', () => {
       expect(api.openFile).toHaveBeenCalledWith(
         'applications/acme/AlexRiveraProjects10202026_Acme.pdf',
       ),
+    );
+    // On Windows, a file shows in its folder.
+    await userEvent.click(
+      screen.getByRole('button', {
+        name: 'Show AlexRiveraProjects10202026_Acme.pdf in its folder',
+      }),
+    );
+    expect(api.showFile).toHaveBeenCalledWith(
+      job.id,
+      'applications/acme/AlexRiveraProjects10202026_Acme.pdf',
+    );
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Download AlexRiveraProjects10202026_Acme.pdf' }),
+    );
+    expect(api.downloadFile).toHaveBeenCalledWith(
+      job.id,
+      'applications/acme/AlexRiveraProjects10202026_Acme.pdf',
     );
   });
 

@@ -130,14 +130,14 @@ export type AttentionLevel = 'urgent' | 'action' | 'info';
 
 /**
  * What the user can do about a step in a click, whatever the job's stage: mark their own reminder
- * done; have Claude check the fit, tailor a resume, write a cover letter or make a Projects page;
+ * done; have Claude analyze the job, tailor a resume, write a cover letter or make a Projects page;
  * decide to apply, or pass; mark the job applied; add the call once they hear back, or find people
  * to follow up with, or mark that no reply came; prep for a call, say how it went, and send thank-
  * you notes after it; and accept an offer, or decline it.
  */
 export type StepAction =
   | { kind: 'reminder' }
-  | { kind: 'fit-check' }
+  | { kind: 'analyze' }
   | { kind: 'to-apply' }
   | { kind: 'pass' }
   | { kind: 'resume' }
@@ -531,9 +531,9 @@ export function nextStep(job: Job, progress: JobProgress, today: string): Attent
     text,
     ...(action && { action }),
   });
-  // A fit check finds out who's hiring too, as far as it can, and says when to look further.
+  // Analyze job finds out who's hiring too, as far as it can, and says when to look further.
   const check = () =>
-    step(looksHidden(job) ? 'Find the real employer' : 'Run a fit check', { kind: 'fit-check' });
+    step(looksHidden(job) ? 'Find the real employer' : 'Analyze job', { kind: 'analyze' });
   switch (progress.status) {
     case 'new':
       if (!job.role || progress.tier === 'skip') return null;

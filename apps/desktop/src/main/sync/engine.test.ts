@@ -37,6 +37,7 @@ const job = (id: string): CollectedJob => ({
   search: null,
   searches: [],
   kindFound: null,
+  suggestedAsk: null,
   folder: null,
   stage: 'review',
   firstSeen: '2026-10-07',
@@ -380,6 +381,91 @@ describe('two computers on one account', () => {
     pc.update();
     expect(pc.tracker.rows()[0]).toMatchObject({ status: 'interview', kind: 'project-manager' });
     expect(await pc.sync()).toMatchObject({ pushed: 0 });
+  });
+
+  it('keep the pay to ask for at a job through a computer from before it, which gets it once it updates', async () => {
+    mac.tracker.saveCollected([job('acme--staff')], AT.now);
+    await mac.sync();
+    await pc.sync();
+    // The PC is still on a version without the pay to ask for, as 0.16 is.
+    pc.goBackTo(9);
+    mac.tracker.updateJob('acme--staff', { payAsk: '$185,000' }, AT);
+    await mac.sync();
+    await pc.sync();
+    // It changes the job without knowing the pay to ask for, and what it sends keeps it.
+    const later: EditContext = { today: '2026-10-13', now: '2026-10-13T09:00:00.000Z' };
+    pc.tracker.updateJob('acme--staff', { status: 'applied' }, later);
+    expect(await pc.sync()).toMatchObject({ pushed: 2 });
+    await mac.sync();
+    expect(mac.tracker.rows()[0]).toMatchObject({ status: 'applied', payAsk: '$185,000' });
+    // Once it updates, it has it too, from what it synced, with nothing to send.
+    pc.update();
+    expect(pc.tracker.rows()[0]).toMatchObject({ status: 'applied', payAsk: '$185,000' });
+    expect(await pc.sync()).toMatchObject({ pulled: 0, pushed: 0 });
+  });
+
+  it('keep the details the user set, and their word that two jobs aren’t the same, both ways', async () => {
+    mac.tracker.saveCollected([job('acme--staff'), job('acme--staff-2')], AT.now);
+    mac.tracker.noteMaybeSame('acme--staff', 'acme--staff-2', 'Same team', AT);
+    await mac.sync();
+    await pc.sync();
+    // The PC is on a version from before them, as 0.17 is, and changes the job meanwhile.
+    pc.goBackTo(10);
+    const later: EditContext = { today: '2026-10-13', now: '2026-10-13T09:00:00.000Z' };
+    mac.tracker.updateJob('acme--staff', { company: 'Acme', location: 'Remote (US)' }, later);
+    mac.tracker.notSame('acme--staff', 'acme--staff-2', later);
+    pc.tracker.updateJob('acme--staff', { status: 'apply' }, later);
+    await mac.sync();
+    await pc.sync();
+    await mac.sync();
+    expect(mac.tracker.rows()[0]).toMatchObject({
+      status: 'apply',
+      own: { company: 'Acme', role: null, pay: null, location: 'Remote (US)' },
+      maybeSame: [{ id: 'acme--staff-2', why: 'Same team', notSame: true }],
+    });
+    pc.update();
+    expect(pc.tracker.rows()[0]).toMatchObject({
+      own: { company: 'Acme', location: 'Remote (US)' },
+      maybeSame: [{ id: 'acme--staff-2', notSame: true }],
+    });
+  });
+
+  it('keep a job’s folder through a computer from before folders, which gets it once it updates', async () => {
+    const folder = '2026-10-07-acme-robotics-staff-engineer';
+    mac.tracker.saveCollected([job('acme--staff')], AT.now);
+    await mac.sync();
+    await pc.sync();
+    // The PC is still on a version that doesn't keep a job's folder in its row, as 0.15 is.
+    pc.goBackTo(8);
+    mac.tracker.saveFolders([{ ...job('acme--staff'), folder }], new Set([folder]));
+    expect(await mac.sync()).toMatchObject({ pushed: 1 });
+    await pc.sync();
+    // It changes the job without knowing its folder, and what it sends keeps the folder.
+    const later: EditContext = { today: '2026-10-13', now: '2026-10-13T09:00:00.000Z' };
+    pc.tracker.updateJob('acme--staff', { status: 'applied' }, later);
+    expect(await pc.sync()).toMatchObject({ pushed: 2 });
+    await mac.sync();
+    expect(mac.tracker.rows()[0]).toMatchObject({ status: 'applied', folder });
+    pc.update();
+    expect(pc.tracker.rows()[0]).toMatchObject({ status: 'applied', folder });
+    expect(await pc.sync()).toMatchObject({ pulled: 0, pushed: 0 });
+  });
+
+  it('send a job’s folder once, when the computer from before folders updates', async () => {
+    const folder = '2026-10-07-acme-robotics-staff-engineer';
+    mac.goBackTo(8);
+    mac.tracker.saveCollected([job('acme--staff')], AT.now);
+    await mac.sync();
+    await pc.sync();
+    expect(pc.tracker.rows()[0]?.folder).toBeNull();
+    // Updated, it has nothing to send until it reads the workspace and finds the job's folder.
+    mac.update();
+    expect(await mac.sync()).toMatchObject({ pulled: 0, pushed: 0 });
+    mac.tracker.saveFolders([{ ...job('acme--staff'), folder }], new Set([folder]));
+    expect(await mac.sync()).toMatchObject({ pushed: 1 });
+    await pc.sync();
+    expect(pc.tracker.rows()[0]?.folder).toBe(folder);
+    expect(await mac.sync()).toMatchObject({ pulled: 0, pushed: 0 });
   });
 
   it('keep a call’s details through a computer from before them, which gets them once it updates', async () => {

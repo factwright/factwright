@@ -1,4 +1,5 @@
 import { oneLine } from '@factwright/core';
+import { SKIPPED_ANSWER } from '../../shared/rounds.ts';
 
 /** A question the user answered in a run, as Claude Code's hooks reported it. */
 export interface Answered {
@@ -28,7 +29,7 @@ export type Backing = keyof typeof MAX_BACKED;
  * The tools that file what the user answered, by their names in Claude Code. A call to one counts
  * only once Claude Code's PreToolUse hook has shown it, from the run's own Claude.
  */
-export const FILING_TOOLS = ['save_fact', 'save_gap', 'verify_fact'] as const;
+export const FILING_TOOLS = ['save_fact', 'save_gap', 'verify_fact', 'correct_fact'] as const;
 
 export type FilingTool = (typeof FILING_TOOLS)[number];
 
@@ -204,7 +205,8 @@ export class QuestionLog {
       // Claude Code keys the answers by each question exactly as Claude wrote it.
       const note = notes[raw];
       const answer = answerOf(answers[raw]) ?? (questions.length === 1 && typed ? typed : null);
-      if (!answer) continue;
+      // A question the user skipped in the app's dialog has no answer to back anything.
+      if (!answer || answer === SKIPPED_ANSWER) continue;
       const picked = options.find((option) => option.label.trim() === answer);
       this.heard.push({
         key: questionKey(raw),

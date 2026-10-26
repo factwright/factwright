@@ -25,7 +25,7 @@ If `find_job` finds the job and `job_details` names a posting saved from the use
 - **In-house recruiter** (works at the company): that's already applying direct.
 
 ## 3. Hunt
-Search first, and stop once one candidate has strong evidence. `read_page` confirms a match, but the user may have to OK each page, so read only the most promising.
+Search first, and stop once one candidate has strong evidence. `read_page` confirms a match. Read only the most promising.
 - Exact-phrase searches, in quotes, of the distinctive sentences.
 - The same phrases restricted to applicant-system sites: `job-boards.greenhouse.io`, `boards.greenhouse.io`, `jobs.lever.co`, `jobs.ashbyhq.com`, `myworkdayjobs.com`, `apply.workable.com`, `jobs.smartrecruiters.com`, `bamboohr.com`, `jobs.gem.com`, `ats.rippling.com`, `wellfound.com`, `ycombinator.com/companies`.
 - Board listings: read the apply link. It often redirects straight to the employer's applicant system.
@@ -51,14 +51,14 @@ Recommend one, with a one-line reason:
 - **Employer not confirmed:** ask the recruiter who the client is before agreeing to anything. Never let anyone submit the user without naming the company.
 
 ## 7. Deliver
-- Reply in 8 lines or fewer: the employer and confidence, the evidence (1–2 links), the direct apply link, the verdict and reason, any scam flags, and next steps (`/factwright:fit-check`, `/factwright:salary-check` if no pay is listed, `/factwright:focused-resume`).
+- Reply in 8 lines or fewer: the employer and confidence, the evidence (1–2 links), the direct apply link, the verdict and reason, any scam flags, and next steps (`/factwright:analyze-job`, `/factwright:salary-check` if no pay is listed, `/factwright:focused-resume`).
 - Once the employer is confirmed or likely, save the job so it survives the listing coming down:
-  - Folder `applications/<YYYY-MM-DD>-<employer>-<role>/`. Reuse it if `find_job` with the employer and role finds one.
+  - Folder `applications/<YYYY-MM-DD>-<employer>-<role>/`. Reuse it if `find_job` with the employer and role finds one for this job. One by that name that's another job's, as a job with the same employer and title can have, stays theirs: add `-2` to the name, or the next number that's free.
   - `posting.md`: `save_posting` with the employer's own posting link. If there's no direct posting, save the board listing instead, or save the user's pasted text with a `- **Source:** pasted by the user <YYYY-MM-DD>` line on top.
-  - `job.md`: `# <Employer>: <Role>`, then `- **Date:**`, `- **Company:**`, `- **Role:**`, `- **Links:**`, `- **Pay:**`, `- **Work arrangement:**`, and `- **Found via:** <board or agency name>`.
+  - `job.md`: `# <Employer>: <Role>`, then `- **Job ID:** <the job's id>` when the job is on file, `- **Date:**`, `- **Company:**`, `- **Role:**`, `- **Links:**`, `- **Pay:**`, `- **Work arrangement:**`, and `- **Found via:** <board or agency name>`.
   - `unmask.md`: employer and confidence, the evidence with links, the poster type, direct or recruiter and why, scam flags.
   - `apply.md`, only when the employer's posting has special application steps (apply by email, an exact subject line or phrase, specific attachments, "mention X", warnings like "no AI-written answers"). Skip it for a plain apply button. The app shows it as a How to apply alert. Format: `# How to apply: <Company>, <Role>`, then `- **Alert:** <one line>`, `- **Email:**` and `- **Subject:**` when they apply, then numbered steps with exact words in backticks.
   - Name the agency or board only, never the recruiter's personal name or contact details.
-- Log it: append one row to `searches/unmask-checks.md` (create it with this header if it's missing): `| Date | Listing | Employer | Role | Apply | Link |`. **Listing** is the board or agency name only. **Apply** is `direct` or `recruiter`. **Link** is the employer's own posting. Skip the row and the folder if the employer is still unknown.
+- Log it: call `log_check` with log `unmask-checks` and the row: `listing`, `employer`, `role`, `apply` and `link`. **Listing** is the board or agency name only. **Apply** is `direct` or `recruiter`. **Link** is the employer's own posting. The app writes it into `searches/unmask-checks.md`, one row at a time, as other runs may be logging theirs at once, so never edit that file yourself. Skip the row and the folder if the employer is still unknown.
 
 The app picks up the folder and the row on its own. There's nothing to commit or sync.

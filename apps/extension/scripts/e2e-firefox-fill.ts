@@ -28,11 +28,16 @@ import type {
   FieldFilled,
   FieldValue,
   FormTask,
+  PageAdder,
   PageField,
 } from '../src/page/form.ts';
 import { Firefox, waitFor } from './bidi.ts';
-import { ASHBY_PRESSES, LEVER_LOOKS_UP, withOwnCode } from './sites-own-code.ts';
+import { icimsCode } from './icims-own-code.ts';
+import { ashbyCode, LEVER_LOOKS_UP, withOwnCode, workdayCode } from './sites-own-code.ts';
+import { smartRecruitersCode } from './smartrecruiters-own-code.ts';
+import { successFactorsCode } from './successfactors-own-code.ts';
 import { PDF, syncedHunt } from './synced-hunt.ts';
+import { taleoCode } from './taleo-own-code.ts';
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
 const FIXTURES = join(ROOT, 'test', 'fixtures');
@@ -68,7 +73,7 @@ const UUID = '5f0d3a91-2c4b-4e8a-9b6f-7d1e2c3b4a50';
 const PAGES: Record<string, { file: string; code?: string }> = {
   '/plain/apply': { file: 'plain-application.html' },
   '/lever/apply': { file: 'lever-application.html', code: LEVER_LOOKS_UP },
-  '/ashby/apply': { file: 'ashby-application.html', code: ASHBY_PRESSES },
+  '/ashby/apply': { file: 'ashby-application.html', code: ashbyCode() },
 };
 
 /** A form with fields you can't see, and the questions of the ones you can. */
@@ -78,9 +83,51 @@ const SEEN = ['Full name', 'Are you willing to relocate?', 'Country', 'City'];
 /** A company's careers page, which shows Lever's form in a frame. */
 const CAREERS = '/careers/northwind';
 
+/**
+ * Workday's application, a page of it at each address, as its pages are built from Workday's
+ * markup, with its own code acted out, and the pages it swaps in from here.
+ */
+const WORKDAY: Record<string, string> = {
+  '/workday/my-information': 'workday-my-information.html',
+  '/workday/my-experience': 'workday-my-experience.html',
+};
+const WORKDAY_PAGES = '/workday-pages/';
+
+/**
+ * A page of each other applicant system's application, built from its markup, with its own code
+ * acted out: SmartRecruiters' components, SuccessFactors' picklists and radios, iCIMS's
+ * dropdowns, and Taleo's lists that fill from its server.
+ */
+const SYSTEMS: Record<string, { file: string; code: string }> = {
+  '/smartrecruiters/apply': {
+    file: 'smartrecruiters-application.html',
+    code: smartRecruitersCode(''),
+  },
+  '/successfactors/apply': {
+    file: 'successfactors-application.html',
+    code: successFactorsCode(),
+  },
+  '/icims/candidate': { file: 'icims-candidate.html', code: icimsCode() },
+  '/taleo/personal': { file: 'taleo-personal.html', code: taleoCode() },
+};
+
 let origin = '';
 const site = createServer((request, response) => {
   const url = request.url ?? '';
+  const workday = WORKDAY[url];
+  if (workday || url.startsWith(WORKDAY_PAGES)) {
+    const file = workday ?? url.slice(WORKDAY_PAGES.length).replace(/[^a-z-.]/g, '');
+    const html = readFileSync(join(FIXTURES, file), 'utf8');
+    response.writeHead(200, { 'content-type': 'text/html' });
+    response.end(workday ? withOwnCode(html, workdayCode(WORKDAY_PAGES)) : html);
+    return;
+  }
+  const system = SYSTEMS[url];
+  if (system) {
+    response.writeHead(200, { 'content-type': 'text/html' });
+    response.end(withOwnCode(readFileSync(join(FIXTURES, system.file), 'utf8'), system.code));
+    return;
+  }
   const page = url === TRAPS ? { file: 'hidden-fields.html' } : PAGES[url];
   if (url === CAREERS) {
     response.writeHead(200, { 'content-type': 'text/html' });
@@ -269,6 +316,175 @@ try {
       `${path}: the resume goes in through Firefox's content-script sandbox`,
     );
   }
+  // Workday's application: its dropdowns, its lists you search, a date's month and year typed a
+  // key at a time, and its Add Another, through Firefox's content-script sandbox.
+  const information = `${origin}/workday/my-information`;
+  await running.send('browsingContext.navigate', {
+    context: tab,
+    url: information,
+    wait: 'complete',
+  });
+  type Read = { did: 'read'; form: { step: string; fields: PageField[]; adders: PageAdder[] } };
+  const myInformation = await inPage<Read>(information, { do: 'read' });
+  const workdayAt = (
+    form: Read['form'],
+    question: string,
+    answer: Omit<FieldAnswer, 'ref' | 'key'>,
+  ) => {
+    const field = form.fields.find((each) => each.question === question);
+    if (!field) throw new Error(`No ${question} on Workday’s page`);
+    return { ref: field.ref, key: field.key, ...answer };
+  };
+  const country = ['United States', 'United States of America', 'USA'];
+  const { filled: informed } = await inPage<{ filled: FieldFilled[] }>(information, {
+    do: 'fill',
+    url: information,
+    answers: [
+      workdayAt(myInformation.form, 'How Did You Hear About Us?', { pick: ['LinkedIn'] }),
+      workdayAt(myInformation.form, 'Country/Region', { pick: country }),
+      workdayAt(myInformation.form, 'First Name', { text: 'Ana María' }),
+      workdayAt(myInformation.form, 'Address Line 1', { text: '1420 Larimer St' }),
+      workdayAt(myInformation.form, 'State', { pick: ['CO', 'Colorado'] }),
+    ],
+  });
+  check(
+    myInformation.form.step === 'My Information' &&
+      JSON.stringify(informed.map((each) => each.shown)) ===
+        JSON.stringify([
+          'LinkedIn',
+          'United States of America',
+          'Ana María',
+          '1420 Larimer St',
+          'Colorado',
+        ]) &&
+      informed.every((each) => each.ok),
+    'Workday’s My Information: its dropdowns, and a list you search, through its groups',
+  );
+  const experience = `${origin}/workday/my-experience`;
+  await running.send('browsingContext.navigate', {
+    context: tab,
+    url: experience,
+    wait: 'complete',
+  });
+  const myExperience = await inPage<Read>(experience, { do: 'read' });
+  const { filled: experienced } = await inPage<{ filled: FieldFilled[] }>(experience, {
+    do: 'fill',
+    url: experience,
+    answers: [
+      workdayAt(myExperience.form, 'From Month', { text: '03' }),
+      workdayAt(myExperience.form, 'From Year', { text: '2021' }),
+      workdayAt(myExperience.form, 'Degree', { pick: ["Bachelor's Degree", "Bachelor's"] }),
+      workdayAt(myExperience.form, 'Field of Study', { pick: ['Psychology'] }),
+    ],
+  });
+  check(
+    JSON.stringify(experienced.map((each) => each.shown)) ===
+      JSON.stringify(['03', '2021', 'Bachelors', 'Psychology']) &&
+      experienced.every((each) => each.ok),
+    'Workday’s My Experience: a date’s month and year a key at a time, a dropdown, and a list you search by Enter',
+  );
+  const [jobs] = myExperience.form.adders;
+  if (!jobs) throw new Error('No Add Another on Workday’s My Experience');
+  const added = await inPage<{ did: 'add'; added: number }>(experience, {
+    do: 'add',
+    url: experience,
+    adder: jobs,
+    times: 1,
+  });
+  const after = await inPage<Read>(experience, { do: 'read' });
+  check(
+    added.added === 1 &&
+      after.form.fields.filter((field) => field.question === 'Job Title').length === 2,
+    'and its Add Another, pressed once, adds a second Work Experience',
+  );
+
+  // The other applicant systems' pages, through Firefox's content-script sandbox: fields inside
+  // SmartRecruiters' components, a place from its list, its phone's country code, SuccessFactors'
+  // picklists past their first page and its own radio buttons, iCIMS's dropdowns, and Taleo's
+  // state list, once its site fills it for the country picked.
+  const systemAt = (
+    form: Read['form'],
+    question: string,
+    answer: Omit<FieldAnswer, 'ref' | 'key'>,
+  ) => {
+    const field = form.fields.find((each) => each.question === question);
+    if (!field) throw new Error(`No ${question} on the page`);
+    return { ref: field.ref, key: field.key, ...answer };
+  };
+  const fillSystem = async (path: string, asked: [string, Omit<FieldAnswer, 'ref' | 'key'>][]) => {
+    const address = `${origin}${path}`;
+    await running.send('browsingContext.navigate', {
+      context: tab,
+      url: address,
+      wait: 'complete',
+    });
+    const read = await inPage<Read>(address, { do: 'read' });
+    const { filled } = await inPage<{ filled: FieldFilled[] }>(address, {
+      do: 'fill',
+      url: address,
+      answers: asked.map(([question, answer]) => systemAt(read.form, question, answer)),
+    });
+    return { read, filled, address };
+  };
+  const smart = await fillSystem('/smartrecruiters/apply', [
+    ['First name', { text: 'Ana María' }],
+    ['City', { pick: ['Denver, CO', 'Denver'], place: true }],
+    ['Country code', { pick: ['Canada'] }],
+  ]);
+  check(
+    smart.read.form.step === 'Easy apply' &&
+      JSON.stringify(smart.filled.map((each) => [each.ok, each.shown])) ===
+        JSON.stringify([
+          [true, 'Ana María'],
+          [true, 'Denver, CO, US'],
+          [true, '+1'],
+        ]),
+    'SmartRecruiters’ form: the fields inside its components, a place from its list, and its country code',
+  );
+  const sf = await fillSystem('/successfactors/apply', [
+    ['State/Province', { pick: ['Wyoming', 'WY'] }],
+    [
+      'Do you currently have the right to work in the location/country the position is offered?',
+      { pick: ['Yes'] },
+    ],
+  ]);
+  check(
+    sf.read.form.step === 'Job Application Form' &&
+      JSON.stringify(sf.filled.map((each) => [each.ok, each.shown])) ===
+        JSON.stringify([
+          [true, 'Wyoming'],
+          [true, 'Yes'],
+        ]),
+    'SuccessFactors’ application: a picklist past its first page, and its own radio buttons',
+  );
+  const icims = await fillSystem('/icims/candidate', [
+    ['Country', { pick: ['United States'] }],
+    ['Are you legally authorized to work in the United States?', { pick: ['Yes'] }],
+  ]);
+  check(
+    icims.read.form.step === 'Candidate Profile' &&
+      JSON.stringify(icims.filled.map((each) => [each.ok, each.shown])) ===
+        JSON.stringify([
+          [true, 'United States'],
+          [true, 'Yes'],
+        ]),
+    'iCIMS’s Candidate Profile: its own dropdowns, one searched past its first page',
+  );
+  const taleo = await fillSystem('/taleo/personal', [['Country', { pick: ['United States'] }]]);
+  await new Promise((done) => setTimeout(done, 800));
+  const states = await inPage<Read>(taleo.address, { do: 'read' });
+  const { filled: state } = await inPage<{ filled: FieldFilled[] }>(taleo.address, {
+    do: 'fill',
+    url: taleo.address,
+    answers: [systemAt(states.form, 'State/Province', { pick: ['Colorado'] })],
+  });
+  check(
+    taleo.read.form.step === 'Personal Information' &&
+      taleo.filled[0]?.shown === 'United States' &&
+      state[0]?.shown === 'Colorado',
+    'Taleo’s step: a country, then the state its site fills a moment later',
+  );
+
   const traps = `${origin}${TRAPS}`;
   await running.send('browsingContext.navigate', { context: tab, url: traps, wait: 'complete' });
   const seen = await inPage<{ form: { fields: PageField[] } }>(traps, { do: 'read' });
@@ -360,11 +576,9 @@ try {
   // The frame takes a click only once it's shown for half a second, as a person sees it first.
   await new Promise((resolve) => setTimeout(resolve, 600));
   await click(fillButton, 'Fill');
-  await says(fillButton, 'couldn’t find Factwright');
-  check(
-    true,
-    'its Fill button asks for the form’s answers itself, as Firefox opens its sidebar only from its own click, and says why it can’t fill it',
-  );
+  const problem = await frameOn(tab, 'note');
+  await says(problem, 'couldn’t find Factwright');
+  check(true, 'its Fill button fills the form in its page, and its note says why it can’t fill it');
   // A company's careers page on another site, which shows the form in a frame from a job site:
   // the Fill button is in the frame, and the extension reads the form there, by the frame's
   // number, while the page around it is one it may not read.
@@ -461,10 +675,12 @@ try {
   );
   await new Promise((resolve) => setTimeout(resolve, 600));
   await click(framedButton, 'Fill');
-  await says(framedButton, 'couldn’t find Factwright');
+  // Its note goes in the button's place, in the same frame.
+  const framedNote = await nested(tab, '/frame.html#note');
+  await says(framedNote, 'couldn’t find Factwright');
   check(
     true,
-    'and its Fill button there fills the form in the frame, as it does on the form’s own page',
+    'and its Fill button there fills the form in the frame, as it does on the form’s own page, with its note there',
   );
 
   // Through sync, as on a computer without Factwright: Factwright on another computer synced its
@@ -521,7 +737,16 @@ try {
   const syncButton = await frameOn(tab, 'button');
   await new Promise((resolve) => setTimeout(resolve, 600));
   await click(syncButton, 'Fill');
-  await says(syncButton, 'Filled ');
+  const filledNote = await frameOn(tab, 'note');
+  await says(filledNote, 'Factwright filled');
+  // A click in a page's frame can't open Firefox's sidebar: Details says where to find it.
+  await new Promise((resolve) => setTimeout(resolve, 600));
+  await click(filledNote, 'Details');
+  await says(filledNote, 'click Factwright’s button');
+  check(
+    true,
+    'its note’s Details says to click Factwright’s button, as Firefox opens its sidebar only from its own click',
+  );
   const inForm = (name: string) =>
     running.run(
       tab,
@@ -542,7 +767,8 @@ try {
     ].map((file) => `${file.name} ${file.size}`),
   );
   check(
-    JSON.stringify(uploaded) === JSON.stringify([`Ana María Ruiz - Resume.pdf ${PDF.length}`]),
+    JSON.stringify(uploaded) ===
+      JSON.stringify([`AnaRuizResume10202026_Northwind.pdf ${PDF.length}`]),
     'and uploads the job’s resume from what sync holds, through Firefox’s content-script sandbox',
   );
 
@@ -565,6 +791,15 @@ try {
   await firefox?.close().catch(() => {});
   site.close();
   sync?.close();
+  if (mac) {
+    try {
+      // A Mac gives the folders Firefox makes in its home, such as Library and Downloads, an
+      // access list that lets nothing delete them, which chmod -N takes off, as e2e:firefox does.
+      execFileSync('chmod', ['-R', '-N', work], { stdio: 'ignore' });
+    } catch {
+      // Then the folder stays, as below.
+    }
+  }
   // Firefox may hold its profile a moment after it stops.
   try {
     rmSync(work, { recursive: true, force: true, maxRetries: 10, retryDelay: 300 });

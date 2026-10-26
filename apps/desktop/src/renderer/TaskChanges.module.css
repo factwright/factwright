@@ -1,0 +1,233 @@
+/* What a task changed, under the bar once it's done: a line that says how much, then the list. */
+.changes {
+  flex: 0 0 auto;
+  border-top: 1px solid var(--fw-border);
+  background: var(--fw-surface);
+}
+
+.summary {
+  display: flex;
+  align-items: center;
+  gap: var(--fw-space-3);
+  padding: 5px var(--fw-space-3) 5px var(--fw-space-4);
+}
+
+.icon {
+  flex: none;
+  color: var(--fw-accent-text);
+}
+
+.words {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+/* The files and pages, scrolling past a few rows, so the terminal keeps its room. */
+.body {
+  max-height: 200px;
+  overflow-y: auto;
+  padding: 0 var(--fw-space-3) var(--fw-space-2) var(--fw-space-4);
+}
+
+.rows,
+.pageList {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  grid-auto-rows: minmax(28px, auto);
+  align-items: center;
+  gap: 2px var(--fw-space-3);
+  padding: 4px 0;
+  border-top: 1px solid var(--fw-border);
+}
+
+.row:first-child {
+  border-top: 0;
+}
+
+/* The file's name first, then its folder, which gives way when there's no room. */
+.file {
+  display: flex;
+  align-items: baseline;
+  gap: var(--fw-space-2);
+  min-width: 0;
+  font-size: 13px;
+}
+
+.name {
+  flex: none;
+  max-width: 100%;
+  overflow: hidden;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.folder {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--fw-muted);
+  font-size: var(--fw-text-xs);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.amount {
+  color: var(--fw-muted);
+  font-size: var(--fw-text-xs);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.plus {
+  color: var(--fw-ok);
+  font-weight: 650;
+}
+
+.minus {
+  color: var(--fw-bad);
+  font-weight: 650;
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+  gap: var(--fw-space-1);
+}
+
+.undone,
+.noCopy {
+  grid-column: 2 / -1;
+  justify-self: end;
+  color: var(--fw-muted);
+  font-size: var(--fw-text-xs);
+  font-style: italic;
+}
+
+.noCopy {
+  grid-column: auto;
+}
+
+/* The question when a file changed again since the task, across the row. */
+.ask {
+  display: flex;
+  grid-column: 1 / -1;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--fw-space-2) var(--fw-space-3);
+  padding: 6px var(--fw-space-3);
+  border-radius: var(--fw-radius-md);
+  background: var(--fw-need-soft);
+}
+
+.ask p {
+  flex: 1 1 260px;
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.problem {
+  grid-column: 1 / -1;
+  margin: 0;
+  color: var(--fw-bad);
+  font-size: var(--fw-text-xs);
+}
+
+.pages {
+  padding-top: var(--fw-space-2);
+}
+
+.pagesHeading {
+  margin: 0 0 2px;
+  color: var(--fw-muted);
+  font-size: var(--fw-text-xs);
+  font-weight: 650;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.page {
+  overflow: hidden;
+  font-family: var(--fw-font-mono);
+  font-size: var(--fw-text-xs);
+  line-height: 1.6;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dialogNote {
+  margin: 0 0 var(--fw-space-3);
+  color: var(--fw-muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+/* The change a line at a time, as a diff reads: what was taken out, and what was put in. */
+.diff {
+  max-height: min(60vh, 520px);
+  margin: 0;
+  padding: var(--fw-space-2) 0;
+  overflow: auto;
+  border: 1px solid var(--fw-border);
+  border-radius: var(--fw-radius-md);
+  background: var(--fw-sunken);
+  font-family: var(--fw-font-mono);
+  font-size: var(--fw-text-xs);
+  line-height: 1.55;
+  list-style: none;
+}
+
+.diff li {
+  display: flex;
+  gap: var(--fw-space-2);
+  padding: 0 var(--fw-space-3);
+}
+
+.mark {
+  flex: none;
+  width: 1ch;
+  color: var(--fw-muted);
+  user-select: none;
+}
+
+.line {
+  min-width: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.added {
+  background: var(--fw-ok-soft);
+}
+
+.added .mark {
+  color: var(--fw-ok);
+}
+
+.removed {
+  background: var(--fw-bad-soft);
+}
+
+.removed .mark {
+  color: var(--fw-bad);
+}
+
+.folded {
+  color: var(--fw-muted);
+  font-family: var(--fw-font-sans);
+  font-style: italic;
+}
+
+.same {
+  color: var(--fw-text);
+}

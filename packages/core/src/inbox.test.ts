@@ -125,6 +125,38 @@ describe('an ask from the inbox', () => {
     expect(readInboxAsk(message({ ...drafts, answers: [] }))).toBeNull();
   });
 
+  it('reads Undo for marking a job Applied, by the job alone', () => {
+    const unsent = { ask: 'unsent', job: 'harbor-pine--account-executive' };
+    expect(readInboxAsk(message(unsent))).toEqual(unsent);
+    expect(readInboxAsk(message({ ...unsent, job: '../../etc' }))).toBeNull();
+    // What sync needs to put back, which the app keeps in the job's history itself.
+    expect(
+      readInboxAsk(
+        message({ ...unsent, undo: { line: 'a', row: { status: null, status_on: null } } }),
+      ),
+    ).toBeNull();
+  });
+
+  it('reads an ask for the job a page is for: its address, company and title, and no more', () => {
+    const job = {
+      ask: 'job',
+      url: 'https://jobs.lever.co/harborpine/4f1c2b7e/apply',
+      company: 'Harbor & Pine',
+      role: 'Senior PM, Data',
+    };
+    expect(readInboxAsk(message(job))).toEqual(job);
+    expect(readInboxAsk(message({ ...job, company: '', role: '' }))).toEqual({
+      ...job,
+      company: '',
+      role: '',
+    });
+    expect(readInboxAsk(message({ ...job, url: 'javascript:alert(1)' }))).toBeNull();
+    expect(readInboxAsk(message({ ...job, company: 'x'.repeat(201) }))).toBeNull();
+    expect(readInboxAsk(message({ ...job, posting: 'About the role' }))).toBeNull();
+    const { role: _, ...untitled } = job;
+    expect(readInboxAsk(message(untitled))).toBeNull();
+  });
+
   it('takes only an ask, as the helper passes it on', () => {
     expect(readInboxAsk('not JSON')).toBeNull();
     expect(

@@ -6,7 +6,7 @@
     <title>Browser extension for Chrome and Firefox · Factwright</title>
     <meta
       name="description"
-      content="Factwright’s browser extension saves the job you’re looking at, with its posting, to your Factwright job hunt: straight to Factwright on the same computer, with no account, or through end-to-end encrypted sync. Free, for Chrome and Firefox."
+      content="Factwright’s browser extension saves the job you’re looking at to your Factwright job hunt, straight to Factwright on the same computer or through end-to-end encrypted sync, and fills in its application from what Factwright knows, for you to check. Free, for Chrome and Firefox."
     />
     <link rel="canonical" href="https://factwright.com/extension" />
     <meta name="color-scheme" content="light dark" />
@@ -20,7 +20,7 @@
     <meta property="og:title" content="Factwright for Chrome and Firefox" />
     <meta
       property="og:description"
-      content="Save the job you’re looking at, with its posting, to your Factwright job hunt: straight to the app on the same computer, or through end-to-end encrypted sync."
+      content="Save the job you’re looking at to your Factwright job hunt, then fill in its application from what Factwright knows, for you to check and send."
     />
     <meta property="og:image" content="https://factwright.com/social-extension.png" />
     <meta property="og:image:width" content="1200" />
@@ -45,6 +45,14 @@
       <symbol id="i-lock" viewBox="0 0 24 24"><rect x="5" y="10.5" width="14" height="10" rx="2.5" /><path d="M8.5 10.5V8a3.5 3.5 0 0 1 7 0v2.5" /></symbol>
       <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3.5l7 2.8v5.2c0 4.4-3 7.6-7 9-4-1.4-7-4.6-7-9V6.3z" /><path d="M9 12l2.2 2.2L15.5 10" /></symbol>
       <symbol id="i-check" viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5" /></symbol>
+      <symbol id="i-clipboard" viewBox="0 0 24 24"><rect width="8" height="4" x="8" y="2" rx="1" ry="1" /><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2" /><path d="M12 11h4M12 16h4M8 11h.01M8 16h.01" /></symbol>
+      <symbol id="i-pen" viewBox="0 0 24 24"><path d="M15.5 4.5l4 4L9 19H5v-4z" /><path d="M13 7l4 4" /></symbol>
+      <symbol id="i-field" viewBox="0 0 24 24"><rect x="3.5" y="4" width="17" height="6" rx="2" /><path d="M6.5 7h4" /><rect x="7.5" y="12.5" width="13" height="8" rx="2" /><path d="M10.5 15.5h7M10.5 18h4.5" /></symbol>
+      <symbol id="i-frame" viewBox="0 0 24 24"><rect x="3.5" y="4" width="17" height="16" rx="2.5" /><path d="M3.5 8h17" /><rect x="7" y="11" width="10" height="6" rx="1.5" /></symbol>
+      <symbol id="i-toggle" viewBox="0 0 24 24"><rect x="3" y="7.5" width="18" height="9" rx="4.5" /><circle cx="16.5" cy="12" r="2.5" /></symbol>
+      <symbol id="i-laptop" viewBox="0 0 24 24"><rect x="4.5" y="5" width="15" height="10.5" rx="2" /><path d="M2.5 18.5h19" /></symbol>
+      <symbol id="i-pages" viewBox="0 0 24 24"><rect x="8" y="3.5" width="11.5" height="14.5" rx="2" /><path d="M5 7v11.5a2 2 0 0 0 2 2h9M11 8h5.5M11 11.5h5.5M11 15h3" /></symbol>
+      <symbol id="i-cloud" viewBox="0 0 24 24"><path d="M7 18.5h10.25a4.25 4.25 0 0 0 .5-8.47A6 6 0 0 0 6.2 9.6 4.5 4.5 0 0 0 7 18.5z" /></symbol>
     </svg>
 
     <a class="skip" href="#main">Skip to content</a>
@@ -72,7 +80,8 @@
             <p class="lede">
               Save the job you’re looking at to your Factwright job hunt, with its posting as you saw
               it: straight to Factwright on the same computer, with no account, or through end-to-end
-              encrypted sync from any computer. For Chrome and Firefox.
+              encrypted sync from any computer. Then fill in its application from what Factwright
+              knows, for you to check and send. For Chrome and Firefox.
             </p>
             <div class="ext-stores">
               <span data-store="chrome"></span>
@@ -146,9 +155,9 @@
               It reads the job data sites publish, the layouts of LinkedIn, Indeed, Greenhouse,
               Lever, Workday and other job sites, or the text you selected, so it saves postings you
               can only see signed in. On a site it doesn’t know, it reads the page’s main text, for
-              you to check first. The job shows in Factwright on your computer as New, ready for a
-              fit check, a tailored resume or a cover letter, and its posting stays even after the
-              listing comes down.
+              you to check first. The job shows in Factwright on your computer as New, where your
+              Claude analyzes it, ready for a tailored resume or a cover letter, and its posting stays
+              even after the listing comes down.
             </p>
           </header>
           <ul class="tasks ext-ways">
@@ -176,26 +185,123 @@
         </div>
       </section>
 
+      <!-- Filling an application -->
+      <section class="section" id="fill" aria-labelledby="fill-title">
+        <div class="wrap">
+          <header class="section-head reveal">
+            <p class="eyebrow">Filling applications</p>
+            <h2 id="fill-title">Fill in the application, then check it.</h2>
+            <p class="lede">
+              It fills in a job’s application form from what you’ve told Factwright: Profile, your
+              work history and resumes, and what you sent before. It asks Factwright on the same
+              computer, or, on a computer without it, reads your job hunt through sync. It uploads
+              the job’s own resume and cover letter, and a panel beside the page lists every field
+              with its answer and where it came from. It never submits: you check the form, and send
+              it yourself.
+            </p>
+          </header>
+          <ul class="tasks ext-fill-ways">
+            <li class="task reveal">
+              <span class="task-icon"><svg class="icon" aria-hidden="true"><use href="#i-clipboard" /></svg></span>
+              <h3>Fill this application</h3>
+              <p>
+                Click it in the extension’s popup or the right-click menu, or press Alt+Shift+F.
+                What’s left for you is outlined on the page.
+              </p>
+            </li>
+            <li class="task reveal">
+              <span class="task-icon"><svg class="icon" aria-hidden="true"><use href="#i-pen" /></svg></span>
+              <h3>Your Claude drafts the rest</h3>
+              <p>
+                Questions nothing on file answers, such as why you want the job, your Claude drafts
+                in Factwright, and the panel fills each one in once it’s done, or through sync at
+                your next Fill. What only you can answer, it leaves for you.
+              </p>
+            </li>
+            <li class="task reveal">
+              <span class="task-icon"><svg class="icon" aria-hidden="true"><use href="#i-field" /></svg></span>
+              <h3>Right in the form</h3>
+              <p>
+                On the job application sites you allow, a small Fill button sits on the form, and a
+                field you click into offers your answers on file. Nothing goes in until you pick one.
+              </p>
+            </li>
+            <li class="task reveal">
+              <span class="task-icon"><svg class="icon" aria-hidden="true"><use href="#i-pages" /></svg></span>
+              <h3>A page at a time</h3>
+              <p>
+                An application that runs over several pages fills each one as you go on with its own
+                button. What the site filled in from your resume stays, and the panel adds a part for
+                each job or school only if you choose.
+              </p>
+            </li>
+            <li class="task reveal">
+              <span class="task-icon"><svg class="icon" aria-hidden="true"><use href="#i-frame" /></svg></span>
+              <h3>Forms inside a careers page</h3>
+              <p>
+                A form a company’s careers page shows in a frame fills like any other. A box that
+                suggests places gets one of its own, and Yes and No buttons are pressed for you.
+              </p>
+            </li>
+            <li class="task reveal">
+              <span class="task-icon"><svg class="icon" aria-hidden="true"><use href="#i-cloud" /></svg></span>
+              <h3>Without Factwright here</h3>
+              <p>
+                Set up through sync, it fills from your job hunt, opened in your browser’s memory
+                alone. Your street, postal code and equal-opportunity answers never sync, so it
+                leaves those for you.
+              </p>
+            </li>
+          </ul>
+          <p class="tasks-note reveal">
+            <svg class="icon" aria-hidden="true"><use href="#i-check" /></svg>
+            On LinkedIn and Indeed, whose terms forbid filling their forms, it gives you answers to
+            copy instead.
+          </p>
+        </div>
+      </section>
+
       <!-- Private by design -->
-      <section class="section" id="private" aria-labelledby="private-title">
+      <section class="section section-band" id="private" aria-labelledby="private-title">
         <div class="wrap">
           <header class="section-head reveal">
             <p class="eyebrow">Private by design</p>
             <h2 id="private-title">It reads a page only when you ask it to.</h2>
             <p class="lede">
               Saved to Factwright on the same computer, a job goes straight to the app, through a
-              small helper that comes with it, and never to a server. Through sync, it’s locked with
+              small helper that comes with it, and never to a server. Filling an application there
+              stays between your browser and the app too. Through sync, what it saves is locked with
               your job hunt’s own key before it leaves your browser, as everything you sync is, so
-              our servers store it only in a form they can’t read.
+              our servers store it only in a form they can’t read, and it fills from your job hunt
+              in your browser alone.
             </p>
           </header>
-          <ul class="promises">
+          <ul class="promises ext-promises">
             <li class="promise reveal">
               <svg class="icon" aria-hidden="true"><use href="#i-eye" /></svg>
               <h3>Nothing as you browse</h3>
               <p>
                 It reads the tab you’re on only when you click its button, its menu item or its
-                shortcut. Its popup sends nothing until you save.
+                shortcut, except on the job application sites you allow. Its popup sends nothing
+                until you save.
+              </p>
+            </li>
+            <li class="promise reveal">
+              <svg class="icon" aria-hidden="true"><use href="#i-toggle" /></svg>
+              <h3>Only where you allow it</h3>
+              <p>
+                Its Fill button and field menus show only on the job application sites you turn on,
+                never on LinkedIn or Indeed. A page can’t read a menu, and gets only the answer you
+                pick.
+              </p>
+            </li>
+            <li class="promise reveal">
+              <svg class="icon" aria-hidden="true"><use href="#i-laptop" /></svg>
+              <h3>Answers from your job hunt</h3>
+              <p>
+                Filling a form, it asks Factwright on the same computer, with the form’s questions and
+                never what’s in them, or reads your job hunt through sync, which it keeps only in
+                memory, for a few minutes. It never fills a password, and never submits a form.
               </p>
             </li>
             <li class="promise reveal">
@@ -212,8 +318,9 @@
               <h3>Your keys, in your browser</h3>
               <p>
                 Through sync, it keeps your job hunt’s keys in your browser, where they can’t be
-                copied out. They open your whole job hunt, so it’s only as trustworthy as its code, which is public
-                and reviewed by each store. Link it only in a browser you use yourself.
+                copied out, to lock what it saves and read what it fills from. They open your whole
+                job hunt, so it’s only as trustworthy as its code, which is public and reviewed by
+                each store. Link it only in a browser you use yourself.
               </p>
             </li>
             <li class="promise reveal">
@@ -237,7 +344,7 @@
       </section>
 
       <!-- Setting it up -->
-      <section class="section section-band" id="setup" aria-labelledby="setup-title">
+      <section class="section" id="setup" aria-labelledby="setup-title">
         <div class="wrap ext-setup">
           <header class="section-head reveal">
             <p class="eyebrow">Setting it up</p>
@@ -254,6 +361,7 @@
               <li><span><strong><a href="/download">Get Factwright</a></strong> for your Mac or Windows PC, and open it.</span></li>
               <li><span><strong>Add the Factwright extension</strong> to Chrome or Firefox<span data-soon>, once it’s in their stores</span>. Its setup opens on its own.</span></li>
               <li><span><strong>Choose where saved jobs go:</strong> Factwright on this computer, with no account and no sync, or through sync, for Factwright on another computer. Through sync, sign in, then approve linking it in Factwright, once both show the same emoji.</span></li>
+              <li><span><strong>To fill an application,</strong> click Fill this application on its page: in the popup or the right-click menu, or with Alt+Shift+F. It fills from Factwright on the same computer, or through sync on a computer without it. For a Fill button and field menus right in the form, turn on the job application sites, in setup or in the panel that opens.</span></li>
             </ol>
             <p class="get-after">
               For Factwright on this computer, the browser asks once to let the extension talk to apps
@@ -268,7 +376,7 @@
             <span data-store="chrome"></span>
             <span data-store="firefox"></span>
           </div>
-          <p class="ext-note">For Chrome 127 or later, and Firefox 140 or later.</p>
+          <p class="ext-note">For Chrome 130 or later, and Firefox 140 or later.</p>
         </div>
       </section>
     </main>

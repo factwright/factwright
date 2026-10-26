@@ -4,7 +4,7 @@ import { Check } from 'lucide-react';
 import { type ReactNode, useId, useState } from 'react';
 import type { FactwrightApi } from '../../shared/api.ts';
 import { type RunTask, THANKS_SKILL } from '../../shared/runs.ts';
-import { ClaudeButton, isRunning } from './ClaudeButton.tsx';
+import { ClaudeButton, isComing } from './ClaudeButton.tsx';
 import { FOCUS_NEXT, SORT_MOVES } from './Decide.tsx';
 import { requestAddCall } from './JobCalls.tsx';
 import { showSection } from './PanelSection.tsx';
@@ -17,8 +17,8 @@ const TONE = { urgent: styles.urgent, action: styles.action, info: styles.info }
 /** The steps Claude does, with the run that does each and what its button says. */
 function claudeStep(jobId: string, action: StepAction): { task: RunTask; label: string } | null {
   switch (action.kind) {
-    case 'fit-check':
-      return { task: { skill: 'fit-check', jobId }, label: 'Run a fit check' };
+    case 'analyze':
+      return { task: { skill: 'analyze-job', jobId }, label: 'Analyze job' };
     case 'resume':
       return { task: { skill: 'focused-resume', jobId }, label: 'Tailor a resume' };
     case 'letter':
@@ -53,13 +53,13 @@ const MOVE: Partial<Record<StepAction['kind'], JobStatus>> = {
   pass: 'passed',
 };
 
-/** Whether the step says no more than its button does, such as "Run a fit check". */
+/** Whether the step says no more than its button does, such as "Analyze job". */
 const said = (text: string, label: string) =>
   text.toLowerCase().replace(/[.?!]$/, '') === label.toLowerCase();
 
 /**
  * What to do next for a job, at the top of its panel, whatever its stage: the step the list shows
- * for it, and the button that does it, such as Run a fit check, Tailor a resume, Mark as applied,
+ * for it, and the button that does it, such as Analyze job, Tailor a resume, Mark as applied,
  * Add a call once the user hears back, Draft thank-you notes after a call, or Accept an offer. A
  * job not sorted yet has the moves to sort it beside the step: To review, To apply, Later, Pass.
  */
@@ -110,6 +110,12 @@ export function UpNext({
     label = claude.label;
     main = <ClaudeButton run={run} task={claude.task} label={label} primary />;
     if (action?.kind === 'outreach') more = also('Mark no reply', () => onMove('ghosted'));
+    // Beside Tailor a resume, one that asks nothing. While either runs, or waits in line, one
+    // says so.
+    if (action?.kind === 'resume' && !isComing(run, claude.task)) {
+      const quick: RunTask = { skill: 'focused-resume', jobId: job.id, quick: true };
+      more = <ClaudeButton run={run} task={quick} label="Quick resume" />;
+    }
   } else if (action?.kind === 'apply') {
     label = 'Mark as applied';
     main = button(label, () => onMove('applied'));
@@ -159,8 +165,9 @@ export function UpNext({
       {each.label}
     </Button>
   ));
-  // While Claude does the step, its button says so, so the step says what it is.
-  const running = claude ? isRunning(run, claude.task) : false;
+  // While Claude does the step, or it waits in line, its button says so, so the step says what
+  // it is.
+  const running = claude ? isComing(run, claude.task) : false;
   const text = next && !(label && said(next.text, label) && !running) ? next.text : null;
 
   return (

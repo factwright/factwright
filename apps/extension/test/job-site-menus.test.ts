@@ -2,7 +2,7 @@ import type { FieldReply } from '@factwright/core';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { allowedFrames, JOB_SITES } from '../src/application-sites.ts';
 import { MENU_ROWS } from '../src/frame-size.ts';
-import { isFromFrame, isFromScript, isToScript } from '../src/job-site-messages.ts';
+import { isFromFrame, isFromScript, isToPanel, isToScript } from '../src/job-site-messages.ts';
 import {
   answerFrame,
   answerScript,
@@ -25,26 +25,44 @@ const browser = vi.hoisted(() => {
     granted: new Set<string>(),
     asks: [] as Record<string, unknown>[],
     replies: [] as FieldReply[],
+    /** The job the form is for, as Factwright finds it, and whether your Claude's drafting. */
+    job: null as Record<string, unknown> | null,
+    drafting: false,
     told: [] as { tabId: number; message: Record<string, unknown>; frameId?: number }[],
+    /** What the background told the panel. */
+    panel: [] as unknown[],
     session: {} as Record<string, unknown>,
   };
   (globalThis as { chrome?: unknown }).chrome = {
     runtime: {
       id: 'factwright',
       getURL: (path: string) => `chrome-extension://factwright/${path}`,
+      sendMessage: async (message: unknown) => {
+        state.panel.push(message);
+      },
       sendNativeMessage: async (_helper: string, message: { request: string }) => {
         const ask = JSON.parse(message.request) as Record<string, unknown>;
         state.asks.push(ask);
         if (ask.ask === 'fill') {
+          // The replies for the fields asked about, by their questions.
+          const asked = (ask.fields as { question: string }[]).map((field) => field.question);
+          const all = ['Full name', 'Phone', 'Gender', 'Why Acme?'];
           return {
             ok: true,
             did: 'fill',
-            job: null,
-            replies: state.replies,
+            job: state.job,
+            replies:
+              asked.length === all.length
+                ? state.replies
+                : asked.map((question) => state.replies[all.indexOf(question)]),
             files: { resume: null, 'cover-letter': null },
           };
         }
         if (ask.ask === 'remember') return { ok: true, did: 'remember', saved: 1 };
+        if (ask.ask === 'draft') return { ok: true, did: 'draft' };
+        if (ask.ask === 'drafts') {
+          return { ok: true, did: 'drafts', drafting: state.drafting, waiting: false, drafted: 0 };
+        }
         return { ok: false, reason: 'failed' };
       },
     },
@@ -117,6 +135,8 @@ const FORM: PageForm = {
   url: PAGE,
   title: 'Acme - Engineer',
   submitted: false,
+  step: '',
+  adders: [],
   fields: [
     field(0, 'Full name'),
     field(1, 'Phone', { type: 'tel' }),
@@ -144,7 +164,10 @@ beforeEach(() => {
   browser.granted = new Set(JOB_SITES);
   browser.asks.length = 0;
   browser.told.length = 0;
+  browser.panel.length = 0;
   browser.replies = REPLIES;
+  browser.job = null;
+  browser.drafting = false;
 });
 
 describe('what a field’s menu offers', () => {
@@ -318,10 +341,11 @@ describe('the script and the frame, as the background answers them', () => {
     const said = await answerScript({ type: 'job-site', do: 'form', form: FORM, job }, fromScript);
     expect(said).toEqual({
       menus: [
-        { ref: 0, key: FORM.fields[0]?.key, answers: 1, keeps: false },
-        { ref: 1, key: FORM.fields[1]?.key, answers: 1, keeps: true },
-        { ref: 2, key: FORM.fields[2]?.key, answers: 0, keeps: false },
-        { ref: 3, key: FORM.fields[3]?.key, answers: 0, keeps: false },
+        { ref: 0, key: FORM.fields[0]?.key, answers: 1, keeps: false, draft: false },
+        { ref: 1, key: FORM.fields[1]?.key, answers: 1, keeps: true, draft: false },
+        { ref: 2, key: FORM.fields[2]?.key, answers: 0, keeps: false, draft: false },
+        // A question nothing answers offers Draft with Claude, for a job you haven't saved too.
+        { ref: 3, key: FORM.fields[3]?.key, answers: 0, keeps: false, draft: true },
       ],
     });
     expect(browser.asks).toHaveLength(1);
@@ -351,12 +375,13 @@ describe('the script and the frame, as the background answers them', () => {
         { type: 'job-site', do: 'menu', ref, key, token: TOKEN, answers: true, save: false },
         fromScript,
       ),
-    ).toEqual({ answers: 1, save: false });
+    ).toEqual({ answers: 1, save: false, draft: false });
     // The script hears how many, never what: the frame asks for them.
     expect(await answerFrame({ type: 'job-site', do: 'shows', token: TOKEN }, fromFrame)).toEqual({
       question: 'Full name',
       answers: [{ text: 'Ana María Ruiz', from: 'From Profile' }],
       save: null,
+      draft: null,
     });
     // Only this tab's frame, by this menu's token.
     const other = { tab: { id: 8, url: PAGE, windowId: 1 } };
@@ -431,6 +456,7 @@ describe('the script and the frame, as the background answers them', () => {
       question: 'Phone',
       answers: [],
       save: { question: 'Phone', text: '(720) 555-0123', private: false },
+      draft: null,
     });
     expect(browser.asks.filter((ask) => ask.ask === 'remember')).toEqual([]);
     expect(await answerFrame({ type: 'job-site', do: 'save', token: TOKEN }, fromFrame)).toEqual({
@@ -446,6 +472,128 @@ describe('the script and the frame, as the background answers them', () => {
         fromScript,
       ),
     ).toEqual({ offer: false });
+  });
+
+  it('says to save a job you haven’t, from Draft with Claude, and drafts once you have', async () => {
+    await answerScript({ type: 'job-site', do: 'form', form: FORM, job }, fromScript);
+    const why = FORM.fields[3] as PageField;
+    const menu = { type: 'job-site', do: 'menu', ref: 3, key: why.key, token: TOKEN } as const;
+    expect(await answerScript({ ...menu, answers: true, save: false }, fromScript)).toEqual({
+      answers: 0,
+      save: false,
+      draft: true,
+    });
+    expect(
+      await answerFrame({ type: 'job-site', do: 'draft', token: TOKEN }, fromFrame),
+    ).toMatchObject({
+      draft: {
+        is: 'failed',
+        says: 'Save this job first, from Factwright’s button. Then try again.',
+      },
+    });
+    expect(browser.asks.filter((ask) => ask.ask === 'draft')).toEqual([]);
+    // Saved, as from the popup: Try again finds it, and drafts.
+    browser.job = {
+      id: 'acme--engineer',
+      company: 'Acme',
+      role: 'Engineer',
+      status: 'new',
+      appliedOn: null,
+    };
+    expect(
+      await answerFrame({ type: 'job-site', do: 'draft', token: TOKEN }, fromFrame),
+    ).toMatchObject({ draft: { is: 'drafting', questions: 1 } });
+    expect(browser.asks.filter((ask) => ask.ask === 'draft')).toHaveLength(1);
+  });
+
+  it('starts your Claude once for two quick clicks on Draft with Claude', async () => {
+    await answerScript({ type: 'job-site', do: 'form', form: FORM, job }, fromScript);
+    const why = FORM.fields[3] as PageField;
+    const menu = { type: 'job-site', do: 'menu', ref: 3, key: why.key, token: TOKEN } as const;
+    await answerScript({ ...menu, answers: true, save: false }, fromScript);
+    // Saved since the page's answers were asked for, so the first click looks it up again.
+    browser.job = {
+      id: 'acme--engineer',
+      company: 'Acme',
+      role: 'Engineer',
+      status: 'new',
+      appliedOn: null,
+    };
+    const draft = { type: 'job-site', do: 'draft', token: TOKEN } as const;
+    await Promise.all([answerFrame(draft, fromFrame), answerFrame(draft, fromFrame)]);
+    expect(browser.asks.filter((ask) => ask.ask === 'draft')).toHaveLength(1);
+  });
+
+  it('has your Claude draft the form’s open questions from a menu, then offers each draft', async () => {
+    browser.job = {
+      id: 'acme--engineer',
+      company: 'Acme',
+      role: 'Engineer',
+      status: 'new',
+      appliedOn: null,
+    };
+    const said = (await answerScript(
+      { type: 'job-site', do: 'form', form: FORM, job },
+      fromScript,
+    )) as { menus: { draft: boolean }[] };
+    expect(said.menus.map((each) => each.draft)).toEqual([false, false, false, true]);
+    const why = FORM.fields[3] as PageField;
+    const menu = { type: 'job-site', do: 'menu', ref: 3, key: why.key, token: TOKEN } as const;
+    expect(await answerScript({ ...menu, answers: true, save: false }, fromScript)).toEqual({
+      answers: 0,
+      save: false,
+      draft: true,
+    });
+    expect(await answerFrame({ type: 'job-site', do: 'shows', token: TOKEN }, fromFrame)).toEqual({
+      question: 'Why Acme?',
+      answers: [],
+      save: null,
+      draft: { is: 'offer', questions: 1, through: 'computer' },
+    });
+    // Draft with Claude: every open question goes in one ask, with what each asks, never what's in it.
+    expect(
+      await answerFrame({ type: 'job-site', do: 'draft', token: TOKEN }, fromFrame),
+    ).toMatchObject({
+      draft: { is: 'drafting', questions: 1 },
+    });
+    const drafted = browser.asks.filter((ask) => ask.ask === 'draft');
+    expect(drafted).toEqual([
+      expect.objectContaining({
+        job: 'acme--engineer',
+        questions: [expect.objectContaining({ question: 'Why Acme?', control: 'long' })],
+      }),
+    ]);
+    // Once your Claude's done, the menu offers its draft, to pick.
+    browser.replies = [
+      ...REPLIES.slice(0, 3),
+      {
+        kind: 'question',
+        text: 'Gear that lasts.',
+        source: 'claude',
+        from: 'Your Claude’s draft for this job',
+      },
+    ];
+    vi.useFakeTimers({ toFake: ['Date'] });
+    try {
+      vi.setSystemTime(Date.now() + 3000);
+      expect(await answerFrame({ type: 'job-site', do: 'shows', token: TOKEN }, fromFrame)).toEqual(
+        {
+          question: 'Why Acme?',
+          answers: [{ text: 'Gear that lasts.', from: 'Your Claude’s draft for this job' }],
+          save: null,
+          draft: null,
+        },
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+    expect(
+      await answerFrame({ type: 'job-site', do: 'pick', token: TOKEN, at: 0 }, fromFrame),
+    ).toEqual({ ok: true });
+    expect(browser.told.at(-1)?.message).toMatchObject({
+      do: 'write',
+      answer: { ref: 3, text: 'Gear that lasts.' },
+    });
   });
 
   it('closes the menu with Escape or Not now, and offers that answer no more', async () => {
@@ -477,6 +625,21 @@ describe('the script and the frame, as the background answers them', () => {
         fromScript,
       ),
     ).toEqual({ offer: false });
+  });
+
+  it('has the panel look at an application of several pages now, from its script alone', async () => {
+    await answerScript(hello, fromScript);
+    expect(await answerScript({ type: 'job-site', do: 'look', doc: DOC }, fromScript)).toEqual({});
+    expect(browser.panel).toEqual([{ type: 'panel', do: 'look', tabId: TAB }]);
+    // A name the script in that frame didn't say hello by tells it nothing.
+    await answerScript({ type: 'job-site', do: 'look', doc: TOKEN }, fromScript);
+    expect(browser.panel).toHaveLength(1);
+    // Nor a site you didn't allow.
+    browser.items.jobSites = { all: false, sites: [] };
+    expect(await answerScript({ type: 'job-site', do: 'look', doc: DOC }, fromScript)).toEqual({
+      stop: true,
+    });
+    expect(browser.panel).toHaveLength(1);
   });
 
   it('asks the script to read the form again once the background has forgotten it', async () => {
@@ -539,7 +702,7 @@ describe('a form in a frame, as a company’s careers page shows an applicant sy
         { type: 'job-site', do: 'menu', ref: 0, key, token: TOKEN, answers: true, save: false },
         inFrame,
       ),
-    ).toEqual({ answers: 1, save: false });
+    ).toEqual({ answers: 1, save: false, draft: false });
     expect(
       await answerFrame({ type: 'job-site', do: 'pick', token: TOKEN, at: 0 }, fromFrame),
     ).toEqual({ ok: true });
@@ -601,7 +764,20 @@ describe('each message, checked', () => {
     expect(isFromScript({ ...hello, around: ['https://careers.example.com'] })).toBe(true);
     expect(isFromScript({ type: 'job-site', do: 'bye', doc: DOC })).toBe(true);
     expect(isFromScript({ type: 'job-site', do: 'form', form: FORM, job })).toBe(true);
+    expect(isFromScript({ type: 'job-site', do: 'look', doc: DOC })).toBe(true);
+    const workday = {
+      ...FORM,
+      step: 'My Experience',
+      adders: [{ section: 'Work Experience', words: 'Add Another' }],
+    };
+    expect(isFromScript({ type: 'job-site', do: 'form', form: workday, job })).toBe(true);
     for (const bad of [
+      { type: 'job-site', do: 'look' },
+      { type: 'job-site', do: 'look', doc: 'mine' },
+      { type: 'job-site', do: 'form', form: { ...workday, step: 7 }, job },
+      { type: 'job-site', do: 'form', form: { ...workday, adders: 'all' }, job },
+      { type: 'job-site', do: 'form', form: { ...workday, adders: [{ words: 'Add' }] }, job },
+      { type: 'job-site', do: 'form', form: { ...FORM, step: undefined }, job },
       null,
       { type: 'save', do: 'hello' },
       { type: 'job-site', do: 'write' },
@@ -644,5 +820,42 @@ describe('each message, checked', () => {
     ).toBe(true);
     expect(isToScript({ type: 'job-site', do: 'write', answer: { key: 'k' } })).toBe(false);
     expect(isToScript({ type: 'job-site', do: 'hello' })).toBe(false);
+    expect(isToScript({ type: 'job-site', do: 'note', token: TOKEN })).toBe(true);
+    expect(isToScript({ type: 'job-site', do: 'note', token: 'guess' })).toBe(false);
+    expect(isFromFrame({ type: 'job-site', do: 'undo', token: TOKEN })).toBe(true);
+    expect(isFromFrame({ type: 'job-site', do: 'details' })).toBe(false);
+    expect(isToPanel({ type: 'panel', do: 'filled', tabId: TAB })).toBe(true);
+    expect(isToPanel({ type: 'panel', do: 'look', tabId: TAB })).toBe(true);
+    expect(isToPanel({ type: 'panel', do: 'look' })).toBe(false);
+    // The panel fills a form only as you ask it, never as another part of the extension says.
+    expect(isToPanel({ type: 'panel', do: 'fill', tabId: TAB, at: 1 })).toBe(false);
+  });
+
+  it('takes a submit only with what a form is, its fields’ values and whether it sends', () => {
+    const submitting = {
+      type: 'job-site',
+      do: 'submitting',
+      doc: DOC,
+      form: FORM,
+      job,
+      values: [{ ref: 3, key: FORM.fields[3]?.key, value: 'Gear that lasts.' }],
+      final: true,
+    };
+    expect(isFromScript(submitting)).toBe(true);
+    expect(isFromScript({ ...submitting, final: 'yes' })).toBe(false);
+    expect(isFromScript({ ...submitting, values: [{ ref: 3, value: 'x' }] })).toBe(false);
+    expect(
+      isFromScript({
+        type: 'job-site',
+        do: 'outcome',
+        doc: DOC,
+        submitted: true,
+        form: false,
+        errors: false,
+      }),
+    ).toBe(true);
+    expect(isFromScript({ type: 'job-site', do: 'outcome', doc: DOC, submitted: true })).toBe(
+      false,
+    );
   });
 });

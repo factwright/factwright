@@ -12,10 +12,13 @@ import { FindJobsDialog } from './FindJobsDialog.tsx';
 import { JourneyDialog } from './JourneyDialog.tsx';
 import { MergeDialog } from './MergeDialog.tsx';
 import { jobRows, type ListFilter, NO_FILTERS } from './rows.ts';
-import { sampleDuplicate, sampleJobs } from './sample-jobs.ts';
+import { KEELSON, sampleDuplicate, sampleJobs, sampleSaved } from './sample-jobs.ts';
 import { WithdrawDialog } from './WithdrawDialog.tsx';
 
 const TODAY = localDate();
+
+// With every package's tests at once, the first test here took 3.3 of vitest's usual 5 seconds.
+vi.setConfig({ testTimeout: 20_000 });
 
 const KINDS = [
   { id: 'developer', name: 'Developer' },
@@ -66,7 +69,7 @@ describe('FiltersPanel', () => {
     expect(button.getAttribute('aria-expanded')).toBe('true');
     const panel = screen.getByRole('region', { name: 'Filters' });
     await userEvent.click(within(panel).getByRole('button', { name: 'Strong' }));
-    await userEvent.click(within(panel).getByRole('button', { name: 'Not scored' }));
+    await userEvent.click(within(panel).getByRole('button', { name: 'Not checked yet' }));
     fireEvent.change(within(panel).getByRole('spinbutton', { name: 'Pays at least' }), {
       target: { value: '150' },
     });
@@ -710,5 +713,29 @@ describe('MergeDialog', () => {
     await userEvent.clear(search);
     await userEvent.type(search, 'nothing like it');
     expect(screen.getByRole('status').textContent).toBe('No other job matches “nothing like it”.');
+  });
+
+  it('opens on the job Claude noted might be the same, first and picked', async () => {
+    const saved = jobRows([...sampleJobs(), ...sampleSaved()], TODAY);
+    const noted = saved.find((row) => row.job.id === KEELSON)?.job;
+    const other = noted?.maybeSame[0]?.id;
+    if (!noted || !other) throw new Error('No sample job noted as maybe the same');
+    const mergeJobs = vi.fn(async () => ({ ok: true as const }));
+    render(
+      <MergeDialog
+        job={noted}
+        rows={saved}
+        api={{ mergeJobs } as unknown as FactwrightApi}
+        suggested={other}
+        onClose={vi.fn()}
+      />,
+    );
+    const list = screen.getByRole('list', { name: 'Jobs to merge with' });
+    const first = within(list).getAllByRole('radio')[0] as HTMLInputElement;
+    expect(first.checked).toBe(true);
+    expect(first.closest('label')?.textContent).toContain('Staff AI Platform Engineer');
+    expect(first.closest('label')?.textContent).toContain('Likely the same');
+    await userEvent.click(screen.getByRole('button', { name: 'Merge' }));
+    expect(mergeJobs).toHaveBeenCalledWith(KEELSON, other);
   });
 });

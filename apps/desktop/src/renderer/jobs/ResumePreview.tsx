@@ -1,7 +1,9 @@
-import type { JobFile } from '@factwright/core';
+import type { Job, JobFile } from '@factwright/core';
 import { Button, Dialog, DialogActions } from '@factwright/ui';
+import { Download, FolderOpen } from 'lucide-react';
 import { useEffect, useState } from 'react';
-import type { FactwrightApi } from '../../shared/api.ts';
+import type { EditResult, FactwrightApi, SaveFileResult } from '../../shared/api.ts';
+import { showWords } from './JobFiles.tsx';
 import type { PageImage } from './pdf.ts';
 import styles from './ResumePreview.module.css';
 
@@ -15,18 +17,30 @@ type Preview =
 
 /**
  * A resume PDF's pages, drawn in the app, so the user sees exactly what an employer will. It
- * can open the PDF in the user's own PDF app too.
+ * can open the PDF in the user's own PDF app too, and for a job's own file, save a copy where the
+ * user picks, or show it where it's kept.
  */
 export function ResumePreview({
   file,
   api,
+  job = null,
   onClose,
 }: {
   file: JobFile;
   api: FactwrightApi;
+  /** The job it's for, whose own files, not its earlier versions, can be saved and shown. */
+  job?: Job | null;
   onClose: () => void;
 }) {
   const [preview, setPreview] = useState<Preview>({ step: 'drawing' });
+  const [problem, setProblem] = useState<string | null>(null);
+  const own =
+    job &&
+    [...job.files, ...job.letters, ...job.projectPages].some((each) => each.path === file.path)
+      ? job
+      : null;
+  const said = (result: EditResult | SaveFileResult) =>
+    setProblem(result.ok ? null : result.message);
 
   useEffect(() => {
     let live = true;
@@ -79,7 +93,29 @@ export function ResumePreview({
                 />
               ))}
           </div>
+          {problem && (
+            <p className={styles.saving} role="alert">
+              {problem}
+            </p>
+          )}
           <DialogActions>
+            {own && (
+              <>
+                <Button
+                  variant="quiet"
+                  icon={<FolderOpen size={15} aria-hidden="true" />}
+                  onClick={() => void api.showFile(own.id, file.path).then(said)}
+                >
+                  {showWords(api.platform)}
+                </Button>
+                <Button
+                  icon={<Download size={15} aria-hidden="true" />}
+                  onClick={() => void api.downloadFile(own.id, file.path).then(said)}
+                >
+                  Download
+                </Button>
+              </>
+            )}
             <Button onClick={() => void api.openFile(file.path)}>Open in your PDF app</Button>
             <Button variant="primary" onClick={close}>
               Done

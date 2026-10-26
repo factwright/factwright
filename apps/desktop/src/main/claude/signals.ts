@@ -1,4 +1,5 @@
 import type { RunSignal } from '../../shared/api.ts';
+import { helpersAtWork } from './activity.ts';
 import { canonical } from './questions.ts';
 
 /**
@@ -16,10 +17,13 @@ const MAX_ANSWERED = 50;
 /**
  * Turns one run's hook events from Claude Code into signals for the panel. While Claude waits on
  * the user, for a permission or a question, tools that finish alongside don't make the run read
- * as working again: Claude often reads files while a permission prompt is open.
+ * as working again: Claude often reads files while a permission prompt is open. It keeps where
+ * the run stands too, for what waits while it has work going, such as an update.
  */
 export class RunSignals {
-  private readonly emit: (signal: RunSignal) => void;
+  private readonly tell: (signal: RunSignal) => void;
+  /** Whether a helper is still at work, as the app knows, for a turn's end that doesn't say. */
+  private readonly helpersKnown: () => boolean;
   /** The tool calls waiting on the user, oldest first. */
   private readonly waiting: string[] = [];
   /**
@@ -27,9 +31,33 @@ export class RunSignals {
    * another wait on the same tool is still waiting.
    */
   private readonly answeredInApp: string[] = [];
+  /** Where the run stands, by the last signal, or null while Claude Code starts. */
+  private last: RunSignal | null = null;
 
-  constructor(emit: (signal: RunSignal) => void) {
-    this.emit = emit;
+  constructor(emit: (signal: RunSignal) => void, helpersKnown: () => boolean = () => false) {
+    this.tell = emit;
+    this.helpersKnown = helpersKnown;
+  }
+
+  /**
+   * Whether the run has work going: Claude Code is starting, Claude is working, or it waits on the
+   * user. One that's done, or ready with nothing to do yet, has none, so it can close.
+   */
+  hasWork(): boolean {
+    return this.last !== 'done' && this.last !== 'ready';
+  }
+
+  /** Claude Code is past its first screens, with no prompt, waiting for what the user types. */
+  ready(): void {
+    this.emit('ready');
+  }
+
+  /**
+   * A prompt went in, such as a task or the user's reply, so Claude has work going before its
+   * hook says so. The hook tells the panel.
+   */
+  prompted(): void {
+    this.last = 'working';
   }
 
   hear(event: unknown): void {
@@ -58,14 +86,31 @@ export class RunSignals {
         ) {
           this.emit('needs-answer');
         }
+        // Claude Code runs no Stop hook when the user interrupts a turn, as with Esc in the
+        // terminal. It says the prompt is idle about a minute after Claude stops responding, and
+        // never while a background agent works, so a run still read as working is done.
+        if (
+          fields.notification_type === 'idle_prompt' &&
+          this.last === 'working' &&
+          this.waiting.length === 0
+        ) {
+          this.emit('done');
+        }
         return;
       // A turn that ends in an error, such as a rate limit, is over too, and Claude Code waits
-      // for the user's next message: the window says what the error was.
+      // for the user's next message: the window says what the error was. One that ends either
+      // way while Claude's helpers work in the background isn't: Claude Code wakes Claude once
+      // they're back, so the run still has work going. A Stop hook lists them. A StopFailure
+      // doesn't, so the helpers the app knows of say.
       case 'Stop':
+        this.waiting.length = 0;
+        this.answeredInApp.length = 0;
+        this.emit((helpersAtWork(fields)?.size ?? 0) > 0 ? 'working' : 'done');
+        return;
       case 'StopFailure':
         this.waiting.length = 0;
         this.answeredInApp.length = 0;
-        this.emit('done');
+        this.emit(this.helpersKnown() ? 'working' : 'done');
         return;
     }
   }
@@ -84,6 +129,11 @@ export class RunSignals {
       if (this.answeredInApp.length > MAX_ANSWERED) this.answeredInApp.shift();
     }
     if (this.waiting.length === 0) this.emit('working');
+  }
+
+  private emit(signal: RunSignal): void {
+    this.last = signal;
+    this.tell(signal);
   }
 
   private wait(fields: Record<string, unknown>): void {

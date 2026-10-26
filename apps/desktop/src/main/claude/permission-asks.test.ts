@@ -95,21 +95,11 @@ describe('permissionAskFrom', () => {
     }
   });
 
-  it('shows the whole address of a page to read, and the site it goes to', () => {
-    const url = 'https://jobs.example.com/careers/42?ref=a%20b';
+  it('never shows a page to read: Factwright’s tool reads without asking, and Claude Code’s is off', () => {
+    const url = 'https://jobs.example.com/careers/42';
     for (const tool of ['mcp__factwright__read_page', 'WebFetch']) {
-      expect(described(tool, { url, prompt: 'Read it' })).toEqual({
-        kind: 'page',
-        url,
-        host: 'jobs.example.com',
-      });
+      expect(described(tool, { url, prompt: 'Read it' })).toBeNull();
     }
-    // The site is the one the address goes to, whatever comes before an @.
-    expect(described('WebFetch', { url: 'https://good.example@evil.example/' })).toMatchObject({
-      host: 'evil.example',
-    });
-    expect(described('WebFetch', { url: 'file:///etc/passwd' })).toBeNull();
-    expect(described('WebFetch', { url: 'not a link' })).toBeNull();
   });
 
   it('shows what saving to the profile saves, in words, in the profile’s order, blanks clearing', () => {

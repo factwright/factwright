@@ -10,7 +10,7 @@ Input: the listing (a link or pasted text), plus the company if the listing hide
 
 Research only, and never sign in anywhere. Pay never changes a fit score. This is information for the user.
 
-Use web searches first: snippets often show posted ranges. `read_posting` reads a posting on Greenhouse, Lever, Ashby or Gem without asking. `read_page` reads anything else, but the user may have to OK each page, so save it for the strongest leads.
+Use web searches first: snippets often show posted ranges. `read_posting` reads a posting on Greenhouse, Lever, Ashby or Gem without asking. `read_page` reads anything else, so save it for the strongest leads.
 
 ## 1. Look for a posted range for this exact job (best evidence)
 - **Other copies of the posting:** pay-transparency laws (CA, CO, NY, WA, IL and others) push many employers to post a range in at least one location. Search the exact title + company across other boards and location variants.
@@ -44,6 +44,6 @@ Use web searches first: snippets often show posted ranges. `read_posting` reads 
 - If the job has a folder (`find_job` says so), append the result to its `notes.md` under `## Pay`.
 
 ## 5. Log it
-Append one row to `searches/salary-checks.md` (create it with this header if it's missing): `| Date | Company | Role | Estimate | Confidence | Link |`.
+Call `log_check` with log `salary-checks` and the row: `company`, `role`, `estimate`, `confidence` and `link`. The app writes it into `searches/salary-checks.md`, one row at a time, as other runs may be logging theirs at once, so never edit that file yourself.
 
 The app picks up the row on its own. There's nothing to commit or sync.

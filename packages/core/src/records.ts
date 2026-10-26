@@ -96,6 +96,8 @@ interface RecordBase {
 
 export interface FitCheckRecord extends RecordBase {
   tool: 'fit-check';
+  /** The job it's for, by its ID, as Analyze job logs it. Older rows don't say. */
+  job: string | null;
   verdict: string | null;
   score: number | null;
   pay: string | null;
@@ -106,6 +108,8 @@ export interface FitCheckRecord extends RecordBase {
 export interface FolderRecord extends RecordBase {
   tool: 'folder';
   folder: string;
+  /** The job it's for, by its ID, as job.md's Job ID line names it. Older folders don't say. */
+  job: string | null;
   pay: string | null;
   location: string | null;
   /** The fit check's verdict as job.md gives it, such as "Strong, 82". */
@@ -115,6 +119,8 @@ export interface FolderRecord extends RecordBase {
   style: string | null;
   /** The kind of job its fit check judged it as, by id or name, such as "project-manager". */
   kind: string | null;
+  /** The pay to ask for there, as your Claude suggested it, such as "$185,000". */
+  ask: string | null;
   /** Its resumes. */
   files: JobFile[];
   /** Its cover letters' files. */
@@ -243,20 +249,39 @@ const byName = (a: WorkspaceEntry, b: WorkspaceEntry) =>
 const companyFromSlug = (slug: string) =>
   /^[a-z0-9]{2,4}$/.test(slug) ? slug.toUpperCase() : slug.split('-').map(capitalize).join(' ');
 
+/** What ends a line of text, in each of the ways a regular expression's `$` knows. */
+const LINE_BREAK = /\r\n?|[\n\u2028\u2029]/;
+
+/**
+ * A job.md's heading: the text of its first line that's "#", whitespace, then something to say,
+ * such as "# Acme Robotics: Staff Engineer". It goes a line at a time, so a lone "#" never takes
+ * the line after it, and no run of tabs in a file, however long, makes it slow.
+ */
+function headingOf(markdown: string): string {
+  for (const line of markdown.split(LINE_BREAK)) {
+    const text = /^#\s+(\S.*)$/.exec(line)?.[1];
+    if (text) return text.trim();
+  }
+  return '';
+}
+
 /** The heading and "- **Field:** value" lines at the top of a job's job.md. */
 function readJobNotes(markdown: string) {
-  const heading = markdown.match(/^#\s+(.+)$/m)?.[1]?.trim() ?? '';
+  const heading = headingOf(markdown);
   const split = [': ', ' — ', ' – ', ' - ']
     .map((separator) => ({ separator, at: heading.indexOf(separator) }))
     .filter(({ at }) => at > 0)
     .sort((a, b) => a.at - b.at)[0];
   const company = split ? heading.slice(0, split.at) : heading;
   const role = split ? heading.slice(split.at + split.separator.length) : '';
+  // A role ends at its first full stop and space, as in "Staff Engineer. Remote first."
+  const stop = role.search(/\.\s/);
+  // A field's value is on its own line: an empty one is nothing, never the line after it.
   const field = (name: string) =>
-    markdown.match(new RegExp(`^- \\*\\*${name}:\\*\\*\\s*(.+)$`, 'mi'))?.[1]?.trim() ?? null;
+    markdown.match(new RegExp(`^- \\*\\*${name}:\\*\\*[ \\t]*(.+)$`, 'mi'))?.[1]?.trim() || null;
   return {
     company: company.trim(),
-    role: role.replace(/\.\s.*$/, '').trim(),
+    role: (stop < 0 ? role : role.slice(0, stop)).trim(),
     date: field('Date'),
     pay: field('Pay'),
     links: [
@@ -270,7 +295,18 @@ function readJobNotes(markdown: string) {
     format: field('Format'),
     style: field('Style / track') ?? field('Style'),
     kind: field('Kind of job'),
+    ask: field('Pay to ask for'),
+    job: jobId(field('Job ID')),
   };
+}
+
+/** The job a folder's job.md is for, by its Job ID line, or null for one that doesn't say. */
+export const folderJobId = (markdown: string): string | null => readJobNotes(markdown).job;
+
+/** A job's ID as a record gives it, in backticks or not, or null for anything else. */
+function jobId(value: string | null | undefined): string | null {
+  const id = value?.replace(/^`|`$/g, '').trim().toLowerCase() ?? '';
+  return JOB_ID.test(id) ? id : null;
 }
 
 /** The rows of one of the workspace's log tables, with a date and a company each. */
@@ -291,6 +327,7 @@ function fitCheckRecords(workspace: WorkspaceReader): FitCheckRecord[] {
     return {
       tool: 'fit-check',
       ...base,
+      job: jobId(row.job),
       verdict: cell(row.verdict),
       score: Number.isNaN(score) ? null : score,
       pay: cell(row.pay),
@@ -317,6 +354,30 @@ function unmaskRecords(workspace: WorkspaceReader): UnmaskRecord[] {
   }));
 }
 
+/**
+ * A job's folder's resumes, cover letters and Projects pages, by name: each PDF and Word file in
+ * it. The app lists them from the folder on disk, and the extension from what sync holds.
+ */
+export function folderFiles(
+  workspace: WorkspaceReader,
+  folder: string,
+): Pick<FolderRecord, 'files' | 'letters' | 'projectPages'> {
+  const path = `${WORKSPACE_PATHS.jobs}/${folder}`;
+  const built: JobFile[] = workspace
+    .list(path)
+    .sort(byName)
+    .flatMap((file) => {
+      const format = file.name.match(/\.(pdf|docx)$/i)?.[1]?.toLowerCase();
+      if (file.folder || (format !== 'pdf' && format !== 'docx')) return [];
+      const { name, size, modified } = file;
+      return [{ path: `${path}/${name}`, name, format, size, modified }];
+    });
+  const letters = built.filter((file) => isCoverLetterFile(file.name));
+  const projectPages = built.filter((file) => isProjectsPageFile(file.name));
+  const files = built.filter((file) => !letters.includes(file) && !projectPages.includes(file));
+  return { files, letters, projectPages };
+}
+
 function folderRecords(workspace: WorkspaceReader): ToolRecord[] {
   const records: ToolRecord[] = [];
   for (const entry of workspace.list(WORKSPACE_PATHS.jobs).sort(byName)) {
@@ -331,23 +392,13 @@ function folderRecords(workspace: WorkspaceReader): ToolRecord[] {
       const content = workspace.readText(`${path}/${file}`);
       if (content) docs[kind] = content;
     }
-    const built: JobFile[] = workspace
-      .list(path)
-      .sort(byName)
-      .flatMap((file) => {
-        const format = file.name.match(/\.(pdf|docx)$/i)?.[1]?.toLowerCase();
-        if (file.folder || (format !== 'pdf' && format !== 'docx')) return [];
-        const { name, size, modified } = file;
-        return [{ path: `${path}/${name}`, name, format, size, modified }];
-      });
-    const letters = built.filter((file) => isCoverLetterFile(file.name));
-    const projectPages = built.filter((file) => isProjectsPageFile(file.name));
-    const files = built.filter((file) => !letters.includes(file) && !projectPages.includes(file));
+    const { files, letters, projectPages } = folderFiles(workspace, folder);
     const date = firstDate(notes.date) ?? firstDate(folder);
     records.push({
       tool: 'folder',
       key: folder,
       folder,
+      job: notes.job,
       date,
       company: notes.company,
       role: notes.role,
@@ -359,6 +410,7 @@ function folderRecords(workspace: WorkspaceReader): ToolRecord[] {
       format: notes.format,
       style: notes.style,
       kind: notes.kind,
+      ask: notes.ask,
       files,
       letters,
       projectPages,
@@ -460,7 +512,6 @@ function runRecords(
     const posting = text(item.posting);
     const site = text(item.site);
     const hnId = number(item.hnId);
-    const job = text(item.job)?.trim().toLowerCase() ?? null;
     return {
       tool: 'search',
       key: `${runKey}:${companyKey(company)}:${roleKey(role)}`,
@@ -468,7 +519,7 @@ function runRecords(
       source,
       folder,
       run,
-      job: job && JOB_ID.test(job) ? job : null,
+      job: jobId(text(item.job)),
       company,
       role,
       links: [

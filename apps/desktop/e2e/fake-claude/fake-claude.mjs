@@ -6,7 +6,7 @@
 // signs it in with a key instead, and FAKE_CLAUDE_FIRST_RUN=show has it show Claude Code's
 // first-run screens until someone presses Enter through them once, as Claude Code does.
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 
 const args = process.argv.slice(2);
 
@@ -109,6 +109,170 @@ async function call(name, args) {
   return text;
 }
 
+/**
+ * Writes a file as Claude Code's Write tool does: its start to the hook every call has, which the
+ * app holds while it keeps the file as it was, then the file, then PostToolUse.
+ */
+async function writeAsClaude(path, text) {
+  const step = {
+    tool_name: 'Write',
+    tool_use_id: `toolu_write_${Date.now()}`,
+    tool_input: { file_path: path, content: text },
+  };
+  if (activityUrl) {
+    await post(activityUrl, { hook_event_name: 'PreToolUse', session_id: 'fake', ...step }).catch(
+      () => {},
+    );
+  }
+  mkdirSync(dirname(path), { recursive: true });
+  writeFileSync(path, text);
+  await hook('PostToolUse', { ...step, tool_response: { type: 'create', filePath: path } });
+}
+
+/**
+ * A call to one of Claude Code's own tools, as its hooks tell it: its start to the hook every
+ * call has, then, unless it's left going, PostToolUse with what it gave back.
+ */
+async function claudeCall(step, answer, { going = false } = {}) {
+  if (activityUrl) {
+    await post(activityUrl, { hook_event_name: 'PreToolUse', session_id: 'fake', ...step }).catch(
+      () => {},
+    );
+  }
+  if (!going) await hook('PostToolUse', { ...step, tool_response: answer });
+}
+
+/** The next line the user types, while a turn waits for one, or null while none does. */
+let lineWaiter = null;
+const nextLine = () =>
+  new Promise((resolve) => {
+    lineWaiter = resolve;
+  });
+
+/**
+ * As Claude does with a task in several steps and helpers: a to-do list with the Task tools, then
+ * two helpers in the background, each on a step of its own, and a turn that ends while they work,
+ * as Claude Code's does, or that ends in an error, whose StopFailure says nothing of them. They're
+ * back, Claude Code wakes Claude with their report, and Claude finishes, once the user types
+ * another line.
+ */
+async function planWithHelpers({ failing = false } = {}) {
+  const items = [
+    ['Read the posting', 'Reading the posting'],
+    ['Filter the listings', 'Filtering the listings'],
+    ['Write the report', 'Writing the report'],
+  ];
+  for (const [at, [subject, activeForm]] of items.entries()) {
+    const id = String(at + 1);
+    await claudeCall(
+      {
+        tool_name: 'TaskCreate',
+        tool_use_id: `toolu_create_${id}`,
+        tool_input: { subject, description: subject, activeForm },
+      },
+      { task: { id, subject } },
+    );
+  }
+  const update = (taskId, status) =>
+    claudeCall(
+      {
+        tool_name: 'TaskUpdate',
+        tool_use_id: `toolu_update_${taskId}_${status}`,
+        tool_input: { taskId, status },
+      },
+      { success: true, taskId, updatedFields: ['status'] },
+    );
+  await update('1', 'completed');
+  await update('2', 'in_progress');
+  const helpers = [
+    ['agent-fake-1', 'Filter listings 1–50'],
+    ['agent-fake-2', 'Filter listings 51–100'],
+  ];
+  const listings = join(process.cwd(), 'searches', 'listings.md');
+  const reading = (agent) => ({
+    agent_id: agent,
+    agent_type: 'general-purpose',
+    tool_name: 'Read',
+    tool_use_id: `toolu_read_${agent}`,
+    tool_input: { file_path: listings },
+  });
+  for (const [agent, description] of helpers) {
+    const launch = {
+      tool_name: 'Agent',
+      tool_use_id: `toolu_${agent}`,
+      tool_input: {
+        description,
+        prompt: 'Filter these listings.',
+        subagent_type: 'general-purpose',
+      },
+    };
+    await claudeCall(launch, null, { going: true });
+    await hook('SubagentStart', { agent_id: agent, agent_type: 'general-purpose' });
+    await hook('PostToolUse', {
+      ...launch,
+      tool_response: { isAsync: true, status: 'async_launched', agentId: agent, description },
+    });
+    await claudeCall(reading(agent), null, { going: true });
+  }
+  if (failing) {
+    await hook('StopFailure', {
+      error: 'server_error',
+      error_details: 'Internal server error',
+      last_assistant_message: 'API Error: 500 Internal server error',
+    });
+  } else {
+    await hook('Stop', {
+      last_assistant_message: 'Two helpers are filtering the listings.',
+      background_tasks: helpers.map(([id, description]) => ({
+        id,
+        type: 'subagent',
+        status: 'running',
+        description,
+        agent_type: 'general-purpose',
+      })),
+      session_crons: [],
+    });
+  }
+  // Said once the app has heard the turn end, so a test that reads it sees where that left the run.
+  show(
+    failing
+      ? 'API Error: 500 Internal server error\n> '
+      : 'Two helpers are filtering the listings.\n> ',
+  );
+  await nextLine();
+  for (const [agent] of helpers) {
+    await hook('PostToolUse', { ...reading(agent), tool_response: { type: 'text' } });
+    await hook('SubagentStop', { agent_id: agent, agent_type: 'general-purpose' });
+  }
+  await hook('UserPromptSubmit', {
+    prompt: '<task-notification>Both helpers are done.</task-notification>',
+  });
+  await update('2', 'completed');
+  await update('3', 'in_progress');
+  await update('3', 'completed');
+  show('The report is written.\n> ');
+  await hook('Stop', {
+    last_assistant_message: 'The report is written.',
+    background_tasks: [],
+    session_crons: [],
+  });
+}
+
+/**
+ * Calls one of Factwright's tools as Claude Code does with the run's settings: without asking
+ * when they allow it, and otherwise after the user's OK. Gives back its text, or what came of
+ * asking.
+ */
+async function callAllowed(name, args) {
+  const tool = `mcp__factwright__${name}`;
+  if (settings.permissions.allow.includes(tool)) return call(name, args);
+  const decision = await permission(tool, args);
+  if (decision?.behavior === 'allow') return call(name, args);
+  return decision?.behavior === 'deny'
+    ? `Not saved: ${decision.message}`
+    : 'Claude Code asked in the terminal.';
+}
+
 /** The answer it gives to every question about a job. */
 const ANSWER = 'A short screen, from the stand-in Claude.';
 
@@ -156,6 +320,34 @@ async function askUser(answers) {
 }
 
 /**
+ * Asks a question anyway, as Claude would if a skill's words slipped: PreToolUse with the round,
+ * as Claude Code sends it, for the app to hold for its dialog or turn away. Gives back what
+ * Claude reads when the hook turns it away.
+ */
+async function askAnyway(question) {
+  const asked = await post(hookUrl, {
+    hook_event_name: 'PreToolUse',
+    session_id: 'fake',
+    tool_name: 'AskUserQuestion',
+    tool_use_id: `toolu_${Date.now()}`,
+    tool_input: {
+      questions: [
+        {
+          question,
+          header: 'Experience',
+          options: CHOICES.map((label) => ({ label, description: '' })),
+          multiSelect: false,
+        },
+      ],
+    },
+  });
+  const decision = asked.status === 200 ? (await asked.json()).hookSpecificOutput : undefined;
+  return decision?.permissionDecision === 'deny'
+    ? `Not asked: ${decision.permissionDecisionReason}`
+    : 'Claude Code asked anyway.';
+}
+
+/**
  * As Claude Code does for a call that needs the user's OK: PreToolUse, then a PermissionRequest
  * hook, which the app holds while the user answers in its dialog. Gives back the hook's decision,
  * or nothing when the hook left it to the terminal.
@@ -191,6 +383,22 @@ async function work(text) {
     const again = named && !open.includes(named);
     for (const id of named ? [named] : open) {
       await call('save_answer', { job, question: id, answer: again ? `${ANSWER} Again.` : ANSWER });
+    }
+  }
+  // As Claude would for Analyze job, on one job or several: read each one, and log its fit check
+  // by the job's id, which tells the app that job is done. A moment between jobs, as helpers take.
+  const analyzing = text.match(/^\/factwright:analyze-job jobs? (.+?)(?: on its own)?$/);
+  if (analyzing) {
+    for (const job of analyzing[1].split(' ')) {
+      const details = await call('job_details', { job });
+      const [company, role] = (details.match(/^## (.+)$/m)?.[1] ?? job).split(/, (.*)/);
+      show(
+        `${await call('log_check', {
+          log: 'fit-checks',
+          row: { company, role: role || 'Engineer', verdict: 'Good', score: 70, job },
+        })}\n`,
+      );
+      await new Promise((resolve) => setTimeout(resolve, 300));
     }
   }
   // As Claude would for the questions of a job's application form: read in job_details how the
@@ -230,7 +438,7 @@ async function work(text) {
     const details = await call('job_details', { job: lettered[1] });
     const folder = details.match(/^- Folder: applications\/([^/\s]+)\/$/m)?.[1];
     if (folder) {
-      writeFileSync(
+      await writeAsClaude(
         join(process.cwd(), 'applications', folder, 'cover-letter.json'),
         JSON.stringify({
           format: 'both',
@@ -259,7 +467,7 @@ async function work(text) {
     const details = await call('job_details', { job: paged[1] });
     const folder = details.match(/^- Folder: applications\/([^/\s]+)\/$/m)?.[1];
     if (folder) {
-      writeFileSync(
+      await writeAsClaude(
         join(process.cwd(), 'applications', folder, 'projects-page.json'),
         JSON.stringify({
           format: 'both',
@@ -290,9 +498,16 @@ async function work(text) {
       show('\n');
     }
   }
+  // As Claude would for a quick resume: ask nothing, and use verified facts only. Then a
+  // question anyway, as if the skill's words slipped, which the app turns away.
+  const quickly = /^\/factwright:focused-resume job \S+(?: new version)? quick$/.test(text);
+  if (quickly) {
+    show('A quick resume, from verified facts only: no questions.\n');
+    show(`${await askAnyway(GRAPHQL)}\n`);
+  }
   // As Claude would while tailoring a resume: ask about what the posting wants that the facts
   // don't show, then save the user's answers to the fact bank.
-  const tailoring = text.match(/^\/factwright:focused-resume job (\S+)/);
+  const tailoring = !quickly && text.match(/^\/factwright:focused-resume job (\S+)/);
   if (tailoring) {
     const [, job] = tailoring;
     await askUser({ [GRAPHQL]: 'Yes, in production', [KAFKA]: 'No' });
@@ -354,7 +569,7 @@ async function work(text) {
       const after = letter
         ? { ...before, paragraphs: [`Changed as you asked (${words}), by the stand-in Claude.`] }
         : { ...before, summary: `Changed as you asked (${words}), by the stand-in Claude.` };
-      writeFileSync(data, JSON.stringify(after));
+      await writeAsClaude(data, JSON.stringify(after));
       const built = await call(letter ? 'build_cover_letter' : 'build_resume', {
         folder,
         ...(!letter && { format: 'both' }),
@@ -378,7 +593,7 @@ async function work(text) {
       await file('save_gap', { topic: 'GraphQL', question: GRAPHQL, job, task: 'resume' });
     }
     if (folder && findings.includes('“Terraform”')) {
-      writeFileSync(
+      await writeAsClaude(
         join(process.cwd(), 'applications', folder, 'resume.json'),
         JSON.stringify({
           layout: 'classic',
@@ -426,8 +641,7 @@ async function work(text) {
     const focus = await call('search_focus', { focus: id });
     show(`${focus.split('\n')[0]}\n`);
     const folder = join(process.cwd(), 'searches', `2026-10-12-linkedin-focus-${id.slice(11)}`);
-    mkdirSync(folder, { recursive: true });
-    writeFileSync(
+    await writeAsClaude(
       join(folder, 'jobs.json'),
       JSON.stringify({
         meta: { source: 'LinkedIn Oct 12', checked: '2026-10-12', focus: id },
@@ -468,7 +682,7 @@ async function work(text) {
           .map((part) => String(part).padStart(2, '0'))
           .join('-')
       : '2026-10-12';
-    writeFileSync(
+    await writeAsClaude(
       join(folder, again ? 'jobs-2.json' : 'jobs.json'),
       JSON.stringify({
         meta: { source: 'LinkedIn Oct 12', checked },
@@ -500,8 +714,7 @@ async function work(text) {
   const forKind = text.match(/^\/factwright:job-search for ([a-z0-9-]+): /);
   if (forKind) {
     const folder = join(process.cwd(), 'searches', `2026-10-12-hn-${forKind[1]}`);
-    mkdirSync(folder, { recursive: true });
-    writeFileSync(
+    await writeAsClaude(
       join(folder, 'jobs.json'),
       JSON.stringify({
         meta: { source: 'HN October 2026', checked: '2026-10-12', kind: forKind[1] },
@@ -518,21 +731,14 @@ async function work(text) {
       }),
     );
   }
-  // As Claude would, asked to save what the user said to their profile, which Claude Code asks
-  // their OK for first: saved on a yes, and not on a no, which says what they added.
-  if (text === 'save my notice period') {
-    const tool = 'mcp__factwright__save_about_you';
-    const input = { start: 'Two weeks’ notice' };
-    const decision = await permission(tool, input);
-    if (decision?.behavior === 'allow') {
-      show(`${await call('save_about_you', input)}\n`);
-      await hook('PostToolUse', { tool_name: tool, tool_input: input, tool_response: {} });
-    } else if (decision?.behavior === 'deny') {
-      show(`Not saved: ${decision.message}\n`);
-    } else {
-      show('Claude Code asked in the terminal.\n');
-    }
-  }
+  // As Claude would, asked to save what the user said to their profile: without asking, when the
+  // run's settings allow it, as they do for a run on the job hunt.
+  const notice = {
+    'save my notice period': 'Two weeks’ notice',
+    'save a month of notice': 'One month’s notice',
+    'save a month of notice, then interrupt': 'One month’s notice',
+  }[text];
+  if (notice) show(`${await callAllowed('save_about_you', { start: notice })}\n`);
   // As Claude would for a template: start from one of the app's, and save one of the user's own.
   if (/^\/factwright:make-template from templates\/sources\/\S+$/.test(text)) {
     const classic = await call('read_template', { id: 'classic' });
@@ -549,6 +755,19 @@ async function work(text) {
       }),
     );
     show('\n');
+  }
+  if (text === 'plan it with helpers' || text === 'plan it with helpers, then fail') {
+    await planWithHelpers({ failing: text.endsWith(', then fail') });
+    return;
+  }
+  // A turn the user interrupts runs no Stop hook: Claude Code says it's waiting for them, later.
+  if (text.endsWith(', then interrupt')) {
+    show('Interrupted · What should Claude do instead?\n> ');
+    await hook('Notification', {
+      notification_type: 'idle_prompt',
+      message: 'Claude is waiting for your input',
+    });
+    return;
   }
   // Its turn ends a moment later, with Stop, before it takes the next prompt, as Claude Code's does.
   await new Promise((resolve) => setTimeout(resolve, 300));
@@ -629,6 +848,13 @@ process.stdin.on('data', async (chunk) => {
   }
   const line = typed.trim();
   typed = '';
+  // A turn waiting on the user's next line takes it.
+  if (line && lineWaiter) {
+    const take = lineWaiter;
+    lineWaiter = null;
+    take(line);
+    return;
+  }
   // One prompt at a time, as Claude Code takes them, even if the next is typed while it works.
   if (line) working = working.then(() => work(line));
 });

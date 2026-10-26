@@ -33,6 +33,8 @@ export interface RunBefore {
   task: RunTask | null;
   jobIds: readonly string[];
   job: JobMarks | null;
+  /** For a run analyzing several jobs, each one's fit check as it started, by the job's ID. */
+  fits: Readonly<Record<string, string | null>>;
 }
 
 /** Where a run's work is: a job, and the section of its panel, a view of the jobs, or a page. */
@@ -67,7 +69,13 @@ function marksOf(job: Job): JobMarks {
 export function runBefore(task: RunTask | null, rows: readonly JobRow[]): RunBefore {
   const jobId = taskJob(task);
   const job = rows.find((row) => row.job.id === jobId)?.job;
-  return { task, jobIds: rows.map((row) => row.job.id), job: job ? marksOf(job) : null };
+  const several = task && 'jobIds' in task ? task.jobIds : [];
+  const fits = Object.fromEntries(
+    rows
+      .filter((row) => several.includes(row.job.id))
+      .map((row) => [row.job.id, marksOf(row.job).fit]),
+  );
+  return { task, jobIds: rows.map((row) => row.job.id), job: job ? marksOf(job) : null, fits };
 }
 
 /** Whether a list has something the earlier one didn't, such as a resume built again. */
@@ -89,14 +97,16 @@ const called = (steps: readonly RunStep[], tool: string) =>
 
 /**
  * What a finished task made, from how its job, or the jobs, changed since it started, and from
- * what Claude did: a resume, a letter, a fit check and so on, said in a sentence with where it
+ * what Claude did: a resume, a letter, a job analyzed and so on, said in a sentence with where it
  * is. Null when there's nothing to show for it yet, such as when Claude stopped to ask the user
- * something, or for a task that makes nothing of its own to show.
+ * something, or for a task that makes nothing of its own to show. `analyzed` is the jobs its tab
+ * counts as done, by their IDs, which include one merged into another of its jobs.
  */
 export function runOutcome(
   before: RunBefore,
   rows: readonly JobRow[],
   steps: readonly RunStep[],
+  analyzed: readonly string[] = [],
 ): RunOutcome | null {
   const { task } = before;
   if (!task) return null;
@@ -117,6 +127,31 @@ export function runOutcome(
       ? { text: 'Your new template is saved.', place: { page: 'profile' } }
       : null;
   }
+  // Several jobs analyzed: each one with a fit check new since the run started, which moves it
+  // to To review, and each its tab counts, as one merged into another of them is.
+  if ('jobIds' in task) {
+    const count = task.jobIds.length;
+    const checked = rows.filter(
+      ({ job }) =>
+        task.jobIds.includes(job.id) &&
+        job.fit !== null &&
+        marksOf(job).fit !== before.fits[job.id],
+    );
+    const [first] = checked;
+    if (!first) return null;
+    const done = new Set([
+      ...checked.map(({ job }) => job.id),
+      ...analyzed.filter((id) => task.jobIds.includes(id)),
+    ]).size;
+    const jobs = task.auto ? 'new jobs' : 'jobs';
+    const text =
+      count === 1
+        ? `${first.job.company} is analyzed.`
+        : done === count
+          ? `All ${count} ${jobs} are analyzed.`
+          : `${done} of ${count} ${jobs} are analyzed.`;
+    return { text, place: { view: 'review' } };
+  }
   const jobId = taskJob(task);
   const was = before.job;
   const row = rows.find((each) => each.job.id === jobId);
@@ -128,7 +163,10 @@ export function runOutcome(
   switch (task.skill) {
     case 'focused-resume':
       return gained(now.files, was.files)
-        ? { text: `Your tailored resume for ${company} is ready.`, place: at('files') }
+        ? {
+            text: `Your ${'quick' in task ? 'quick' : 'tailored'} resume for ${company} is ready.`,
+            place: at('files'),
+          }
         : null;
     case REVISE_SKILL:
       return gained(now.files, was.files)
@@ -142,14 +180,14 @@ export function runOutcome(
       return gained(now.projectPages, was.projectPages)
         ? { text: `Your Projects page for ${company} is ready.`, place: at('files') }
         : null;
-    case 'fit-check': {
+    case 'analyze-job': {
       if (now.fit === was.fit || !job.fit) return null;
       const score = job.fit.score;
       return {
         text:
           score !== null && progress.tier
-            ? `The fit check for ${company} is done: ${score}, ${FIT_TIER_DISPLAY[progress.tier].label}.`
-            : `The fit check for ${company} is done.`,
+            ? `${company} is analyzed: ${score}, ${FIT_TIER_DISPLAY[progress.tier].label}.`
+            : `${company} is analyzed.`,
         place: at('fit'),
       };
     }

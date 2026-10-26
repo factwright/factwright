@@ -52,9 +52,10 @@ import type {
   RecordedAnswers,
   ShotFor,
   ShotResult,
+  UndoneResult,
 } from '../../shared/api.ts';
 import { readShot, saveShot, shotFile } from './shots.ts';
-import type { EditContext, Tracker } from './tracker.ts';
+import type { EditContext, NotedResult, Tracker } from './tracker.ts';
 import { diskWorkspace, watchWorkspace } from './workspace.ts';
 
 /**
@@ -109,6 +110,8 @@ export class JobsService {
   private found = new Map<string, CollectedJob>();
   /** Claude's prep sheets and thank-you notes for each job's calls, by the job's ID. */
   private callDocs = new Map<string, CallDoc[]>();
+  /** Every job folder the workspace has had since the app opened, for the tracker's rows. */
+  private readonly folders = new Set<string>();
   private readAt: string | null = null;
   private stopWatching: (() => void) | undefined;
 
@@ -136,6 +139,8 @@ export class JobsService {
     const records = readRecords(workspace);
     const jobs = collectJobs(records, this.deps.tracker.knownJobs());
     this.deps.tracker.saveCollected(jobs, now);
+    for (const record of records) if (record.tool === 'folder') this.folders.add(record.folder);
+    this.deps.tracker.saveFolders(jobs, this.folders);
     this.found = new Map(jobs.map((job) => [job.id, job]));
     this.callDocs = readAllCallDocs(workspace);
     this.readAt = now;
@@ -216,9 +221,10 @@ export class JobsService {
   /**
    * Adds a job the extension saved on this computer, from the inbox, as a save through sync
    * adds it: its row, as New, and its posting as the person saw it, kept with the job's extras in
-   * `saved/<job ID>/posting.md`, where Claude's work later copies it into the job's folder. The
-   * same job, by its link, is added once, and saving it again adds its posting if it has none. The
-   * inbox sends the new list once it has added all it holds (sendList).
+   * `saved/<job ID>/posting.md`, where Claude's work later copies it into the job's folder. A job
+   * the job hunt has already, by its posting or its role (Tracker.addSavedJob), is added to
+   * instead: saving it again adds its posting if it has none. The inbox sends the new list once it
+   * has added all it holds (sendList).
    */
   addSaved(job: SavedJob): InboxAnswer {
     const context = this.context();
@@ -228,7 +234,8 @@ export class JobsService {
     );
     if (!added.ok) return { ok: false, reason: 'failed', message: added.message };
     const posting = this.keepPosting(added.id, job, !added.already, context.today);
-    return { ok: true, id: added.id, already: added.already, posting };
+    const { id, already, joined } = added;
+    return { ok: true, id, already, posting, ...(joined && { joined }) };
   }
 
   /** Sends the list as it is now, as after an edit: once the inbox has added what it holds. */
@@ -291,6 +298,29 @@ export class JobsService {
     } catch {
       return null;
     }
+  }
+
+  /**
+   * Notes that another job might be this one, as Analyze job found without being sure enough to
+   * merge them, for the user to merge them or not. A pair the user said isn't the same isn't.
+   */
+  noteMaybeSame(jobId: string, otherId: string, why: string | null): NotedResult {
+    const result = this.deps.tracker.noteMaybeSame(jobId, otherId, why, this.context());
+    if (result.ok && result.noted) this.deps.onChange(this.list());
+    return result;
+  }
+
+  /** Keeps the user's word that two jobs aren't the same, so the note that they might be goes. */
+  notSame(jobId: string, otherId: string): EditResult {
+    return this.saved(this.deps.tracker.notSame(jobId, otherId, this.context()));
+  }
+
+  /** Whether the user said two jobs aren't the same, either way round. */
+  saidNotSame(jobId: string, otherId: string): boolean {
+    const rows = this.deps.tracker.rows();
+    const job = rows.find((row) => row.id === jobId);
+    const other = rows.find((row) => row.id === otherId);
+    return Boolean(job && other && this.deps.tracker.saidNotSame(job, other));
   }
 
   /**
@@ -390,6 +420,15 @@ export class JobsService {
 
   undoStatusChange(changeId: string): EditResult {
     return this.saved(this.deps.tracker.undoChange(changeId, this.context().now));
+  }
+
+  /**
+   * Takes back marking a job Applied, as the browser extension's Undo asks, while that's still
+   * the latest change in its history.
+   */
+  undoApplied(jobId: string): UndoneResult {
+    const result = this.deps.tracker.undoApplied(jobId, this.context().now);
+    return result.ok && !result.undone ? result : this.saved(result);
   }
 
   addNote(jobId: string, note: NewNote): EditResult {

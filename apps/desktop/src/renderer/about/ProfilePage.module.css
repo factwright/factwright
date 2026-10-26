@@ -264,6 +264,15 @@
   font-weight: 400;
 }
 
+/* Why you're leaving, as long as it runs, in two lines on the card. */
+.leaving {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+}
+
 .projectWhat {
   display: -webkit-box;
   overflow: hidden;

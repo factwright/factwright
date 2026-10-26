@@ -8,7 +8,7 @@ export const RUN_SKILLS = [
   'focused-resume',
   'cover-letter',
   'projects-page',
-  'fit-check',
+  'analyze-job',
   'salary-check',
   'who-to-message',
   'interview-prep',
@@ -17,6 +17,28 @@ export const RUN_SKILLS = [
 ] as const;
 
 export type RunSkill = (typeof RUN_SKILLS)[number];
+
+/**
+ * The skill that analyzes a job, as the user's Analyze job button starts it, or several at once:
+ * it fills in a missing posting, puts the job's details right from it, merges the job with one
+ * it was found twice as, checks the fit and suggests the pay to ask for.
+ */
+export const ANALYZE_SKILL = 'analyze-job';
+
+/** As many jobs as one run analyzes, with a helper for each, so its tab says how far it's got. */
+export const MOST_TO_ANALYZE = 20;
+
+/**
+ * As many newly saved jobs as one run that starts on its own takes, while Claude is free. The
+ * rest wait for the next.
+ */
+export const ANALYZE_ON_ITS_OWN = 8;
+
+/**
+ * What a task was called in a file an earlier version saved, such as the models chosen for each
+ * task, and what it's called now: Analyze job was a fit check before it did more.
+ */
+export const EARLIER_SKILLS: Readonly<Record<string, RunSkill>> = { 'fit-check': ANALYZE_SKILL };
 
 /** The skills that make what the user sends, of which a job keeps versions. */
 export const VERSION_SKILLS = ['focused-resume', 'cover-letter', 'projects-page'] as const;
@@ -114,10 +136,22 @@ export const TEMPLATE_SOURCE = /^\d{4}-\d{2}-\d{2}-\d{1,3}\.(?:pdf|png|jpg|webp)
  * resumes), more facts, from an interview or from new files and notes, a template in the look of
  * a resume the user likes, or a revision of a job's resume for what its ATS X-ray found. A new
  * version of a job's resume, cover letter or Projects page comes once the app has kept the one
- * before, and changes the user asked for in their own words reach the run through a tool.
+ * before, and changes the user asked for in their own words reach the run through a tool. A quick
+ * resume asks nothing, as a first resume or a new version.
  */
 export type RunTask =
   | { skill: RunSkill; jobId: string }
+  /**
+   * Analyzing several jobs in one run, with a helper for each, as the user picked them, or as
+   * Claude takes the jobs saved since it was last free, on its own (`auto`). One that starts on
+   * its own steps aside for any task the user starts that would otherwise wait for it.
+   */
+  | { skill: typeof ANALYZE_SKILL; jobIds: string[]; auto?: true }
+  /**
+   * A quick resume, which asks the user nothing: it uses verified facts only, and ends with what
+   * could make it stronger. As a new version too, once the app has kept the one before.
+   */
+  | { skill: 'focused-resume'; jobId: string; quick: true; again?: true }
   /**
    * Drafting the questions of a job's application form in the user's browser, which the browser
    * extension asked for: the run reads them, with their options and limits, in job_details.
@@ -166,30 +200,67 @@ export const HUNT_SKILLS = [
 ] as const;
 
 /**
- * What a run may change without asking. A run started to get to know the user, or to add facts,
- * may save their facts, starting resumes and guide. A run started to make a template may read
- * and save templates, and nothing else, and may replace only the ones it saved: the resume it
- * copies came from anywhere. A revision may do what a run on the job hunt does, but reads what
- * the X-ray found in a posting, and needs nothing from the web, so it can't reach it. Every
- * other run asks first. None of the last three reads the web.
+ * What a run may change without asking. A run on the job hunt changes any file in the workspace,
+ * and reads the web, but changes the facts only through Factwright's fact tools. So does every
+ * other run, apart from what it may never do: a run started to get to know the user, or to add
+ * facts, changes the facts themselves, as the user confirms them, and one that fills in their
+ * work history works from their facts and resumes. A revision reads what the X-ray found in a
+ * posting, and asks before saving a template. A run started to make a template may read and
+ * save templates, and nothing else, and may replace only the ones it saved: the resume it copies
+ * came from anywhere. None of the last four reads the web.
  */
-export type RunScope = 'hunt' | 'profile' | 'template' | 'revise';
+export type RunScope = 'hunt' | 'profile' | 'history' | 'template' | 'revise';
 
 export function scopeOf(task: RunTask | null | undefined): RunScope {
-  if (
-    task?.skill === GET_STARTED_SKILL ||
-    task?.skill === FACTS_SKILL ||
-    task?.skill === HISTORY_SKILL
-  ) {
-    return 'profile';
-  }
+  if (task?.skill === GET_STARTED_SKILL || task?.skill === FACTS_SKILL) return 'profile';
+  if (task?.skill === HISTORY_SKILL) return 'history';
   if (task?.skill === REVISE_SKILL) return 'revise';
   return task?.skill === TEMPLATE_SKILL ? 'template' : 'hunt';
 }
 
-/** The job a task runs on, or null for one on the whole job hunt. */
+/** The job a task runs on, or null for one on the whole job hunt, or on several jobs. */
 export const taskJob = (task: RunTask | null): string | null =>
   task && 'jobId' in task ? task.jobId : null;
+
+/** Every job a task runs on: its one job, the jobs it analyzes, or none for the job hunt. */
+export const taskJobs = (task: RunTask | null): readonly string[] =>
+  task && 'jobIds' in task ? task.jobIds : task && 'jobId' in task ? [task.jobId] : [];
+
+/** Whether a task started on its own, as Claude analyzing new jobs while it's free. */
+export const startedOnItsOwn = (task: RunTask | null): boolean =>
+  Boolean(task && 'auto' in task && task.auto);
+
+/** A task as the user's, as when they start again one that Claude started on its own. */
+export const usersTask = (task: RunTask): RunTask =>
+  'jobIds' in task ? { skill: task.skill, jobIds: task.jobIds } : task;
+
+/** How many of Claude's runs may go at once: three, unless the user picks from one to five. */
+export const AT_ONCE = { least: 1, most: 5, usual: 3 } as const;
+
+/** A number of runs at once the app takes, or null. */
+export const atOnceFrom = (value: unknown): number | null =>
+  Number.isInteger(value) && (value as number) >= AT_ONCE.least && (value as number) <= AT_ONCE.most
+    ? (value as number)
+    : null;
+
+/**
+ * What a task works on, which no two tasks going at once share: its job, by the job's ID; the
+ * user's facts and Profile, which getting started, adding facts and filling in their work history
+ * all change; the job searches; or the templates. A task on several jobs at once, as analyzing
+ * the jobs the user picked, works on each of them. Nothing for Claude with no task, waiting for
+ * what the user types.
+ */
+export function lanesOf(task: RunTask | null): string[] {
+  if (!task) return [];
+  const jobs = taskJobs(task);
+  if (jobs.length > 0) return jobs.map((job) => `job:${job}`);
+  const profile = [GET_STARTED_SKILL, FACTS_SKILL, HISTORY_SKILL] as string[];
+  return [profile.includes(task.skill) ? 'profile' : task.skill];
+}
+
+/** Whether two tasks work on anything the same, so one waits for the other. */
+export const sharesLane = (a: RunTask | null, b: RunTask | null) =>
+  lanesOf(a).some((lane) => lanesOf(b).includes(lane));
 
 /** The call a task works on, such as prep for it, or null for one on no call in particular. */
 export const taskCall = (task: RunTask | null): string | null =>

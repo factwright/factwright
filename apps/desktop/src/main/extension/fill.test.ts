@@ -57,6 +57,7 @@ let deps: FillDeps & {
   jobs: {
     recordAnswers: ReturnType<typeof vi.fn>;
     updateJob: ReturnType<typeof vi.fn>;
+    undoApplied: ReturnType<typeof vi.fn>;
     keepForm: ReturnType<typeof vi.fn>;
   };
   drafts: { start: ReturnType<typeof vi.fn>; state: ReturnType<typeof vi.fn> };
@@ -144,6 +145,7 @@ beforeEach(() => {
         recorded: answers.length,
       })),
       updateJob: vi.fn(() => ({ ok: true as const })),
+      undoApplied: vi.fn(() => ({ ok: true as const, undone: true })),
       keepForm: vi.fn((id: string, form: SavedForm) => {
         forms.set(id, form);
         return { ok: true as const };
@@ -216,13 +218,35 @@ describe('answering a form to fill', () => {
     ]);
     expect(answer.files).toEqual({
       resume: {
-        name: 'Ana María Ruiz - Resume.pdf',
+        name: 'AnaRuizResume10202026_HarborPine.pdf',
         size: PDF.length,
         parts: 2,
         version: expect.stringMatching(/^[0-9a-f]{16}$/),
       },
       'cover-letter': null,
     });
+  });
+
+  it('says how many jobs and schools on file it can take, for a form that adds a part for each', async () => {
+    // The job's resume lists two positions and no school, with no work history in Profile.
+    expect(
+      ((await fill([field('Job title', { section: 'Work Experience 1' })])) as Filled).blocks,
+    ).toEqual({ jobs: 2, schools: 0 });
+    deps.about.history = () => ({
+      jobs: [
+        {
+          company: 'Tidewater Analytics',
+          location: 'Denver, CO',
+          positions: ['Director of Product', 'Senior Product Manager', 'Product Manager'].map(
+            (title) => ({ title, start: '', end: '', summary: '' }),
+          ),
+        },
+      ],
+      schools: [{ school: 'CU Boulder', degree: 'B.S.', field: '', start: '', end: '2017' }],
+    });
+    expect(
+      ((await fill([field('Job title', { section: 'Work Experience 1' })])) as Filled).blocks,
+    ).toEqual({ jobs: 3, schools: 1 });
   });
 
   it('asks where the job is when a question names no country', async () => {
@@ -260,6 +284,85 @@ describe('answering a form to fill', () => {
   });
 });
 
+describe('the pay to ask for, and why you’re leaving', () => {
+  const PAY = [
+    field('What are your salary expectations?'),
+    field('Desired salary', { control: 'number', type: 'number' }),
+    field('Salary range', {
+      control: 'choice',
+      options: ['$100,000 - $149,999', '$150,000 - $199,999', '$200,000 or more'],
+    }),
+  ];
+  const asked = async (fields = PAY) =>
+    ((await fill(fields)) as Filled).replies.map((reply) => [
+      reply.source,
+      reply.text ?? reply.pick?.[0] ?? reply.left,
+    ]);
+
+  it('fills the job’s own ask: the user’s, or else their Claude’s suggestion in job.md', async () => {
+    jobs[0] = { ...(jobs[0] as Job), payAsk: '$185,000', suggestedAsk: '$175,000' };
+    expect(await asked()).toEqual([
+      ['job', '$185,000'],
+      ['job', '185000'],
+      ['job', '$150,000 - $199,999'],
+    ]);
+    jobs[0] = { ...(jobs[0] as Job), payAsk: null };
+    expect(await asked()).toEqual([
+      ['claude', '$175,000'],
+      ['claude', '175000'],
+      ['claude', '$150,000 - $199,999'],
+    ]);
+  });
+
+  it('fills the target of the job’s kind of job without one, or the first kind’s', async () => {
+    about = {
+      ...ABOUT,
+      targetPay: '$210,000',
+      firstKind: { id: 'developer', name: 'Developer' },
+      otherKinds: [
+        {
+          id: 'project-manager',
+          name: 'Project manager',
+          roles: [],
+          fields: [],
+          levels: [],
+          minPay: '',
+          targetPay: '$160,000',
+          payFilter: false,
+        },
+      ],
+    };
+    expect(await asked()).toEqual([
+      ['profile', '$210,000'],
+      ['profile', '210000'],
+      ['profile', '$200,000 or more'],
+    ]);
+    jobs[0] = { ...(jobs[0] as Job), kind: 'project-manager' };
+    expect(await asked()).toEqual([
+      ['profile', '$160,000'],
+      ['profile', '160000'],
+      ['profile', '$150,000 - $199,999'],
+    ]);
+  });
+
+  it('fills why you’re leaving from Profile, never your title or company', async () => {
+    const LEAVING = 'I want to sell to bigger teams than Tidewater has.';
+    const fields = [
+      field('Reason for leaving your current position'),
+      field('Reason for leaving current employer', { control: 'long' }),
+    ];
+    expect(await asked(fields)).toEqual([
+      ['you', 'unset'],
+      ['you', 'unset'],
+    ]);
+    about = { ...ABOUT, applications: { ...ABOUT.applications, leaving: LEAVING } };
+    expect(await asked(fields)).toEqual([
+      ['profile', LEAVING],
+      ['profile', LEAVING],
+    ]);
+  });
+});
+
 describe('answering from the resumes, where Profile is blank', () => {
   const BLANK = { name: '', email: '', phone: '', location: '', linkedin: '', website: '' };
 
@@ -276,7 +379,7 @@ describe('answering from the resumes, where Profile is blank', () => {
       from: 'From the job’s resume',
     });
     expect(answer.replies[1]?.text).toBe('Tidewater Analytics');
-    expect(answer.files.resume?.name).toBe('Ana María Ruiz - Resume.pdf');
+    expect(answer.files.resume?.name).toBe('AnaRuizResume10202026_HarborPine.pdf');
   });
 
   it('takes your newest resume for a job that has none yet', async () => {
@@ -364,7 +467,8 @@ describe('what was sent', () => {
       { question: 'Street address', text: '1420 Larimer St' },
       { question: 'Anything else?', text: '  ' },
     ]);
-    expect(answer).toMatchObject({ ok: true, did: 'sent', recorded: 3 });
+    // It marked the job Applied, as it wasn't, which Undo may take back.
+    expect(answer).toMatchObject({ ok: true, did: 'sent', recorded: 3, marked: true });
     expect(deps.jobs.recordAnswers.mock.calls).toEqual([
       [
         'harbor-pine--account-executive',
@@ -380,9 +484,27 @@ describe('what was sent', () => {
     });
   });
 
-  it('leaves a job you applied to as it is', async () => {
-    await sent([{ question: 'Why?', text: 'Because.' }], 'lumen--product-manager');
+  it('leaves a job you applied to as it is, and says it didn’t mark it, so there’s no Undo', async () => {
+    const answer = await sent([{ question: 'Why?', text: 'Because.' }], 'lumen--product-manager');
     expect(deps.jobs.updateJob).not.toHaveBeenCalled();
+    expect(answer).toMatchObject({ ok: true, did: 'sent', marked: false });
+  });
+
+  it('takes marking a job Applied back, as Undo asks', async () => {
+    const job = 'harbor-pine--account-executive';
+    expect(await answerAsk({ ask: 'unsent', job }, deps)).toMatchObject({
+      ok: true,
+      did: 'unsent',
+      job: { id: job },
+      undone: true,
+    });
+    expect(deps.jobs.undoApplied).toHaveBeenCalledWith(job);
+    deps.jobs.undoApplied.mockReturnValueOnce({ ok: true, undone: false });
+    expect(await answerAsk({ ask: 'unsent', job }, deps)).toMatchObject({ undone: false });
+    expect(await answerAsk({ ask: 'unsent', job: 'gone--job' }, deps)).toMatchObject({
+      ok: false,
+      reason: 'not-found',
+    });
   });
 });
 
@@ -407,6 +529,24 @@ describe('answers to keep', () => {
     expect(about.applications.pronouns).toBe('she/her');
     expect(kept.street).toBe('1420 Larimer St');
     expect(kept.equalOpportunity.gender).toBe('woman');
+  });
+
+  it('keeps why you’re leaving in a few sentences, where the rest take a line', async () => {
+    const leaving = `I want to sell to bigger teams. ${'More of why. '.repeat(40)}`.trim();
+    expect(leaving.length).toBeGreaterThan(200);
+    const answer = await answerAsk(
+      {
+        ask: 'remember',
+        answers: [
+          { kind: 'leaving', text: leaving },
+          { kind: 'pronouns', text: 'x'.repeat(201) },
+        ],
+      },
+      deps,
+    );
+    expect(answer).toEqual({ ok: true, did: 'remember', saved: 1 });
+    expect(about.applications.leaving).toBe(leaving);
+    expect(about.applications.pronouns).toBe('');
   });
 });
 
@@ -498,5 +638,46 @@ describe('drafts of a form’s own questions', () => {
       reason: 'not-found',
     });
     expect(deps.drafts.start).not.toHaveBeenCalled();
+  });
+});
+
+describe('the job a page is for', () => {
+  const lookUp = (url: string, company = '', role = '') =>
+    answerAsk({ ask: 'job', url, company, role }, deps);
+
+  it('finds the job by its posting, from its application too, with its status', async () => {
+    expect(await lookUp(`${POSTING}?gh_src=linkedin`)).toEqual({
+      ok: true,
+      did: 'job',
+      found: {
+        job: {
+          id: 'harbor-pine--account-executive',
+          company: 'Harbor & Pine',
+          role: 'Account Executive',
+          status: 'new',
+          appliedOn: null,
+        },
+        how: 'same',
+      },
+    });
+    expect(
+      await lookUp('https://www.linkedin.com/jobs/view/product-manager-at-lumen-4012345678/'),
+    ).toMatchObject({
+      found: { job: { status: 'applied', appliedOn: '2026-10-12' }, how: 'same' },
+    });
+  });
+
+  it('finds the job at the company with the page’s title, saying how', async () => {
+    expect(
+      await lookUp('https://jobs.lever.co/lumenhealth/6f0c2e1a', 'Lumen Health', 'Product Manager'),
+    ).toMatchObject({ found: { job: { id: 'lumen--product-manager' }, how: 'role' } });
+  });
+
+  it('finds none for a job that isn’t in the job hunt', async () => {
+    expect(await lookUp('https://jobs.lever.co/fernway/1', 'Fernway', 'Data Analyst')).toEqual({
+      ok: true,
+      did: 'job',
+      found: null,
+    });
   });
 });

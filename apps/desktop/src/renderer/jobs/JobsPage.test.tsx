@@ -144,6 +144,36 @@ describe('JobsPage', () => {
     expect(onSort).toHaveBeenLastCalledWith(null);
   });
 
+  it('keeps a heading for every column, with the day each job was found or saved', async () => {
+    const onSort = vi.fn();
+    page({ onSort, filter: view('new') });
+    expect(
+      screen
+        .getAllByRole('button', { name: /^Sort by/ })
+        .map((heading) => heading.getAttribute('aria-label')),
+    ).toEqual([
+      'Sort by job',
+      'Sort by status',
+      'Sort by fit',
+      'Sort by pay',
+      'Sort by next step',
+      'Sort by added',
+    ]);
+    const added = screen.getByRole('button', { name: /^Bluewave Staffing/ });
+    expect(added.textContent).toMatch(/Added [A-Z][a-z]{2} \d{1,2}(, \d{4})?$/);
+    await userEvent.click(screen.getByRole('button', { name: 'Sort by added' }));
+    expect(onSort).toHaveBeenLastCalledWith({ by: 'added', reversed: false });
+    cleanup();
+    page({ onSort, filter: view('new'), sort: { by: 'added', reversed: false } });
+    expect(screen.getByRole('button', { name: 'Added, sorted newest first' })).toBeTruthy();
+    // The newest saved first: Bluewave a day ago, Copperleaf two, Granite three.
+    expect(
+      within(screen.getByRole('list', { name: 'Jobs' }))
+        .getAllByRole('button')
+        .map((row) => row.textContent?.split('Added ')[0]?.slice(0, 10)),
+    ).toEqual(['Bluewave S', 'Copperleaf', 'Granite He']);
+  });
+
   it('moves between jobs with the arrow keys', async () => {
     page();
     const rows = within(screen.getByRole('list', { name: 'Jobs' })).getAllByRole('button');
@@ -369,6 +399,36 @@ describe('JobsPage', () => {
     expect(screen.getByRole('status').textContent).toBe('Moved 3 jobs to To review.');
     expect(screen.getByRole('status')).toBe(live);
     expect(screen.queryByRole('region', { name: 'Selected jobs' })).toBeNull();
+  });
+
+  it('has Claude analyze the jobs picked, in one run, once Claude is ready', async () => {
+    const onAnalyze = vi.fn();
+    page({ filter: view('new'), onAnalyze });
+    const box = (name: RegExp) => screen.getByRole('checkbox', { name });
+    await userEvent.click(box(/^Select Bluewave Staffing/));
+    await userEvent.click(box(/^Select Granite Health/));
+    const bar = screen.getByRole('region', { name: 'Selected jobs' });
+    expect(
+      within(bar)
+        .getAllByRole('button')
+        .map((button) => button.textContent),
+    ).toEqual(['Analyze', 'To review', 'To apply', 'Later', 'Pass', 'Clear']);
+    await userEvent.click(within(bar).getByRole('button', { name: 'Analyze' }));
+    expect(onAnalyze).toHaveBeenCalledWith([
+      'bluewave-staffing--senior-engineer',
+      'granite-health--staff-software-engineer',
+    ]);
+    // Picked no more, as the run takes them.
+    expect(screen.queryByRole('region', { name: 'Selected jobs' })).toBeNull();
+  });
+
+  it('says a job nothing has scored yet isn’t checked yet, in its Fit column', () => {
+    page({ filter: view('new') });
+    const bluewave = screen.getByRole('button', { name: /^Bluewave Staffing/ });
+    expect(bluewave.textContent).toContain('Not checked yet');
+    expect(screen.getByRole('button', { name: /^Copperleaf Energy/ }).textContent).toContain(
+      '71 · Good',
+    );
   });
 
   it('selects every job in the view at once, and moves them anywhere', async () => {

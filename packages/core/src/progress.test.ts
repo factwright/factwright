@@ -18,7 +18,7 @@ import {
   viewOf,
 } from './progress.ts';
 import type { JobFile } from './records.ts';
-import { type Call, JOB_STATUSES } from './tracker.ts';
+import { type Call, JOB_STATUSES, NO_OWN_DETAILS } from './tracker.ts';
 
 const TODAY = '2026-10-10';
 
@@ -37,6 +37,7 @@ function job(extra: Partial<Job> = {}): Job {
     search: null,
     searches: [],
     kindFound: null,
+    suggestedAsk: null,
     folder: null,
     stage: 'new',
     firstSeen: '2026-10-01',
@@ -63,6 +64,9 @@ function job(extra: Partial<Job> = {}): Job {
     earlierNotes: null,
     archived: false,
     kind: null,
+    payAsk: null,
+    own: NO_OWN_DETAILS,
+    maybeSame: [],
     manual: false,
     calls: [],
     callDocs: [],
@@ -451,7 +455,7 @@ describe('nextStep', () => {
   it('puts what needs the user first, then their own next step, then calls', () => {
     expect(step({ nextOn: '2026-10-09', nextAction: 'Email Sam' })).toBe('Overdue: Email Sam');
     // A reminder waits in Progress until its day, and one with no day is the next step.
-    expect(step({ nextAction: 'Email Sam', nextOn: '2026-10-13' })).toBe('Run a fit check');
+    expect(step({ nextAction: 'Email Sam', nextOn: '2026-10-13' })).toBe('Analyze job');
     expect(step({ nextAction: 'Email Sam' })).toBe('Email Sam');
     expect(step({ calls: [call({ onDate: '2026-10-20', kind: 'panel' })] })).toBe(
       'Panel interview Tue, Oct 20',
@@ -459,7 +463,7 @@ describe('nextStep', () => {
   });
 
   it('suggests what usually comes next', () => {
-    expect(step({})).toBe('Run a fit check');
+    expect(step({})).toBe('Analyze job');
     expect(step({ company: 'Bluewave Staffing' })).toBe('Find the real employer');
     expect(step({ status: 'applied', appliedOn: '2026-10-07', statusOn: '2026-10-07' })).toBe(
       'Applied 3 days ago',
@@ -471,7 +475,7 @@ describe('nextStep', () => {
   it('says what’s left to decide before applying', () => {
     const fit = (verdict: string) => ({ verdict, score: 70, date: null });
     // Claude's work takes a job to To review. Only the user takes it further.
-    expect(step({ stage: 'review' })).toBe('Run a fit check');
+    expect(step({ stage: 'review' })).toBe('Analyze job');
     expect(step({ stage: 'review', fit: fit('Good') })).toBe('Apply or pass?');
     expect(step({ stage: 'review', fit: fit('Skip: hybrid in Austin') })).toBe(
       'Fit check says skip. Pass?',
@@ -500,8 +504,8 @@ describe('nextStep', () => {
   });
 
   it('says what does each step in a click, when one can', () => {
-    expect(action({})).toEqual({ kind: 'fit-check' });
-    expect(action({ company: 'Bluewave Staffing' })).toEqual({ kind: 'fit-check' });
+    expect(action({})).toEqual({ kind: 'analyze' });
+    expect(action({ company: 'Bluewave Staffing' })).toEqual({ kind: 'analyze' });
     expect(action({ nextAction: 'Email Sam' })).toEqual({ kind: 'reminder' });
     const apply = { status: 'apply' as const, statusOn: TODAY };
     expect(action(apply)).toEqual({ kind: 'resume' });

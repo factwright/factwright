@@ -50,7 +50,7 @@ Before starting, read:
   - **Company job boards:** search the web the same way for openings on the applicant systems that fit criteria.md, such as `site:jobs.ashbyhq.com "staff engineer" remote`, `site:jobs.lever.co`, `site:boards.greenhouse.io` and `site:job-boards.greenhouse.io`. Save the results in `listings.md`. Read each opening with `job_board` in step 3.
   - **A company's board on Greenhouse, Lever, Ashby or Gem:** call `job_board` with the board's link. It saves the whole board as one file and lists every job.
   - **A company's name:** find its careers page or job board with a web search, then read it as a link.
-  - **Anything else** (a careers page, a job site's public listings): read it with `read_page`. The user may have to OK each page, so read only what the source needs. Never sign in anywhere for a search.
+  - **Anything else** (a careers page, a job site's public listings): read it with `read_page`, reading only what the source needs. Never sign in anywhere for a search.
 - Count as you go, for the funnel: listings in the source → pass the location filter → pass every filter → ranked.
 
 ## 2. Filter
@@ -85,7 +85,6 @@ For each listing that passed:
   - its jobs: company, role, link and HN id, and with more than one kind of job, each job's kind, to score its role against
   - to call `find_job` for each job first, flag the ones the user has seen before, and return the id it names for each as `job`
   - the jobs.json fields to return for each one, `kind` included
-  - Pages read with `read_page` may ask the user, so tell the user how many to expect.
 - Write `why` and `gaps` concretely, each tied to a fact, in the user's terms. Never stretch a fit. Gaps are gaps.
 
 ## 4. Write the report
@@ -144,7 +143,7 @@ Reply in 6 lines or fewer, plus a line for each place after the first:
 - the funnel, in one line per place
 - the top 3, with scores
 - anything odd about a source
-- the next step: the ranked jobs are in the app under **New**, each place as a search of its own to filter by. Each job's panel sorts it in a click (To review, To apply, Later or Pass) and runs `/factwright:fit-check` or `/factwright:focused-resume` on it.
+- the next step: the ranked jobs are in the app under **New**, each place as a search of its own to filter by. Each job's panel sorts it in a click (To review, To apply, Later or Pass) and runs `/factwright:analyze-job` or `/factwright:focused-resume` on it.
 - when `find_job` says the user passed on jobs for the same reason more than once, one line suggesting it as a deal-breaker they can add in Profile, under What you want ("You've passed on 4 jobs over pay. Add a pay floor to your deal-breakers?"). Only suggest it; change nothing.
 
 The app picks up the search on its own. There's nothing to commit or sync.

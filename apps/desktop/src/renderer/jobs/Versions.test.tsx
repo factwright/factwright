@@ -8,7 +8,7 @@ import type { FactwrightApi } from '../../shared/api.ts';
 import type { RunTask } from '../../shared/runs.ts';
 import type { DocVersion } from '../../shared/versions.ts';
 import { ResumesSection } from './ResumesSection.tsx';
-import type { RunControls } from './RunActions.tsx';
+import { type RunControls, runControlsFor } from './RunActions.tsx';
 import { sampleJob } from './sample-jobs.ts';
 import { EarlierVersions, NewVersionButton, RequestChanges } from './Versions.tsx';
 
@@ -94,10 +94,9 @@ function apiStub() {
   };
 }
 
+/** The job panel's run controls, with Claude at work on a task, or on none. */
 const controls = (task: RunTask | null = null): RunControls => ({
-  phase: task ? 'working' : 'idle',
-  task,
-  start: vi.fn(),
+  ...runControlsFor(task ? [{ id: 'run-1', task, phase: 'working' }] : [], vi.fn(), vi.fn()),
   show: vi.fn(),
 });
 
@@ -217,6 +216,33 @@ describe('New version', () => {
         again: true,
       }),
     );
+  });
+
+  it('offers a quick one beside a resume’s, which keeps the current one too, and asks nothing', async () => {
+    const api = apiStub();
+    const run = controls();
+    render(<NewVersionButton job={job} kind="resume" api={api} run={run} onProblem={vi.fn()} />);
+    await userEvent.click(screen.getByRole('button', { name: 'Quick version' }));
+    expect(api.keepVersion).toHaveBeenCalledWith(job.id, 'resume');
+    await waitFor(() =>
+      expect(run.start).toHaveBeenCalledWith({
+        skill: 'focused-resume',
+        jobId: job.id,
+        again: true,
+        quick: true,
+      }),
+    );
+    cleanup();
+    // Only a resume has one, and while either runs, one says Claude is on it.
+    render(<NewVersionButton job={job} kind="letter" api={api} run={run} onProblem={vi.fn()} />);
+    expect(screen.queryByRole('button', { name: 'Quick version' })).toBeNull();
+    cleanup();
+    const working = controls({ skill: 'focused-resume', jobId: job.id, again: true, quick: true });
+    render(
+      <NewVersionButton job={job} kind="resume" api={api} run={working} onProblem={vi.fn()} />,
+    );
+    expect(screen.getAllByText('Claude is on it')).toHaveLength(1);
+    expect(screen.queryByRole('button', { name: 'Quick version' })).toBeNull();
   });
 
   it('says why, and starts nothing, when it can’t keep the current one', async () => {

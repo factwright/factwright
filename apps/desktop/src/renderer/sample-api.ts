@@ -1,23 +1,49 @@
 import { localDate } from '@factwright/core';
-import type { RunStep, TurnEnd } from '../shared/activity.ts';
-import type { ClaudeStatus, FactwrightApi, RunSignal, SetupCheck } from '../shared/api.ts';
+import {
+  type RunProgress,
+  type RunStep,
+  type TodoItem,
+  type TurnEnd,
+  todoAt,
+} from '../shared/activity.ts';
+import type {
+  ClaudeStatus,
+  FactwrightApi,
+  RunOutput,
+  RunSignal,
+  RunsView,
+  RunView,
+  SetupCheck,
+  WaitingAsk,
+  WaitingRound,
+} from '../shared/api.ts';
 import { DEFAULT_EFFORT, type EffortChoices } from '../shared/effort.ts';
 import type { FiledFacts } from '../shared/facts.ts';
 import { DEFAULT_MODELS, type ModelChoices } from '../shared/models.ts';
 import type { PermissionAsk } from '../shared/permission-asks.ts';
-import { ASK_FIRST, type ClaudePermissions } from '../shared/permissions.ts';
 import {
   isAnswered,
   type QuestionRound,
   type RoundQuestion,
   type RoundReply,
+  SKIPPED_ANSWER,
 } from '../shared/rounds.ts';
-import { type RunTask, THANKS_SKILL, taskJob } from '../shared/runs.ts';
+import {
+  ANALYZE_SKILL,
+  AT_ONCE,
+  lanesOf,
+  type RunTask,
+  TEMPLATE_SKILL,
+  THANKS_SKILL,
+  taskJob,
+} from '../shared/runs.ts';
 import { sampleProfile } from './about/sample-profile.ts';
 import { sampleSaveHelper } from './extension/sample-helper.ts';
 import { sampleFacts } from './facts/sample-facts.ts';
+import { SAVED_TODAY } from './jobs/sample-jobs.ts';
 import { sampleTracker } from './jobs/sample-tracker.ts';
 import { sampleProfiles } from './profiles/sample-profiles.ts';
+import { sampleChanges } from './sample-changes.ts';
 import { sampleSync } from './sync/sample-sync.ts';
 
 const READY: ClaudeStatus = {
@@ -171,8 +197,6 @@ function permissionCall(ask: PermissionAsk): string {
       return `Write(${ask.file})`;
     case 'read':
       return `Read(${ask.file})`;
-    case 'page':
-      return `factwright - read_page (MCP)(url: "${ask.url}")`;
     case 'profile':
       return 'factwright - save_about_you (MCP)';
     case 'template':
@@ -182,12 +206,6 @@ function permissionCall(ask: PermissionAsk): string {
 
 /** A permission prompt for the made-up run, with ?permit= and its kind, in place of its question. */
 const SAMPLE_PERMITS: Readonly<Record<string, PermissionAsk>> = {
-  page: {
-    id: 'perm_sample',
-    kind: 'page',
-    url: 'https://northwindlabs.com/careers/senior-software-engineer-platform',
-    host: 'northwindlabs.com',
-  },
   edit: {
     id: 'perm_sample',
     kind: 'edit',
@@ -254,6 +272,7 @@ const PREP_ANSWER = 'No, so help me handle the gap';
 
 /** The rest of a run's command after the job, as the app types it: the call, or the question. */
 function taskTail(task: RunTask): string {
+  if ('quick' in task) return `${'again' in task && task.again ? ' new version' : ''} quick`;
   if ('askId' in task) return ` question ${task.askId}`;
   if (!('callId' in task)) return '';
   return ` call ${task.callId}${'practice' in task && task.practice ? ' practice' : ''}`;
@@ -372,10 +391,56 @@ const PREP_ROUND: QuestionRound = {
   ],
 };
 
+/** What tailoring a resume asks, with ?runs=asking: what the posting wants that the facts don't show. */
+const RESUME_ROUND: QuestionRound = {
+  id: 'toolu_sample_resume',
+  questions: [
+    choice({
+      question: 'The posting wants GraphQL. Have you used GraphQL?',
+      header: 'GraphQL',
+      multiSelect: false,
+      options: [
+        {
+          label: 'Yes, in production',
+          description: 'Saved as a fact for you to verify.',
+          preview: null,
+        },
+        { label: 'Some: a side project or a course', description: null, preview: null },
+        { label: 'No', description: 'Noted as a gap, so it isn’t asked again.', preview: null },
+      ],
+    }),
+  ],
+};
+
+/** What a cover letter asks, with ?runs=asking: which story leads it. */
+const LETTER_ROUND: QuestionRound = {
+  id: 'toolu_sample_letter',
+  questions: [
+    choice({
+      question: 'Which story should the letter lead with?',
+      header: 'Story',
+      multiSelect: false,
+      options: [
+        {
+          label: 'The deploy pipeline at Tidewater',
+          description: 'Cut deploy time by about 40%, which the posting’s first line is about.',
+          preview: null,
+        },
+        {
+          label: 'The on-call runbooks',
+          description: 'The posting asks for someone who makes on-call calmer.',
+          preview: null,
+        },
+      ],
+    }),
+  ],
+};
+
 /** Each question answered, with what the user picked and wrote, as Claude Code notes them. */
 const noted = (round: QuestionRound, reply: RoundReply): [string, string][] =>
   round.questions.flatMap(({ question }, at): [string, string][] => {
     const answer = reply[at];
+    if (answer?.skipped) return [[question, SKIPPED_ANSWER]];
     if (!answer || !isAnswered(answer)) return [];
     return [[question, [...answer.picks, answer.other.trim()].filter(Boolean).join(', ')]];
   });
@@ -393,7 +458,7 @@ const noted = (round: QuestionRound, reply: RoundReply): [string, string][] =>
  * questions open in their dialog. With ?run=asks, interview prep stops to ask a question, as the
  * README's screenshots show it, and ?ask=more makes the first run's round three questions, or
  * ?ask=kinds a number and a line of words.
- * ?permit=edit, write, read, page, profile or template has the first run ask Claude Code's OK
+ * ?permit=edit, write, read, profile or template has the first run ask Claude Code's OK
  * for that instead, in its dialog. ?helper picks where the browsers stand in the Browser
  * extension window (see extension/sample-helper.ts).
  */
@@ -421,7 +486,7 @@ function sampleSteps(task: RunTask): Omit<RunStep, 'id' | 'state'>[] {
         { tool: 'Write', detail: `${folder}/cover-letter.json` },
         { tool: 'mcp__factwright__build_cover_letter', detail: null },
       ];
-    case 'fit-check':
+    case 'analyze-job':
       return [
         { tool: 'mcp__factwright__read_posting', detail: 'jobs.example' },
         ...reading,
@@ -444,102 +509,145 @@ export function sampleApi(): FactwrightApi {
   const query = new URLSearchParams(location.search);
   const claude = query.get('claude') ?? 'ready';
   const ready = PLANS[query.get('plan') ?? ''] ?? READY;
-  const outputListeners = new Set<(data: string) => void>();
-  const signalListeners = new Set<(signal: RunSignal) => void>();
-  const stepListeners = new Set<(step: RunStep) => void>();
-  const endListeners = new Set<(end: TurnEnd) => void>();
-  const step = (value: RunStep) => {
-    for (const listener of stepListeners) listener(value);
-  };
-  const ended = (end: TurnEnd) => {
-    for (const listener of endListeners) listener(end);
-  };
   // ?jobs picks the jobs, and a made-up run leaves its work on them.
   const tracker = sampleTracker(query.get('jobs'), query.get('resume'), query.has('revised'));
-  const print = (lines: string[]) => {
-    for (const line of lines) for (const listener of outputListeners) listener(line);
-  };
-  const signal = (value: RunSignal) => {
-    for (const listener of signalListeners) listener(value);
-  };
-  let waitingForAnswer = false;
   // What answering plays: the opening run's question, interview prep's, with ?run=asks, or a
   // permission prompt, with ?permit=.
-  let afterAnswer: 'opening' | 'round' | 'permission' = 'opening';
   const asks = query.get('run') === 'asks';
   // ?first-run=show starts with Claude Code's first-run screens, once, each until Enter.
   let firstRunLeft = query.get('first-run') === 'show' ? 2 : 0;
-  let afterFirstRun: () => void = () => {};
-  const firstRunListeners = new Set<() => void>();
   // ?trust=ask starts with Claude Code's question about trusting the folder, once.
-  let waitingForTrust = false;
   let trusted = query.get('trust') !== 'ask';
-  let afterTrust: () => void = () => {};
-  const trustListeners = new Set<() => void>();
-  let run = sampleRun(false);
-  // The round of Claude's questions waiting in its dialog, and what answering it plays.
-  const questionListeners = new Set<(round: QuestionRound | null) => void>();
-  let asking: { round: QuestionRound; after: 'opening' | 'round' } | null = null;
-  const tellQuestion = (round: QuestionRound | null) => {
-    for (const listener of questionListeners) listener(round);
-  };
-  const askRound = (round: QuestionRound, after: 'opening' | 'round') => {
-    asking = { round, after };
-    signal('needs-answer');
-    tellQuestion(round);
-  };
   const roundAsked = query.get('ask');
-  // A permission prompt waiting in its dialog, with ?permit=, in place of the first question.
-  const permissionListeners = new Set<(ask: PermissionAsk | null) => void>();
-  let permitting: PermissionAsk | null = null;
-  const tellPermission = (ask: PermissionAsk | null) => {
-    for (const listener of permissionListeners) listener(ask);
-  };
-  const askPermission = (ask: PermissionAsk) => {
-    permitting = ask;
-    print(run.permission(ask));
-    signal('needs-answer');
-    tellPermission(ask);
-  };
-  const carryOn = () => {
-    signal('working');
-    setTimeout(() => {
-      print(run.finished);
-      done();
-    }, 1600);
-  };
   // ?filed has the made-up run file facts from the user's answers as it finishes, once.
   const facts = sampleFacts(query.get('profile'));
-  const filedListeners = new Set<(filed: FiledFacts) => void>();
   let fileOnce = query.has('filed');
-  const done = () => {
-    signal('done');
-    if (!fileOnce) return;
-    fileOnce = false;
-    const filed = facts.fileAnswers();
-    for (const listener of filedListeners) listener(filed);
-  };
-  let permissions: ClaudePermissions = ASK_FIRST;
+  // What each made-up task changed, for its card once it's done. ?changes picks none, or since.
+  const changes = sampleChanges(query.get('changes'));
   let reminding = query.get('reminders') !== 'off';
   let models: ModelChoices = DEFAULT_MODELS;
   let effort: EffortChoices = DEFAULT_EFFORT;
+  let analyzesNew = true;
   // ?end=question has a run stop to ask in its own words, and ?end=rate_limit end in that error.
   const ending = query.get('end');
-  // The task at hand, which a reply to the made-up run's question finishes.
-  let current: RunTask | null = null;
-  const finish = (task: RunTask | null) => {
-    if (task) tracker.madeBy(task);
-    ended({ said: 'Done. The job’s panel shows what changed.', error: null });
-    done();
+  const dark = () => window.matchMedia('(prefers-color-scheme: dark)').matches;
+
+  // The made-up runs, side by side, a tab each, and the tasks waiting in line, as many at once
+  // as the app runs them.
+  const tabs: RunView[] = [];
+  let atOnce: number = AT_ONCE.usual;
+  let count = 0;
+  const runsListeners = new Set<(view: RunsView) => void>();
+  const runsView = (): RunsView => ({
+    runs: tabs.map((tab) => ({ ...tab })),
+    atOnce,
+    setUp: trusted && firstRunLeft === 0,
+  });
+  const tellRuns = () => {
+    const view = runsView();
+    for (const listener of runsListeners) listener(view);
   };
-  const playTask = (task: RunTask) => {
-    current = task;
-    signal('working');
-    print(run.task(task));
+  const outputListeners = new Set<(output: RunOutput) => void>();
+  const stepListeners = new Set<(step: { runId: string; step: RunStep }) => void>();
+  const progressListeners = new Set<(progress: { runId: string; progress: RunProgress }) => void>();
+  const endListeners = new Set<(end: { runId: string; end: TurnEnd }) => void>();
+  const filedListeners = new Set<(filed: { runId: string; filed: FiledFacts }) => void>();
+  // What the runs wait on the user for in the window's dialog, in the order it came in.
+  let rounds: (WaitingRound & { after: 'opening' | 'round' })[] = [];
+  let permits: WaitingAsk[] = [];
+  let since = 0;
+  const questionListeners = new Set<(rounds: WaitingRound[]) => void>();
+  const permissionListeners = new Set<(asks: WaitingAsk[]) => void>();
+  const tellQuestions = () => {
+    for (const listener of questionListeners) listener([...rounds]);
+  };
+  const tellPermissions = () => {
+    for (const listener of permissionListeners) listener([...permits]);
+  };
+
+  /** One made-up run: what it prints, and what the user answers in its terminal plays. */
+  interface Sample {
+    id: string;
+    task: RunTask | null;
+    lines: ReturnType<typeof sampleRun>;
+    /** What Enter in its terminal answers: a round sent there, or Claude Code's own prompt. */
+    terminal: 'opening' | 'round' | 'permission' | null;
+    /** Its task's record of what it changed. */
+    record: string;
+    /** Claude Code's screens it waits at, and what comes once they're answered. */
+    screen: 'first-run' | 'trust' | null;
+    afterScreens: () => void;
+    stopped: boolean;
+  }
+  const samples = new Map<string, Sample>();
+  const tabOf = (id: string) => tabs.find((each) => each.id === id);
+  const set = (id: string, changed: Partial<RunView>) => {
+    const tab = tabOf(id);
+    if (!tab) return;
+    Object.assign(tab, changed);
+    tellRuns();
+  };
+  const print = (sample: Sample, lines: string[]) => {
+    for (const data of lines)
+      for (const listener of outputListeners) listener({ runId: sample.id, data });
+  };
+  const step = (sample: Sample, value: RunStep) => {
+    for (const listener of stepListeners) listener({ runId: sample.id, step: value });
+  };
+  const progress = (sample: Sample, value: RunProgress) => {
+    for (const listener of progressListeners) listener({ runId: sample.id, progress: value });
+  };
+  const ended = (sample: Sample, end: TurnEnd) => {
+    for (const listener of endListeners) listener({ runId: sample.id, end });
+  };
+  const signal = (sample: Sample, phase: RunSignal) => {
+    if (sample.stopped || !tabOf(sample.id)) return;
+    set(sample.id, { phase, screen: null });
+    pump();
+  };
+  const askRound = (sample: Sample, round: QuestionRound, after: 'opening' | 'round') => {
+    since += 1;
+    rounds = [
+      ...rounds,
+      { ...round, id: `${sample.id}/${round.id}`, runId: sample.id, since, after },
+    ];
+    signal(sample, 'needs-answer');
+    tellQuestions();
+  };
+  const askPermission = (sample: Sample, ask: PermissionAsk) => {
+    since += 1;
+    permits = [...permits, { ...ask, id: `${sample.id}/${ask.id}`, runId: sample.id, since }];
+    print(sample, sample.lines.permission(ask));
+    signal(sample, 'needs-answer');
+    tellPermissions();
+  };
+  const done = (sample: Sample) => {
+    signal(sample, 'done');
+    if (!fileOnce) return;
+    fileOnce = false;
+    const filed = facts.fileAnswers();
+    for (const listener of filedListeners) listener({ runId: sample.id, filed });
+  };
+  const carryOn = (sample: Sample) => {
+    signal(sample, 'working');
+    setTimeout(() => {
+      print(sample, sample.lines.finished);
+      done(sample);
+    }, 1600);
+  };
+  const finish = (sample: Sample) => {
+    if (sample.task) tracker.madeBy(sample.task);
+    ended(sample, { said: 'Done. The job’s panel shows what changed.', error: null });
+    changes.done(sample.record, sample.task);
+    done(sample);
+  };
+  const playTask = (sample: Sample, task: RunTask) => {
+    signal(sample, 'working');
+    print(sample, sample.lines.task(task));
     if (asks && task.skill === 'interview-prep') {
       setTimeout(() => {
-        print(run.roundIntro);
-        askRound(PREP_ROUND, 'round');
+        print(sample, sample.lines.roundIntro);
+        askRound(sample, PREP_ROUND, 'round');
       }, 1200);
       return;
     }
@@ -548,26 +656,376 @@ export function sampleApi(): FactwrightApi {
       id: `sample-${Date.now()}-${i}`,
     }));
     steps.forEach((each, i) => {
-      setTimeout(() => step({ ...each, state: 'running' }), 300 + i * STEP_MS);
-      setTimeout(() => step({ ...each, state: 'done' }), 300 + (i + 0.7) * STEP_MS);
+      setTimeout(() => step(sample, { ...each, state: 'running' }), 300 + i * STEP_MS);
+      setTimeout(() => step(sample, { ...each, state: 'done' }), 300 + (i + 0.7) * STEP_MS);
     });
     setTimeout(
       () => {
-        print(run.taskDone(task));
+        if (sample.stopped) return;
+        print(sample, sample.lines.taskDone(task));
         if (!ending) {
-          finish(task);
+          finish(sample);
           return;
         }
         ended(
+          sample,
           ending === 'question'
             ? { said: 'Which template would you like for it, Classic or Minimal?', error: null }
             : { said: null, error: { kind: ending, message: 'API Error: Rate limit reached' } },
         );
-        done();
+        done(sample);
       },
       300 + steps.length * STEP_MS,
     );
   };
+  // Claude with no task opens on its own question, or a permission prompt with ?permit=.
+  const play = (sample: Sample) => {
+    const { task } = sample;
+    if (task) {
+      setTimeout(() => playTask(sample, task), 300);
+      return;
+    }
+    setTimeout(() => {
+      signal(sample, 'working');
+      print(sample, sample.lines.opening);
+    }, 300);
+    setTimeout(() => {
+      print(sample, sample.lines.intro);
+      const permit = SAMPLE_PERMITS[query.get('permit') ?? ''];
+      if (permit) askPermission(sample, permit);
+      else askRound(sample, openingRound(roundAsked), 'opening');
+    }, 1800);
+  };
+  const askTrust = (sample: Sample) => {
+    if (trusted) {
+      play(sample);
+      return;
+    }
+    sample.afterScreens = () => play(sample);
+    setTimeout(() => {
+      print(sample, sample.lines.trust);
+      sample.screen = 'trust';
+      set(sample.id, { screen: 'trust' });
+    }, 300);
+  };
+  const launch = (sample: Sample) => {
+    set(sample.id, { phase: 'starting', waits: null, startedAt: Date.now() });
+    sample.record = changes.begin(sample.id);
+    if (firstRunLeft === 0) {
+      askTrust(sample);
+      return;
+    }
+    sample.afterScreens = () => {
+      print(sample, ['\x1b[H\x1b[2J']);
+      askTrust(sample);
+    };
+    setTimeout(() => {
+      print(sample, sample.lines.firstRun[0] ?? []);
+      sample.screen = 'first-run';
+      set(sample.id, { screen: 'first-run' });
+    }, 300);
+  };
+  // The line: tasks start in the order they were asked for, as many at once as may, and never
+  // two on one job.
+  const pump = () => {
+    const busy = (tab: RunView) => ['starting', 'working', 'needs-answer'].includes(tab.phase);
+    let going = tabs.filter(busy).length;
+    const lanes = new Set(tabs.filter(busy).flatMap((tab) => lanesOf(tab.task)));
+    for (const tab of tabs) {
+      if (tab.phase !== 'in-line') continue;
+      const mine = lanesOf(tab.task);
+      const waits = mine.some((lane) => lanes.has(lane))
+        ? 'job'
+        : tab.task && going >= atOnce
+          ? 'turn'
+          : null;
+      for (const lane of mine) lanes.add(lane);
+      if (waits) {
+        if (tab.waits !== waits) set(tab.id, { waits });
+        continue;
+      }
+      going += 1;
+      const sample = samples.get(tab.id);
+      if (sample) launch(sample);
+    }
+  };
+  /** A made-up run, or a task in line for one, as the window would start it. */
+  const add = (task: RunTask | null): Sample => {
+    count += 1;
+    const id = `run-${count}`;
+    tabs.push({
+      id,
+      task,
+      phase: 'in-line',
+      waits: 'turn',
+      screen: null,
+      startedAt: null,
+      problem: null,
+      analyzed: [],
+    });
+    const sample: Sample = {
+      id,
+      task,
+      lines: sampleRun(dark()),
+      terminal: null,
+      record: '',
+      screen: null,
+      afterScreens: () => {},
+      stopped: false,
+    };
+    samples.set(id, sample);
+    return sample;
+  };
+  const close = (id: string) => {
+    const at = tabs.findIndex((tab) => tab.id === id);
+    if (at < 0) return;
+    tabs.splice(at, 1);
+    const sample = samples.get(id);
+    if (sample) sample.stopped = true;
+    samples.delete(id);
+    rounds = rounds.filter((round) => round.runId !== id);
+    permits = permits.filter((ask) => ask.runId !== id);
+    tellQuestions();
+    tellPermissions();
+    tellRuns();
+    pump();
+  };
+  // ?runs=side opens on runs side by side: three at work, one done that stopped on a question,
+  // and a cover letter in line for its job's resume. ?runs=asking has three runs waiting on the
+  // user at once: two rounds of questions and a permission prompt. ?runs=analyze, with
+  // ?jobs=saved, has one run analyzing the six jobs saved from the browser, two of them done.
+  // ?runs=strips has a run on each kind of step the working strip draws, held there: reading,
+  // searching, writing, checking facts with a helper, building a PDF, a job search at step 3 of 7
+  // with four helpers, and thinking.
+  const scene = query.get('runs');
+  const sideBySide = (tasks: RunTask[], start: (sample: Sample, at: number) => void) => {
+    const now = Date.now();
+    const started = tasks.map((task, at) => {
+      const sample = add(task);
+      set(sample.id, {
+        phase: 'working',
+        waits: null,
+        startedAt: now - Math.max(4 - at, 1) * 61_000,
+      });
+      return sample;
+    });
+    // What each run says comes once the window listens.
+    setTimeout(() => {
+      started.forEach((sample, at) => {
+        sample.record = changes.begin(sample.id);
+        if (sample.task) print(sample, sample.lines.task(sample.task));
+        start(sample, at);
+      });
+    }, 500);
+  };
+  if (scene === 'side') {
+    const at = (tool: string, detail: string | null) => ({ tool, detail, id: `${tool}-${detail}` });
+    sideBySide(
+      [
+        { skill: 'focused-resume', jobId: 'tidewater-analytics--senior-backend-engineer' },
+        { skill: 'cover-letter', jobId: 'acme-robotics--staff-engineer-developer-tools' },
+        { skill: 'analyze-job', jobId: 'copperleaf-energy--principal-engineer' },
+        { skill: 'focused-resume', jobId: 'quarry-labs--senior-software-engineer' },
+      ],
+      (sample, index) => {
+        const doing = [
+          at('Write', 'applications/tidewater-analytics--senior-backend-engineer/resume.json'),
+          at('mcp__factwright__build_cover_letter', null),
+          at('WebSearch', 'Copperleaf Energy engineering team reviews'),
+        ][index];
+        if (doing) {
+          step(sample, { ...at('Read', 'facts/platform-engineering.md'), state: 'done' });
+          step(sample, { ...doing, state: 'running' });
+          return;
+        }
+        // The fourth is done, and stopped to ask something in its own words.
+        set(sample.id, { phase: 'done' });
+        ended(sample, {
+          said: 'The posting lists Rust as a must. Should I lead with your Go work, or leave Rust off and say so in the letter?',
+          error: null,
+        });
+      },
+    );
+    add({ skill: 'cover-letter', jobId: 'tidewater-analytics--senior-backend-engineer' });
+    pump();
+  } else if (scene === 'analyze') {
+    // ?runs=analyze: the jobs saved today and yesterday, analyzed in one run, two of six done,
+    // beside a tailored resume.
+    const jobIds = SAVED_TODAY.map(([id]) => id);
+    const done = jobIds.slice(0, 2);
+    sideBySide(
+      [
+        { skill: ANALYZE_SKILL, jobIds },
+        { skill: 'focused-resume', jobId: 'tidewater-analytics--senior-backend-engineer' },
+      ],
+      (sample, index) => {
+        if (index > 0) {
+          step(sample, {
+            tool: 'Read',
+            detail: 'facts/platform-engineering.md',
+            id: 'r',
+            state: 'running',
+          });
+          return;
+        }
+        for (const id of done) tracker.madeBy({ skill: ANALYZE_SKILL, jobId: id });
+        set(sample.id, { analyzed: done });
+        step(sample, {
+          tool: 'mcp__factwright__job_details',
+          detail: null,
+          id: 'details-northbeam',
+          state: 'running',
+        });
+      },
+    );
+  } else if (scene === 'strips') {
+    const at = (tool: string, detail: string | null, helper?: string): RunStep => ({
+      id: `${tool}-${detail}-${helper}`,
+      tool,
+      detail,
+      state: 'running',
+      ...(helper && { helper }),
+    });
+    const done = (step: RunStep): RunStep => ({ ...step, state: 'done' });
+    // Where Claude is on a to-do list, given as what each item is and what Claude says while it's
+    // on it: on the one given.
+    const onList = (items: [string, string][], on: number) =>
+      todoAt(
+        items.map(
+          ([text, doing], i): TodoItem => ({
+            text,
+            doing,
+            state: i < on ? 'completed' : i === on ? 'in_progress' : 'pending',
+          }),
+        ),
+      );
+    const posting = (jobId: string) => `applications/${jobId}/posting.md`;
+    const strips: { task: RunTask; steps: RunStep[]; progress?: RunProgress }[] = [
+      {
+        task: { skill: 'focused-resume', jobId: 'tidewater-analytics--senior-backend-engineer' },
+        steps: [
+          done(at('Read', posting('tidewater-analytics--senior-backend-engineer'))),
+          at('Read', 'facts/platform-engineering.md'),
+        ],
+      },
+      {
+        task: { skill: 'who-to-message', jobId: 'copperleaf-energy--principal-engineer' },
+        steps: [
+          done(at('Read', posting('copperleaf-energy--principal-engineer'))),
+          at('WebSearch', 'Copperleaf Energy engineering manager platform'),
+        ],
+      },
+      {
+        task: { skill: 'cover-letter', jobId: 'acme-robotics--staff-engineer-developer-tools' },
+        steps: [
+          done(at('Read', 'facts/platform-engineering.md')),
+          at(
+            'Write',
+            'applications/acme-robotics--staff-engineer-developer-tools/cover-letter.json',
+          ),
+        ],
+      },
+      {
+        task: { skill: 'focused-resume', jobId: 'quarry-labs--senior-software-engineer' },
+        steps: [
+          done(at('mcp__factwright__build_resume', null)),
+          done(at('Agent', 'Fact-check the resume')),
+          at('Read', 'facts/platform-engineering.md', 'agent-fact-check'),
+        ],
+        progress: {
+          todo: onList(
+            [
+              ['Set up the folder', 'Setting up the folder'],
+              ['Research the company', 'Researching the company'],
+              ['Pull out what the posting asks for', 'Pulling out what the posting asks for'],
+              ['Map your facts to it', 'Mapping your facts to it'],
+              ['Ask about the gaps', 'Asking about the gaps'],
+              ['Draft the resume', 'Drafting the resume'],
+              ['Build it and fit the pages', 'Building it and fitting the pages'],
+              ['Fact-check the resume', 'Fact-checking the resume'],
+              ['Sum up what changed', 'Summing up what changed'],
+            ],
+            7,
+          ),
+          helpers: [{ id: 'agent-fact-check', what: 'Fact-check the resume' }],
+        },
+      },
+      {
+        task: {
+          skill: 'projects-page',
+          jobId: 'northwind-labs--senior-software-engineer-platform',
+        },
+        steps: [
+          done(
+            at(
+              'Write',
+              'applications/northwind-labs--senior-software-engineer-platform/projects-page.json',
+            ),
+          ),
+          at('mcp__factwright__build_projects_page', null),
+        ],
+      },
+      {
+        task: { skill: 'job-search', sources: { sites: ['hn', 'boards'] } },
+        steps: [
+          done(at('mcp__factwright__hn_jobs', null)),
+          ...['1–50', '51–100', '101–150', '151–186'].map((part) =>
+            done(at('Agent', `Filter listings ${part}`)),
+          ),
+          at('Read', 'searches/2026-10-hn/listings.md', 'agent-1'),
+          at('mcp__factwright__job_board', null, 'agent-2'),
+          at('WebSearch', 'Lakeside Data platform team remote', 'agent-3'),
+          at('mcp__factwright__find_job', null, 'agent-4'),
+        ],
+        progress: {
+          todo: onList(
+            [
+              ['Read HN’s October thread', 'Reading HN’s October thread'],
+              ['Read the company boards', 'Reading the company boards'],
+              ['Filter the listings', 'Filtering the listings'],
+              ['Verify and score the jobs', 'Verifying and scoring the jobs'],
+              ['Write the report', 'Writing the report'],
+              ['List the near misses', 'Listing the near misses'],
+              ['Sum up the search', 'Summing up the search'],
+            ],
+            2,
+          ),
+          helpers: [
+            { id: 'agent-1', what: 'Filter listings 1–50' },
+            { id: 'agent-2', what: 'Filter listings 51–100' },
+            { id: 'agent-3', what: 'Filter listings 101–150' },
+            { id: 'agent-4', what: 'Filter listings 151–186' },
+          ],
+        },
+      },
+      {
+        task: { skill: 'salary-check', jobId: 'granite-health--staff-software-engineer' },
+        steps: [done(at('Read', posting('granite-health--staff-software-engineer')))],
+      },
+    ];
+    sideBySide(
+      strips.map(({ task }) => task),
+      (sample, index) => {
+        const strip = strips[index];
+        if (!strip) return;
+        for (const each of strip.steps) step(sample, each);
+        if (strip.progress) progress(sample, strip.progress);
+      },
+    );
+  } else if (scene === 'asking') {
+    sideBySide(
+      [
+        { skill: 'focused-resume', jobId: 'tidewater-analytics--senior-backend-engineer' },
+        { skill: 'cover-letter', jobId: 'acme-robotics--staff-engineer-developer-tools' },
+        { skill: TEMPLATE_SKILL, source: '2026-10-25-1.pdf' },
+      ],
+      (sample, index) => {
+        if (index === 0) askRound(sample, RESUME_ROUND, 'round');
+        else if (index === 1) askRound(sample, LETTER_ROUND, 'round');
+        else if (SAMPLE_PERMITS.template) askPermission(sample, SAMPLE_PERMITS.template);
+      },
+    );
+  }
   return {
     platform: query.get('platform') ?? 'darwin',
     version: query.get('version') ?? '0.1.0',
@@ -588,53 +1046,28 @@ export function sampleApi(): FactwrightApi {
     checkSetup: () =>
       new Promise((resolve) => setTimeout(() => resolve(SETUP_CHECKS.passed ?? null), 1200)),
     onSetupCheck: () => () => {},
-    startClaude: async (_size, task) => {
-      run = sampleRun(window.matchMedia('(prefers-color-scheme: dark)').matches);
-      const play = () => {
-        if (task) {
-          setTimeout(() => playTask(task), 300);
-          return;
-        }
-        setTimeout(() => {
-          signal('working');
-          print(run.opening);
-        }, 300);
-        setTimeout(() => {
-          print(run.intro);
-          const permit = SAMPLE_PERMITS[query.get('permit') ?? ''];
-          if (permit) askPermission(permit);
-          else askRound(openingRound(roundAsked), 'opening');
-        }, 1800);
-      };
-      const askTrust = () => {
-        if (trusted) {
-          play();
-          return;
-        }
-        afterTrust = play;
-        setTimeout(() => {
-          print(run.trust);
-          waitingForTrust = true;
-          for (const listener of trustListeners) listener();
-        }, 300);
-      };
-      if (firstRunLeft === 0) {
-        askTrust();
-        return { ok: true };
-      }
-      afterFirstRun = () => {
-        print(['\x1b[H\x1b[2J']);
-        askTrust();
-      };
-      setTimeout(() => {
-        print(run.firstRun[0] ?? []);
-        for (const listener of firstRunListeners) listener();
-      }, 300);
-      return { ok: true };
+    startClaude: async (task) => {
+      const sample = add(task ?? null);
+      tellRuns();
+      pump();
+      return sample.id;
     },
-    runTask: async (task) => {
-      playTask(task);
-      return { ok: true };
+    claudeRuns: async () => runsView(),
+    onClaudeRuns: (listener) => {
+      runsListeners.add(listener);
+      return () => runsListeners.delete(listener);
+    },
+    runsAtOnce: async () => atOnce,
+    setRunsAtOnce: async (chosen) => {
+      atOnce = chosen;
+      tellRuns();
+      pump();
+      return chosen;
+    },
+    analyzesNewJobs: async () => analyzesNew,
+    setAnalyzesNewJobs: async (on) => {
+      analyzesNew = on;
+      return on;
     },
     // A focus kept in memory until the page reloads, by an ID like the app's.
     saveSearchFocus: async () => ({
@@ -643,139 +1076,144 @@ export function sampleApi(): FactwrightApi {
         .toString(16)
         .padStart(4, '0')}`,
     }),
-    stopClaude: () => {
-      if (asking) {
-        asking = null;
-        tellQuestion(null);
+    stopClaude: (runId) => {
+      const sample = samples.get(runId);
+      if (!sample) return;
+      if (tabOf(runId)?.phase === 'in-line') {
+        close(runId);
+        return;
       }
-      if (permitting) {
-        permitting = null;
-        tellPermission(null);
-      }
-      signal('stopped');
+      rounds = rounds.filter((round) => round.runId !== runId);
+      permits = permits.filter((ask) => ask.runId !== runId);
+      tellQuestions();
+      tellPermissions();
+      set(runId, { phase: 'stopped', screen: null });
+      sample.stopped = true;
+      pump();
     },
-    writeToClaude: (data) => {
-      if (firstRunLeft > 0 && data.includes('\r')) {
+    closeRun: close,
+    writeToClaude: (runId, data) => {
+      const sample = samples.get(runId);
+      if (!sample || !data.includes('\r')) return;
+      if (sample.screen === 'first-run' && firstRunLeft > 0) {
         firstRunLeft -= 1;
+        set(runId, { screen: null });
         if (firstRunLeft === 0) {
-          afterFirstRun();
+          sample.screen = null;
+          sample.afterScreens();
           return;
         }
         // A moment later, as Claude Code draws it, the next screen says so too, as in the app.
-        const next = run.firstRun[run.firstRun.length - firstRunLeft] ?? [];
+        const next = sample.lines.firstRun[sample.lines.firstRun.length - firstRunLeft] ?? [];
         setTimeout(() => {
-          print(next);
-          for (const listener of firstRunListeners) listener();
+          print(sample, next);
+          set(runId, { screen: 'first-run' });
         }, 150);
         return;
       }
-      if (waitingForTrust && data.includes('\r')) {
-        waitingForTrust = false;
+      if (sample.screen === 'trust') {
+        sample.screen = null;
         trusted = true;
-        afterTrust();
+        set(runId, { screen: null });
+        sample.afterScreens();
         return;
       }
-      if (!waitingForAnswer || !data.includes('\r')) return;
-      waitingForAnswer = false;
-      if (afterAnswer === 'permission') {
-        print(run.allowed);
-        carryOn();
+      const answering = sample.terminal;
+      if (!answering) return;
+      sample.terminal = null;
+      if (answering === 'permission') {
+        print(sample, sample.lines.allowed);
+        carryOn(sample);
         return;
       }
       print(
-        afterAnswer === 'round'
-          ? run.answered([[PREP_QUESTION, PREP_ANSWER]], NEXT.round)
-          : run.answered([['Which role is the call about?', 'Tidewater Analytics']], NEXT.opening),
+        sample,
+        answering === 'round'
+          ? sample.lines.answered([[PREP_QUESTION, PREP_ANSWER]], NEXT.round)
+          : sample.lines.answered(
+              [['Which role is the call about?', 'Tidewater Analytics']],
+              NEXT.opening,
+            ),
       );
-      signal('working');
-      setTimeout(() => {
-        print(run.finished);
-        done();
-      }, 1600);
+      carryOn(sample);
     },
     resizeClaude: () => {},
     onClaudeOutput: (listener) => {
       outputListeners.add(listener);
       return () => outputListeners.delete(listener);
     },
-    onClaudeSignal: (listener) => {
-      signalListeners.add(listener);
-      return () => signalListeners.delete(listener);
-    },
     onClaudeStep: (listener) => {
       stepListeners.add(listener);
       return () => stepListeners.delete(listener);
+    },
+    onClaudeProgress: (listener) => {
+      progressListeners.add(listener);
+      return () => progressListeners.delete(listener);
     },
     onClaudeTurnEnd: (listener) => {
       endListeners.add(listener);
       return () => endListeners.delete(listener);
     },
     // A reply carries on the made-up run, as a message typed in the terminal does.
-    replyToClaude: (text) => {
-      print([`> ${text}\r\n`]);
-      signal('working');
+    replyToClaude: (runId, text) => {
+      const sample = samples.get(runId);
+      if (!sample) return;
+      print(sample, [`> ${text}\r\n`]);
+      signal(sample, 'working');
       setTimeout(() => {
-        print(run.finished);
-        finish(current);
+        print(sample, sample.lines.finished);
+        finish(sample);
       }, 1600);
     },
     // The window is always in view in the screens preview, so a done run tells no one.
     tellRunDone: () => {},
     onOpenRunResult: () => () => {},
-    onClaudeTrust: (listener) => {
-      trustListeners.add(listener);
-      return () => trustListeners.delete(listener);
-    },
-    onClaudeFirstRun: (listener) => {
-      firstRunListeners.add(listener);
-      return () => firstRunListeners.delete(listener);
-    },
     // The screens never have the browser extension ask for anything.
     onRunRequest: () => () => {},
     answerRunRequest: () => {},
     // Claude's questions, in their dialog: answered there, or sent to the terminal.
-    claudeQuestion: async () => asking?.round ?? null,
-    onClaudeQuestion: (listener) => {
+    claudeQuestions: async () => [...rounds],
+    onClaudeQuestions: (listener) => {
       questionListeners.add(listener);
       return () => questionListeners.delete(listener);
     },
     answerClaude: async (id, reply) => {
-      const waiting = asking;
-      if (!waiting || waiting.round.id !== id) {
+      const waiting = rounds.find((round) => round.id === id);
+      const sample = waiting && samples.get(waiting.runId);
+      if (!waiting || !sample) {
         return { ok: false, message: 'Claude isn’t waiting for these answers anymore.' };
       }
-      asking = null;
-      tellQuestion(null);
+      rounds = rounds.filter((round) => round !== waiting);
+      tellQuestions();
       if (reply === 'terminal') {
-        print(waiting.after === 'round' ? run.round : run.question);
-        waitingForAnswer = true;
-        afterAnswer = waiting.after;
+        print(sample, waiting.after === 'round' ? sample.lines.round : sample.lines.question);
+        sample.terminal = waiting.after;
         return { ok: true };
       }
-      print(run.answered(noted(waiting.round, reply), NEXT[waiting.after]));
-      carryOn();
+      print(sample, sample.lines.answered(noted(waiting, reply), NEXT[waiting.after]));
+      carryOn(sample);
       return { ok: true };
     },
     // Claude Code's permission prompts, in their dialog: answered there, or in the terminal.
-    claudePermission: async () => permitting,
-    onClaudePermission: (listener) => {
+    claudePermissions: async () => [...permits],
+    onClaudePermissions: (listener) => {
       permissionListeners.add(listener);
       return () => permissionListeners.delete(listener);
     },
     answerPermission: async (id, answer) => {
-      const waiting = permitting;
-      if (!waiting || waiting.id !== id) {
+      const waiting = permits.find((ask) => ask.id === id);
+      const sample = waiting && samples.get(waiting.runId);
+      if (!waiting || !sample) {
         return { ok: false, message: 'Claude Code isn’t waiting for this anymore.' };
       }
-      permitting = null;
-      tellPermission(null);
+      permits = permits.filter((ask) => ask !== waiting);
+      tellPermissions();
       if (answer === 'terminal') {
-        waitingForAnswer = true;
-        afterAnswer = 'permission';
+        sample.terminal = 'permission';
         return { ok: true };
       }
-      print(answer.allow ? run.allowed : run.denied(answer.note));
-      carryOn();
+      print(sample, answer.allow ? sample.lines.allowed : sample.lines.denied(answer.note));
+      carryOn(sample);
       return { ok: true };
     },
     // ?resume=spaced, dates-last, icons, sidebar or footer gives every resume a problem to X-ray,
@@ -826,11 +1264,6 @@ export function sampleApi(): FactwrightApi {
       const timer = jobId ? setTimeout(() => listener(jobId), 500) : undefined;
       return () => clearTimeout(timer);
     },
-    // What Claude may do without asking, kept until the page reloads.
-    claudePermissions: async () => permissions,
-    setClaudePermissions: async (chosen) => {
-      permissions = chosen;
-      return chosen;
-    },
+    ...changes.api,
   };
 }

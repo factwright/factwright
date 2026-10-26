@@ -3,11 +3,10 @@ import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import axe from 'axe-core';
 import { afterEach, beforeAll, describe, expect, it, type Mock, vi } from 'vitest';
-import type { FactwrightApi } from '../../shared/api.ts';
+import type { FactwrightApi, RunPhase } from '../../shared/api.ts';
 import type { RunTask } from '../../shared/runs.ts';
-import type { RunPhase } from '../useClaudeRun.ts';
 import { ApplicationSection } from './ApplicationSection.tsx';
-import type { RunControls } from './RunActions.tsx';
+import { type RunControls, runControlsFor } from './RunActions.tsx';
 import { sampleJob } from './sample-jobs.ts';
 
 beforeAll(() => {
@@ -61,8 +60,10 @@ const PNG = new File([new Uint8Array([0x89, 0x50, 0x4e, 0x47, 13, 10, 26, 10])],
 
 const job = sampleJob({ id: 'acme--staff-engineer', company: 'Acme', role: 'Staff Engineer' });
 
-function controls(phase: RunPhase = 'idle', task: RunTask | null = null): RunControls {
-  return { phase, task, start: vi.fn(), show: vi.fn() };
+/** The job panel's run controls, with a run of a task in a phase, or none. */
+function controls(phase: RunPhase | null = null, task: RunTask | null = null): RunControls {
+  const runs = phase && task ? [{ id: 'run-1', task, phase }] : [];
+  return { ...runControlsFor(runs, vi.fn(), vi.fn()), show: vi.fn() };
 }
 
 const action = (name: RegExp) => screen.getByRole('button', { name });

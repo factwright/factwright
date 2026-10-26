@@ -138,6 +138,7 @@ describe('readRecords', () => {
         company: 'Acme Robotics',
         role: 'Staff Engineer, Developer Tools',
         links: [{ url: 'https://jobs.ashbyhq.com/acme/7f3a', label: 'Posting' }],
+        job: null,
         verdict: 'Strong',
         score: 82,
         pay: '$185k–$215k',
@@ -145,6 +146,63 @@ describe('readRecords', () => {
       },
       expect.objectContaining({ score: null, links: [], pay: null, note: null }),
     ]);
+  });
+
+  it('reads which job a folder and a fit check are for, by the ID they name', () => {
+    const named = readRecords(
+      memoryWorkspace({
+        'searches/fit-checks.md': [
+          '| Date | Company | Role | Verdict | Score | Link | Pay | Note | Job |',
+          '|---|---|---|---|---|---|---|---|---|',
+          '| 2026-10-25 | Seeq | AI Software Engineer | Good | 71 | | | | seeq--ai-software-engineer-2 |',
+          '| 2026-10-25 | Seeq | AI Software Engineer | Good | 71 | | | | not an id! |',
+        ].join('\n'),
+        'applications/2026-10-25-seeq-ai/job.md': [
+          '# Seeq: AI Software Engineer',
+          '',
+          '- **Job ID:** `Seeq--AI-Software-Engineer-2`',
+        ].join('\n'),
+        'applications/older/job.md': '# Seeq: AI Software Engineer\n',
+      }),
+    );
+    expect(of(named, 'fit-check').map((record) => record.job)).toEqual([
+      'seeq--ai-software-engineer-2',
+      null,
+    ]);
+    expect(of(named, 'folder').map((record) => [record.folder, record.job])).toEqual([
+      ['2026-10-25-seeq-ai', 'seeq--ai-software-engineer-2'],
+      ['older', null],
+    ]);
+  });
+
+  it('reads a job’s heading a line at a time, quickly, whatever its file holds', () => {
+    const folder = (notes: string) =>
+      of(readRecords(memoryWorkspace({ 'applications/acme/job.md': notes })), 'folder')[0];
+    // Tabs after the #, and a role that says more after a full stop.
+    expect(folder('#\t\tAcme Robotics: Staff Engineer. Remote first.\r\n')).toMatchObject({
+      company: 'Acme Robotics',
+      role: 'Staff Engineer',
+    });
+    // A full stop with no space after it is part of the role.
+    expect(folder('# Acme Robotics: Engineer, Node.js platform\n')).toMatchObject({
+      role: 'Engineer, Node.js platform',
+    });
+    // A lone # is no heading, and never takes the line after it: the first line that says
+    // something after its # is the heading.
+    expect(
+      folder('#\nAcme Robotics: Staff Engineer\n#\t\n# Globex: Data Engineer\n'),
+    ).toMatchObject({
+      company: 'Globex',
+      role: 'Data Engineer',
+    });
+    expect(folder('#\nAcme Robotics: Staff Engineer\n')).toMatchObject({ company: '', role: '' });
+    // Long runs of tabs after a #, and of full stops and tabs in a role, read in a moment.
+    const started = Date.now();
+    expect(folder(`#\t${'\t\t'.repeat(100_000)}\n`)).toMatchObject({ company: '' });
+    expect(folder(`# Acme Robotics: Staff Engineer${'.\t'.repeat(100_000)}`)).toMatchObject({
+      role: 'Staff Engineer',
+    });
+    expect(Date.now() - started).toBeLessThan(1000);
   });
 
   it('reads a job’s folder: its notes, documents and resumes', () => {
@@ -419,7 +477,7 @@ describe('readRecords', () => {
           jobs: [{ company: 'Northwind Labs', role: 'Engineer' }],
         }),
         [`${ACME}/job.md`]:
-          '# Acme Robotics: Program Manager\n\n- **Kind of job:** project-manager',
+          '# Acme Robotics: Program Manager\n\n- **Kind of job:** project-manager\n- **Pay to ask for:** $185,000',
       }),
     );
     expect(of(records, 'search').map((record) => [record.company, record.kind])).toEqual([
@@ -429,5 +487,16 @@ describe('readRecords', () => {
     ]);
     expect(of(records, 'folder')[0]?.kind).toBe('project-manager');
     expect(of(readRecords(WORKSPACE), 'folder')[0]?.kind).toBeNull();
+    // And the pay to ask for, as the job's Claude suggested it.
+    expect(of(records, 'folder')[0]?.ask).toBe('$185,000');
+    expect(of(readRecords(WORKSPACE), 'folder')[0]?.ask).toBeNull();
+    // A field left empty is nothing, never the line after it.
+    const empty = readRecords(
+      memoryWorkspace({
+        [`${ACME}/job.md`]:
+          '# Acme Robotics: Program Manager\n\n- **Pay to ask for:**\n- **Kind of job:** project-manager',
+      }),
+    );
+    expect(of(empty, 'folder')[0]).toMatchObject({ ask: null, kind: 'project-manager' });
   });
 });

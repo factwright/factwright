@@ -1,23 +1,40 @@
 import { LIGHT } from '@factwright/ui/tokens';
 import { browserName, canReachSync, clientFor, forgetAccount } from './account.ts';
 import { registerScripts } from './application-sites.ts';
+import { markFromPopup, undoApplied } from './applied.ts';
 import { canReachComputer, canSendNow, destination, saveOnComputer } from './computer.ts';
 import { ext, type Tab } from './ext.ts';
-import { isSave } from './messages.ts';
+import { isCopyOnly } from './fill.ts';
+import { fillAndNote } from './in-place.ts';
+import { justFromNote, keepFill, keptFill } from './kept-fill.ts';
+import {
+  isApplied,
+  isFill,
+  isKeep,
+  isKept,
+  isLookUp,
+  isSave,
+  isUndo,
+  type KeptHere,
+} from './messages.ts';
+import { noteFor, notesOn } from './notes.ts';
 import { forgetTab, onJobSiteMessage, stopWhereNotAllowed } from './on-job-sites.ts';
 import { openPanel } from './panel-open.ts';
 import { isWebPage, readTab } from './read-tab.ts';
-import { type JobToSave, type SaveResult, saveJob } from './save.ts';
+import { type JobToSave, type SaveResult, savedThroughSync, saveJob } from './save.ts';
+import type { PageAsked, SavedFor } from './saved.ts';
 import { serverName } from './server.ts';
 import { needsChecking, toSave } from './tab-job.ts';
 
 /**
  * The extension's background: it saves jobs, for the popup, the page's right-click menu and the
- * keyboard shortcut, and opens the setup page on install. It saves through sync, or straight to
- * Factwright on this computer, as setup set it up. It holds nothing between saves: the sign-in,
- * the keys and the settings stay in the extension's own storage. On the job sites you allowed, it
- * registers the extension's script, and answers it and the extension's frame there
- * (src/on-job-sites.ts).
+ * keyboard shortcut, looks up for the popup whether a page's job is saved through sync, fills a
+ * tab's form in its page, for the popup, the menu and the shortcut, with a note on the page
+ * (src/in-place.ts), marks a job applied for the popup, and opens the setup page on install. It
+ * saves through sync, or straight to Factwright on this computer, as setup set it up. The sign-in,
+ * the keys and the settings stay in the extension's own storage, and what it reads of sync's jobs
+ * stays in memory only, for a few minutes. On the job sites you allowed, it registers the
+ * extension's script, and answers it and the extension's frame there (src/on-job-sites.ts).
  */
 
 const MENU = 'save-job';
@@ -42,10 +59,13 @@ function menus(): void {
 
 /**
  * Pages that look like an application form, by what Chrome sees on them itself: a file to upload
- * and an email address to give, a file to upload on an applicant system's site, or a company's
- * page that shows an applicant system's application form in a frame, by the frame's address, as
- * Chrome looks only at frames of the page's own site. Chrome checks these rules, so the extension
- * never reads a page to light its button up.
+ * and an email address to give, a file to upload on an applicant system's site, each page of a
+ * Workday, iCIMS or Taleo application, by the step it marks, or its Save and Continue, a
+ * SuccessFactors application, or SmartRecruiters' newer form, by its own elements, as its fields
+ * are inside its components, where Chrome doesn't look, or a company's page that shows an
+ * applicant system's application form in a frame, by the frame's address, as Chrome looks only
+ * at frames of the page's own site. Chrome checks these rules, so the extension never reads a
+ * page to light its button up.
  */
 const FORM_PAGES: { pageUrl?: { hostSuffix: string }; css: string[] }[] = [
   { css: ['input[type="file"]', 'input[type="email"]'] },
@@ -63,6 +83,24 @@ const FORM_PAGES: { pageUrl?: { hostSuffix: string }; css: string[] }[] = [
     'workable.com',
     'jobvite.com',
   ].map((host) => ({ pageUrl: { hostSuffix: host }, css: ['input[type="file"]'] })),
+  ...['myworkdayjobs.com', 'myworkdaysite.com'].map((host) => ({
+    pageUrl: { hostSuffix: host },
+    css: ['[data-automation-id="progressBarActiveStep"]'],
+  })),
+  { pageUrl: { hostSuffix: 'icims.com' }, css: ['li.iCIMS_Steps_Current'] },
+  { pageUrl: { hostSuffix: 'taleo.net' }, css: ['input[id$="saveContinueCmdBottom"]'] },
+  ...[
+    'successfactors.com',
+    'successfactors.eu',
+    'sapsf.com',
+    'sapsf.eu',
+    'sapsf.cn',
+    'hr.cloud.sap',
+  ].map((host) => ({ pageUrl: { hostSuffix: host }, css: ['#rcmJobApplicationCtr'] })),
+  ...['oc-oneclick-form', 'oc-screening-questions'].map((form) => ({
+    pageUrl: { hostSuffix: 'smartrecruiters.com' },
+    css: [form],
+  })),
 ];
 
 /** The toolbar button's icon with a dot in Factwright's accent, at each size it shows. */
@@ -139,6 +177,20 @@ async function save(job: JobToSave): Promise<SaveResult> {
   });
   if (!result.ok && result.reason === 'signed-out') await forgetAccount();
   return result;
+}
+
+/**
+ * The job on file a page is for, as sync holds your job hunt, for the popup of a browser set up
+ * through sync: null for none, or when it can't tell, as when sync can't be reached. The popup asks
+ * Factwright on this computer itself.
+ */
+async function lookUp(page: PageAsked): Promise<SavedFor | null> {
+  const to = await destination();
+  if (to?.to !== 'sync' || !(await canReachSync(to.account.server))) return null;
+  const { account } = to;
+  return savedThroughSync(clientFor(account.server, account.token), account.keys, page).catch(
+    () => null,
+  );
 }
 
 /** Marks the toolbar button on a tab for a few seconds: ✓ when it saved, ! when it didn't. */
@@ -245,19 +297,33 @@ ext.storage.onChanged.addListener((changes, area) => {
 });
 ext.tabs.onRemoved.addListener(forgetTab);
 
+/**
+ * Fill, from the page's right-click menu or the shortcut: the form is filled in its page, with a
+ * note there. LinkedIn's and Indeed's, which their sites don't allow filling, have the panel open
+ * beside the page instead, with each answer to copy: straight from the click, as each browser asks.
+ */
+function fillTab(tab: Tab, pageUrl = tab.url ?? ''): void {
+  if (isCopyOnly(pageUrl)) {
+    void openPanel(tab);
+    return;
+  }
+  if (tab.id !== undefined) void fillAndNote({ ...tab, id: tab.id });
+}
+
 ext.contextMenus.onClicked.addListener((click, tab) => {
   if (click.menuItemId === MENU && tab) void saveTab(tab);
-  // The panel opens straight from the click, as each browser asks, and fills the tab in front.
-  if (click.menuItemId === FILL && tab) void openPanel(tab);
+  if (click.menuItemId === FILL && tab) fillTab(tab, click.pageUrl);
 });
 
 ext.commands.onCommand.addListener((command, tab) => {
   if (command === 'fill-form') {
     if (tab) {
-      void openPanel(tab);
+      fillTab(tab);
     } else {
-      // Firefox gives no tab: its sidebar opens beside the one in front.
-      void ext.sidebarAction?.open();
+      // Firefox gives no tab: the one in front.
+      void ext.tabs.query({ active: true, currentWindow: true }).then(([active]) => {
+        if (active) fillTab(active);
+      });
     }
     return;
   }
@@ -281,6 +347,47 @@ ext.runtime.onMessage.addListener((message, sender, sendResponse) => {
     (sender.frameId ?? 0) === 0 &&
     !/^https?:/i.test(sender.tab?.url ?? '') &&
     (sender.url ?? '').startsWith(ext.runtime.getURL(''));
+  if (ours && isLookUp(message)) {
+    lookUp(message.page).then(sendResponse, () => sendResponse(null));
+    return true;
+  }
+  // The popup's Fill: heard at once, as the popup closes once it knows, and the form fills in its
+  // page from here.
+  if (ours && isFill(message)) {
+    void fillAndNote(message.tab).catch(() => {});
+    sendResponse({ filling: true });
+    return undefined;
+  }
+  if (ours && isApplied(message)) {
+    markFromPopup(message.tabId, message.job, message.via, message.url).then(sendResponse, () =>
+      sendResponse(null),
+    );
+    return true;
+  }
+  if (ours && isUndo(message)) {
+    void noteFor(message.tabId, message.token)
+      .then((note) => (note ? undoApplied(note) : null))
+      .then(sendResponse, () => sendResponse(null));
+    return true;
+  }
+  // What Fill did on a tab, for the popup and the panel: through sync, it's in this background's
+  // memory alone, which they can't reach themselves.
+  if (ours && isKept(message)) {
+    void Promise.all([keptFill(message.tabId), notesOn(message.tabId)])
+      .then(
+        ([fill, notes]) =>
+          ({ fill, notes, fromNote: justFromNote(message.tabId) }) satisfies KeptHere,
+      )
+      .then(sendResponse, () => sendResponse(null));
+    return true;
+  }
+  if (ours && isKeep(message)) {
+    void keepFill(message.fill).then(
+      () => sendResponse({}),
+      () => sendResponse(null),
+    );
+    return true;
+  }
   if (!ours || !isSave(message)) return undefined;
   save(message.job).then(sendResponse, (error: unknown) =>
     sendResponse({ ok: false, reason: 'failed', message: String(error) } satisfies SaveResult),

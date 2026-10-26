@@ -1,19 +1,67 @@
-/* Its rows' tints stay inside its rounded corners. */
+/* Its rows' tints stay inside its rounded corners, and what it pins stays under anything over it. */
 .table {
+  /* The least room the jobs' names get, where they're pinned, and the row's padding to their left,
+     which they cover as the columns pass under them. */
+  --job-min: 180px;
+  --job-left: var(--fw-space-4);
+  --job-pad: var(--fw-space-4);
+  /* Scrolled, a line along the names' edge. */
+  --job-edge: transparent;
+  position: relative;
+  isolation: isolate;
   margin-top: 14px;
   overflow: hidden;
   border: 1px solid var(--fw-border);
   border-radius: var(--fw-radius-lg);
   background: var(--fw-surface);
-  container: list / inline-size;
 }
 
-/* Wide: one line per job, with every column. */
+/* Too narrow for every column, the list scrolls sideways, rather than hide any. What the keyboard
+   moves to scrolls clear of the names pinned on the left. */
+.scroller {
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior-x: contain;
+  scroll-padding-left: calc(var(--job-left) + var(--job-min) + var(--fw-space-3));
+}
+
+/* With the boxes ahead of the names. */
+.pickable {
+  --job-left: calc(var(--fw-space-4) + 16px + var(--fw-space-3));
+  --job-pad: var(--fw-space-3);
+}
+
+.table[data-scrolled] {
+  --job-edge: var(--fw-border);
+}
+
+.content {
+  min-width: min-content;
+}
+
+/* A fade at the right edge while columns are out of sight there. */
+.table::after {
+  position: absolute;
+  inset: 0 0 0 auto;
+  z-index: 3;
+  width: 40px;
+  background: linear-gradient(to right, transparent, var(--fw-surface));
+  content: "";
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s ease;
+}
+
+.table[data-more]::after {
+  opacity: 1;
+}
+
+/* One line per job, with every column. */
 .head,
 .row {
   display: grid;
-  grid-template-columns: minmax(180px, 2.4fr) 118px 128px 116px minmax(130px, 1.4fr);
-  grid-template-areas: "job status fit pay next";
+  grid-template-columns: minmax(var(--job-min), 2.4fr) 118px 128px 116px minmax(130px, 1.4fr) 84px;
+  grid-template-areas: "job status fit pay next added";
   gap: 2px var(--fw-space-3);
   align-items: center;
   padding: 0 var(--fw-space-4);
@@ -39,45 +87,59 @@
   grid-area: next;
 }
 
-/* Narrower: the next step goes under the role. */
-@container list (max-width: 760px) {
-  .head,
-  .row {
-    grid-template-columns: minmax(170px, 1fr) 118px 128px 116px;
-    grid-template-areas:
-      "job status fit pay"
-      "next status fit pay";
-  }
-
-  .head .next {
-    display: none;
-  }
+.added {
+  grid-area: added;
 }
 
-/* Narrowest: the pay goes there too. */
-@container list (max-width: 580px) {
-  .head,
-  .row {
-    grid-template-columns: minmax(150px, 1fr) 118px 128px;
-    grid-template-areas:
-      "job status fit"
-      "pay status fit"
-      "next status fit";
-  }
+/*
+ * The jobs' names, and the boxes that select them, stay in view as the list scrolls sideways,
+ * with the row's tint behind them, and the columns pass under them. Each stops a pixel short of
+ * the lines between rows, which it would cover where they fall between pixels. Only background
+ * colors cover, which high contrast keeps, where it drops shadows and gradients.
+ */
+.pick,
+.head .job,
+.row .job {
+  position: sticky;
+  z-index: 1;
+  background-color: var(--row-tint);
+}
 
-  .head .pay {
-    display: none;
-  }
+.pick {
+  left: 0;
+  margin-block: 1px;
+}
 
-  .row .pay {
-    color: var(--fw-muted);
-  }
+.head .job,
+.row .job {
+  left: var(--job-left);
+  align-self: stretch;
+  margin-block: -9px;
+  padding-block: 9px;
+  box-shadow: 1px 0 0 var(--job-edge);
+}
+
+/* The row's padding to the names' left, which they cover too. */
+.head .job::before,
+.row .job::before {
+  position: absolute;
+  inset: 0 100% 0 auto;
+  width: var(--job-pad);
+  background-color: var(--row-tint);
+  content: "";
 }
 
 .headRow {
+  --row-tint: var(--fw-surface);
   display: flex;
   align-items: center;
   border-bottom: 1px solid var(--fw-border);
+  background: var(--row-tint);
+}
+
+.head .job {
+  display: flex;
+  align-items: center;
 }
 
 .head {
@@ -146,23 +208,25 @@
 }
 
 .item {
+  --row-tint: var(--fw-surface);
+  position: relative;
   display: flex;
-  background: var(--fw-surface);
+  background: var(--row-tint);
 }
 
 .item:hover {
-  background: var(--fw-hover);
+  --row-tint: var(--fw-hover);
 }
 
 /* Picked to move with others: a light tint. Open in the panel: the accent's. */
 .picked,
 .picked:hover {
-  background: color-mix(in srgb, var(--fw-accent-soft) 55%, var(--fw-surface));
+  --row-tint: color-mix(in srgb, var(--fw-accent-soft) 55%, var(--fw-surface));
 }
 
 .selected,
 .selected:hover {
-  background: var(--fw-accent-soft);
+  --row-tint: var(--fw-accent-soft);
 }
 
 .row {
@@ -180,7 +244,18 @@
 }
 
 .row:focus-visible {
+  outline: none;
+}
+
+/* The keyboard's focus rings the whole row, over the names pinned to its left. */
+.item:has(> .row:focus-visible)::after {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  outline: 2px solid var(--fw-accent);
   outline-offset: -2px;
+  content: "";
+  pointer-events: none;
 }
 
 /* With the boxes, the row's own padding starts after them. */
@@ -192,6 +267,7 @@
 .row .job {
   display: flex;
   flex-direction: column;
+  justify-content: center;
   min-width: 0;
 }
 
@@ -245,6 +321,43 @@
 
 .withKind .found {
   max-width: 100%;
+}
+
+/* Claude's on a task for the job, or one waits in line for it: the first thing to keep. */
+.claude {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+  padding: 0 7px;
+  border-radius: var(--fw-radius-full);
+  background: var(--fw-accent-soft);
+  color: var(--fw-accent-text);
+  font-size: var(--fw-text-xs);
+  font-weight: 600;
+  line-height: 18px;
+  white-space: nowrap;
+}
+
+.claudeLater {
+  background: var(--fw-sunken);
+  color: var(--fw-muted);
+}
+
+.claudeSpin {
+  animation: claude-spin 1.2s linear infinite;
+}
+
+@keyframes claude-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .claudeSpin {
+    animation: none;
+  }
 }
 
 /* Which kind of job it's under, while every kind shows: an outline, to tell it from the search
@@ -303,10 +416,15 @@
   min-width: 0;
 }
 
-.row .pay {
+.row .pay,
+.row .added {
   font-size: 13px;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
+}
+
+.row .added {
+  color: var(--fw-muted);
 }
 
 .row .next {
@@ -391,7 +509,8 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .chevron {
+  .chevron,
+  .table::after {
     transition: none;
   }
 }

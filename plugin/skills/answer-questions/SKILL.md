@@ -14,7 +14,7 @@ Before starting, read:
 - `guide/rules.md`, if there is one. Every claim traces to `facts/`, with the same status, ownership and confidentiality limits as a resume.
 - `guide/preferences.md`, if there is one. Its application-answer nudges set the voice.
 - all of `facts/`. If there's no fact bank yet, say so, suggest `/factwright:add-facts` ("interview me" starts one), and stop. Claims tagged `unconfirmed` are unverified: offer one in step 3 before an answer uses it.
-- `about_you`: what the user told Factwright about themselves. It holds what forms often ask, such as contact details, work authorization, when they can start, relocation and pay, and Beyond work: their projects, and their interests, what they're learning, their communities and what they care about.
+- `about_you`: what the user told Factwright about themselves. It holds what forms often ask, such as contact details, work authorization, when they can start, relocation, pay and why they're leaving their job, and Beyond work: their projects, and their interests, what they're learning, their communities and what they care about.
 
 ## From the application form
 
@@ -32,9 +32,9 @@ When the input ends with `form`, these drafts are for the questions on the job's
 - `resume.json`: the resume they're sending. Answers must match it.
 - `past_answers`, with the job's id to leave it out: what the user actually sent on other applications, in their own words. Reuse the substance where a question comes up again ("why healthcare?"), never another company's specifics, and match how they sound. Claude's suggestions in other jobs' `answers.md` come second.
 - No folder yet? Make one, so the answers have a home:
-  - `applications/<YYYY-MM-DD>-<company>-<role>/`, lowercase with hyphens.
+  - `applications/<YYYY-MM-DD>-<company>-<role>/`, lowercase with hyphens. One by that name that's there already is another job's: add `-2` to the name, or the next number that's free.
   - `posting.md`: when `job_details` names a posting saved from the user's browser, `save_posting` with the job's link and its id copies it in, with no reading, LinkedIn's included. Otherwise read the link with `read_posting` (on Greenhouse, Lever, Ashby or Gem) or `read_page` (anywhere else), then `save_posting` with the link and the folder's name. For pasted text, save it as `posting.md` with a `- **Source:** pasted by the user <YYYY-MM-DD>` line on top.
-  - `job.md`: `# <Company>: <Role>`, then `- **Date:**`, `- **Company:**`, `- **Role:**` and `- **Links:**`, then `## Job description` with one line: "Saved word for word in posting.md."
+  - `job.md`: `# <Company>: <Role>`, then `- **Job ID:** <the job's id>` when the job is on file, `- **Date:**`, `- **Company:**`, `- **Role:**` and `- **Links:**`, then `## Job description` with one line: "Saved word for word in posting.md."
 
 ## 2. Draft
 - **Sound like the user typed it.** Laid back and plain: first person, contractions, everyday words. "Yep" is fine. Never over the top. Their voice nudges win over this, and what they actually sent shows their voice best.
@@ -43,7 +43,9 @@ When the input ends with `form`, these drafts are for the questions on the job's
 - **Why us / why this job:** why they want it, tied to their real day-to-day work and specifics in the posting. Never a pitch about the company's market.
 - **No names:** never name the user's colleagues or customers, and nothing confidential: those limits are the same as a resume's.
 - **Choice questions** (checkboxes, dropdowns, yes/no): give the pick plus a one-line why. Never pick something `facts/gaps.md` says they don't have.
-- **Only the user knows:** hobbies, salary number, start date, notice period, work authorization, relocation, references. Take what `about_you` has: its interests, learning and communities answer "tell us about yourself" and questions about life outside work. Ask for the rest, and never invent. Never bring up anything that could reveal their age, health, religion, politics or family.
+- **Only the user knows:** hobbies, salary number, start date, notice period, work authorization, relocation, references, why they're leaving. Take what `about_you` has: its interests, learning and communities answer "tell us about yourself" and questions about life outside work. Ask for the rest, and never invent. Never bring up anything that could reveal their age, health, religion, politics or family.
+- **Pay:** the job's pay to ask for, as `job_details` gives it, word for word. The user set it, or a check of the job suggested it. Without one, their target pay from `about_you`, the job's kind's when they want more than one kind. Never a number of your own. A choice of ranges takes the one the pay falls in.
+- **Why they're leaving:** start from `about_you`'s answer, in their words. You may fit it to this job, such as what the posting offers that their job doesn't, but add no reason, fact or claim it doesn't give, and never a word against their employer. With none there, it's theirs to answer: ask in step 3, and use what they say for this job alone. Profile's For applications keeps an answer for every form.
 - **Something you built or led:** a question like "tell us about a project you're proud of" can take a featured project, or one that fits the job, from its claims in `facts/projects.md`. Never a private one.
 - Numbers only where they come up naturally, worded the way `facts/` approves.
 

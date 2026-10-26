@@ -1,7 +1,7 @@
 import { statSync } from 'node:fs';
-import { readFile, writeFile } from 'node:fs/promises';
+import { copyFile, readFile, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
-import { join } from 'node:path';
+import { basename, extname, join } from 'node:path';
 import { ASK_ID, localDate } from '@factwright/core';
 import { isRequestId } from '@factwright/sync';
 import {
@@ -22,38 +22,42 @@ import type {
   SaveFileResult,
   SaveFocusResult,
   ShotFor,
-  StartResult,
+  WaitingAsk,
+  WaitingRound,
 } from '../shared/api.ts';
-import { effortFor, needsMore, parseEffort } from '../shared/effort.ts';
+import { parseEffort } from '../shared/effort.ts';
 import { LIMITS } from '../shared/limits.ts';
-import { modelFor, parseModels } from '../shared/models.ts';
-import type { PermissionAnswer, PermissionAsk } from '../shared/permission-asks.ts';
-import { parsePermissions } from '../shared/permissions.ts';
-import { parseRevisionRequest, REVISE_SKILL } from '../shared/revision.ts';
-import type { QuestionRound, RoundReply } from '../shared/rounds.ts';
-import { scopeOf } from '../shared/runs.ts';
+import { parseModels } from '../shared/models.ts';
+import type { PermissionAnswer } from '../shared/permission-asks.ts';
+import { parseRevisionRequest } from '../shared/revision.ts';
+import type { RoundReply } from '../shared/rounds.ts';
+import { isWorkspacePath, RUN_CHANGES_ID } from '../shared/run-changes.ts';
+import { atOnceFrom } from '../shared/runs.ts';
 import type { UpdateStatus } from '../shared/updates.ts';
 import { DOC_KINDS, type DocKind, parseChangesRequest } from '../shared/versions.ts';
 import { registerAboutIpc } from './about/ipc.ts';
 import type { TemplatePreviews } from './about/previews.ts';
 import type { PrivateAnswers } from './about/private.ts';
 import type { AboutStore } from './about/store.ts';
+import type { AnalyzeNew } from './claude/analyze-new.ts';
+import { saveAtOnce } from './claude/at-once.ts';
 import type { Desk } from './claude/desk.ts';
 import { loadEffort, saveEffort } from './claude/effort.ts';
 import { claudeConfigFolder } from './claude/launch.ts';
 import { loadModels, saveModels } from './claude/models.ts';
 import { parsePermissionAnswer } from './claude/permission-asks.ts';
-import { loadPermissions, savePermissions } from './claude/permissions.ts';
 import { parseReply } from './claude/rounds.ts';
+import type { RunChanges } from './claude/run-changes.ts';
 import type { RunRequests } from './claude/run-requests.ts';
+import type { ClaudeRuns } from './claude/runs.ts';
 import type { SetupChecker } from './claude/self-test.ts';
-import type { ClaudeSession } from './claude/session.ts';
 import { claudeStatus, nodeStatusDeps } from './claude/status.ts';
 import { BROWSERS } from './extension/browsers.ts';
 import type { SaveHelper } from './extension/save-helper.ts';
 import { hasFocus, parseFocus, saveFocus } from './jobs/focus.ts';
 import { getFormQuestions } from './jobs/form-feed.ts';
 import {
+  changesDetails,
   parseCallChanges,
   parseDate,
   parseJobChanges,
@@ -67,14 +71,15 @@ import type { JobsService } from './jobs/service.ts';
 import type { Versions } from './jobs/versions.ts';
 import type { JobOpener } from './open-job.ts';
 import {
+  copyProblem,
   JOB_ID,
+  listedFile,
   MAX_PREVIEW_BYTES,
   openableFile,
   parseRunTask,
   parseTerminalSize,
   previewablePdf,
   readableWord,
-  runPrompt,
   saveableFileName,
 } from './policy.ts';
 import { markFirstRunDone, type Profiles } from './profiles.ts';
@@ -113,6 +118,10 @@ const QUESTIONS_GONE = {
 const isId = (value: unknown): value is string =>
   typeof value === 'string' && value.length > 0 && value.length <= 300;
 
+/** One of Claude's runs, by the ID the app gave it. */
+const isRun = (value: unknown): value is string =>
+  typeof value === 'string' && /^run-\d{1,9}$/.test(value);
+
 /** The most jobs the window may change at once: every job in a long list, but not a flood. */
 const MAX_JOBS_AT_ONCE = 5000;
 
@@ -146,22 +155,25 @@ export interface IpcDeps {
   kept: PrivateAnswers;
   templates: TemplateLibrary;
   previews: TemplatePreviews;
-  claude: ClaudeSession;
-  /** Claude's questions waiting on the user, which the window's dialog answers. */
-  questions: Desk<QuestionRound, RoundReply>;
+  /** The user's Claude runs, side by side, and the tasks waiting in line. */
+  claude: ClaudeRuns;
+  /** Claude's questions waiting on the user, from every run, which the window's dialog answers. */
+  questions: Desk<WaitingRound, RoundReply>;
   /** Claude Code's permission prompts waiting on the user, which the window's dialog answers. */
-  permissionAsks: Desk<PermissionAsk, PermissionAnswer>;
+  permissionAsks: Desk<WaitingAsk, PermissionAnswer>;
   /** Checks that Factwright's setup still works with each version of Claude Code. */
   setup: SetupChecker;
   jobs: JobsService;
   /** The revisions of jobs' resumes the user sent from their X-rays. */
-  revisions: Revisions;
+  revisions: Pick<Revisions, 'prepare' | 'state'>;
   /** The versions of jobs' resumes, cover letters and Projects pages. */
-  versions: Versions;
+  versions: Pick<Versions, 'keep' | 'use' | 'remove' | 'prepareChanges' | 'list'>;
   workspace: string;
   sync: SyncAccount;
-  /** The app's own data folder, which holds what Claude may do without asking. */
+  /** The app's own data folder, which holds Claude's settings. */
   dataDir: string;
+  /** What each of Claude's tasks changed, with a copy of each file from before, for Undo. */
+  runChanges: RunChanges;
   /** Keeps an installed copy up to date, or null for one that doesn't update itself. */
   updates: UpdateWatcher | null;
   /** The profiles on this computer: each person's own job hunt, one open at a time. */
@@ -176,6 +188,10 @@ export interface IpcDeps {
   tellRunDone: (note: unknown) => void;
   /** The app's requests to the window to start a run, which the window answers. */
   runRequests: RunRequests;
+  /** Claude analyzing new jobs on its own, which the user can turn off. */
+  analyzeNew: Pick<AnalyzeNew, 'isOn' | 'setOn'>;
+  /** Hears each status of Claude Code the window asks for, such as whether it's ready. */
+  onClaudeStatus?: (status: ClaudeStatus) => void;
   /** Stands in for Greenhouse's job API, as the tests' copy has it, or undefined to ask it. */
   formFeed?: FetchDeps['fetch'] | undefined;
 }
@@ -198,6 +214,16 @@ const isFile = (path: string) => {
   }
 };
 
+/** Whether two paths are one file, as when the user picks a file to save a copy over itself. */
+const sameFile = (a: string, b: string) => {
+  try {
+    const [x, y] = [statSync(a), statSync(b)];
+    return x.dev === y.dev && x.ino === y.ino;
+  } catch {
+    return false;
+  }
+};
+
 /** Answers the window's requests, after checking each one came from the app's own page. */
 export function registerIpc({
   isAppPage,
@@ -205,7 +231,7 @@ export function registerIpc({
   kept,
   templates,
   previews,
-  claude: session,
+  claude,
   questions,
   permissionAsks,
   setup,
@@ -215,6 +241,7 @@ export function registerIpc({
   workspace,
   sync,
   dataDir,
+  runChanges,
   updates,
   profiles,
   reminders,
@@ -222,6 +249,8 @@ export function registerIpc({
   saveHelper,
   tellRunDone,
   runRequests,
+  analyzeNew,
+  onClaudeStatus,
   formFeed,
 }: IpcDeps): void {
   const fromApp = (event: IpcMainEvent | IpcMainInvokeEvent) =>
@@ -242,7 +271,7 @@ export function registerIpc({
   let firstRunDone = false;
   const markFirstRun = (status: ClaudeStatus) => {
     if (firstRunDone || status.state !== 'ready' || status.method !== 'subscription') return;
-    if (session.busy() || setup.busy()) return;
+    if (claude.busy() || setup.busy()) return;
     firstRunDone = markFirstRunDone(claudeConfigFolder(process.env), homedir()) !== 'left';
   };
 
@@ -253,6 +282,7 @@ export function registerIpc({
       markFirstRun(status);
       setup.checkIfNeeded(status.version);
     }
+    onClaudeStatus?.(status);
     return status;
   });
 
@@ -279,15 +309,6 @@ export function registerIpc({
     return effort;
   });
 
-  // What Claude may do without asking. A change applies from Claude's next start.
-  answer('claude:permissions', () => loadPermissions(dataDir));
-  answer('claude:set-permissions', async (value) => {
-    const permissions = parsePermissions(value);
-    if (!permissions) throw new Error('Refused permissions that aren’t two yes-or-no answers.');
-    await savePermissions(dataDir, permissions);
-    return permissions;
-  });
-
   answer('setup:check', async () => {
     const status = await claudeStatus(nodeStatusDeps());
     if (status.state !== 'ready') return setup.current();
@@ -305,6 +326,11 @@ export function registerIpc({
     // A focus for a search, by the ID the app kept it under.
     const focus = task && 'sources' in task ? task.sources?.focus : undefined;
     if (focus !== undefined) return hasFocus(workspace, focus) ? task : null;
+    // Jobs to analyze, every one of them on file. Only the app starts Claude on them on its own.
+    if (task && 'jobIds' in task) {
+      const known = new Set(jobs.list().jobs.map((each) => each.id));
+      return task.jobIds.every((id) => known.has(id)) && !task.auto ? task : null;
+    }
     if (!task || !('jobId' in task)) return task;
     const job = jobs.list().jobs.find((each) => each.id === task.jobId);
     if (!job) return null;
@@ -312,49 +338,34 @@ export function registerIpc({
     return task;
   };
 
-  answer('claude:start', (size, task) => {
+  // A run of its own for each task, or a place in line until it has its turn. Claude with no
+  // task waits for what the user types.
+  answer('claude:start', (task) => {
     // The user's run comes first: a setup check that's going steps aside for it.
     setup.yieldToRun();
-    const valid = parseTerminalSize(size);
-    const run = task === undefined ? undefined : knownTask(task);
-    if (!valid || run === null) throw new Error('Refused a request to start Claude.');
-    // A revision runs only as the window prepared it, in one run, whose tool calls read it, and
-    // so do the changes the user asked for.
-    const revision = run && 'findings' in run ? revisions.claim(run) : undefined;
-    if (revision === null) return Promise.resolve<StartResult>({ ok: false, reason: 'revision' });
-    const changes =
-      run && 'changes' in run
-        ? versions.claimChanges(run.jobId, run.skill === REVISE_SKILL ? 'resume' : 'letter')
-        : undefined;
-    if (changes === null) return Promise.resolve<StartResult>({ ok: false, reason: 'changes' });
-    return Promise.all([loadModels(dataDir), loadEffort(dataDir)]).then(
-      async ([models, effort]) => {
-        let started: StartResult;
-        try {
-          started = await session.start(valid, {
-            prompt: run ? runPrompt(run) : undefined,
-            choose: (levels) => ({
-              model: modelFor(models, run, levels),
-              effort: effortFor(effort, run, levels),
-            }),
-            scope: scopeOf(run),
-            ...(revision && { revision }),
-            ...(changes && { changes }),
-          });
-        } catch (error) {
-          // It didn't start, so starting it again finds it.
-          if (revision) revisions.release(revision);
-          if (changes) versions.releaseChanges(changes);
-          throw error;
-        }
-        // Once its run starts, the revision is kept for the before-and-after. If it didn't
-        // start, starting it again finds it.
-        if (revision && started.ok) await revisions.record(revision).catch(() => {});
-        else if (revision) revisions.release(revision);
-        if (changes && !started.ok) versions.releaseChanges(changes);
-        return started;
-      },
-    );
+    const run = task === undefined || task === null ? null : knownTask(task);
+    if (run === null && task !== undefined && task !== null) {
+      throw new Error('Refused a request to start Claude.');
+    }
+    return claude.start(run);
+  });
+  answer('claude:runs', () => claude.view());
+
+  // Whether Claude analyzes new jobs on its own while it's free.
+  answer('claude:analyzes-new', () => analyzeNew.isOn());
+  answer('claude:set-analyzes-new', async (value) => {
+    if (typeof value !== 'boolean') throw new Error('Refused a setting that isn’t on or off.');
+    return analyzeNew.setOn(value);
+  });
+
+  // How many runs may go at once, which the line follows from the next one to start.
+  answer('claude:at-once', () => claude.view().atOnce);
+  answer('claude:set-at-once', async (value) => {
+    const count = atOnceFrom(value);
+    if (count === null) throw new Error('Refused a number of runs the app doesn’t take.');
+    await saveAtOnce(dataDir, count);
+    claude.setAtOnce(count);
+    return count;
   });
 
   // The resume's previous version is kept, and the revision held for the run the window starts.
@@ -393,33 +404,27 @@ export function registerIpc({
     return versions.prepareChanges(request);
   });
 
-  // A task for the run that's open. One that needs another model or more effort, or may change
-  // other files without asking, starts a new run instead. One that needs less effort runs at the
-  // open run's. A lighter model still gets a run of its own, as that's what saves the most of a
-  // plan, such as Sonnet for a job search on Pro.
-  answer('claude:task', async (task): Promise<StartResult> => {
-    const run = knownTask(task);
-    if (!run) throw new Error('Refused a task for Claude.');
-    // A revision's findings belong to its own run, so it always starts one, and so do changes.
-    if ('findings' in run || 'changes' in run) return { ok: false, reason: 'new-run' };
-    const [models, effort] = await Promise.all([loadModels(dataDir), loadEffort(dataDir)]);
-    const differs = <T>(open: T | undefined, wanted: T) => open !== undefined && open !== wanted;
-    const thinking = session.effort();
-    const levels = session.levels();
-    if (
-      differs(session.model(), modelFor(models, run, levels)) ||
-      (thinking !== undefined && needsMore(thinking, effortFor(effort, run, levels))) ||
-      differs(session.scope(), scopeOf(run))
-    ) {
-      return { ok: false, reason: 'new-run' };
+  // What a task of Claude's changed, each file before and after it, and putting one back as it
+  // was. Only a file in that task's own record, which the app keeps outside the workspace.
+  const isTask = (value: unknown): value is string =>
+    typeof value === 'string' && RUN_CHANGES_ID.test(value);
+  answer('claude:change', (id, path) => {
+    if (!isTask(id) || !isWorkspacePath(path))
+      throw new Error('Refused a change Claude didn’t make.');
+    return runChanges.see(id, path);
+  });
+  answer('claude:undo', (id, path, anyway) => {
+    if (!isTask(id) || !isWorkspacePath(path) || typeof anyway !== 'boolean') {
+      throw new Error('Refused a change Claude didn’t make.');
     }
-    return session.send(runPrompt(run));
+    return runChanges.undo(id, path, anyway);
   });
 
-  // A reply from Claude's panel, on one line, as a message of the user's own: nothing in it can
+  // A reply from a run's tab, on one line, as a message of the user's own: nothing in it can
   // reach the terminal as a key that isn't text.
-  ipcMain.on('claude:reply', (event, text: unknown) => {
-    if (!fromApp(event) || typeof text !== 'string' || text.length > MAX_INPUT_LENGTH) return;
+  ipcMain.on('claude:reply', (event, runId: unknown, text: unknown) => {
+    if (!fromApp(event) || !isRun(runId)) return;
+    if (typeof text !== 'string' || text.length > MAX_INPUT_LENGTH) return;
     const line = [...text.replace(/\s+/g, ' ')]
       .filter((char) => {
         const code = char.charCodeAt(0);
@@ -427,22 +432,26 @@ export function registerIpc({
       })
       .join('')
       .trim();
-    if (line) session.send(line);
+    if (line) claude.send(runId, line);
   });
 
-  ipcMain.on('claude:input', (event, data: unknown) => {
-    if (fromApp(event) && typeof data === 'string' && data.length <= MAX_INPUT_LENGTH) {
-      session.write(data);
-    }
+  ipcMain.on('claude:input', (event, runId: unknown, data: unknown) => {
+    if (!fromApp(event) || !isRun(runId)) return;
+    if (typeof data === 'string' && data.length <= MAX_INPUT_LENGTH) claude.write(runId, data);
   });
 
-  ipcMain.on('claude:resize', (event, size: unknown) => {
+  ipcMain.on('claude:resize', (event, runId: unknown, size: unknown) => {
     const valid = parseTerminalSize(size);
-    if (fromApp(event) && valid) session.resize(valid);
+    if (fromApp(event) && isRun(runId) && valid) claude.resize(runId, valid);
   });
 
-  ipcMain.on('claude:stop', (event) => {
-    if (fromApp(event)) session.stop();
+  ipcMain.on('claude:stop', (event, runId: unknown) => {
+    if (fromApp(event) && isRun(runId)) claude.stop(runId);
+  });
+
+  // Closing a run's tab quits its Claude Code, or takes its task out of line.
+  ipcMain.on('claude:close', (event, runId: unknown) => {
+    if (fromApp(event) && isRun(runId)) claude.close(runId);
   });
 
   // Whether the window started a run the app asked it to, as for a form's drafts.
@@ -454,8 +463,9 @@ export function registerIpc({
     if (fromApp(event)) tellRunDone(note);
   });
 
-  // Claude's questions, answered in the window's dialog, or sent to the terminal to answer there.
-  answer('claude:question', () => questions.current());
+  // Claude's questions, from every run, answered in the window's dialog, or sent to the terminal
+  // to answer there.
+  answer('claude:question', () => questions.items());
   answer('claude:answer', (id, reply): EditResult => {
     const round = typeof id === 'string' ? questions.find(id) : null;
     if (!round) return QUESTIONS_GONE;
@@ -469,7 +479,7 @@ export function registerIpc({
   });
 
   // Claude Code's permission prompts, answered in the window's dialog, or in the terminal.
-  answer('claude:permission', () => permissionAsks.current());
+  answer('claude:permission', () => permissionAsks.items());
   answer('claude:permit', (id, value): EditResult => {
     const ask = typeof id === 'string' ? permissionAsks.find(id) : null;
     if (!ask) return PERMISSION_GONE;
@@ -550,15 +560,21 @@ export function registerIpc({
     return isId(jobId) && valid ? jobs.updateJob(jobId, valid) : REFUSED;
   });
 
-  // Several jobs at once take a new status, not a new date for the one they have.
+  // Several jobs at once take a new status, not a new date for the one they have, nor one job's
+  // details.
   answer('jobs:update-many', (jobIds, changes) => {
     const valid = parseJobChanges(changes);
     const redates = valid?.statusOn !== undefined && valid.status === undefined;
-    return isIds(jobIds) && valid && !redates ? jobs.updateJobs(jobIds, valid) : REFUSED;
+    const one = valid !== null && changesDetails(valid);
+    return isIds(jobIds) && valid && !redates && !one ? jobs.updateJobs(jobIds, valid) : REFUSED;
   });
 
   answer('jobs:merge', (keepId, otherId) =>
     isId(keepId) && isId(otherId) && keepId !== otherId ? jobs.mergeJobs(keepId, otherId) : REFUSED,
+  );
+
+  answer('jobs:not-same', (jobId, otherId) =>
+    isId(jobId) && isId(otherId) && jobId !== otherId ? jobs.notSame(jobId, otherId) : REFUSED,
   );
 
   answer('jobs:add', (job) => {
@@ -606,6 +622,47 @@ export function registerIpc({
     }
     const failed = await shell.openPath(file);
     return failed ? { ok: false, message: 'Your computer couldn’t open that file.' } : { ok: true };
+  });
+
+  // One of a job's own files, as its panel lists them: a copy saved where the user picks, under its
+  // own name, or the file shown where it's kept.
+  const jobFile = (jobId: unknown, path: unknown) => {
+    const file = listedFile(workspace, isId(jobId) ? jobs.job(jobId) : null, path);
+    return file && isFile(file) ? file : null;
+  };
+  const GONE = { ok: false, message: 'That file isn’t in your workspace anymore.' } as const;
+  ipcMain.handle(
+    'files:download',
+    async (event, jobId: unknown, path: unknown): Promise<SaveFileResult> => {
+      if (!fromApp(event)) throw new Error('Refused a request from a page outside the app.');
+      const file = jobFile(jobId, path);
+      if (!file) return GONE;
+      const kind = extname(file).slice(1).toLowerCase();
+      const window = BrowserWindow.fromWebContents(event.sender);
+      const options = {
+        defaultPath: join(app.getPath('downloads'), basename(file)),
+        filters: [{ name: kind === 'pdf' ? 'PDF' : 'Word document', extensions: [kind] }],
+      };
+      const choice = window
+        ? await dialog.showSaveDialog(window, options)
+        : await dialog.showSaveDialog(options);
+      if (choice.canceled || !choice.filePath) return { ok: true, saved: false };
+      if (sameFile(file, choice.filePath)) return { ok: true, saved: true };
+      try {
+        await copyFile(file, choice.filePath);
+        return { ok: true, saved: true };
+      } catch (error) {
+        // A new version may have replaced it while the dialog was open.
+        if (!isFile(file)) return GONE;
+        return { ok: false, message: copyProblem((error as NodeJS.ErrnoException).code) };
+      }
+    },
+  );
+  answer('files:show', (jobId, path): EditResult => {
+    const file = jobFile(jobId, path);
+    if (!file) return GONE;
+    shell.showItemInFolder(file);
+    return { ok: true };
   });
 
   answer('files:pdf', async (path): Promise<PdfResult> => {

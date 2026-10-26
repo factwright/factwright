@@ -26,9 +26,7 @@ import type { StartingResume, TemplateInfo } from '../../shared/profile.ts';
 import type { ProfileEntry } from '../../shared/profiles.ts';
 import { type RunTask, TEMPLATE_SKILL } from '../../shared/runs.ts';
 import { ResumePreview } from '../jobs/ResumePreview.tsx';
-import { BUSY } from '../jobs/RunActions.tsx';
 import { ProfilesLine } from '../profiles/ProfilesLine.tsx';
-import type { RunPhase } from '../useClaudeRun.ts';
 import { OpenXRay } from '../xray/OpenXRay.tsx';
 import type { XRayFile } from '../xray/useXRay.ts';
 import styles from './ProfilePage.module.css';
@@ -94,7 +92,10 @@ function historyLines(history: WorkHistory): string[] {
   return more > 0 ? [...shown, `And ${more} more ${more === 1 ? 'company' : 'companies'}.`] : shown;
 }
 
-/** What Profile keeps for applications, in a line: where you can work, and sponsorship. */
+/**
+ * What Profile keeps for applications, in a line: where you can work, and sponsorship. Why
+ * you're leaving has a line of its own.
+ */
 function applicationsSummary(applications: ForApplications): string {
   const where =
     applications.countries.length > 0 ? `Works in ${applications.countries.join(', ')}` : '';
@@ -104,7 +105,8 @@ function applicationsSummary(applications: ForApplications): string {
   const adult = applications.over18
     ? `18 or older: ${labelOf(OVER_18, applications.over18).toLowerCase()}`
     : '';
-  return [where, sponsorship, adult].filter(Boolean).join(' · ') || 'Nothing yet.';
+  const said = [where, sponsorship, adult].filter(Boolean).join(' · ');
+  return said || (applications.leaving.trim() ? '' : 'Nothing yet.');
 }
 
 const plural = (count: number, word: string) =>
@@ -238,7 +240,7 @@ const asJobFile = (path: string, format: 'pdf' | 'docx'): JobFile => ({
 export function ProfilePage({
   state,
   api,
-  phase,
+  busy,
   ready,
   onRun,
   onOpenFacts,
@@ -246,8 +248,11 @@ export function ProfilePage({
 }: {
   state: ProfileState & { profile: NonNullable<ProfileState['profile']> };
   api: FactwrightApi;
-  /** Where Claude's run stands, so buttons wait while it's busy. */
-  phase: RunPhase;
+  /**
+   * Whether Claude has a task going, or waiting in line, on the user's facts and Profile, so the
+   * buttons for another wait.
+   */
+  busy: boolean;
   /** Whether Claude Code is ready to run. */
   ready: boolean;
   onRun: (task: RunTask) => void;
@@ -278,7 +283,6 @@ export function ProfilePage({
   const [addingProject, setAddingProject] = useState(false);
   const [preview, setPreview] = useState<JobFile | null>(null);
   const [xray, setXray] = useState<StartingResume | null>(null);
-  const busy = BUSY.includes(phase);
   const canRun = ready && !busy;
   const { claims, unconfirmed, files } = status.facts;
   const started = answers.startedOn !== null;
@@ -624,7 +628,14 @@ export function ProfilePage({
             </Button>
           }
         >
-          <p>{applicationsSummary(answers.applications)}</p>
+          {applicationsSummary(answers.applications) && (
+            <p>{applicationsSummary(answers.applications)}</p>
+          )}
+          {answers.applications.leaving.trim() && (
+            <p className={styles.leaving}>
+              Why you’re leaving: {answers.applications.leaving.trim()}
+            </p>
+          )}
           <p className={styles.quiet}>
             The browser extension fills forms with these. Equal-opportunity answers stay on this
             computer.
@@ -741,7 +752,8 @@ export function ProfilePage({
                   templates={profile.templates}
                   update={state.update}
                   api={api}
-                  canMake={canRun}
+                  // A template's run waits in line behind another, so it's never busy here.
+                  canMake={ready}
                   onMake={(source) => {
                     // Claude's panel shows it at work. The template joins the gallery once saved.
                     setEditing(null);

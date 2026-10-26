@@ -3,10 +3,12 @@ import {
   type AskedField,
   DRAFT_QUESTIONS,
   type FieldReply,
+  fieldPart,
   type InboxAskAnswer,
   isEqualOpportunity,
   isRemembered,
   JOB_LIMITS,
+  keptLength,
   type OfferedFile,
   type RememberedKind,
   US_STATES,
@@ -26,6 +28,7 @@ import {
   type FormAnswer,
   type FormTask,
   formPage,
+  type PageAdder,
   type PageField,
   type PageForm,
 } from './page/form.ts';
@@ -135,13 +138,52 @@ export async function fillForm(
   return answer?.did === 'fill' ? answer.filled : null;
 }
 
-/** What some of a form's fields hold now, and the page's address, or null when it can't be read. */
-export async function formValues(
-  place: FormPlace,
-  fields: FieldRef[],
-): Promise<{ url: string; submitted: boolean; values: FieldValue[] } | null> {
+/** What some of a form's fields hold now, as the page reads them. */
+export type FormValues = Extract<FormAnswer, { did: 'values' }>;
+
+/**
+ * What some of a form's fields hold now, the page's address, and the page of its application it's
+ * on, or null when it can't be read.
+ */
+export async function formValues(place: FormPlace, fields: FieldRef[]): Promise<FormValues | null> {
   const answer = await inPage(place, { do: 'values', fields });
   return answer?.did === 'values' ? answer : null;
+}
+
+/**
+ * Presses one of a form's buttons that add a part to it, as many times as you chose, and says how
+ * many parts it added: or that the tab has moved on to another address, or null when the tab
+ * can't be reached.
+ */
+export async function addParts(
+  place: FormPlace,
+  url: string,
+  adder: PageAdder,
+  times: number,
+): Promise<number | 'elsewhere' | null> {
+  const answer = await inPage(place, { do: 'add', url, adder, times });
+  if (answer?.did === 'elsewhere') return 'elsewhere';
+  return answer?.did === 'add' ? answer.added : null;
+}
+
+/**
+ * Waits while the page reads a resume, as one may once it's given the file, and fills fields in
+ * from it, up to a limit, as long as `quiet` passes with no reading: what it fills in from the
+ * resume would take the place of what's put there before it's done. Words it showed before Fill
+ * put anything in (`ignore`) don't count.
+ */
+async function waitForPage(place: FormPlace, quiet: number, ignore: string[]): Promise<void> {
+  await inPage(place, { do: 'wait', ms: READING_MS, quiet, ignore });
+}
+
+/**
+ * The words about reading a resume a page shows before Fill puts anything in, once it's waited a
+ * moment for one it's reading already, as one you gave it yourself: words it still shows then are
+ * there all along.
+ */
+async function readingAlready(place: FormPlace): Promise<string[]> {
+  const said = await inPage(place, { do: 'wait', ms: ALREADY_MS, quiet: 0 });
+  return said?.did === 'wait' ? said.seen : [];
 }
 
 /** Outlines fields in orange on the page, as left for you. */
@@ -202,9 +244,16 @@ export async function planFill(
 }
 
 /**
+ * A box for one part of a date, as "Date Month" or "From Year", which only you can say: a few
+ * words that end in the part, in a box for a number.
+ */
+const DATE_PART = /^(\S+ ){0,2}(day|month|year)$/i;
+
+/**
  * The form's own questions that nothing on file answers, which your Claude can draft: ones it
- * asks in words or with options, left for you and not filled. A file, a box to tick, and a
- * question your Claude said is yours to answer, with why, aren't.
+ * asks in words or with options, left for you and not filled. A file, a box to tick, a box for one
+ * part of a date, as a self-identification form's date to sign it is, and a question your Claude
+ * said is yours to answer, with why, aren't.
  */
 export function draftable(
   form: PageForm,
@@ -222,6 +271,7 @@ export function draftable(
         field.question.trim() !== '' &&
         field.control !== 'file' &&
         field.control !== 'check' &&
+        !(field.control === 'number' && DATE_PART.test(field.question.trim())) &&
         !filled.get(field.key)?.ok
       );
     })
@@ -289,13 +339,23 @@ export const isPlace = (kind: FieldReply['kind']) => PLACES.has(kind);
 export const picksOf = (reply: Pick<FieldReply, 'kind' | 'pick'>): string[] =>
   isPlace(reply.kind) ? placeNames(reply.pick ?? []) : [...(reply.pick ?? [])];
 
-/** What to put in each field Factwright answered, with the files it fetched. */
+/** The kinds of field that name a part's job or school: what tells a part that holds another. */
+const NAMES_PART = new Set<FieldReply['kind']>(['current-company', 'school']);
+
+/**
+ * What to put in each field Factwright answered, with the files it fetched, in place of what's
+ * there. On a page of an application that runs over several, which its site may have filled from
+ * your resume, as Workday's does, none in a part for a job or school the site filled with another
+ * one; and only in the fields that are empty, as asked (`onlyEmpty`), once parts were added to the
+ * form, whose earlier parts hold what you gave them.
+ */
 export function fillAnswers(
   form: PageForm,
   replies: readonly FieldReply[],
   files: Partial<Record<'resume' | 'cover-letter', { name: string; base64: string }>>,
+  onlyEmpty = false,
 ): FieldAnswer[] {
-  return form.fields.flatMap((field, at): FieldAnswer[] => {
+  const answers = form.fields.flatMap((field, at): FieldAnswer[] => {
     const reply = replies[at];
     if (!reply || reply.source === 'you') return [];
     const { ref, key } = field;
@@ -321,6 +381,17 @@ export function fillAnswers(
     }
     return [{ ref, key, text: reply.text }];
   });
+  if (!onlyEmpty && !form.step) return answers;
+  return answers.map((answer) => {
+    const at = form.fields.findIndex((field) => field.ref === answer.ref);
+    const field = form.fields[at];
+    const part = field?.section && fieldPart(field) ? field.section : undefined;
+    return {
+      ...answer,
+      ...(onlyEmpty && { ifEmpty: true }),
+      ...(part && { part, names: NAMES_PART.has(replies[at]?.kind ?? 'question') }),
+    };
+  });
 }
 
 /** The words Factwright put in a field, as the panel shows them and you can copy them. */
@@ -339,6 +410,8 @@ export function answerSource(reply: FieldReply): string {
   }
   if (reply.file) return reply.file === 'resume' ? 'The job’s resume' : 'The job’s cover letter';
   if (reply.source === 'resume') return 'From the job’s resume';
+  // The pay you ask for at this job, as you set it in Factwright.
+  if (reply.source === 'job' && reply.kind === 'pay' && reply.from) return reply.from;
   if (reply.source === 'job')
     return reply.kind === 'how-heard' ? 'Where you found the job' : 'From the job';
   return 'From Profile';
@@ -349,6 +422,32 @@ export function answerSource(reply: FieldReply): string {
  * answered, as a question about race once you've said whether you're Hispanic or Latino.
  */
 const PASSES = 3;
+
+/**
+ * How long a form gets to show the fields it shows once others are answered, when a pass finds
+ * none at once: a list a site fills from its server once the one before is picked, as Taleo's
+ * state's once its country is, takes a moment.
+ */
+const SETTLE_MS = 700;
+
+/**
+ * The longest a page gets to read a resume, as Ashby's does in a second or two, and how long it
+ * gets to start once it's given the file.
+ */
+const READING_MS = 15_000;
+const START_READING_MS = 1200;
+
+/**
+ * How long, before filling, it waits for a page to finish reading a resume it's reading already,
+ * as one you gave it yourself: words about reading one that stay longer are there all along.
+ */
+const ALREADY_MS = 5000;
+
+/**
+ * How long after filling the form's choices are checked again: a page reading a resume you gave
+ * it may take an answer back as it fills in what it read, as Ashby's can.
+ */
+const CHECK_AGAIN_MS = 1500;
 
 /** A form being filled, as filling it in passes goes along. */
 export interface Passes {
@@ -365,6 +464,8 @@ export interface Passes {
   filled: Map<string, FieldFilled>;
   /** Whether a later start of filling took over, which stops this one where it is. */
   stale: () => boolean;
+  /** Whether it fills only the fields that are empty, as once parts were added to the form. */
+  onlyEmpty?: boolean;
   /** What it's doing now, to say. */
   status?: (text: string) => void;
   /** The form showed more fields, which it's answered. */
@@ -373,10 +474,13 @@ export interface Passes {
 
 /**
  * Fills a form with Factwright's answers, as the panel and the Fill button on the job sites you
- * allowed do: it fetches the job's files to upload first, fills each field, then again for those
- * the form showed meanwhile, and outlines what's left for you, and needed, in orange. Or it says
- * why it stopped: the tab moved on from the form, the browser doesn't let it reach the tab, or a
- * later start took over.
+ * allowed do: it fetches the job's files to upload first, and fills each field, then again for
+ * those the form showed meanwhile, and outlines what's left for you, and needed, in orange. A page
+ * may read a resume it's given and fill fields in from it, as Ashby's and Lever's do, so the files
+ * go in first, and the rest once the page has read them, or the one you gave it yourself. Then,
+ * a moment later, each choice is checked again, and picked again if the page took it back. Or it
+ * says why it stopped: the tab moved on from the form, the browser doesn't let it reach the tab,
+ * or a later start took over.
  */
 export async function fillInPasses(
   passes: Passes,
@@ -398,25 +502,66 @@ export async function fillInPasses(
     }
   }
   passes.status?.('Filling the form…');
-  let from = 0;
-  for (let pass = 0; pass < PASSES; pass++) {
-    const fields = form.fields.slice(from);
-    const answers = fillAnswers({ ...form, fields }, replies.slice(from), fetched);
+  const already = await readingAlready(place);
+  if (stale()) return 'stale';
+  /** The answers that went in the form's choices, to check again once it's filled. */
+  const choices: { answer: FieldAnswer; field: PageField }[] = [];
+  /** Fills some of a form's fields, and keeps how each went, or says why it couldn't. */
+  const fillSome = async (
+    fields: readonly PageField[],
+    answers: FieldAnswer[],
+  ): Promise<true | 'elsewhere' | 'unreachable' | 'stale'> => {
+    if (answers.length === 0) return true;
     const done = await fillForm(place, form.url, answers);
     if (stale()) return 'stale';
     if (done === null) return 'unreachable';
     if (done === 'elsewhere') return 'elsewhere';
     for (const each of done) {
       const field = fields.find((one) => one.ref === each.ref);
-      if (field) filled.set(field.key, each);
+      if (!field) continue;
+      filled.set(field.key, each);
+      const answer = answers.find((one) => one.ref === each.ref);
+      if (answer && each.ok && !each.kept && /^choices?$/.test(field.control)) {
+        choices.push({ answer, field });
+      }
     }
-    // Fields the form showed once others were answered, filled in the next pass.
-    const again = await readForm(place);
+    return true;
+  };
+  let from = 0;
+  for (let pass = 0; pass < PASSES; pass++) {
+    const fields = form.fields.slice(from);
+    const answers = fillAnswers(
+      { ...form, fields },
+      replies.slice(from),
+      fetched,
+      passes.onlyEmpty,
+    );
+    const files = answers.filter((answer) => answer.file);
+    const sent = await fillSome(fields, files);
+    if (sent !== true) return sent;
+    await waitForPage(place, files.length > 0 ? START_READING_MS : 0, already);
     if (stale()) return 'stale';
-    if (!again || again.url.split('#')[0] !== form.url.split('#')[0]) break;
+    const rest = await fillSome(
+      fields,
+      answers.filter((answer) => !answer.file),
+    );
+    if (rest !== true) return rest;
+    // Fields the form showed once others were answered, filled in the next pass.
     const known = new Set(form.fields.map((field) => field.key));
-    const added = again.fields.filter((field) => !known.has(field.key));
-    if (added.length === 0) break;
+    const newFields = async () => {
+      const read = await readForm(place);
+      if (!read || read.url.split('#')[0] !== form.url.split('#')[0]) return null;
+      return { read, added: read.fields.filter((field) => !known.has(field.key)) };
+    };
+    let found = await newFields();
+    if (stale()) return 'stale';
+    if (found && found.added.length === 0) {
+      await new Promise((done) => setTimeout(done, SETTLE_MS));
+      found = await newFields();
+      if (stale()) return 'stale';
+    }
+    if (!found || found.added.length === 0) break;
+    const { read: again, added } = found;
     const planned = await planFill({ ...again, fields: added }, shows, way);
     if (stale()) return 'stale';
     if (!planned.ok || planned.did !== 'fill') break;
@@ -425,19 +570,48 @@ export async function fillInPasses(
     replies.push(...planned.replies);
     passes.added?.();
   }
+  // Each choice again, a moment later: one the page took back, as it filled in from a resume it
+  // read, is picked again. One it still shows is left as it is.
+  if (choices.length > 0) {
+    await new Promise((done) => setTimeout(done, CHECK_AGAIN_MS));
+    if (stale()) return 'stale';
+    await waitForPage(place, 0, already);
+    if (stale()) return 'stale';
+    const again = await fillForm(
+      place,
+      form.url,
+      choices.map(({ answer }) => answer),
+    );
+    if (stale()) return 'stale';
+    if (Array.isArray(again)) {
+      for (const each of again) {
+        const field = choices.find(({ answer }) => answer.ref === each.ref)?.field;
+        if (field) filled.set(field.key, each);
+      }
+    }
+  }
   // What's left for you, and needed, is outlined in orange on the page.
   const left = form.fields.filter((field) => field.required && !filled.get(field.key)?.ok);
   await outlineFields(place, left);
   return stale() ? 'stale' : true;
 }
 
-/** How many fields were filled, and how many are left for you, as the panel says it. */
+/**
+ * How many fields were filled, how many that held an answer already were left as they were, and
+ * how many are left for you, as the panel says it.
+ */
 export function filledSummary(form: PageForm, filled: ReadonlyMap<string, FieldFilled>): string {
   const total = form.fields.length;
-  const done = [...filled.values()].filter((each) => each.ok).length;
-  const left = total - done;
-  return left > 0
-    ? `Filled ${done} of ${total} fields. ${left} ${left === 1 ? 'is' : 'are'} left for you.`
+  const took = [...filled.values()].filter((each) => each.ok);
+  const kept = took.filter((each) => each.kept).length;
+  const done = took.length - kept;
+  const left = total - took.length;
+  const keeping = kept > 0 ? `, and left ${kept} as ${kept === 1 ? 'it was' : 'they were'}` : '';
+  if (left > 0) {
+    return `Filled ${done} of ${total} fields${keeping}. ${left} ${left === 1 ? 'is' : 'are'} left for you.`;
+  }
+  return kept > 0
+    ? `Filled ${done} of ${total} fields${keeping}. Check them, then submit it on the page.`
     : `Filled all ${total} fields. Check them, then submit it on the page.`;
 }
 
@@ -465,8 +639,8 @@ export function fieldsToRead(form: PageForm, replies: readonly FieldReply[]): Fi
 
 /**
  * The answers to send once you've applied: what's in each of the form's own questions, as typed
- * or picked. Never what Profile fills, a file, a checkbox, agreeing to something, or an
- * equal-opportunity or personal answer.
+ * or picked, and why you're leaving, as you put it for this job. Never anything else Profile
+ * fills, a file, a checkbox, agreeing to something, or an equal-opportunity or personal answer.
  */
 export function sentAnswers(
   form: PageForm,
@@ -476,7 +650,7 @@ export function sentAnswers(
   return form.fields
     .flatMap((field, at) => {
       const reply = replies[at];
-      if (reply?.kind !== 'question') return [];
+      if (reply?.kind !== 'question' && reply?.kind !== 'leaving') return [];
       if (field.control === 'file' || field.control === 'check' || !field.question) return [];
       const value = fieldValue(field, values);
       return value.trim() ? [{ question: field.question, text: value.trim() }] : [];
@@ -495,20 +669,24 @@ export interface NewAnswer {
 
 /**
  * What you typed or picked on a form that Factwright didn't have, for a field Profile answers:
- * each one offered on its own, to keep for next time, or not.
+ * each one offered on its own, to keep for next time, or not. What a site put in a field itself,
+ * as from your resume, which Factwright left as it was (`filled`), isn't yours, unless you changed it.
  */
 export function newAnswers(
   form: PageForm,
   replies: readonly FieldReply[],
   values: readonly FieldValue[],
+  filled: ReadonlyMap<string, FieldFilled> = new Map(),
 ): NewAnswer[] {
   return form.fields.flatMap((field, at) => {
     const reply = replies[at];
     if (!reply || !isRemembered(reply.kind) || field.control === 'file') return [];
     const text = fieldValue(field, values).trim();
-    if (!text || text.length > 200) return [];
+    if (!text || text.length > keptLength(reply.kind)) return [];
     const had = replyText(reply).trim();
     if (had && plainly(had) === plainly(text)) return [];
+    const kept = filled.get(field.key);
+    if (kept?.kept && plainly(kept.shown) === plainly(text)) return [];
     // A choice Factwright picked from its own words, as "Woman" for "Female", is what it had.
     if (reply.pick?.some((pick) => plainly(pick) === plainly(text))) return [];
     const kind = reply.kind;

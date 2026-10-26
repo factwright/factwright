@@ -1,4 +1,4 @@
-import { boardPostingId, boardSource } from './boards.ts';
+import { boardPostingId, boardSource, workablePostingId } from './boards.ts';
 import { companyKey, slug } from './keys.ts';
 import { isJobLink, normalizeUrl } from './links.ts';
 
@@ -14,9 +14,10 @@ const OPAQUE_ID = /^[\w-]{1,100}$/;
 /**
  * A key for the one posting a link is to, the same however the link is written: the applicant
  * system's own ID for it, such as "greenhouse:4567890" for boards.greenhouse.io and
- * job-boards.greenhouse.io alike, or for a company's site with ?gh_jid=4567890. LinkedIn's is the
- * number in jobs/view/<id>, whatever it says around it, and Indeed's is its jk. Null for a link to
- * a whole board, or to a site this doesn't know.
+ * job-boards.greenhouse.io alike, or for a company's site with ?gh_jid=4567890, and Workable's
+ * shortcode, as "workable:1b6e0a1710". LinkedIn's is the number in jobs/view/<id>, whatever it says
+ * around it, and Indeed's is its jk. Null for a link to a whole board, or to a site this doesn't
+ * know.
  */
 export function postingKey(address: string): string | null {
   let url: URL;
@@ -40,6 +41,17 @@ export function postingKey(address: string): string | null {
     if (board.kind === 'gem') return `gem:${board.board.toLowerCase()}:${id}`;
     return `${board.kind}:${id.toLowerCase()}`;
   }
+  // Workable's IDs are its own across every company, as its short links name no company.
+  const workable = workablePostingId(address);
+  if (workable) return `workable:${workable.toLowerCase()}`;
+  const workday = workdayPosting(host, url.pathname);
+  if (workday) return workday;
+  const icims = icimsPosting(host, url.pathname);
+  if (icims) return icims;
+  const taleo = taleoPosting(host, url);
+  if (taleo) return taleo;
+  const successFactors = successFactorsPosting(host, url);
+  if (successFactors) return successFactors;
   if (/(^|\.)linkedin\.com$/.test(host) && /^\/jobs(\/|$)/.test(url.pathname)) {
     // jobs/view/<id>, or jobs/view/<its title>-<id>.
     const view = url.pathname.match(/^\/jobs\/view\/([^/]+)/)?.[1];
@@ -51,6 +63,87 @@ export function postingKey(address: string): string | null {
     return id && OPAQUE_ID.test(id) ? `indeed:${id.toLowerCase()}` : null;
   }
   return null;
+}
+
+/**
+ * A Workday posting's key, by the company's own site on Workday and the posting's ID, which ends
+ * its job's part of the address, after the last "_": the same for the posting and its
+ * application, as "…/job/Denver/Product-Manager_R101" and "…/Product-Manager_R101/apply" are. A
+ * company's site is its own name at myworkdayjobs.com, or the part after "recruiting" at
+ * myworkdaysite.com.
+ */
+function workdayPosting(host: string, path: string): string | null {
+  const parts = path.split('/').filter(Boolean);
+  let site = '';
+  if (/^[a-z0-9-]+\.wd\d+\.myworkdayjobs\.com$/.test(host)) site = host.split('.')[0] ?? '';
+  else if (/^(wd\d+\.)?myworkdaysite\.com$/.test(host)) {
+    const at = parts.indexOf('recruiting');
+    site = at < 0 ? '' : (parts[at + 1] ?? '');
+  } else return null;
+  const job = parts.findIndex((part) => part === 'job' || part === 'details');
+  if (!site || job < 0) return null;
+  const after = parts.slice(job + 1);
+  const ends = after.indexOf('apply');
+  const posting = (ends < 0 ? after : after.slice(0, ends)).at(-1) ?? '';
+  const id = /_([A-Za-z0-9-]{1,40})$/.exec(posting)?.[1];
+  return id ? `workday:${site.toLowerCase()}:${id.toLowerCase()}` : null;
+}
+
+/**
+ * An iCIMS posting's key, by the company's site on iCIMS and the job's number, which follows
+ * "/jobs/" in the posting's address and its application's alike, as
+ * "careers-acme.icims.com/jobs/1234/engineer/job" and "…/jobs/1234/engineer/candidate" are.
+ */
+function icimsPosting(host: string, path: string): string | null {
+  if (!/^[a-z0-9-]+\.icims\.com$/.test(host) || host === 'www.icims.com') return null;
+  const id = /^\/jobs\/(\d{1,12})(?:\/|$)/.exec(path)?.[1];
+  return id ? `icims:${host.split('.')[0]}:${id}` : null;
+}
+
+/** An ID as Taleo and SuccessFactors give a posting or a requisition: letters, digits and dashes. */
+const REQUISITION = /^[\w-]{1,40}$/;
+
+/**
+ * A Taleo posting's key, by the company's site and the job's number: on Taleo Enterprise, its
+ * "job" in a career section's posting and application alike, as
+ * "acme.taleo.net/careersection/2/jobdetail.ftl?job=2600123" and "…/jobapply.ftl?job=2600123"
+ * are, on the company's own name at taleo.net or its own site; on Taleo Business Edition, the
+ * company's code and the requisition's, as "…/ats/careers/v2/applyRequisition?org=ACME&rid=4321".
+ */
+function taleoPosting(host: string, url: URL): string | null {
+  const taleo = /^[a-z0-9-]+\.taleo\.net$/.test(host);
+  if (/^\/careersection\//.test(url.pathname) && (taleo || /\.ftl$/.test(url.pathname))) {
+    const job = url.searchParams.get('job') ?? '';
+    const site = taleo ? (host.split('.')[0] ?? '') : host;
+    return REQUISITION.test(job) ? `taleo:${site}:${job.toLowerCase()}` : null;
+  }
+  if (/(^|\.)tbe\.taleo\.net$/.test(host) && /\/ats\/careers\//.test(url.pathname)) {
+    const org = url.searchParams.get('org') ?? '';
+    const rid = url.searchParams.get('rid') ?? '';
+    return REQUISITION.test(org) && REQUISITION.test(rid)
+      ? `taleo:${org.toLowerCase()}:${rid.toLowerCase()}`
+      : null;
+  }
+  return null;
+}
+
+/** The sites SuccessFactors' career pages are on, by their data centers' names. */
+const SUCCESSFACTORS = /(^|\.)(successfactors\.(com|eu)|sapsf\.(com|eu|cn)|hr\.cloud\.sap)$/;
+
+/**
+ * A SuccessFactors posting's key, by the company's ID and the requisition's, which its posting
+ * and its application on a career site name alike, as
+ * "career4.successfactors.com/career?company=acme&career_job_req_id=1000" and
+ * "…/sfcareer/jobreqcareer?jobId=1000&company=acme" do. A company's own career site, which names
+ * its postings by IDs of its own, gives none.
+ */
+function successFactorsPosting(host: string, url: URL): string | null {
+  if (!SUCCESSFACTORS.test(host)) return null;
+  const company = url.searchParams.get('company') ?? url.searchParams.get('career_company') ?? '';
+  const job = url.searchParams.get('career_job_req_id') ?? url.searchParams.get('jobId') ?? '';
+  return REQUISITION.test(company) && REQUISITION.test(job)
+    ? `successfactors:${company.toLowerCase()}:${job.toLowerCase()}`
+    : null;
 }
 
 /** The site a posting's key is on, such as "greenhouse" or "linkedin". */
@@ -496,4 +589,78 @@ export function matchJobs<T extends JobIdentity>(
       return match ? [{ job, match }] : [];
     })
     .sort((a, b) => MATCH_ORDER[a.match] - MATCH_ORDER[b.match]);
+}
+
+/**
+ * Whether a job has a posting of its own: a link to one job, by its address or its ID, and not
+ * only a board's address, a Hacker News post or the company's site.
+ */
+export const hasOwnPosting = (job: { links: readonly { url: string }[] }) =>
+  job.links.some((link) => isJobLink(link.url) || postingKey(link.url) !== null);
+
+/**
+ * How a job on a page goes with the jobs on file, as the browser extension tells when it saves the
+ * page, and when its popup says whether the job is saved:
+ * - **same:** a job with the same posting, by its address or its ID, which saving finds there;
+ * - **joins:** the one job with the same role at the same company, its title the same however
+ *   it's written, where one of the two has no posting of its own, only a board's address, a Hacker
+ *   News post or the company's site, so saving adds the page's link and posting to it;
+ * - **role:** the one job with the same role at the company, as matching reads it otherwise, as
+ *   one with another posting of its own, or a title saying more, which filling a form takes as the
+ *   form's job, and saving makes a new job beside.
+ */
+export type SavedHow = 'same' | 'joins' | 'role';
+
+/** The job on file a page is for, with how, or null for none. */
+export function savedJobFor<T extends JobIdentity>(
+  jobs: readonly T[],
+  page: { url: string; company: string; role: string },
+): { job: T; how: SavedHow } | null {
+  const matches = matchJobs(jobs, { company: page.company, role: page.role, link: page.url });
+  const same = matches.find(({ match }) => match === 'posting');
+  if (same) return { job: same.job, how: 'same' };
+  const roles = matches.filter(({ match }) => match === 'role');
+  // Joining changes the job on file, so only one job it can't be mistaken for: the same company
+  // and the same title, never one whose name only holds the page's, or whose title says more.
+  const pagePosting = hasOwnPosting({ links: [{ url: page.url }] });
+  const name = { company: page.company, companyKey: companyKey(page.company) };
+  const title = readTitle(page.role);
+  const joins = roles.filter(
+    ({ job }) =>
+      (!pagePosting || !hasOwnPosting(job)) &&
+      companyMatch(
+        { company: job.company, companyKey: job.companyKey || companyKey(job.company) },
+        name,
+      ) === 'same' &&
+      titleFit(readTitle(job.role), title) === 'same',
+  );
+  const [joined, ...others] = joins;
+  if (joined && others.length === 0) return { job: joined.job, how: 'joins' };
+  const [only, ...more] = roles;
+  return only && more.length === 0 ? { job: only.job, how: 'role' } : null;
+}
+
+/**
+ * Whether two jobs on file are surely one job found twice, as your Claude's Analyze job merges
+ * them: the same posting by an applicant system's own ID for it, at any company; the same address,
+ * at the same company with the same title, as a careers page or a board's address can be many
+ * jobs'; or the same role at the same company, its title the same however it's written, where one
+ * of the two has no posting of its own, only a board's address, a Hacker News post or the
+ * company's site. Null for anything less sure, which the user decides with Merge.
+ */
+export function sameJob(a: JobIdentity, b: JobIdentity): 'posting' | 'role' | null {
+  const named = (job: JobIdentity) => ({
+    company: job.company,
+    companyKey: job.companyKey || companyKey(job.company),
+  });
+  const postings = (job: JobIdentity) => job.links.flatMap((link) => postingKey(link.url) ?? []);
+  const theirPostings = postings(b);
+  if (postings(a).some((key) => theirPostings.includes(key))) return 'posting';
+  const like = jobLikeness({ ...a, ...named(a) }, { ...b, ...named(b) });
+  if (like !== 'posting' && like !== 'role') return null;
+  const company = companyMatch(named(a), named(b));
+  const title = titleFit(readTitle(a.role), readTitle(b.role));
+  if (company !== 'same' || title !== 'same') return null;
+  if (like === 'posting') return 'posting';
+  return !hasOwnPosting(a) || !hasOwnPosting(b) ? 'role' : null;
 }

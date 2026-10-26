@@ -6,6 +6,7 @@ import {
   answerForm,
   applicationAnswers,
   askedJob,
+  blocksOnFile,
   FILE_LIMIT,
   FILE_PART_BYTES,
   formJob,
@@ -13,27 +14,33 @@ import {
   type InboxAskAnswer,
   isEqualOpportunity,
   isRemembered,
+  isSyncedAnswer,
   type Job,
   type JobFile,
   jobPdfs,
   type KeptPrivate,
+  keptLength,
   letterPlainText,
   localDate,
   type OfferedFile,
   type OnFile,
   onFileJob,
+  payAskFor,
   readEqualOpportunity,
   readLetterText,
   readSuggestedAnswers,
   type SavedForm,
   SENT_STATUSES,
+  SYNCED_ANSWERS,
+  savedJobFor,
   sentAnswersOf,
   sentBefore,
   uploadName,
   type WorkHistory,
 } from '@factwright/core';
 import type { AboutYou, AnswerChanges } from '../../shared/about.ts';
-import type { EditResult, JobChanges, RecordedAnswers } from '../../shared/api.ts';
+import type { EditResult, JobChanges, RecordedAnswers, UndoneResult } from '../../shared/api.ts';
+import { kindsOf } from '../../shared/kinds.ts';
 import type { RunRequestAnswer } from '../../shared/runs.ts';
 import { resumeOnFile } from '../about/from-resume.ts';
 
@@ -56,6 +63,8 @@ export interface FillDeps {
       answers: readonly { question: string; nth: number; text: string }[],
     ): RecordedAnswers;
     updateJob(jobId: string, changes: JobChanges): EditResult;
+    /** Takes back marking a job Applied, while that's the latest change in its history. */
+    undoApplied(jobId: string): UndoneResult;
     /** Keeps the questions of a job's application form with it, for its Claude to draft. */
     keepForm(jobId: string, form: SavedForm): EditResult;
     /** The questions of a job's application form, as kept, or null. */
@@ -127,12 +136,11 @@ async function openInside(workspace: string, file: JobFile): Promise<Opened | nu
   }
 }
 
-/** An offer of one of a job's files: its plain name, its size, its parts and its version. */
+/** An offer of one of a job's files: its own name, its size, its parts and its version. */
 async function offer(
   deps: FillDeps,
   job: Job,
   kind: 'resume' | 'cover-letter',
-  you: string,
 ): Promise<OfferedFile | null> {
   const [file] = jobPdfs(job, kind);
   const opened = file ? await openInside(deps.workspace, file) : null;
@@ -141,7 +149,7 @@ async function offer(
   const { size, version } = opened;
   if (size === 0 || size > FILE_LIMIT) return null;
   return {
-    name: uploadName(you, kind, file),
+    name: uploadName(file),
     size,
     parts: Math.ceil(size / FILE_PART_BYTES),
     version,
@@ -158,11 +166,9 @@ async function fill(
   const about = deps.about.answers();
   const docs = job ? deps.jobs.docs(job.id) : null;
   const letter = readLetterText(docs?.letter);
-  // Your name for the upload's name, from Profile or else the resume.
   const resume = await resumeOnFile(deps.workspace, job?.folder ?? null);
-  const you = about.you.name || resume?.name || '';
   const [cv, coverLetter] = job
-    ? await Promise.all([offer(deps, job, 'resume', you), offer(deps, job, 'cover-letter', you)])
+    ? await Promise.all([offer(deps, job, 'resume'), offer(deps, job, 'cover-letter')])
     : [null, null];
   const onFile: OnFile = {
     you: about.you,
@@ -171,7 +177,7 @@ async function fill(
     authorization: about.authorization,
     start: about.start,
     relocate: about.relocate,
-    targetPay: about.targetPay,
+    pay: payAskFor(job, kindsOf(about)),
     resume,
     history: deps.about.history(),
     job: job ? onFileJob(job) : null,
@@ -187,6 +193,7 @@ async function fill(
     job: job ? askedJob(job) : null,
     replies: answerForm(ask.fields, onFile),
     files: { resume: cv, 'cover-letter': coverLetter },
+    blocks: blocksOnFile(onFile),
   };
 }
 
@@ -245,7 +252,21 @@ function sent(ask: Extract<InboxAsk, { ask: 'sent' }>, deps: FillDeps): InboxAsk
     if (!result.ok) return failed(result.message);
   }
   const now = deps.jobs.job(job.id) ?? job;
-  return { ok: true, did: 'sent', job: askedJob(now), recorded };
+  return { ok: true, did: 'sent', job: askedJob(now), recorded, marked: !applied };
+}
+
+/**
+ * Takes back marking a job Applied, as the extension's Undo asks once it noticed you submitted the
+ * job's application and marked it: the job goes back where it was, while that's still the latest
+ * change in its history. What you sent stays with the job, as you'd send the same again.
+ */
+function unsent(ask: Extract<InboxAsk, { ask: 'unsent' }>, deps: FillDeps): InboxAskAnswer {
+  const job = deps.jobs.job(ask.job);
+  if (!job) return notFound('That job isn’t in Factwright anymore.');
+  const result = deps.jobs.undoApplied(job.id);
+  if (!result.ok) return failed(result.message);
+  const now = deps.jobs.job(job.id) ?? job;
+  return { ok: true, did: 'unsent', job: askedJob(now), undone: result.undone };
 }
 
 /**
@@ -264,26 +285,14 @@ function remember(ask: Extract<InboxAsk, { ask: 'remember' }>, deps: FillDeps): 
   let saved = 0;
   for (const { kind, text } of ask.answers) {
     const value = text.trim();
-    if (!value || !isRemembered(kind) || value.length > 200) continue;
+    if (!value || !isRemembered(kind) || value.length > keptLength(kind)) continue;
     saved += 1;
-    if (kind === 'email' || kind === 'phone' || kind === 'linkedin' || kind === 'website') {
-      you[kind] = value;
-    } else if (kind === 'location') {
-      you.location = value;
-    } else if (kind === 'preferred-name') {
-      applications.preferredName = value;
-    } else if (
-      kind === 'pronouns' ||
-      kind === 'city' ||
-      kind === 'region' ||
-      kind === 'country' ||
-      kind === 'github'
-    ) {
-      applications[kind] = value;
-    } else if (kind === 'how-heard') {
-      applications.howHeard = value;
-    } else if (kind === 'start-date') {
-      start = value;
+    if (isSyncedAnswer(kind)) {
+      // In answers.json, where a browser filling through sync keeps them too.
+      const place = SYNCED_ANSWERS[kind];
+      if (place.part === 'you') you[place.key] = value;
+      else if (place.part === 'applications') applications[place.key] = value;
+      else start = value;
     } else if (kind === 'street') {
       privately.street = value;
     } else if (kind === 'postal-code') {
@@ -355,14 +364,26 @@ function drafts(ask: Extract<InboxAsk, { ask: 'drafts' }>, deps: FillDeps): Inbo
   return { ok: true, did: 'drafts', ...deps.drafts.state(job.id), drafted };
 }
 
+/**
+ * The job on file a page is for, as the extension's popup asks before it offers to save the page:
+ * the same posting, the same role that saving the page would add to, or the one job Fill would
+ * take, by @factwright/core's savedJobFor, with how. None for a job that isn't in the job hunt.
+ */
+function jobFor(ask: Extract<InboxAsk, { ask: 'job' }>, deps: FillDeps): InboxAskAnswer {
+  const found = savedJobFor(deps.jobs.list().jobs, ask);
+  return { ok: true, did: 'job', found: found && { job: askedJob(found.job), how: found.how } };
+}
+
 /** Answers one ask from the extension. Nothing in it can stop the app: a failure says so. */
 export async function answerAsk(ask: InboxAsk, deps: FillDeps): Promise<InboxAskAnswer> {
   try {
     if (ask.ask === 'fill') return await fill(ask, deps);
     if (ask.ask === 'file') return await filePart(ask, deps);
     if (ask.ask === 'sent') return sent(ask, deps);
+    if (ask.ask === 'unsent') return unsent(ask, deps);
     if (ask.ask === 'draft') return await draft(ask, deps);
     if (ask.ask === 'drafts') return drafts(ask, deps);
+    if (ask.ask === 'job') return jobFor(ask, deps);
     return remember(ask, deps);
   } catch {
     return failed('Factwright couldn’t do that just now. Try again.');

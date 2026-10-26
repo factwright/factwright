@@ -27,7 +27,7 @@ import sidebarPdf from '@factwright/xray/fixtures/sidebar.pdf?url';
 import spacedPdf from '@factwright/xray/fixtures/spaced.pdf?url';
 import type { EditResult, FactwrightApi, JobChanges, JobList } from '../../shared/api.ts';
 import { REVISE_SKILL, type Revision } from '../../shared/revision.ts';
-import { type RunTask, THANKS_SKILL, taskCall, taskJob } from '../../shared/runs.ts';
+import { type RunTask, THANKS_SKILL, taskCall, taskJobs } from '../../shared/runs.ts';
 import type { DocKind, DocVersion } from '../../shared/versions.ts';
 import {
   sampleCallDocs,
@@ -37,6 +37,7 @@ import {
   sampleJob,
   sampleJobs,
   sampleOutreach,
+  sampleSaved,
   sampleVersions,
 } from './sample-jobs.ts';
 import { samplePdf } from './sample-pdf.ts';
@@ -66,6 +67,7 @@ type TrackerApi = Pick<
   | 'updateJob'
   | 'updateJobs'
   | 'mergeJobs'
+  | 'notSameJob'
   | 'addJob'
   | 'addCall'
   | 'updateCall'
@@ -77,6 +79,8 @@ type TrackerApi = Pick<
   | 'deleteNote'
   | 'onJobsChanged'
   | 'openFile'
+  | 'downloadFile'
+  | 'showFile'
   | 'readPdf'
   | 'readWord'
   | 'copyText'
@@ -175,8 +179,9 @@ const withFiles = (job: Job, kind: DocKind, files: Job['files']): Job =>
 /**
  * The tracker for the sample screens, kept in memory until the page reloads. It follows the
  * real tracker's main rules (a call moves a job forward, Undo puts it back) closely enough to
- * check the screens by eye. "jobs" picks the starting jobs: none, failed or loading, or twice,
- * with a job found twice to merge.
+ * check the screens by eye. "jobs" picks the starting jobs: none, failed or loading, twice,
+ * with a job found twice to merge, or saved, with jobs saved from the browser that Claude hasn't
+ * analyzed yet, and one Analyze job noted might be another.
  */
 export function sampleTracker(
   jobs: string | null,
@@ -194,7 +199,13 @@ export function sampleTracker(
   const revisionKey = (jobId: string, name: string) => `${jobId}/${stemOf(name)}`;
   let list: JobList = {
     jobs:
-      jobs === 'none' ? [] : jobs === 'twice' ? [...sampleJobs(), sampleDuplicate()] : sampleJobs(),
+      jobs === 'none'
+        ? []
+        : jobs === 'twice'
+          ? [...sampleJobs(), sampleDuplicate()]
+          : jobs === 'saved'
+            ? [...sampleJobs(), ...sampleSaved()]
+            : sampleJobs(),
     readAt: new Date().toISOString(),
   };
   for (const [jobId, kept] of sampleVersions(list.jobs)) versions.set(jobId, kept);
@@ -253,6 +264,40 @@ export function sampleTracker(
     appliedOn: status === 'applied' && !job.appliedOn ? at : job.appliedOn,
     statusLog: [...job.statusLog, { id: newId('change'), status, at }],
   });
+  // What Claude found for each job, from before the user set any of its details.
+  const found = new Map<
+    string,
+    Pick<Job, 'company' | 'companyKey' | 'role' | 'pay' | 'location'>
+  >();
+  /** A job with the details the user set, which win over what Claude found, as the tracker's do. */
+  const withOwn = (job: Job, changes: JobChanges): Job => {
+    const fields = ['company', 'role', 'pay', 'location'] as const;
+    if (!fields.some((field) => changes[field] !== undefined)) return job;
+    const claude = found.get(job.id) ?? {
+      company: job.company,
+      companyKey: job.companyKey,
+      role: job.role,
+      pay: job.pay,
+      location: job.location,
+    };
+    found.set(job.id, claude);
+    const own = { ...job.own };
+    for (const field of fields) {
+      if (changes[field] !== undefined) own[field] = changes[field]?.trim() || null;
+    }
+    const range = own.pay ? parsePay(own.pay) : null;
+    return {
+      ...job,
+      own,
+      company: own.company ?? claude.company,
+      companyKey: own.company ? own.company.toLowerCase().replace(/\W+/g, '-') : claude.companyKey,
+      role: own.role ?? claude.role,
+      pay: own.pay
+        ? { text: own.pay, min: range?.min ?? null, max: range?.max ?? null, source: 'own' }
+        : claude.pay,
+      location: own.location ?? claude.location,
+    };
+  };
   /**
    * One job's change, as the real tracker makes it: a job set aside keeps the day it comes back,
    * and one passed on keeps why, each when given.
@@ -271,7 +316,9 @@ export function sampleTracker(
       ...(changes.questions !== undefined && { questions: changes.questions }),
       ...(changes.archived !== undefined && { archived: changes.archived }),
       ...(changes.kind !== undefined && { kind: changes.kind }),
+      ...(changes.payAsk !== undefined && { payAsk: changes.payAsk?.trim() || null }),
     };
+    updated = withOwn(updated, changes);
     const { status } = changes;
     const moved = status !== undefined && status !== job.status;
     if (moved) {
@@ -343,6 +390,17 @@ export function sampleTracker(
         list.jobs.flatMap((job) => (job === other ? [] : job === keep ? [merged] : [job])),
       );
     },
+    notSameJob: async (jobId, otherId) =>
+      change(
+        (job) => job.id === jobId,
+        (job) => ({
+          ...job,
+          maybeSame: [
+            ...job.maybeSame.filter((each) => each.id !== otherId),
+            { id: otherId, why: null, on: localDate(), notSame: true },
+          ],
+        }),
+      ),
     addJob: async (input) => {
       const company = input.company.trim();
       if (!company) return { ok: false, message: 'Add the company’s name.' };
@@ -507,7 +565,7 @@ export function sampleTracker(
       return () => listeners.delete(listener);
     },
     madeBy: (task) => {
-      const jobId = taskJob(task);
+      const jobIds = taskJobs(task);
       const modified = new Date().toISOString();
       const file = (job: Job, name: string) => ({
         path: `applications/${job.id}/${name}`,
@@ -518,7 +576,7 @@ export function sampleTracker(
       });
       const named = (job: Job) => job.company.replace(/\W+/g, '');
       change(
-        (job) => job.id === jobId,
+        (job) => jobIds.includes(job.id),
         (job) => {
           // One the job has already is built again, under its own name.
           const again = (files: Job['files'], name: string) =>
@@ -537,8 +595,12 @@ export function sampleTracker(
                 ...job,
                 projectPages: again(job.projectPages, `AlexRiveraProjects_${named(job)}.pdf`),
               };
-            case 'fit-check':
-              return { ...job, fit: { verdict: 'Good fit', score: 78, date: localDate() } };
+            case 'analyze-job':
+              return {
+                ...job,
+                stage: 'review',
+                fit: { verdict: 'Good fit', score: 78, date: localDate() },
+              };
             case 'salary-check':
               return {
                 ...job,
@@ -669,6 +731,8 @@ export function sampleTracker(
     readShot: async (path) => shots.get(path)?.bytes ?? null,
     pasteImage: async () => ({ ok: true, file: '/sample/workspace/screenshots/pasted-1.png' }),
     openFile: async () => ({ ok: false, message: 'The sample screens can’t open files.' }),
+    downloadFile: async () => ({ ok: false, message: 'The sample screens can’t save files.' }),
+    showFile: async () => ({ ok: false, message: 'The sample screens can’t show files.' }),
     // Every resume is the same made-up one, made by the engine as the app makes it. A cover
     // letter shows the sample page.
     readPdf: async (path) => ({

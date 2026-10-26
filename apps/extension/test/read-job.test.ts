@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { postingKey } from '@factwright/core';
 import { describe, expect, it } from 'vitest';
 import { type PageJob, readJobPage } from '../src/page/read-job.ts';
 
@@ -147,6 +150,172 @@ describe('reading a job page', () => {
     expect(job.posting).toBe('Clinical Data Lead\n\nJoin us.');
     // Marked as the page's main text, which a save without the popup leaves out.
     expect(job.source).toBe('main');
+  });
+
+  it('leaves out an application form built without a form element, and keeps the posting beside it', () => {
+    const careers = page(`<html><head><title>Data Lead | Lumen Health</title></head><body><main>
+      <h1>Data Lead</h1>
+      <div class="description"><h2>What you’ll do</h2><p>Run our data platform.</p></div>
+      <div class="apply">
+        <h2>Apply for this job</h2>
+        <div class="field"><div class="label">First name *</div><input name="first"></div>
+        <div class="field"><label for="mail">Email</label><input id="mail" type="email">
+          <p class="hint">We’ll write to you here.</p></div>
+        <div class="field"><span>Resume</span><input type="file"><span>Attach</span></div>
+        <section><h3>Voluntary self-identification</h3>
+          <p>${'We’re an equal opportunity employer, and answering is up to you. '.repeat(20)}</p>
+          <div class="field"><p>Will you need a visa?</p>
+            <label><input type="radio" name="visa" value="yes"> Yes</label>
+            <label><input type="radio" name="visa" value="no"> No</label></div>
+          <div class="field"><span>How did you hear about us?</span>
+            <button type="button" aria-haspopup="listbox">Select…</button></div></section>
+        <button type="submit">Submit application</button>
+      </div></main></body></html>`);
+    const job = readJobPage(careers, 'https://lumen.example/careers/data-lead', '');
+    expect(job.source).toBe('main');
+    expect(job.posting).toBe('Data Lead\n\nWhat you’ll do\n\nRun our data platform.');
+    // A page that's all its form, its questions among its own words, has no posting there.
+    const form =
+      page(`<main><h1>Apply: Data Lead</h1><p>${'Tell us about yourself. '.repeat(30)}</p>
+      <div><span>First name</span><input></div><div><span>Email</span><input type="email"></div>
+      <p>Attach your resume.</p><div><input type="file"></div></main>`);
+    expect(readJobPage(form, 'https://lumen.example/careers/data-lead/apply', '')).toMatchObject<
+      Partial<PageJob>
+    >({ posting: '', source: 'page' });
+  });
+
+  it('keeps a posting whole beside a box or two that aren’t an application', () => {
+    const about = 'Pull great shots for our regulars every morning, and keep the bar spotless. ';
+    const at = 'https://bean.example/jobs/barista';
+    // A menu's box to tick, on a page with no main part.
+    const menu = page(`<body><div class="page"><div class="top"><input type="checkbox" id="menu">
+      <label for="menu">Menu</label></div><h1>Barista</h1><p>${about.repeat(4)}</p></div></body>`);
+    expect(readJobPage(menu, at, '').posting).toBe(`Menu\n\nBarista\n\n${about.repeat(4).trim()}`);
+    // A link to copy and a search box, beside a short posting.
+    const shared = page(`<main><article><h1>Barista</h1><p>${about.repeat(4)}</p>
+      <div class="share"><span>Copy its link</span><input readonly value="${at}"></div>
+      <div class="search"><span>Search jobs</span><input type="search"></div></article></main>`);
+    expect(readJobPage(shared, at, '').posting).toBe(
+      `Barista\n\n${about.repeat(4).trim()}\n\nCopy its link\n\nSearch jobs`,
+    );
+    // Parts that open one at a time, each a radio button of one set.
+    const parts = ['What you’ll do', 'What you’ll need']
+      .map(
+        (name, at) =>
+          `<div class="part"><input type="radio" name="parts" id="part-${at}"><label for="part-${at}">${name}</label><div><p>${about}</p></div></div>`,
+      )
+      .join('');
+    expect(readJobPage(page(`<main><h1>Barista</h1>${parts}</main>`), at, '').posting).toBe(
+      `Barista\n\nWhat you’ll do\n\n${about.trim()}\n\nWhat you’ll need\n\n${about.trim()}`,
+    );
+    // A newsletter's form inside the posting.
+    const newsletter = page(`<main><div class="posting"><h1>Barista</h1><p>${about}</p>
+      <form><input name="first"><input name="last"><input type="email"><button>Sign up</button></form>
+      </div></main>`);
+    expect(readJobPage(newsletter, at, '').posting).toBe(`Barista\n\n${about.trim()}`);
+  });
+
+  it('reads no posting on a page of an application that runs over several', () => {
+    const workday = readJobPage(
+      page(
+        readFileSync(
+          join(import.meta.dirname, 'fixtures', 'workday-application-questions.html'),
+          'utf8',
+        ),
+      ),
+      'https://larkspur.wd1.myworkdayjobs.com/en-US/External/job/Austin/Senior-Product-Manager_R123/apply/applyManually',
+      '',
+    );
+    expect(workday).toMatchObject<Partial<PageJob>>({ posting: '', source: 'page' });
+    // iCIMS's, in its frame, which the popup reads for the job.
+    const icims = readJobPage(
+      page(readFileSync(join(import.meta.dirname, 'fixtures', 'icims-eeo.html'), 'utf8')),
+      'https://careers-bramblecrest.icims.com/jobs/4821/robotics-software-engineer/candidate?in_iframe=1',
+      '',
+    );
+    expect(icims.posting).toBe('');
+    const stepped = page(`<main><ol><li aria-current="step">Your details</li><li>Questions</li></ol>
+      <p>${'Our hiring team reads every application. '.repeat(40)}</p></main>`);
+    expect(readJobPage(stepped, 'https://lumen.example/apply/2', '').posting).toBe('');
+  });
+
+  it('takes no more time for each box to tick on a page with more of them', () => {
+    /** A page with this many boxes to tick, all answering one question. */
+    const boxes = (count: number) =>
+      page(
+        `<main><h1>Data Lead</h1><p>Lead data.</p><div>${Array.from(
+          { length: count },
+          (_, at) =>
+            `<label><input type="checkbox" name="skills" value="${at}"> Skill ${at}</label>`,
+        ).join('')}</div></main>`,
+      );
+    /** How long reading a page takes, in milliseconds. */
+    const timed = (doc: Document) => {
+      const start = performance.now();
+      expect(readJobPage(doc, 'https://lumen.example/careers/7', '').posting).toContain(
+        'Lead data.',
+      );
+      return performance.now() - start;
+    };
+    const few = boxes(1000);
+    const many = boxes(8000);
+    timed(boxes(100));
+    // The quickest of three reads of each, taken in turn, so a busy moment slows both alike.
+    let fewest = Number.POSITIVE_INFINITY;
+    let most = Number.POSITIVE_INFINITY;
+    for (let run = 0; run < 3; run++) {
+      fewest = Math.min(fewest, timed(few));
+      most = Math.min(most, timed(many));
+    }
+    // Eight times the boxes take about eight times as long. A read that went through every box
+    // for each box would take sixty-four times as long.
+    expect(most / fewest).toBeLessThan(24);
+  });
+
+  it('counts no field a page hides, as a closed dialog’s, toward an application form', () => {
+    const about = 'Pull great shots for our regulars every morning, and keep the bar spotless. ';
+    for (const closed of ['hidden', 'aria-hidden="true"', 'style="display: none"']) {
+      // No main part, a closed dialog of choices about cookies, and a box to sign up.
+      const doc = page(`<body><h1>Barista</h1><p>${about}</p>
+        <div role="dialog" ${closed}><p>Your choices</p>
+          <input type="checkbox" name="analytics"><input type="checkbox" name="ads">
+          <input type="checkbox" name="social"></div>
+        <div class="news"><span>Our newsletter</span><input type="email"></div></body>`);
+      expect(readJobPage(doc, 'https://bean.example/jobs/barista', '').posting, closed).toBe(
+        `Barista\n\n${about.trim()}\n\nOur newsletter`,
+      );
+    }
+  });
+
+  it('reads no application form as a job site’s posting, as Ashby’s is on its application’s tab', () => {
+    // The form in the pane beside the job's title, where the posting's tab shows the posting.
+    const tab = readFileSync(
+      join(import.meta.dirname, 'fixtures', 'ashby-application.html'),
+      'utf8',
+    )
+      .replace(
+        '<main>',
+        '<main><div class="ashby-job-posting-left-pane"><h1 class="ashby-job-posting-heading">Staff Engineer, Integrations</h1></div><div class="ashby-job-posting-right-pane">',
+      )
+      .replace('</main>', '</div></main>');
+    const at =
+      'https://jobs.ashbyhq.com/tidewater/1f2e3d4c-5b6a-4980-a1b2-c3d4e5f60718/application';
+    // Its job data's posting, where it has one.
+    const data = { ...JOB_DATA, title: 'Staff Engineer, Integrations' };
+    const withPosting = tab.replace(
+      '</head>',
+      `<script type="application/ld+json">${JSON.stringify(data).replace(/</g, '\\u003c')}</script></head>`,
+    );
+    expect(readJobPage(page(withPosting), at, '')).toMatchObject<Partial<PageJob>>({
+      source: 'structured',
+      posting: 'Lead our data platform.\n\nWhat you’ll do\n\n- Own the roadmap\n- Ship weekly',
+    });
+    // Or else the page's main text, without the form.
+    const job = readJobPage(page(tab), at, '');
+    expect(job).toMatchObject<Partial<PageJob>>({
+      source: 'main',
+      posting: 'Staff Engineer, Integrations',
+    });
   });
 
   it('reads the page as it is, and changes nothing in it', () => {
@@ -599,6 +768,64 @@ describe('reading a job page', () => {
     );
   });
 
+  it('reads which job SmartRecruiters’ application is for, page by page, as its tab’s title says', () => {
+    const at =
+      'https://jobs.smartrecruiters.com/oneclick-ui/company/SaltmarshRobotics/publication/5a1c0de4-2b8f-4e7a-9d31-0c6e2f8b7a15';
+    for (const [name, href] of [
+      ['smartrecruiters-application', `${at}?dcr_ci=SaltmarshRobotics`],
+      ['smartrecruiters-screening', `${at}/screening?dcr_ci=SaltmarshRobotics`],
+    ] as const) {
+      const job = readJobPage(
+        page(readFileSync(join(import.meta.dirname, 'fixtures', `${name}.html`), 'utf8')),
+        href,
+        '',
+      );
+      expect(job).toMatchObject({
+        title: 'Robotics Software Intern',
+        company: 'Saltmarsh Robotics',
+        location: 'Denver, CO, USA',
+      });
+    }
+  });
+
+  it('gives SuccessFactors’ application, at your session’s address, its posting’s own', () => {
+    const job = readJobPage(
+      page(
+        readFileSync(
+          join(import.meta.dirname, 'fixtures', 'successfactors-application.html'),
+          'utf8',
+        ),
+      ),
+      'https://career17.sapsf.com/portalcareer?_s.crb=sample',
+      '',
+    );
+    expect(job).toMatchObject({
+      url: 'https://career17.sapsf.com/sfcareer/jobreqcareer?jobId=1042&company=copperlineP',
+      pageUrl: 'https://career17.sapsf.com/portalcareer?_s.crb=sample',
+      title: 'Field Data Analyst',
+    });
+    expect(postingKey(job.url)).toBe('successfactors:copperlinep:1042');
+  });
+
+  it('reads which job iCIMS’s application is for, in its frame, from its tab’s title and its portal', () => {
+    const job = readJobPage(
+      page(readFileSync(join(import.meta.dirname, 'fixtures', 'icims-candidate.html'), 'utf8')),
+      'https://careers-bramblecrest.icims.com/jobs/4821/robotics-software-engineer/candidate?from=login&in_iframe=1',
+      '',
+    );
+    expect(job).toMatchObject({ title: 'Robotics Software Engineer', company: 'Bramblecrest' });
+    expect(postingKey(job.url)).toBe('icims:careers-bramblecrest:4821');
+  });
+
+  it('reads which job Taleo’s application is for, from its banner and its site', () => {
+    const job = readJobPage(
+      page(readFileSync(join(import.meta.dirname, 'fixtures', 'taleo-personal.html'), 'utf8')),
+      'https://bramblecote.taleo.net/careersection/careersection/candidateacquisition/flow.jsf',
+      '',
+    );
+    expect(job).toMatchObject({ title: 'Fleet Data Analyst', company: 'Bramblecote' });
+  });
+
   it('never takes a job board’s or an applicant system’s name as the company', () => {
     for (const site of ['LinkedIn', 'Indeed', 'Glassdoor', 'Lever', 'Greenhouse', 'Workday']) {
       const board = page(`<html><head><meta property="og:site_name" content="${site}"></head>
@@ -629,5 +856,10 @@ describe('reading a job page', () => {
     expect(alone(withData(JOB_DATA), 'https://a.example/jobs/1', '').company).toBe(
       'Tidewater Analytics',
     );
+    // And beside an application form built without a form element.
+    const form = '<div><input name="a"><input name="b"><input type="email"></div>';
+    expect(
+      alone(page(`<main><p>Lead data.</p>${form}</main>`), 'https://a.example/jobs/1', '').posting,
+    ).toBe('Lead data.');
   });
 });

@@ -16,12 +16,14 @@ const name = (job: Job) => `${job.company}, ${job.role || 'Company outreach'}`;
 /**
  * Merges another job into one, for the rare job the app found twice and didn't tell was the
  * same: the user picks the other, and its status, notes, calls and links move to this one. Jobs
- * likely the same come first, with the rest of the company's, and a search finds any other.
+ * likely the same come first, with the rest of the company's, and a search finds any other. The
+ * job Claude noted might be the same, when the user came from its note, is first and picked.
  */
 export function MergeDialog({
   job,
   rows,
   api,
+  suggested = null,
   onClose,
 }: {
   /** The job kept. */
@@ -29,24 +31,28 @@ export function MergeDialog({
   /** Every job, to pick the other from. */
   rows: readonly JobRow[];
   api: FactwrightApi;
+  /** The job Claude noted might be the same, by its ID, to pick first. */
+  suggested?: string | null;
   onClose: () => void;
 }) {
   const [query, setQuery] = useState('');
-  const [picked, setPicked] = useState<string | null>(null);
+  const [picked, setPicked] = useState<string | null>(suggested);
   const [problem, setProblem] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const words = query.toLowerCase().split(/\s+/).filter(Boolean);
   const others = rows
     .filter((row) => row.job.id !== job.id)
     .map((row) => ({ row, like: jobLikeness(job, row.job) }));
+  const rank = (one: (typeof others)[number]) =>
+    one.row.job.id === suggested ? -1 : one.like ? RANK[one.like] : 3;
   const listed = (
     words.length > 0
       ? others.filter(({ row }) => words.every((word) => row.searchText.includes(word)))
-      : others.filter(({ like }) => like !== null)
+      : others.filter((one) => one.like !== null || one.row.job.id === suggested)
   )
     .sort(
       (a, b) =>
-        (a.like ? RANK[a.like] : 3) - (b.like ? RANK[b.like] : 3) ||
+        rank(a) - rank(b) ||
         (b.row.progress.lastActivity ?? '').localeCompare(a.row.progress.lastActivity ?? ''),
     )
     .slice(0, MOST);
@@ -88,7 +94,7 @@ export function MergeDialog({
                     <span className={styles.name}>
                       <span className={styles.company}>
                         {row.job.company}
-                        {(like === 'posting' || like === 'role') && (
+                        {(like === 'posting' || like === 'role' || row.job.id === suggested) && (
                           <span className={styles.likely}>Likely the same</span>
                         )}
                       </span>

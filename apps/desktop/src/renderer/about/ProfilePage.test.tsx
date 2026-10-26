@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { NO_HISTORY, type WorkHistory } from '@factwright/core';
+import { NO_HISTORY, NO_PRIVATE, type WorkHistory } from '@factwright/core';
 import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import axe from 'axe-core';
@@ -18,7 +18,6 @@ import type {
   ProfileStatus,
   TemplateInfo,
 } from '../../shared/profile.ts';
-import type { RunPhase } from '../useClaudeRun.ts';
 import { ProfilePage } from './ProfilePage.tsx';
 import { useProfile } from './useProfile.ts';
 
@@ -130,12 +129,15 @@ function profileApi(
 
 function Harness({
   api,
-  phase = 'idle',
+  busy = false,
+  ready = true,
   onRun = () => {},
   onOpenFacts = () => {},
 }: {
   api: ReturnType<typeof profileApi>;
-  phase?: RunPhase;
+  /** Whether Claude has a task going, or in line, on the user's facts and Profile. */
+  busy?: boolean;
+  ready?: boolean;
   onRun?: (task: unknown) => void;
   onOpenFacts?: () => void;
 }) {
@@ -145,20 +147,27 @@ function Harness({
     <ProfilePage
       state={{ ...state, profile: state.profile }}
       api={api as unknown as FactwrightApi}
-      phase={phase}
-      ready
+      busy={busy}
+      ready={ready}
       onRun={onRun}
       onOpenFacts={onOpenFacts}
     />
   );
 }
 
+/** Answers save half a second after the last change, which a busy computer can stretch. */
+const SAVED = { timeout: 4000 };
+
 describe('ProfilePage', () => {
   it('opens the fact bank, to read and change each fact', async () => {
     const user = userEvent.setup();
     const onOpenFacts = vi.fn();
     render(<Harness api={profileApi()} onOpenFacts={onOpenFacts} />);
-    await user.click(await screen.findByRole('button', { name: 'See and change them' }));
+    // The file's first page takes longest to draw: over a second, with every package's tests at
+    // once.
+    await user.click(
+      await screen.findByRole('button', { name: 'See and change them' }, { timeout: 5000 }),
+    );
     expect(onOpenFacts).toHaveBeenCalled();
   });
 
@@ -176,8 +185,8 @@ describe('ProfilePage', () => {
     expect(onRun).toHaveBeenLastCalledWith({ skill: 'add-facts', mode: 'interview' });
   });
 
-  it('waits while Claude is busy', async () => {
-    render(<Harness api={profileApi()} phase="working" />);
+  it('waits while Claude has another task on your profile', async () => {
+    render(<Harness api={profileApi()} busy />);
     expect(
       await screen.findByText('Your Claude is working on it in the panel below.'),
     ).toBeTruthy();
@@ -214,7 +223,8 @@ describe('ProfilePage', () => {
     await userEvent.click(
       within(card).getByRole('button', { name: 'ATS X-ray of Senior Product Manager' }),
     );
-    const xray = await screen.findByRole('dialog', { name: 'ATS X-ray' });
+    // The X-ray's code loads the first time it opens.
+    const xray = await screen.findByRole('dialog', { name: 'ATS X-ray' }, { timeout: 5000 });
     expect((await within(xray).findByRole('alert')).textContent).toBe('No preview here');
     expect(api.readPdf).toHaveBeenLastCalledWith('base/JordanAveryResume_Startups.pdf');
   });
@@ -290,16 +300,22 @@ describe('ProfilePage', () => {
     // The browser's modal leaves only the dialog to reach, as jsdom doesn't, so it's what's checked.
     expect((await axe.run(dialog)).violations).toEqual([]);
     await userEvent.click(within(dialog).getByRole('button', { name: 'Done' }));
+    // What the saves come to: on a busy computer, the project can save before its name is typed.
     await waitFor(() =>
-      expect(api.saveAnswers).toHaveBeenCalledWith(
-        expect.objectContaining({
-          addedProjects: [expect.objectContaining({ name: 'Denver Devs' })],
-          projectPrefs: expect.objectContaining({
-            resumes: 'experience',
-            heading: 'Selected Work',
-          }),
-        }),
-      ),
+      expect(
+        api.saveAnswers.mock.calls.reduce(
+          (saved, [changes]) => applyChanges(saved, changes),
+          answers,
+        ),
+      ).toMatchObject({
+        projects: [
+          { name: 'Code Club' },
+          { name: 'Trailhead' },
+          { name: 'Rivera Woodworks' },
+          { name: 'Denver Devs' },
+        ],
+        projectPrefs: { resumes: 'experience', heading: 'Selected Work' },
+      }),
     );
   });
 
@@ -319,17 +335,19 @@ describe('ProfilePage', () => {
       await within(about).findByRole('button', { name: 'Fill in from your resume' }),
     );
     // Only what's blank: the email Profile has stays as it is.
-    await waitFor(() =>
-      expect(api.saveAnswers).toHaveBeenCalledWith({
-        you: {
-          name: 'Jordan Avery',
-          email: 'jordan@example.com',
-          phone: '(555) 555-0123',
-          location: 'Austin, TX',
-          linkedin: 'linkedin.com/in/jordanavery',
-          website: '',
-        },
-      }),
+    await waitFor(
+      () =>
+        expect(api.saveAnswers).toHaveBeenCalledWith({
+          you: {
+            name: 'Jordan Avery',
+            email: 'jordan@example.com',
+            phone: '(555) 555-0123',
+            location: 'Austin, TX',
+            linkedin: 'linkedin.com/in/jordanavery',
+            website: '',
+          },
+        }),
+      SAVED,
     );
   });
 
@@ -433,6 +451,35 @@ describe('ProfilePage', () => {
         expect.objectContaining({ levels: ['senior', 'director'] }),
       ),
     );
+  });
+
+  it('keeps why you’re leaving for applications, and shows it on their card', async () => {
+    const api = {
+      ...profileApi(),
+      privateAnswers: vi.fn(async () => NO_PRIVATE),
+      savePrivateAnswers: vi.fn(async () => NO_PRIVATE),
+    };
+    render(<Harness api={api} />);
+    const card = await screen.findByRole('region', { name: 'For applications' });
+    expect(within(card).getByText('Nothing yet.')).toBeTruthy();
+    await userEvent.click(within(card).getByRole('button', { name: 'Change' }));
+    const dialog = await screen.findByRole('dialog', { name: 'For applications' });
+    await userEvent.type(
+      within(dialog).getByRole('textbox', { name: 'Why you’re leaving' }),
+      'I want to work at a bigger scale.',
+    );
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Done' }));
+    await waitFor(
+      () =>
+        expect(api.saveAnswers).toHaveBeenCalledWith({
+          applications: expect.objectContaining({ leaving: 'I want to work at a bigger scale.' }),
+        }),
+      SAVED,
+    );
+    expect(
+      within(card).getByText('Why you’re leaving: I want to work at a bigger scale.'),
+    ).toBeTruthy();
+    expect(within(card).queryByText('Nothing yet.')).toBeNull();
   });
 
   it('adds another kind of job, with its own titles and pay, and names the first', async () => {
@@ -580,10 +627,12 @@ describe('ProfilePage', () => {
     expect(api.saveAnswers).not.toHaveBeenCalled();
     await userEvent.clear(name);
     await userEvent.type(name, 'UX design{Enter}');
-    await waitFor(() =>
-      expect(api.saveAnswers).toHaveBeenLastCalledWith({
-        kindChanges: [{ id: 'design', name: 'UX design' }],
-      }),
+    await waitFor(
+      () =>
+        expect(api.saveAnswers).toHaveBeenLastCalledWith({
+          kindChanges: [{ id: 'design', name: 'UX design' }],
+        }),
+      SAVED,
     );
     const kinds = within(dialog).getByRole('group', { name: 'Kinds of job' });
     expect(within(kinds).getByRole('radio', { name: 'UX design' })).toBeTruthy();
@@ -656,7 +705,7 @@ describe('ProfilePage', () => {
 
   it('keeps a resume to copy until Claude can start on it', async () => {
     const api = profileApi();
-    render(<Harness api={api} phase="working" />);
+    render(<Harness api={api} ready={false} />);
     const card = await screen.findByRole('region', { name: 'Resume templates' });
     await userEvent.click(within(card).getByRole('button', { name: 'Change' }));
     const dialog = await screen.findByRole('dialog', { name: 'Resume templates' });

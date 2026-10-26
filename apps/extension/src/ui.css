@@ -205,6 +205,25 @@ button:disabled {
   cursor: default;
 }
 
+/* A button that reads as a link, beside the main one, as the popup's Edit details. */
+button.link {
+  border-color: transparent;
+  background: none;
+  color: var(--fw-accent-text);
+  padding-left: var(--fw-space-2);
+  padding-right: var(--fw-space-2);
+}
+
+button.link:hover {
+  background: none;
+  text-decoration: underline;
+}
+
+/* Alone on its line, in line with the words above it. */
+button.link:first-child {
+  padding-left: 0;
+}
+
 a {
   color: var(--fw-accent-text);
 }
@@ -215,6 +234,25 @@ a {
   border-radius: var(--fw-radius-lg);
   padding: var(--fw-space-3) var(--fw-space-4);
   margin: var(--fw-space-3) 0;
+}
+
+/* The popup's link to setup, below whatever it shows. */
+.settings {
+  margin-top: var(--fw-space-4);
+}
+
+/* The job the popup read, or the one on file: its title, then what else it says, one to a line. */
+.card.job p {
+  margin: 0 0 var(--fw-space-1);
+  overflow-wrap: anywhere;
+}
+
+.card.job p:last-child {
+  margin-bottom: 0;
+}
+
+.card.job .job-title {
+  font-weight: 600;
 }
 
 .facts {
@@ -367,6 +405,62 @@ body.panel {
 .field .row .row-actions {
   margin-top: 0;
   flex: none;
+}
+
+/*
+ * In the panel, Go to and Copy show on the row you point at, or that has the keyboard's focus,
+ * and stay out of the way of the rest.
+ */
+body.panel .field .row-actions {
+  opacity: 0;
+  transition: opacity 120ms ease-out;
+}
+
+body.panel .field:hover .row-actions,
+body.panel .field:focus-within .row-actions {
+  opacity: 1;
+}
+
+@media (hover: none) {
+  body.panel .field .row-actions {
+    opacity: 1;
+  }
+}
+
+/* Where each answer came from, in small type. */
+body.panel .field .meta {
+  font-size: var(--fw-text-xs);
+}
+
+/* The panel's groups of fields: Needs you open, and those folded away, as Filled. */
+body.panel h2 {
+  font-size: var(--fw-text-sm);
+  margin: var(--fw-space-4) 0 var(--fw-space-1);
+}
+
+body.panel details.group {
+  margin: var(--fw-space-3) 0;
+}
+
+body.panel details.group summary {
+  cursor: pointer;
+  font-weight: 600;
+  font-size: var(--fw-text-sm);
+  color: var(--fw-muted);
+}
+
+body.panel details.group[open] summary {
+  color: var(--fw-text);
+}
+
+/* Fill again and Mark as applied, at the bottom, under the fields. */
+body.panel .actions.bottom {
+  border-top: 1px solid var(--fw-border);
+  padding-top: var(--fw-space-3);
+}
+
+body.panel .actions.bottom + p {
+  margin-top: var(--fw-space-2);
 }
 
 button.small-button {

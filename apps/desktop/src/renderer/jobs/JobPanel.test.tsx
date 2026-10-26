@@ -6,11 +6,15 @@ import axe from 'axe-core';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { FactwrightApi } from '../../shared/api.ts';
 import { JobPanel } from './JobPanel.tsx';
-import type { RunControls } from './RunActions.tsx';
+import { type RunControls, runControlsFor } from './RunActions.tsx';
 import { jobRows } from './rows.ts';
-import { sampleDocs, sampleJobs } from './sample-jobs.ts';
+import { KEELSON, sampleDocs, sampleJobs, sampleSaved } from './sample-jobs.ts';
 
 const TODAY = localDate();
+
+// Each test draws the whole job panel, as JobCalls' do: with every package's tests at once, the
+// first here took 3.9 of vitest's usual 5 seconds.
+vi.setConfig({ testTimeout: 20_000 });
 
 beforeAll(() => {
   // jsdom doesn't open dialogs on its own.
@@ -64,7 +68,7 @@ function panel(
   return { api: fullApi, onClose, ...view };
 }
 
-const controls = (): RunControls => ({ phase: 'idle', task: null, start: vi.fn(), show: vi.fn() });
+const controls = (): RunControls => runControlsFor([], vi.fn(), vi.fn());
 
 /** Opens what's saved for the job, which waits folded at first, once it shows. */
 const openSaved = async () =>
@@ -76,19 +80,19 @@ describe('sorting a job before applying', () => {
       .getAllByRole('button')
       .map((button) => button.textContent);
 
-  it('leads a new job with a fit check, then where it goes, each one click', async () => {
+  it('leads a new job with Analyze job, then where it goes, each one click', async () => {
     const run = controls();
     const { api, container } = panel(byCompany('Copperleaf Energy'), {}, { run });
     const next = screen.getByRole('region', { name: 'Up next' });
-    expect(within(next).getByText('Run a fit check')).toBeTruthy();
+    expect(within(next).getByText('Analyze job')).toBeTruthy();
     expect(sortButtons()).toEqual(['To review', 'To apply', 'Later', 'Pass']);
     await userEvent.click(screen.getByRole('button', { name: 'To apply' }));
     expect(api.updateJob).toHaveBeenCalledWith('copperleaf-energy--principal-engineer', {
       status: 'apply',
     });
-    await userEvent.click(within(next).getByRole('button', { name: 'Run a fit check' }));
+    await userEvent.click(within(next).getByRole('button', { name: 'Analyze job' }));
     expect(run.start).toHaveBeenCalledWith({
-      skill: 'fit-check',
+      skill: 'analyze-job',
       jobId: 'copperleaf-energy--principal-engineer',
     });
     const results = await axe.run(container, { rules: { 'color-contrast': { enabled: false } } });
@@ -149,8 +153,12 @@ describe('sorting a job before applying', () => {
         versions: [],
       })),
     } as unknown as FactwrightApi;
-    // A fit check is running on another job, so its button here can't take focus.
-    const run: RunControls = { ...controls(), phase: 'working' };
+    // The job's fit check waits in line, so it has no button here to take focus.
+    const run = runControlsFor(
+      [{ id: 'run-1', task: { skill: 'analyze-job', jobId: job.id }, phase: 'in-line' }],
+      vi.fn(),
+      vi.fn(),
+    );
     const shown = (each: Job) => (
       <JobPanel
         row={jobRows([each], TODAY)[0] ?? null}
@@ -173,7 +181,7 @@ describe('sorting a job before applying', () => {
     await userEvent.click(within(box).getByRole('button', { name: 'Undo “Marked Later”' }));
     expect(api.undoStatusChange).toHaveBeenCalledWith('later-1');
     rerender(shown(job));
-    // Back in New, with the fit check waiting on Claude, the first move has it.
+    // Back in New, with the fit check in line for Claude, the first move has it.
     expect(document.activeElement).toBe(screen.getByRole('button', { name: 'To review' }));
   });
 
@@ -242,10 +250,106 @@ describe('sorting a job before applying', () => {
   });
 });
 
+describe('the pay to ask for', () => {
+  const TARGETS = [{ id: '', name: '', targetPay: '$180,000' }];
+  /** A job with no pay to ask for of its own yet. */
+  const northwind = (): Job => ({
+    ...byCompany('Northwind Labs'),
+    payAsk: null,
+    suggestedAsk: null,
+  });
+  /** The pay to ask for, as the line says it, without its button. */
+  const line = () =>
+    (screen.getByText('Pay to ask for:').parentElement as HTMLElement).textContent
+      ?.replace(/ (Change|Set it)$/, '')
+      .trim();
+
+  it('goes by the user’s target until they give the job its own, in their words', async () => {
+    const job = northwind();
+    const { api, container } = panel(job, {}, { targets: TARGETS });
+    expect(line()).toBe('Pay to ask for: $180,000, your target');
+    await userEvent.click(screen.getByRole('button', { name: /^Change: the pay to ask for/ }));
+    const box = screen.getByRole('textbox', { name: 'Pay to ask for at Northwind Labs' });
+    expect(box).toHaveProperty('value', '$180,000');
+    expect(container.textContent).toContain('Yours wins over your Claude’s.');
+    await userEvent.clear(box);
+    await userEvent.type(box, '$195,000{Enter}');
+    expect(api.updateJob).toHaveBeenCalledWith(job.id, { payAsk: '$195,000' });
+    // Saved, it reads as it was, until the job list brings the change, with the keyboard's focus
+    // back on Change.
+    expect(screen.queryByRole('textbox', { name: /^Pay to ask for at/ })).toBeNull();
+    expect(document.activeElement).toBe(
+      screen.getByRole('button', { name: /^Change: the pay to ask for/ }),
+    );
+    const results = await axe.run(container, { rules: { 'color-contrast': { enabled: false } } });
+    expect(results.violations).toEqual([]);
+  });
+
+  it('changes nothing when Save is pressed on what it goes by already', async () => {
+    const { api } = panel({ ...northwind(), suggestedAsk: '$190,000' }, {}, { targets: TARGETS });
+    await userEvent.click(screen.getByRole('button', { name: /^Change: the pay to ask for/ }));
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }));
+    expect(api.updateJob).not.toHaveBeenCalled();
+    expect(line()).toBe('Pay to ask for: $190,000, your Claude’s suggestion');
+  });
+
+  it('says whose it is, the user’s own winning over their Claude’s, and goes back', async () => {
+    const job = { ...northwind(), suggestedAsk: '$190,000' };
+    panel(job, {}, { targets: TARGETS });
+    expect(line()).toBe('Pay to ask for: $190,000, your Claude’s suggestion');
+    cleanup();
+    const { api } = panel({ ...job, payAsk: '$200,000' }, {}, { targets: TARGETS });
+    expect(line()).toBe('Pay to ask for: $200,000, your own');
+    await userEvent.click(screen.getByRole('button', { name: /^Change: the pay to ask for/ }));
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Use your Claude’s suggestion, $190,000' }),
+    );
+    expect(api.updateJob).toHaveBeenCalledWith(job.id, { payAsk: null });
+    cleanup();
+    // With no suggestion, back to the target.
+    panel({ ...northwind(), payAsk: '$200,000' }, {}, { targets: TARGETS });
+    await userEvent.click(screen.getByRole('button', { name: /^Change: the pay to ask for/ }));
+    expect(screen.getByRole('button', { name: 'Use your target, $180,000' })).toBeTruthy();
+  });
+
+  it('takes the target of the kind of job it’s under', () => {
+    const targets = [
+      { id: 'developer', name: 'Developer', targetPay: '$180,000' },
+      { id: 'project-manager', name: 'Project manager', targetPay: '$150,000' },
+    ];
+    panel({ ...northwind(), kind: 'project-manager' }, {}, { targets });
+    expect(line()).toBe('Pay to ask for: $150,000, your target for Project manager jobs');
+  });
+
+  it('says when there’s none, and Escape closes its box, never the panel', async () => {
+    const { api, onClose } = panel(northwind());
+    expect(line()).toBe('Pay to ask for: none yet');
+    await userEvent.click(screen.getByRole('button', { name: /^Set it: the pay to ask for/ }));
+    expect(screen.getByRole('textbox', { name: /^Pay to ask for at/ })).toHaveProperty('value', '');
+    await userEvent.keyboard('{Escape}');
+    expect(onClose).not.toHaveBeenCalled();
+    expect(screen.queryByRole('textbox', { name: /^Pay to ask for at/ })).toBeNull();
+    expect(document.activeElement).toBe(
+      screen.getByRole('button', { name: /^Set it: the pay to ask for/ }),
+    );
+    expect(api.updateJob).not.toHaveBeenCalled();
+  });
+
+  it('says why a change didn’t save, and keeps the box open', async () => {
+    panel(northwind(), {
+      updateJob: vi.fn(async () => ({ ok: false as const, message: 'That job is gone.' })),
+    });
+    await userEvent.click(screen.getByRole('button', { name: /^Set it/ }));
+    await userEvent.type(screen.getByRole('textbox', { name: /^Pay to ask for at/ }), '$1{Enter}');
+    expect(screen.getByRole('alert').textContent).toBe('That job is gone.');
+    expect(screen.getByRole('textbox', { name: /^Pay to ask for at/ })).toBeTruthy();
+  });
+});
+
 describe('JobPanel', () => {
-  it('asks the user to pick a job until one is picked', () => {
+  it('shows nothing until a job is picked, so the list has the room', () => {
     panel(null);
-    expect(screen.getByText('Pick a job to see everything on file for it.')).toBeTruthy();
+    expect(screen.queryByRole('complementary', { name: 'Job details' })).toBeNull();
   });
 
   it('shows the job, why it scored, what people say, files, calls and history', async () => {
@@ -381,7 +485,9 @@ describe('JobPanel', () => {
     panel(byCompany('Orchard Health'), {}, { onMerge });
     // Up top, and in its history.
     expect(screen.getAllByText(/Found again in LinkedIn/).map((each) => each.textContent)).toEqual([
-      expect.stringMatching(/^Remote, US · Found again in LinkedIn \w{3} \d+ · Posting$/),
+      expect.stringMatching(
+        /^Remote, US · Found again in LinkedIn \w{3} \d+ · Posting · Edit details$/,
+      ),
       expect.stringMatching(/^Found again in LinkedIn \w{3} \d+: Long shot$/),
     ]);
     // For a job found twice the app didn't tell was the same.
@@ -389,17 +495,116 @@ describe('JobPanel', () => {
     expect(onMerge).toHaveBeenCalled();
   });
 
+  it('changes the job’s details in boxes, saving only what changed, and the user’s own win', async () => {
+    const saved = sampleSaved()[0] as Job;
+    const { api } = panel(saved);
+    expect(screen.getByRole('heading', { name: 'Staff Software Engineer' })).toBeTruthy();
+    const edit = screen.getByRole('button', { name: 'Edit details' });
+    await userEvent.click(edit);
+    expect(edit.getAttribute('aria-expanded')).toBe('true');
+    const form = screen.getByRole('form', { name: 'Edit details' });
+    const box = (name: string) => within(form).getByRole('textbox', { name }) as HTMLInputElement;
+    expect(box('Company').value).toBe('Larkspur Benefits blog');
+    expect(document.activeElement).toBe(box('Company'));
+    await userEvent.clear(box('Company'));
+    await userEvent.type(box('Company'), 'Larkspur Benefits');
+    await userEvent.type(box('Place'), 'Remote (US)');
+    await userEvent.click(within(form).getByRole('button', { name: 'Save' }));
+    expect(api.updateJob).toHaveBeenCalledWith(saved.id, {
+      company: 'Larkspur Benefits',
+      location: 'Remote (US)',
+    });
+    expect(screen.queryByRole('form', { name: 'Edit details' })).toBeNull();
+    cleanup();
+    // A detail of the user's own says so, and emptying it goes back to what the posting says.
+    const own = { ...saved, company: 'Larkspur Benefits' };
+    const second = panel({ ...own, own: { ...own.own, company: 'Larkspur Benefits' } });
+    await userEvent.click(screen.getByRole('button', { name: 'Edit details' }));
+    expect(screen.getByText('Yours')).toBeTruthy();
+    const company = screen.getByRole('textbox', { name: /^Company/ }) as HTMLInputElement;
+    await userEvent.clear(company);
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }));
+    expect(second.api.updateJob).toHaveBeenCalledWith(saved.id, { company: null });
+    // Escape closes the boxes, never the panel, and Save with nothing changed saves nothing.
+    await userEvent.click(screen.getByRole('button', { name: 'Edit details' }));
+    await userEvent.keyboard('{Escape}');
+    expect(screen.queryByRole('form', { name: 'Edit details' })).toBeNull();
+    expect(second.onClose).not.toHaveBeenCalled();
+    await userEvent.click(screen.getByRole('button', { name: 'Edit details' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }));
+    expect(second.api.updateJob).toHaveBeenCalledTimes(1);
+  });
+
+  it('saves only the boxes the user changed, though the job changed while they were open', async () => {
+    const saved = sampleSaved()[0] as Job;
+    const { api, rerender } = panel(saved);
+    await userEvent.click(screen.getByRole('button', { name: 'Edit details' }));
+    // Meanwhile a run of Claude's own puts the company and place right from the posting.
+    const analyzed = { ...saved, company: 'Larkspur Benefits', location: 'Remote (US)' };
+    const row = jobRows([analyzed], TODAY)[0] ?? null;
+    rerender(<JobPanel row={row} api={api} today={TODAY} onClose={vi.fn()} />);
+    const form = screen.getByRole('form', { name: 'Edit details' });
+    await userEvent.type(within(form).getByRole('textbox', { name: 'Pay' }), '$150k');
+    await userEvent.click(within(form).getByRole('button', { name: 'Save' }));
+    expect(api.updateJob).toHaveBeenCalledWith(saved.id, { pay: '$150k' });
+  });
+
+  it('says the pay is the user’s own when they set it', () => {
+    const [analyzed] = sampleSaved().filter((job) => job.company === 'Keelson AI');
+    if (!analyzed) throw new Error('No Keelson sample');
+    panel({ ...analyzed, pay: { text: '$190k–$220k', min: 190_000, max: 220_000, source: 'own' } });
+    expect(screen.getByText(', as you set it')).toBeTruthy();
+  });
+
+  it('says a job might be the same as another, with Merge and Not the same', async () => {
+    const [noted, other] = sampleSaved().filter((job) => job.company === 'Keelson AI');
+    if (!noted || !other) throw new Error('No Keelson samples');
+    expect(noted.id).toBe(KEELSON);
+    const onMerge = vi.fn();
+    const notSameJob = vi.fn(async () => ({ ok: true as const }));
+    const { container } = panel(
+      noted,
+      { notSameJob },
+      { onMerge, lookUp: (id) => (id === other.id ? other : null) },
+    );
+    const note = screen.getByRole('note');
+    expect(note.textContent).toContain(
+      'Might be the same as Keelson AI, Staff AI Platform Engineer',
+    );
+    expect(note.textContent).toContain('The same team and level.');
+    expect(note.textContent).toContain('That job: New · Found in LinkedIn');
+    await userEvent.click(within(note).getByRole('button', { name: 'Merge…' }));
+    expect(onMerge).toHaveBeenCalledWith(other.id);
+    await userEvent.click(within(note).getByRole('button', { name: 'Not the same' }));
+    expect(notSameJob).toHaveBeenCalledWith(noted.id, other.id);
+    expect((await axe.run(container)).violations).toEqual([]);
+    cleanup();
+    // Once the user said they aren't, or the other's gone, there's no note.
+    panel(
+      {
+        ...noted,
+        maybeSame: [{ ...(noted.maybeSame[0] as Job['maybeSame'][number]), notSame: true }],
+      },
+      {},
+      { lookUp: () => other },
+    );
+    expect(screen.queryByText(/Might be the same as/)).toBeNull();
+    cleanup();
+    panel(noted, {}, { lookUp: () => null });
+    expect(screen.queryByText(/Might be the same as/)).toBeNull();
+  });
+
   it('says what goes in each area before there’s anything, with the button that makes it', async () => {
     const run = controls();
     const { container } = panel(byCompany('Bluewave Staffing'), {}, { run });
     const area = (name: string) => screen.getByRole('region', { name });
-    expect(within(area('Fit')).getByText(/A fit check scores this job/)).toBeTruthy();
+    expect(within(area('Fit')).getByText(/Analyze job reads the posting/)).toBeTruthy();
     expect(within(area('Fit')).getByText('not listed')).toBeTruthy();
     expect(
       within(area('Resumes and cover letters'))
         .getAllByRole('button')
         .map((button) => button.textContent),
-    ).toEqual(['Tailor a resume', 'Write a cover letter']);
+    ).toEqual(['Tailor a resume', 'Quick resume', 'Write a cover letter']);
     expect(within(area('Application questions')).getByRole('button')).toBeTruthy();
     expect(within(area('Questions for Claude')).getByRole('button')).toBeTruthy();
     // Empty areas have nothing to close.

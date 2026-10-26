@@ -8,9 +8,16 @@
   background: var(--fw-surface);
 }
 
+/* The shown run's bar, and what goes under it. */
+.run {
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+  min-height: 0;
+}
+
 /* One line, whatever the width: what Claude is doing shortens first, so the buttons never move. */
 .header {
-  position: relative;
   display: flex;
   flex: 0 0 auto;
   align-items: center;
@@ -20,27 +27,13 @@
   container-type: inline-size;
 }
 
-/* While Claude starts or works, a light moves along the top of the bar. */
-.busy::before {
-  position: absolute;
-  top: -1px;
-  right: 0;
-  left: 0;
-  height: 2px;
-  background: linear-gradient(90deg, transparent, var(--fw-accent), transparent) no-repeat;
-  background-size: 35% 100%;
-  animation: working 1.8s ease-in-out infinite;
-  content: "";
-}
-
-@keyframes working {
-  from {
-    background-position: -40% 0;
-  }
-
-  to {
-    background-position: 140% 0;
-  }
+/*
+ * While Claude starts or works, the bar is a taller strip: a picture of the step it's on, beside
+ * two lines of what it's doing.
+ */
+.strip {
+  padding-top: 11px;
+  padding-bottom: 11px;
 }
 
 /* Done, with something to show for it: the bar turns green for a moment, then stays tinted. */
@@ -56,20 +49,19 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .busy::before {
-    background: var(--fw-accent);
-    opacity: 0.5;
-    animation: none;
-  }
-
   .finished {
     animation: none;
   }
 }
 
+/* In a narrow bar, it takes no more than a third, so what Claude is doing keeps room. */
 .title {
+  flex: none;
+  max-width: 32cqw;
+  overflow: hidden;
   font-size: var(--fw-text-md);
   font-weight: 600;
+  text-overflow: ellipsis;
 }
 
 .hint {
@@ -78,6 +70,18 @@
   overflow: hidden;
   color: var(--fw-muted);
   font-size: 13px;
+  text-overflow: ellipsis;
+}
+
+/* In the working strip, two lines, each of which shortens on its own, so it keeps its height. */
+.strip .hint {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.strip .hint > * {
+  overflow: hidden;
   text-overflow: ellipsis;
 }
 
@@ -91,22 +95,25 @@
   display: none;
 }
 
-/* The last step done, quietly, then the one Claude is on. */
-.did {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  margin-right: 10px;
-}
-
-.didMark {
-  flex: none;
-  color: var(--fw-ok);
-}
-
+/* The step Claude is on, or where it is on its to-do list. */
 .doing {
   color: var(--fw-text);
   font-weight: 550;
+}
+
+/* Under it, quietly: what it's doing within that step, its helpers, and the last step done. */
+.also {
+  font-size: 12.5px;
+}
+
+.alsoPart {
+  margin-right: 8px;
+}
+
+.didMark {
+  margin-right: 4px;
+  color: var(--fw-ok);
+  vertical-align: -2px;
 }
 
 .elapsed {
@@ -127,6 +134,18 @@
 @container (max-width: 1100px) {
   .plan {
     display: none;
+  }
+}
+
+/* Narrower still, Show Claude's work is its arrow alone, and its words are for screen readers. */
+@container (max-width: 760px) {
+  .workLabel {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
   }
 }
 
@@ -190,6 +209,24 @@
   height: 0;
   overflow: hidden;
   border-top: 0;
+}
+
+/* The shown run's terminal. */
+.stage {
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+}
+
+/*
+ * Every other run's terminal keeps its size, out of sight, as a folded one does, so each Claude
+ * Code draws what it prints as it would in view, and switching tabs redraws nothing.
+ */
+.offstage {
+  display: flex;
+  flex-direction: column;
+  height: 0;
+  overflow: hidden;
 }
 
 /*

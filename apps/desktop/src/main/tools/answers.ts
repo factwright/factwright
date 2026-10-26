@@ -74,6 +74,7 @@ export async function saveAnswer(
   answer: string,
   workspace: string,
   today: string,
+  keep?: (path: string) => void,
 ): Promise<string> {
   const ask = job.asks.find((each) => each.id === askId);
   if (!ask) {
@@ -89,6 +90,7 @@ export async function saveAnswer(
   const path = askedFile(job.id, ask.id);
   const file = join(workspace, ...path.split('/'));
   await mkdir(dirname(file), { recursive: true });
+  keep?.(file);
   await writeFile(file, answerFile(ask.question, ask.on, today, answer));
   return `Saved in ${path}. The app shows it with the question.`;
 }

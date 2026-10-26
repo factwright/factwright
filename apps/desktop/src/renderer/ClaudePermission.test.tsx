@@ -20,39 +20,50 @@ beforeAll(() => {
 
 afterEach(cleanup);
 
-const PAGE: PermissionAsk = {
+/** A revision's fix to a template, the one save that still asks first in a run on a job. */
+const TEMPLATE: PermissionAsk = {
   id: 'perm_1',
-  kind: 'page',
-  url: 'https://jobs.example.com/careers/42',
-  host: 'jobs.example.com',
+  kind: 'template',
+  template: 'executive',
+  name: 'Navy (clean)',
+  look: 'Navy headings.',
+  replace: true,
+  replacing: 'Executive',
+  code: '{\n  "name": "Navy (clean)"\n}',
 };
 
-/** Waits out the moment the answers wait after a prompt shows. */
+/** Waits out the moment the answers wait after a prompt shows: half a second, or more when busy. */
 const answerable = () =>
-  vi.waitFor(() =>
-    expect(screen.getByRole('button', { name: 'Allow' })).toHaveProperty('disabled', false),
+  vi.waitFor(
+    () => expect(screen.getByRole('button', { name: 'Allow' })).toHaveProperty('disabled', false),
+    { timeout: 2000 },
   );
 
-function open(ask: PermissionAsk = PAGE, result: EditResult = { ok: true }) {
+function open(ask: PermissionAsk = TEMPLATE, result: EditResult = { ok: true }) {
   const api = {
     answerPermission: vi.fn(async (_id: string, _answer: PermissionAnswer | 'terminal') => result),
   };
   const onClose = vi.fn();
   const view = render(
-    <ClaudePermission api={api} ask={ask} about="Fit check · Acme Robotics" onClose={onClose} />,
+    <ClaudePermission
+      api={api}
+      ask={ask}
+      about="Acme Robotics · Resume revision"
+      onClose={onClose}
+    />,
   );
   return { api, onClose, ...view };
 }
 
 describe('ClaudePermission', () => {
-  it('shows the whole address of a page, and the site it goes to, for the user to OK', async () => {
+  it('asks the user’s OK for what Claude would do, saying what the run is for', async () => {
     const { container, api, onClose } = open();
-    const dialog = screen.getByRole('dialog', { name: 'Let Claude read a web page?' });
+    const dialog = screen.getByRole('dialog', {
+      name: 'Let Claude replace your template “Executive”?',
+    });
     expect(dialog.textContent).toContain(
-      'Claude Code asks, as your Claude works on Fit check · Acme Robotics.',
+      'Claude Code asks, as your Claude works on Acme Robotics · Resume revision.',
     );
-    expect(screen.getByText('https://jobs.example.com/careers/42')).toBeTruthy();
-    expect(screen.getByText('jobs.example.com').tagName).toBe('STRONG');
     expect((await axe.run(container)).violations).toEqual([]);
     // A click the moment it shows, such as a double-click's second, answers nothing.
     expect(screen.getByRole('button', { name: 'Allow' })).toHaveProperty('disabled', true);
@@ -60,6 +71,31 @@ describe('ClaudePermission', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Allow' }));
     expect(api.answerPermission).toHaveBeenCalledWith('perm_1', { allow: true });
     expect(onClose).toHaveBeenCalled();
+  });
+
+  it('names the run asking among several waiting, and goes on to the next once answered', async () => {
+    const api = { answerPermission: vi.fn(async () => ({ ok: true as const })) };
+    const go = vi.fn();
+    const onAnswered = vi.fn();
+    const onClose = vi.fn();
+    render(
+      <ClaudePermission
+        api={api}
+        ask={TEMPLATE}
+        about="A template of your own"
+        turn={{ run: 'A template of your own', at: 3, of: 3, go }}
+        onAnswered={onAnswered}
+        onClose={onClose}
+      />,
+    );
+    expect(screen.getByRole('dialog').textContent).toContain('A template of your own3 of 3');
+    expect(screen.getByRole('button', { name: 'Next' })).toHaveProperty('disabled', true);
+    await userEvent.click(screen.getByRole('button', { name: 'Previous' }));
+    expect(go).toHaveBeenCalledWith(-1);
+    await answerable();
+    await userEvent.click(screen.getByRole('button', { name: 'Allow' }));
+    expect(onAnswered).toHaveBeenCalled();
+    expect(onClose).not.toHaveBeenCalled();
   });
 
   it('says no with a note for Claude, or leaves it to the terminal', async () => {
@@ -161,7 +197,7 @@ describe('ClaudePermission', () => {
   });
 
   it('stays open, saying why, when the answer doesn’t reach Claude Code', async () => {
-    const { onClose } = open(PAGE, {
+    const { onClose } = open(TEMPLATE, {
       ok: false,
       message: 'Claude Code isn’t waiting for this anymore.',
     });

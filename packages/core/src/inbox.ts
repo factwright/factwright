@@ -1,5 +1,6 @@
 import type { FieldReply } from './fill.ts';
 import { FIELD_CONTROLS, type FieldControl, type FieldKind } from './forms.ts';
+import type { SavedHow } from './matching.ts';
 import { JOB_LIMITS } from './new-job.ts';
 
 /**
@@ -93,11 +94,12 @@ export type PostingSaved = 'saved' | 'kept' | 'none' | 'failed';
 
 /**
  * What the app answers for a job from the inbox, which the helper hands back to the extension: the
- * job's ID, whether it was in the job hunt already, and what became of its posting. Or why it
- * couldn't be added.
+ * job's ID, whether it was in the job hunt already, and what became of its posting. `joined` says
+ * the job hunt had the same role at the company by a board's address, a Hacker News post or the
+ * company's site, and the job's link was added to it (savedJobFor). Or why it couldn't be added.
  */
 export type InboxAnswer =
-  | { ok: true; id: string; already: boolean; posting: PostingSaved }
+  | { ok: true; id: string; already: boolean; posting: PostingSaved; joined?: true }
   | { ok: false; reason: 'bad-message' | 'failed'; message: string };
 
 /**
@@ -167,15 +169,30 @@ export type InboxAsk =
   | { ask: 'file'; job: string; file: 'resume' | 'cover-letter'; version: string; part: number }
   /** What you sent, once you've applied: the answers to the form's own questions. */
   | { ask: 'sent'; job: string; url: string; answers: { question: string; text: string }[] }
-  /** New answers to keep in Profile, each one you chose to save. */
-  | { ask: 'remember'; answers: { kind: FieldKind; text: string }[] }
+  /**
+   * Takes back marking a job Applied, as the extension's Undo asks once it noticed you submitted
+   * the job's application and marked it: the job goes back where it was, unless it's moved on
+   * since. An app from before it knew how answers bad-message. The extension's own answers through
+   * sync take `undo`, as its `sent` said, since the app's readInboxAsk refuses extra keys.
+   */
+  | { ask: 'unsent'; job: string; undo?: SentUndo }
+  /**
+   * New answers to keep in Profile, each one you chose to save. The extension's own answers
+   * through sync take `since`, the version of Profile the form was filled from, as its fill said.
+   */
+  | { ask: 'remember'; answers: { kind: FieldKind; text: string }[]; since?: string }
   /**
    * The form's own questions that nothing on file answers, for your Claude to draft answers to
    * in Factwright, for a job you saved: each as the field asks it, never what's in it.
    */
   | { ask: 'draft'; job: string; url: string; questions: AskedField[] }
   /** How your Claude's drafts for a job are coming along. */
-  | { ask: 'drafts'; job: string };
+  | { ask: 'drafts'; job: string }
+  /**
+   * Whether the job on a page is in your job hunt, as the popup asks before it offers to save it:
+   * the page's address, and the company and job title the page shows.
+   */
+  | { ask: 'job'; url: string; company: string; role: string };
 
 const isText = (value: unknown, max: number): value is string =>
   typeof value === 'string' && value.length <= max;
@@ -325,7 +342,28 @@ export function readInboxAsk(text: string): InboxAsk | null {
   if (asked.ask === 'drafts' && keys === 'ask job') {
     return isJobId(asked.job) ? { ask: 'drafts', job: asked.job } : null;
   }
+  if (asked.ask === 'unsent' && keys === 'ask job') {
+    return isJobId(asked.job) ? { ask: 'unsent', job: asked.job } : null;
+  }
+  if (asked.ask === 'job' && keys === 'ask company role url') {
+    const { url, company, role } = asked;
+    if (!isPage(url) || !isText(company, JOB_LIMITS.company) || !isText(role, JOB_LIMITS.role)) {
+      return null;
+    }
+    return { ask: 'job', url, company, role };
+  }
   return null;
+}
+
+/**
+ * What taking back marking a job Applied puts back, through sync, as the extension marked it: its
+ * row's status, the day that status started and the day you applied, as they were, and the line it
+ * added to the job's history, which goes. Factwright on your computer keeps the job's history
+ * itself, and needs none of it.
+ */
+export interface SentUndo {
+  line: string;
+  row: { status: string | null; status_on: string | null; applied_on: string | null };
 }
 
 /** A job, as the app tells the extension of it: enough to say which it is, and if you applied. */
@@ -359,10 +397,46 @@ export type InboxAskAnswer =
       /** An answer for each field, in the ask's order. */
       replies: FieldReply[];
       files: { resume: OfferedFile | null; 'cover-letter': OfferedFile | null };
+      /**
+       * How many jobs and schools on file a form that asks for each one can take, for a form
+       * with a button that adds a part for another. An app from before it says none.
+       */
+      blocks?: { jobs: number; schools: number };
+      /**
+       * Through sync, the version of Profile's answers the replies are from, as its file's ID, or
+       * empty for none yet, so a new answer saved to Profile later keeps a change made since.
+       * Factwright on your computer sends none.
+       */
+      profile?: string;
     }
   | { ok: true; did: 'file'; part: number; parts: number; base64: string }
-  | { ok: true; did: 'sent'; job: AskedJob; recorded: number }
-  | { ok: true; did: 'remember'; saved: number }
+  | {
+      ok: true;
+      did: 'sent';
+      job: AskedJob;
+      recorded: number;
+      /**
+       * Whether this marked the job Applied, as it wasn't, which only that Undo takes back.
+       * Factwright from before Undo doesn't say.
+       */
+      marked?: boolean;
+      /** Through sync, what Undo puts back, once marking the job Applied changed it. */
+      undo?: SentUndo;
+    }
+  /** Marking the job Applied taken back (`undone`), or not, as it's moved on since, as it is now. */
+  | { ok: true; did: 'unsent'; job: AskedJob; undone: boolean }
+  | {
+      ok: true;
+      did: 'remember';
+      /** How many went in Profile. */
+      saved: number;
+      /**
+       * Through sync, where Profile had another answer by then, which Factwright gave it since the
+       * form was filled: the file the new ones were kept in instead, beside Profile's, as sync
+       * keeps both copies of a file two devices changed.
+       */
+      copy?: string;
+    }
   /** Your Claude has started on the form's questions, in Factwright. */
   | { ok: true; did: 'draft' }
   | {
@@ -375,6 +449,11 @@ export type InboxAskAnswer =
       /** How many of the form's questions have a draft now. */
       drafted: number;
     }
+  /**
+   * The job on file a page is for, with how saving the page goes with it (savedJobFor), or null
+   * when your job hunt doesn't have it.
+   */
+  | { ok: true; did: 'job'; found: { job: AskedJob; how: SavedHow } | null }
   | {
       ok: false;
       /**
