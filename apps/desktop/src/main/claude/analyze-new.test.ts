@@ -102,7 +102,10 @@ describe('Claude analyzing new jobs on its own', () => {
         startOwn: (task) => {
           if (!free) return null;
           started.push(task);
-          return `run-${started.length}`;
+          // Its run holds its jobs while it goes, as Claude's runs do.
+          const id = `run-${started.length}`;
+          runs = [...runs, running(id, task)];
+          return id;
         },
       },
       ready: () => ready,
@@ -111,6 +114,23 @@ describe('Claude analyzing new jobs on its own', () => {
     });
   /** Lets the clock run on, and the timers with it. */
   const wait = (ms: number) => vi.advanceTimersByTimeAsync(ms);
+  /** A run going on a task. */
+  const running = (id: string, task: RunTask): RunView => ({
+    id,
+    task,
+    phase: 'working',
+    waits: null,
+    screen: null,
+    startedAt: 1,
+    problem: null,
+    analyzed: [],
+  });
+  /** Jobs with a fit check now, as a run analyzing them leaves them. */
+  const analyzed = (...ids: string[]) => {
+    jobs = jobs.map((job) =>
+      ids.includes(job.id) ? { ...job, fit: { verdict: 'Good', score: 70, date: TODAY } } : job,
+    );
+  };
 
   beforeEach(() => {
     vi.useFakeTimers();
@@ -153,8 +173,15 @@ describe('Claude analyzing new jobs on its own', () => {
     expect(started).toHaveLength(1);
     expect(started[0]).toMatchObject({ skill: 'analyze-job', auto: true });
     expect(started[0] && 'jobIds' in started[0] && started[0].jobIds).toHaveLength(8);
-    // The ones it took aren't taken again, and the rest wait for its next run.
+    // The ones it took are its run's, and the rest wait for its next run, once it's done.
     claude.look();
+    await wait(1000);
+    expect(started).toHaveLength(1);
+    // Done, with all eight analyzed.
+    const first = started[0] && 'jobIds' in started[0] ? started[0].jobIds : [];
+    runs = [];
+    analyzed(...first);
+    claude.ended({ id: 'run-1', task: started[0] ?? null }, 'ended', first);
     await wait(1000);
     expect(started).toHaveLength(2);
     expect(started[1] && 'jobIds' in started[1] && started[1].jobIds).toEqual([
@@ -197,40 +224,57 @@ describe('Claude analyzing new jobs on its own', () => {
     expect(started).toEqual([{ skill: 'analyze-job', jobIds: ['globex--staff'], auto: true }]);
   });
 
-  it('leaves a job a task holds, and gives back the jobs a run left when it stepped aside', async () => {
+  it('leaves a job a task holds, and the jobs a run left when it stepped aside wait for the next', async () => {
     const claude = analyzing(0);
     await claude.load();
     jobs = [saved('acme--staff'), saved('globex--staff')];
-    runs = [
-      {
-        id: 'run-1',
-        task: { skill: 'focused-resume', jobId: 'acme--staff' },
-        phase: 'working',
-        waits: null,
-        screen: null,
-        startedAt: 1,
-        problem: null,
-        analyzed: [],
-      },
-    ];
+    runs = [running('run-0', { skill: 'focused-resume', jobId: 'acme--staff' })];
     claude.look();
     await wait(1000);
     expect(started).toEqual([{ skill: 'analyze-job', jobIds: ['globex--staff'], auto: true }]);
-    // It stepped aside for the user, with nothing finished: the job waits for its next run.
+    // Its own run holds the job: no look takes it twice.
+    claude.look();
+    await wait(1000);
+    expect(started).toHaveLength(1);
+    // It stepped aside for the user, with nothing finished, and the user's task is done: the next
+    // run takes both.
     runs = [];
-    claude.ended({ id: 'run-2', task: started[0] ?? null }, 'stepped-aside', []);
+    claude.ended({ id: 'run-1', task: started[0] ?? null }, 'stepped-aside', []);
     await wait(1000);
     expect(started.at(-1)).toEqual({
       skill: 'analyze-job',
       jobIds: ['acme--staff', 'globex--staff'],
       auto: true,
     });
-    // Any other end leaves the jobs it didn't finish to the user.
-    claude.ended({ id: 'run-3', task: started.at(-1) ?? null }, 'ended', ['acme--staff']);
+  });
+
+  it('leaves to the user the jobs a run ended without finishing, so none is tried over and over', async () => {
+    const claude = analyzing(0);
+    await claude.load();
+    jobs = [saved('acme--staff'), saved('globex--staff')];
+    claude.look();
     await wait(1000);
-    expect(started).toHaveLength(2);
+    expect(started).toHaveLength(1);
+    // Done, with Acme analyzed and Globex not, as when its posting wouldn't load.
+    runs = [];
+    analyzed('acme--staff');
+    claude.ended({ id: 'run-1', task: started[0] ?? null }, 'ended', ['acme--staff']);
+    await wait(1000);
+    expect(started).toHaveLength(1);
     await settled(join(dataDir, 'analyze-new.json'));
     const kept = JSON.parse(readFileSync(join(dataDir, 'analyze-new.json'), 'utf8'));
-    expect(kept.tried).toEqual(['acme--staff', 'globex--staff']);
+    expect(kept.tried).toEqual(['globex--staff']);
+    // Once the user analyzes it, it leaves the list.
+    analyzed('globex--staff');
+    jobs = [...jobs, saved('initech--staff')];
+    claude.look();
+    await wait(1000);
+    expect(started.at(-1)).toEqual({
+      skill: 'analyze-job',
+      jobIds: ['initech--staff'],
+      auto: true,
+    });
+    await settled(join(dataDir, 'analyze-new.json'));
+    expect(JSON.parse(readFileSync(join(dataDir, 'analyze-new.json'), 'utf8')).tried).toEqual([]);
   });
 });

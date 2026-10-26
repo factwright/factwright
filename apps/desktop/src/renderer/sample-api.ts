@@ -854,9 +854,9 @@ export function sampleApi(): FactwrightApi {
         for (const id of done) tracker.madeBy({ skill: ANALYZE_SKILL, jobId: id });
         set(sample.id, { analyzed: done });
         step(sample, {
-          tool: 'Agent',
-          detail: 'Analyze Northbeam Analytics',
-          id: 'agent-northbeam',
+          tool: 'mcp__factwright__job_details',
+          detail: null,
+          id: 'details-northbeam',
           state: 'running',
         });
       },

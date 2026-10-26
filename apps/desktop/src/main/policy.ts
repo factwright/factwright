@@ -423,8 +423,8 @@ export const SEVERAL_ASK_NOTHING =
 
 /**
  * Why a task asks the user nothing, by its prompt, for Claude to read when it asks anyway: a
- * quick resume's, or analyzing several jobs, which the user may have started on their way
- * elsewhere, or Claude on its own. Null for any other task, which may ask.
+ * quick resume's, or analyzing several jobs, which goes on while the user does other things, or
+ * which Claude started on its own. Null for any other task, which may ask.
  */
 export function asksNothing(prompt: unknown): string | null {
   if (typeof prompt !== 'string') return null;

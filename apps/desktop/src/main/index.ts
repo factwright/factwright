@@ -271,6 +271,8 @@ function start(home: string, profile: ProfileFolder, stopped: ProfileFolder | nu
           if (page) opener.open(jobId, page);
         }),
     });
+    // Claude analyzing new jobs on its own, once everything it needs is open, further down.
+    let analyzeNew: AnalyzeNew | null = null;
     const sync = new SyncAccount({
       dataDir,
       server: syncServer,
@@ -301,10 +303,10 @@ function start(home: string, profile: ProfileFolder, stopped: ProfileFolder | nu
       onApplied: () => {
         window.send('jobs:changed', jobs.read());
         reminders.check({ synced: true });
+        // A job saved on another device may be one for Claude to analyze on its own.
+        analyzeNew?.look();
       },
     });
-    // Claude analyzing new jobs on its own, once everything it needs is open, further down.
-    let analyzeNew: AnalyzeNew | null = null;
     const jobs = new JobsService({
       workspace,
       tracker,

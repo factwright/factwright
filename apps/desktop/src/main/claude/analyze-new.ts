@@ -2,7 +2,13 @@ import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { effectiveStatus, isIsoDate, type Job } from '@factwright/core';
 import type { RunPhase, RunsView } from '../../shared/api.ts';
-import { ANALYZE_ON_ITS_OWN, ANALYZE_SKILL, type RunTask, taskJobs } from '../../shared/runs.ts';
+import {
+  ANALYZE_ON_ITS_OWN,
+  ANALYZE_SKILL,
+  type RunTask,
+  startedOnItsOwn,
+  taskJobs,
+} from '../../shared/runs.ts';
 import type { OwnEnd, RunHeard } from './runs.ts';
 import { saveJson, settled } from './save.ts';
 
@@ -23,7 +29,7 @@ const HOLDS: readonly RunPhase[] = ['in-line', 'starting', 'working', 'needs-ans
 
 /**
  * What the app keeps about Claude analyzing new jobs on its own: whether it does, since when, and
- * the jobs a run of its own took and didn't finish, which it doesn't take again.
+ * the jobs a run of its own took and ended without finishing, which it doesn't take again.
  */
 export interface AnalyzeNewState {
   on: boolean;
@@ -62,6 +68,10 @@ export function jobsToAnalyze(
       (a, b) => (a.firstSeen ?? '').localeCompare(b.firstSeen ?? '') || a.id.localeCompare(b.id),
     );
 }
+
+/** Whether a run of Claude's own is going, which takes the jobs saved since, one run at a time. */
+const ownGoing = (view: RunsView): boolean =>
+  view.runs.some((run) => HOLDS.includes(run.phase) && startedOnItsOwn(run.task));
 
 /** The jobs a task holds now, going or waiting in line. */
 const takenIn = (view: RunsView): Set<string> =>
@@ -107,10 +117,10 @@ export interface AnalyzeNewDeps {
 /**
  * Claude analyzing new jobs on its own, while it's free, several in one run, until the user turns
  * it off. Jobs saved together wait a moment, so they go in one run, and a run takes as many as it
- * can, the oldest first. It starts only when it can start at once, never in line, and it steps
- * aside for any task the user starts that would otherwise wait for it: the jobs it didn't finish
- * then wait for the next. A run that ends any other way leaves the jobs it didn't finish to the
- * user, so none is tried over and over.
+ * can, the oldest first. It starts only when it can start at once, never in line. A run that ends,
+ * done, stopped, closed or failed, leaves the jobs it didn't finish to the user, so none is tried
+ * over and over. One that steps aside for a task the user starts, or goes as the window closes or
+ * the app quits, leaves them for the next.
  */
 export class AnalyzeNew {
   private readonly deps: AnalyzeNewDeps;
@@ -163,14 +173,19 @@ export class AnalyzeNew {
   }
 
   /**
-   * Hears a run of its own end. One that stepped aside for a task of the user's gives back the
-   * jobs it didn't finish, for the next. Any other end leaves them to the user.
+   * Hears a run of its own end. One that ended leaves the jobs it didn't finish to the user. One
+   * that stepped aside for a task of the user's leaves them for the next.
    */
   ended(run: RunHeard, end: OwnEnd, analyzed: readonly string[]): void {
-    if (this.state && end === 'stepped-aside') {
-      const back = taskJobs(run.task).filter((id) => !analyzed.includes(id));
-      this.state = { ...this.state, tried: this.state.tried.filter((id) => !back.includes(id)) };
-      void this.save();
+    const state = this.state;
+    if (state && end === 'ended') {
+      const left = taskJobs(run.task).filter(
+        (id) => !analyzed.includes(id) && !state.tried.includes(id),
+      );
+      if (left.length > 0) {
+        this.state = { ...state, tried: [...state.tried, ...left] };
+        void this.save();
+      }
     }
     this.look();
   }
@@ -187,13 +202,17 @@ export class AnalyzeNew {
     }, ms);
   }
 
-  /** Starts a run on the jobs waiting, if it's time and Claude is free. */
+  /**
+   * Starts a run on the jobs waiting, if it's time and Claude is free, one run of its own at a
+   * time.
+   */
   private check(): void {
     const state = this.state;
     if (!state?.on) return;
     const now = this.now();
     const jobs = this.deps.jobs();
-    const waiting = jobsToAnalyze(jobs, state, takenIn(this.deps.runs.view()));
+    const view = this.deps.runs.view();
+    const waiting = jobsToAnalyze(jobs, state, takenIn(view));
     for (const id of this.seen.keys()) {
       if (!waiting.some((job) => job.id === id)) this.seen.delete(id);
     }
@@ -205,16 +224,19 @@ export class AnalyzeNew {
       this.at(wait);
       return;
     }
-    // Not ready, or not free: Claude Code's status, or the runs, changing looks again.
-    if (!this.deps.ready()) return;
+    // Not ready, or not free: Claude Code's status, or the runs, changing looks again. The jobs
+    // it takes are its run's while it goes, so no look takes them twice.
+    if (ownGoing(view) || !this.deps.ready()) return;
     const picked = waiting.slice(0, ANALYZE_ON_ITS_OWN).map((job) => job.id);
     if (!this.deps.runs.startOwn({ skill: ANALYZE_SKILL, jobIds: picked, auto: true })) return;
-    // Only jobs still waiting for Claude stay on the list of those it took, so it stays short.
-    const left = state.tried.filter((id) =>
+    // Only jobs still not checked stay on the list of those left to the user, so it stays short.
+    const kept = state.tried.filter((id) =>
       jobs.some((job) => job.id === id && notCheckedYet(job)),
     );
-    this.state = { ...state, tried: [...left, ...picked] };
-    void this.save();
+    if (kept.length < state.tried.length) {
+      this.state = { ...state, tried: kept };
+      void this.save();
+    }
   }
 
   private save(): Promise<void> {
