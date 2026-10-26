@@ -10,9 +10,16 @@ import { PanelSection, Placeholder } from './PanelSection.tsx';
 import { PayAskLine } from './PayAsk.tsx';
 import type { RunControls } from './RunActions.tsx';
 
+/** Where the job's pay came from, after it. */
+const PAY_FROM: Readonly<Record<NonNullable<Job['pay']>['source'], string>> = {
+  listed: ', as listed',
+  estimate: ', estimated by a salary check',
+  own: ', as you set it',
+};
+
 /**
- * The job's pay, as the posting listed it or a salary check estimated it, or else the button that
- * estimates it.
+ * The job's pay, as the posting listed it, a salary check estimated it or the user set it, or
+ * else the button that estimates it.
  */
 function Pay({ job, run }: { job: Job; run: RunControls | undefined }) {
   const { pay } = job;
@@ -21,9 +28,7 @@ function Pay({ job, run }: { job: Job; run: RunControls | undefined }) {
       {pay ? (
         <p>
           <strong>Pay:</strong> {payLabel(pay) ?? pay.text}
-          <span className={styles.source}>
-            {pay.source === 'listed' ? ', as listed' : ', estimated by a salary check'}
-          </span>
+          <span className={styles.source}>{PAY_FROM[pay.source]}</span>
         </p>
       ) : (
         <>

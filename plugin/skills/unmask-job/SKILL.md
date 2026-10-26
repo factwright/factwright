@@ -53,7 +53,7 @@ Recommend one, with a one-line reason:
 ## 7. Deliver
 - Reply in 8 lines or fewer: the employer and confidence, the evidence (1–2 links), the direct apply link, the verdict and reason, any scam flags, and next steps (`/factwright:analyze-job`, `/factwright:salary-check` if no pay is listed, `/factwright:focused-resume`).
 - Once the employer is confirmed or likely, save the job so it survives the listing coming down:
-  - Folder `applications/<YYYY-MM-DD>-<employer>-<role>/`. Reuse it if `find_job` with the employer and role finds one.
+  - Folder `applications/<YYYY-MM-DD>-<employer>-<role>/`. Reuse it if `find_job` with the employer and role finds one for this job. One by that name that's another job's, as a job with the same employer and title can have, stays theirs: add `-2` to the name, or the next number that's free.
   - `posting.md`: `save_posting` with the employer's own posting link. If there's no direct posting, save the board listing instead, or save the user's pasted text with a `- **Source:** pasted by the user <YYYY-MM-DD>` line on top.
   - `job.md`: `# <Employer>: <Role>`, then `- **Job ID:** <the job's id>` when the job is on file, `- **Date:**`, `- **Company:**`, `- **Role:**`, `- **Links:**`, `- **Pay:**`, `- **Work arrangement:**`, and `- **Found via:** <board or agency name>`.
   - `unmask.md`: employer and confidence, the evidence with links, the poster type, direct or recruiter and why, scam flags.

@@ -535,6 +535,13 @@ describe('JobPanel', () => {
     expect(second.api.updateJob).toHaveBeenCalledTimes(1);
   });
 
+  it('says the pay is the user’s own when they set it', () => {
+    const [analyzed] = sampleSaved().filter((job) => job.company === 'Keelson AI');
+    if (!analyzed) throw new Error('No Keelson sample');
+    panel({ ...analyzed, pay: { text: '$190k–$220k', min: 190_000, max: 220_000, source: 'own' } });
+    expect(screen.getByText(', as you set it')).toBeTruthy();
+  });
+
   it('says a job might be the same as another, with Merge and Not the same', async () => {
     const [noted, other] = sampleSaved().filter((job) => job.company === 'Keelson AI');
     if (!noted || !other) throw new Error('No Keelson samples');

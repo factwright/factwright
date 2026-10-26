@@ -29,7 +29,7 @@ One run does five things, in this order: the posting, the details, duplicates, t
 Get the posting word for word, if the job has none yet. `job_details` lists what's on file.
 - **Already in the folder:** `posting.md` (or `job.md` in older folders). Read it from there, plus `unmask.md` and `notes.md` if they're there: an employer check may already have found the real employer behind a board listing. `job_details` lists everything else on file, such as the user's notes and calls, which can change the verdict.
 - **Saved from the user's browser:** when `job_details` names a posting saved from their browser, that's it, as they saw it, LinkedIn's included, which Factwright's tools never read. `save_posting` with the job's link and its id copies it into the folder.
-- **On the board's own API:** a posting on Greenhouse, Lever, Ashby or Gem comes from `read_posting`. A link to a company's whole board, as a Hacker News search saves it, isn't one job's: `job_board` with that link lists every open job there, with its own link. Find this role among them, and use its own link from then on.
+- **On the board's own API:** a posting on Greenhouse, Lever, Ashby or Gem comes from `read_posting`. A link to a company's whole board, as a Hacker News search saves it, isn't one job's: `job_board` with that link, and `boards` as its folder, lists every open job there, with its own link. Find this role among them, and use its own link from then on.
 - **Anywhere else:** `read_page`. Never LinkedIn's pages: a job whose only link is LinkedIn's, with nothing saved from the browser, has no posting to read.
 - Save what you read with `save_posting`, the job's link and its id. If it needs a sign-in, won't load, or there's nothing to read, ask the user to paste the text, or to save the page with Factwright's browser extension.
 - If the employer is hidden (a recruiter or board listing), score it anyway, skip sentiment, and suggest `/factwright:unmask-job`.
@@ -47,7 +47,7 @@ They go in `job.md` (step 4): its heading, `- **Pay:**` and `- **Work arrangemen
 
 ## 3. Duplicates
 Once the details are right, call `find_job` with the company, the role and the posting's link. Each job it lists as **the same posting** or **the same role**, other than this one, may be this job found twice:
-- Call `merge_job` with this job's id as `job`, the other's as `other`, and why you think they're one, in a line. The app merges them when it's sure: the same posting, or the same role at the same company where one of the two has no posting of its own, as a Hacker News search saves a company's board. Anything less sure gets a note on the job, "Might be the same as …", for the user to merge with a click or not. Never merge them any other way.
+- Call `merge_job` with this job's id as `job`, the other's as `other`, and why you think they're one, in a line. It merges into a job the app started this run on: in any other run, say in a line which job it might be. The app merges them when it's sure: the same posting, or the same role at the same company where one of the two has no posting of its own, as a Hacker News search saves a company's board. Anything less sure gets a note on the job, "Might be the same as …", for the user to merge with a click or not. Never merge them any other way.
 - After a merge, go on with the job the tool names. A fit check the job kept already has from the last 30 days stands: reuse its folder and write-up, update job.md with the details and the pay to ask for, and log it.
 - The tool says when the user said two jobs aren't the same: leave them apart.
 
@@ -70,7 +70,7 @@ Once the details are right, call `find_job` with the company, the role and the p
 
 ### Save it
 Every job analyzed gets a folder, so its posting and this write-up survive dead links. The app shows them in the job's panel.
-- Folder: `applications/<YYYY-MM-DD>-<company>-<role>/`, lowercase with hyphens. If `find_job` or `job_details` found a folder for this job, reuse it.
+- Folder: `applications/<YYYY-MM-DD>-<company>-<role>/`, lowercase with hyphens. If `find_job` or `job_details` found a folder for this job, reuse it. If they found none and one by that name is there already, it's another job's, as a job with the same company and title can have: add `-2` to the name, or the next number that's free.
 - `posting.md`, the posting word for word:
   - From a link: call `save_posting` with the link, the folder's name and the job's id. It saves what you read, or the posting the user saved from their browser, word for word, without asking.
   - Pasted text, or save_posting couldn't read it: save the user's text as `posting.md` with a `- **Source:** pasted by the user <YYYY-MM-DD>` line on top.
@@ -147,7 +147,7 @@ Never stretch a fact to make the fit look better. Gaps are gaps.
 `jobs <id> <id> …` names several jobs on file, in one run. The app's tab says how many are done as each one's row reaches the log.
 - **Ask nothing.** The user went on to other things once they started it, or the app started it while Claude was free (`on its own`). A question you ask is turned away. When something's missing, such as a posting that won't load, or a job whose only link is LinkedIn's with nothing saved from the browser, say so in that job's line of the reply, and go on with the rest.
 - **Read once:** criteria.md, `about_you` and facts/, before the jobs.
-- **Duplicates among them first:** call `find_job` for each. When two of the jobs given are one, merge them with `merge_job` before going further, and analyze the one kept once.
+- **Duplicates among them first:** call `find_job` for each. When two of the jobs given are one, merge them with `merge_job` before going further, and analyze the one kept once. Two that stay apart with the same company and title each get a folder of their own: give the second one's subagent its folder's name, ending in `-2`, so the two never make the same one at once.
 - **A subagent for each job:** give each job to a subagent of its own, up to 4 at once, then the next as one finishes. Give each one: the job's id; the steps above for one job, 1 to 6; that it asks nothing; and, in a few lines, the user's filters, tiers and kinds of job, their target and lowest pay, and where their facts are, so it reads only what its job needs. Each one ends with its `log_check` row, once its job is analyzed, and replies with its job's line. A job it couldn't analyze gets no row, and stays not checked yet.
 - **Wait for every subagent** to finish before you reply.
 - **Reply** with one line per job, best fit first: "Acme Robotics, Staff Engineer: Good 71 · ask $185,000 · merged with the HN find", or what stopped it, such as "Coastline Credit Union: the posting wouldn't load". Then one line on what's next.
