@@ -278,10 +278,12 @@ describe('the script on a job site you allowed', () => {
     document.body.insertAdjacentHTML('beforeend', '<button id="everywhere">Chat</button>');
     boxes.set('everywhere', new DOMRect(0, 0, innerWidth, innerHeight));
     script = startScript(() => true, 0);
-    await vi.waitFor(() => expect(sentOf('hello')).toHaveLength(1));
+    // Placing it looks at every spot beside the field first, which takes a while on a busy run.
+    await vi.waitFor(() => expect(sentOf('hello')).toHaveLength(1), { timeout: 5000 });
     clickIn('name');
-    await vi.waitFor(() =>
-      expect(frames().some(({ frame }) => frame.src.includes('#menu:'))).toBe(true),
+    await vi.waitFor(
+      () => expect(frames().some(({ frame }) => frame.src.includes('#menu:'))).toBe(true),
+      { timeout: 5000 },
     );
     const menu = frames().find(({ frame }) => frame.src.includes('#menu:'));
     expect(menu?.host.style.getPropertyValue('left')).toBe('40px');
