@@ -70,7 +70,7 @@ import {
   onSamePage,
   partsOffers,
 } from './several-pages.ts';
-import { toSave } from './tab-job.ts';
+import { postingBesideForm, toSave } from './tab-job.ts';
 
 /**
  * The side panel beside the page, where filling an application form is checked. It opens only as
@@ -911,8 +911,10 @@ async function saveFirst(state: Filling): Promise<void> {
     return;
   }
   const page = await readFormPage(tab, state.place.frameId);
-  // Saved the way the form's filled: to Factwright here, or through sync, as the background saves.
-  const job = toSave(page);
+  // Saved the way the form's filled: to Factwright here, or through sync, as the background saves,
+  // with the posting the page shows beside the form, if it shows one.
+  const read = toSave(page);
+  const job = postingBesideForm(page, state.form.step) ? read : { ...read, posting: '' };
   const saved =
     state.way.via === 'computer'
       ? await saveOnComputer(job)

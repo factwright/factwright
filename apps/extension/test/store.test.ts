@@ -50,6 +50,13 @@ const OTHERS = [
   'Cloudflare',
 ];
 
+/** What a part has you paste at one of its numbered steps, found by the bold words it starts with. */
+const pastedAt = (text: string, step: string) => {
+  const rest = text.slice(text.indexOf(`**${step}`));
+  const end = rest.slice(1).search(/\n(\d+\. \*\*|#)/);
+  return pasted(end < 0 ? rest : rest.slice(0, end + 1)).join('\n');
+};
+
 /** The names some words carry, each as a word of its own. */
 const named = (words: string, names: readonly string[]) =>
   names.filter((name) => new RegExp(`(?<![\\w-])${name}(?![\\w-])`).test(words));
@@ -71,6 +78,15 @@ describe('the store listing and answers', () => {
       expect(lines.length, heading).toBeGreaterThan(0);
       for (const line of lines) expect(named(line, others), `${heading}: ${line}`).toEqual([]);
     }
+  });
+
+  it('fit the notes to Firefox’s reviewer, with the build steps, in the 3,000 characters it takes', () => {
+    const firefox = part('Firefox Add-ons');
+    const notes = pastedAt(firefox, 'Notes to reviewer');
+    const steps = pastedAt(firefox, 'Source code');
+    expect(notes.length).toBeGreaterThan(1000);
+    expect(steps).toContain('pnpm install --frozen-lockfile');
+    expect(`${notes}\n\n${steps}`.length).toBeLessThanOrEqual(3000);
   });
 
   it('give the manifest’s description as the summary, which Chrome keeps to 132 characters', () => {

@@ -9,6 +9,7 @@ import {
   looksLikeJob,
   needsChecking,
   payInPosting,
+  postingBesideForm,
   toSave,
 } from '../src/tab-job.ts';
 
@@ -427,6 +428,54 @@ describe('whether a page looks like a job’s', () => {
       ['https://recetas.example/tortilla', 'Tortilla', '<p>Requisitos: huevos y patatas.</p>'],
     ] as const) {
       expect(looksLikeJob(unknown(href, title, text), null), href).toBe(false);
+    }
+  });
+});
+
+describe('a posting beside an application form', () => {
+  /** A careers page it doesn't know, with an application form, as reading it gives. */
+  const read = (html: string): PageJob =>
+    readJobPage(
+      new DOMParser().parseFromString(`<title>Data Lead | Lumen</title>${html}`, 'text/html'),
+      'https://lumen.example/careers/data-lead',
+      '',
+    );
+  /** A posting's words, about 300 of them. */
+  const POSTING = `<h1>Data Lead</h1><h2>What you’ll do</h2>${'<p>Run our data platform with the analysts and the engineers who build it, and ship it every week.</p>'.repeat(18)}`;
+  /** An application form, built without a form element, with what's around it. */
+  const FORM =
+    '<div class="apply"><h2>Apply for this job</h2><p>* indicates a required field</p><div><span>First name *</span><input></div><div><span>Email *</span><input type="email"></div><div><span>Resume *</span><input type="file"></div></div>';
+
+  it('is the page’s main text where the page shows a posting, as a careers page above its form', () => {
+    const job = read(`<main>${POSTING}${FORM}</main>`);
+    expect(job.source).toBe('main');
+    expect(postingBesideForm(job, '')).toBe(true);
+    expect(job.posting).not.toContain('First name');
+    // Or beside a form in a frame, as a careers page shows an applicant system's.
+    const framed = read(
+      `<main>${POSTING}<iframe src="https://boards.example/apply"></iframe></main>`,
+    );
+    expect(postingBesideForm(framed, '')).toBe(true);
+  });
+
+  it('isn’t the few words around a form on its own page, as its title and a note on cookies', () => {
+    const job = read(
+      `<main><p>This website uses cookies to improve your web experience. By clicking Accept, you agree to the use of cookies.</p><h1>Data Lead</h1><p>Denver, CO / Data / Full-time</p>${FORM}</main>`,
+    );
+    expect(job.source).toBe('main');
+    expect(postingBesideForm(job, '')).toBe(false);
+  });
+
+  it('isn’t on one page of an application that runs over several, whatever its notes say', () => {
+    expect(postingBesideForm(read(`<main>${POSTING}${FORM}</main>`), 'Self Identify')).toBe(false);
+  });
+
+  it('is the job’s own data, a job site’s own posting, or text you selected, always', () => {
+    for (const source of ['structured', 'page', 'selection'] as const) {
+      const job = { ...jobFromTab('https://lumen.example/careers/7', 'Data Lead'), source };
+      expect(postingBesideForm({ ...job, posting: 'Lead data.' }, 'My Experience'), source).toBe(
+        true,
+      );
     }
   });
 });
