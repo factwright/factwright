@@ -15,8 +15,9 @@
 // own inbox code, in a folder of its own (it needs a C compiler, as the desktop app's helper does).
 // `pnpm --filter @factwright/extension e2e` (it needs Playwright's
 // Chromium: `pnpm --filter @factwright/site exec playwright install chromium`). With
-// `-- --screenshots`, it also draws the stores' screenshots, into store/screenshots, from what it
-// shows along the way, and with `-- --shots <folder>`, saves each setup page it checks there, and
+// `-- --screenshots`, it also draws the stores' screenshots of saving and setting up, into
+// store/screenshots, from what it shows along the way (`e2e:fill` draws those of filling), and
+// with `-- --shots <folder>`, saves each setup page it checks there, and
 // the popup on a page that doesn't look like a job's, in light and dark.
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
@@ -54,20 +55,18 @@ import {
   type SyncRecord,
   sealRecord,
 } from '@factwright/sync';
-import { LIGHT } from '@factwright/ui/tokens';
-import { type Browser, type BrowserContext, chromium, type Page } from '@playwright/test';
+import { type BrowserContext, chromium, type Page } from '@playwright/test';
 // Factwright's own inbox and answers, as the desktop app runs them, standing in for the app on
 // this computer.
 import { answerAsk, type FillDeps } from '../../desktop/src/main/extension/fill.ts';
 import { JobInbox } from '../../desktop/src/main/extension/inbox.ts';
 import { JobsService } from '../../desktop/src/main/jobs/service.ts';
 import { Tracker } from '../../desktop/src/main/jobs/tracker.ts';
+import { closeFramer, frame } from './store-shots.ts';
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
 /** The desktop app, whose helper the browser starts to save on this computer. */
 const DESKTOP = fileURLToPath(new URL('../../desktop', import.meta.url));
-/** Where the stores' screenshots go, when it's asked to draw them. */
-const SHOTS = process.argv.includes('--screenshots') ? join(ROOT, 'store', 'screenshots') : null;
 /** Where the setup pages it checks go, in light and dark, when it's asked for them. */
 const PAGES = process.argv.includes('--shots')
   ? process.argv[process.argv.indexOf('--shots') + 1]
@@ -139,38 +138,6 @@ async function browser(extension: string, env: Record<string, string> = {}) {
   setup.on('pageerror', (error) => errors.push(error.message));
   await setup.goto(`chrome-extension://${id}/setup.html`);
   return { context, setup, errors, id, profile };
-}
-
-/**
- * A store's screenshot: what the extension showed, framed at the 1280 by 800 both stores take, with
- * what it shows in words beside it.
- */
-let framer: Browser | null = null;
-
-async function frame(
-  shot: Buffer,
-  width: number,
-  title: string,
-  words: string,
-  name: string,
-): Promise<void> {
-  if (!SHOTS) return;
-  mkdirSync(SHOTS, { recursive: true });
-  // Framed in a browser of its own at 1x, so the image is exactly 1280 by 800, with the extension's
-  // pages, taken at 2x, sharp in it.
-  framer ??= await chromium.launch({ channel: 'chromium', headless: true });
-  const page = await framer.newPage();
-  await page.setViewportSize({ width: 1280, height: 800 });
-  await page.setContent(`<!doctype html><html><body style="margin:0;width:1280px;height:800px;
-    background:${LIGHT.sunken};color:${LIGHT.text};display:flex;align-items:center;justify-content:center;
-    gap:64px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif">
-    <div style="max-width:400px"><h1 style="font-size:42px;line-height:1.15;margin:0 0 18px">${title}</h1>
-    <p style="font-size:21px;line-height:1.45;margin:0;color:${LIGHT.muted}">${words}</p></div>
-    <img alt="" style="width:${width}px;border-radius:14px;border:1px solid ${LIGHT.border};
-    box-shadow:0 24px 60px rgba(20,20,40,.16)" src="data:image/png;base64,${shot.toString('base64')}">
-    </body></html>`);
-  await page.screenshot({ path: join(SHOTS, name) });
-  await page.close();
 }
 
 /**
@@ -640,7 +607,7 @@ try {
       620,
       'Linked by Factwright on your computer',
       'Set it up once: sign in to sync, then approve it in Factwright, once both show the same emoji.',
-      '3-link.png',
+      '4-link.png',
     );
     const shown = (await setup.locator('p.small.muted').first().textContent()) ?? '';
     check(
@@ -665,7 +632,7 @@ try {
       620,
       'Save it your way',
       'From the toolbar, a keyboard shortcut or the right-click menu, from any job site. You choose whether it reads LinkedIn’s postings or saves their links alone.',
-      '4-settings.png',
+      '5-settings.png',
     );
 
     // The popup, on a job's page: what it read, to save in one click.
@@ -709,7 +676,7 @@ try {
       400,
       'Saved as New, with the posting as you saw it',
       'It shows in Factwright on your computer once it syncs, locked with your job hunt’s own key on the way.',
-      '2-saved.png',
+      '3-saved.png',
     );
     await popup.close();
 
@@ -1545,7 +1512,7 @@ try {
     // A temporary folder left behind does no harm.
   }
   // Set while framing, which TypeScript can't follow from here.
-  await (framer as Browser | null)?.close();
+  await closeFramer();
   await server.close();
   await factwright.close();
   await selling.close();
