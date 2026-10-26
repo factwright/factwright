@@ -1,17 +1,23 @@
 /**
  * One thing Claude does in a run, as Claude Code's hooks tell it: a tool call, by its ID, with a
- * few words of what it's on, such as the file it reads, and whether it's still going.
+ * few words of what it's on, such as the file it reads, whether it's still going, and which of
+ * Claude's helpers made it, if one did.
  */
 export interface RunStep {
   id: string;
   /** The tool, as Claude Code names it, such as Read or mcp__factwright__build_resume. */
   tool: string;
   /**
-   * What it's on, when that says something: a file's path in the workspace, a page's host, or a
-   * web search's words.
+   * What it's on, when that says something: a file's path in the workspace, a page's host, a web
+   * search's words, a skill's name, or what Claude asked of a helper.
    */
   detail: string | null;
   state: 'running' | 'done' | 'failed';
+  /**
+   * The helper that made it, one of the subagents Claude hands part of its task to, by Claude
+   * Code's ID for it. Absent for the run's own Claude.
+   */
+  helper?: string;
 }
 
 /**
@@ -22,6 +28,46 @@ export interface TurnEnd {
   said: string | null;
   error: { kind: string; message: string | null } | null;
 }
+
+/** Where an item on Claude's to-do list stands. */
+export type TodoState = 'pending' | 'in_progress' | 'completed';
+
+/** One item on the to-do list Claude keeps in Claude Code, in Claude's own words. */
+export interface TodoItem {
+  /** What it is, such as "Read the posting". */
+  text: string;
+  /** What Claude says while it's on it, such as "Reading the posting", when it said. */
+  doing: string | null;
+  state: TodoState;
+}
+
+/** A helper at work on a run's task: one of the subagents Claude hands part of it to. */
+export interface RunHelper {
+  /** Claude Code's ID for it, which its steps carry, or until that's known, its start's. */
+  id: string;
+  /** What Claude asked of it, in Claude's few words, such as "Fact-check the resume". */
+  what: string | null;
+}
+
+/** Where a run's task stands beyond its steps: Claude's to-do list, and its helpers at work. */
+export interface RunProgress {
+  todos: TodoItem[];
+  helpers: RunHelper[];
+}
+
+/**
+ * The kinds of step the working strip draws, each a small picture of its own: reading, searching,
+ * writing, checking facts, building a PDF, helpers at work side by side, and thinking between
+ * steps.
+ */
+export type StepKind =
+  | 'reading'
+  | 'searching'
+  | 'writing'
+  | 'checking'
+  | 'building'
+  | 'helpers'
+  | 'thinking';
 
 /** What a step is, in the window's words: while it runs, and once it's done. */
 export interface StepWords {
@@ -56,9 +102,98 @@ const TOOLS: Readonly<Record<string, StepWords>> = {
   save_fact: words('Saving a fact for you to verify', 'Saved a fact for you to verify'),
   save_gap: words('Noting something you don’t have', 'Noted something you don’t have'),
   verify_fact: words('Updating a fact', 'Updated a fact'),
+  correct_fact: words('Correcting a fact', 'Corrected a fact'),
   save_about_you: words('Saving what you told Claude', 'Saved what you told Claude'),
   save_work_history: words('Saving your work history', 'Saved your work history'),
+  log_check: words('Logging the check', 'Logged the check'),
 };
+
+/** What each of Factwright's tools is, as the working strip draws it. */
+const TOOL_KINDS: Readonly<Record<string, StepKind>> = {
+  find_job: 'searching',
+  search_focus: 'reading',
+  job_details: 'reading',
+  revision_findings: 'reading',
+  requested_changes: 'reading',
+  read_posting: 'reading',
+  read_page: 'reading',
+  build_resume: 'building',
+  build_cover_letter: 'building',
+  build_projects_page: 'building',
+  save_call_prep: 'writing',
+  save_thank_you: 'writing',
+  list_templates: 'reading',
+  read_template: 'reading',
+  save_template: 'writing',
+  save_posting: 'writing',
+  job_board: 'reading',
+  hn_jobs: 'reading',
+  about_you: 'reading',
+  past_answers: 'reading',
+  save_answer: 'writing',
+  save_fact: 'checking',
+  save_gap: 'checking',
+  verify_fact: 'checking',
+  correct_fact: 'checking',
+  save_about_you: 'writing',
+  save_work_history: 'writing',
+  log_check: 'writing',
+};
+
+/**
+ * Factwright's skills, by name: what each one is how to do, as reading it says, and what a run's
+ * helpers do for it, one and several, where its helpers always do the same, such as checking a
+ * resume's facts against the fact bank, with how the working strip draws one helper at that.
+ */
+const SKILLS: Readonly<
+  Record<string, { how: string; helpers?: { one: string; many: string; kind?: StepKind } }>
+> = {
+  'add-facts': { how: 'add to your fact bank' },
+  'analyze-job': {
+    how: 'analyze a job',
+    helpers: { one: 'analyzing a job', many: 'analyzing jobs' },
+  },
+  'answer-questions': { how: 'answer an application’s questions' },
+  ask: { how: 'answer a question about a job' },
+  'cover-letter': {
+    how: 'write a cover letter',
+    helpers: { one: 'checking the facts', many: 'checking the facts', kind: 'checking' },
+  },
+  'fit-check': { how: 'check a job’s fit' },
+  'focused-resume': {
+    how: 'tailor a resume',
+    helpers: { one: 'checking the facts', many: 'checking the facts', kind: 'checking' },
+  },
+  'get-started': { how: 'get to know you' },
+  'interview-prep': { how: 'prepare for a call' },
+  'job-search': {
+    how: 'search for jobs',
+    helpers: { one: 'going through the jobs', many: 'going through the jobs' },
+  },
+  'make-template': { how: 'make a template' },
+  'projects-page': {
+    how: 'write a Projects page',
+    helpers: { one: 'checking the facts', many: 'checking the facts', kind: 'checking' },
+  },
+  'revise-resume': {
+    how: 'revise a resume',
+    helpers: { one: 'checking the facts', many: 'checking the facts', kind: 'checking' },
+  },
+  'salary-check': { how: 'check what a job pays' },
+  'thank-you': { how: 'write thank-you notes' },
+  'unmask-job': { how: 'find who’s hiring' },
+  'who-to-message': { how: 'find who to message' },
+  'work-history': { how: 'fill in your work history' },
+};
+
+/** Factwright's skills go by the plugin's name, such as "factwright:focused-resume". */
+const skillName = (name: string) => name.replace(/^factwright:/, '');
+
+/** The tool that starts a helper: Agent, or Task, as Claude Code named it before. */
+export const HELPER_TOOLS = ['Agent', 'Task'];
+
+/** The tools Claude keeps its to-do list with: TodoWrite, or the Task tools that replaced it. */
+export const TODO_TOOLS = ['TodoWrite', 'TaskCreate', 'TaskUpdate', 'TaskList', 'TaskGet'];
 
 /** A job's files, by name, as reading them and writing them. */
 const JOB_FILES: Readonly<Record<string, readonly [StepWords, StepWords]>> = {
@@ -166,10 +301,14 @@ function fileWords(path: string | null, writing: boolean): StepWords {
     : words(`Reading ${name}`, `Read ${name}`);
 }
 
+const SEARCHES = ['Glob', 'Grep', 'LS'];
+
 /**
  * A step in the window's words, such as "Reading your fact bank", or null for one that says
- * nothing worth showing, such as Claude keeping its to-do list, or asking the user, which the
- * app does in a dialog of its own.
+ * nothing worth showing, such as Claude ticking off an item on its to-do list, which the strip
+ * shows as "Step 3 of 7", or asking the user, which the app does in a dialog of its own. Making
+ * the list says so, as does starting a helper, with what Claude asked of it, and reading one of
+ * Factwright's skills, by what it's how to do.
  */
 export function stepWords({ tool, detail }: Pick<RunStep, 'tool' | 'detail'>): StepWords | null {
   if (tool.startsWith('mcp__factwright__')) {
@@ -183,7 +322,7 @@ export function stepWords({ tool, detail }: Pick<RunStep, 'tool' | 'detail'>): S
   }
   if (READS.includes(tool)) return fileWords(detail, false);
   if (WRITES.includes(tool)) return fileWords(detail, true);
-  if (tool === 'Glob' || tool === 'Grep' || tool === 'LS') {
+  if (SEARCHES.includes(tool)) {
     return words('Looking through your workspace', 'Looked through your workspace');
   }
   if (tool === 'WebSearch') {
@@ -196,5 +335,82 @@ export function stepWords({ tool, detail }: Pick<RunStep, 'tool' | 'detail'>): S
       ? words(`Reading ${detail}`, `Read ${detail}`)
       : words('Reading a page', 'Read a page');
   }
+  if (HELPER_TOOLS.includes(tool)) {
+    return detail
+      ? words(`Starting a helper for “${detail}”`, `Started a helper for “${detail}”`)
+      : words('Starting a helper', 'Started a helper');
+  }
+  // A new list says how many steps it has. TodoWrite sends the whole list each time, so an
+  // update, as an item starts or ends, has no detail.
+  if (tool === 'TodoWrite') return detail ? words(`Planning ${detail}`, `Planned ${detail}`) : null;
+  if (tool === 'TaskCreate') return words('Planning the steps', 'Planned the steps');
+  if (tool === 'Skill' && detail) {
+    const how = SKILLS[skillName(detail)]?.how;
+    return how
+      ? words(`Reading how to ${how}`, `Read how to ${how}`)
+      : words(`Reading the “${detail}” skill`, `Read the “${detail}” skill`);
+  }
   return null;
 }
+
+/**
+ * What a step is, as the working strip draws it: reading, searching, writing, checking facts,
+ * building a PDF, or starting a helper. Null for one it doesn't draw, such as Claude keeping its
+ * to-do list.
+ */
+export function stepKind({ tool }: Pick<RunStep, 'tool'>): StepKind | null {
+  if (tool.startsWith('mcp__factwright__')) {
+    return TOOL_KINDS[tool.slice('mcp__factwright__'.length)] ?? null;
+  }
+  if (READS.includes(tool) || tool === 'WebFetch' || tool === 'Skill') return 'reading';
+  if (WRITES.includes(tool)) return 'writing';
+  if (SEARCHES.includes(tool) || tool === 'WebSearch') return 'searching';
+  if (HELPER_TOOLS.includes(tool)) return 'helpers';
+  return null;
+}
+
+/**
+ * Where Claude is on its to-do list: the item it's on, or else the next one to do, by its place
+ * in the list, counting from 1, and how many there are. Null for a list of fewer than two, or
+ * once every item is done.
+ */
+export function todoAt(
+  todos: readonly TodoItem[],
+): { at: number; of: number; item: TodoItem } | null {
+  if (todos.length < 2) return null;
+  const on = todos.findIndex(({ state }) => state === 'in_progress');
+  const at = on >= 0 ? on : todos.findIndex(({ state }) => state === 'pending');
+  const item = todos[at];
+  return item ? { at: at + 1, of: todos.length, item } : null;
+}
+
+/**
+ * Where Claude is on its to-do list, as the working strip says it, such as "Step 3 of 7: Tailoring
+ * the summary": the item it's on, in the words it says while it's on it, or else the next one to
+ * do, in its own.
+ */
+export function todoWords(todos: readonly TodoItem[]): string | null {
+  const where = todoAt(todos);
+  if (!where) return null;
+  const { at, of, item } = where;
+  const words = item.state === 'in_progress' ? (item.doing ?? item.text) : item.text;
+  return `Step ${at} of ${of}: ${words}`;
+}
+
+/**
+ * A run's helpers at work, in a few words: what its skill's helpers always do, such as "4 helpers
+ * analyzing jobs", or else what Claude asked of a helper alone, or else that they're at work. Null
+ * with none at work.
+ */
+export function helpersWords(helpers: readonly RunHelper[], skill: string | null): string | null {
+  const known = skill ? SKILLS[skillName(skill)]?.helpers : undefined;
+  if (helpers.length > 1) return `${helpers.length} helpers ${known?.many ?? 'at work'}`;
+  const [helper] = helpers;
+  if (!helper) return null;
+  if (known) return `A helper is ${known.one}`;
+  return helper.what ? `A helper is on “${helper.what}”` : 'A helper is at work';
+}
+
+/** How the working strip draws a helper alone at work, where the run's skill says what it does. */
+export const helperKind = (skill: string | null): StepKind | null =>
+  (skill ? SKILLS[skillName(skill)]?.helpers?.kind : undefined) ?? null;

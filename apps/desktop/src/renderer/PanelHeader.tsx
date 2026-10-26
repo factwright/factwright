@@ -1,9 +1,17 @@
 import { Button, type RunState, RunStatus, VisuallyHidden } from '@factwright/ui';
 import { ChevronDown, ChevronUp } from 'lucide-react';
 import type { ReactNode } from 'react';
+import type { StepKind } from '../shared/activity.ts';
 import type { RunPhase } from '../shared/api.ts';
 import styles from './ClaudePanel.module.css';
 import { BUSY } from './jobs/RunActions.tsx';
+import { WorkingScene } from './WorkingScene.tsx';
+
+/** The picture of what Claude is on, while it works: the kind of step, and how many helpers. */
+export interface Scene {
+  kind: StepKind;
+  lanes: number;
+}
 
 /** The run's state as the status chip shows it. A run that couldn't start counts as failed. */
 export function chipState(phase: RunPhase, problem: string | undefined): RunState {
@@ -13,9 +21,11 @@ export function chipState(phase: RunPhase, problem: string | undefined): RunStat
 /**
  * The bar of the run Claude's panel shows: where it stands, what Claude is doing or what it made,
  * how long it's been, whose Claude it is, and what you can do, such as open what it made, or see
- * Claude's work, the terminal under the bar. Stop is for a run that's starting, working or waiting
- * on the user. Otherwise it's Close, which quits Claude Code that's done, or ready with nothing to
- * do, and closes the run's tab in one click, or takes a task waiting in line out of it.
+ * Claude's work, the terminal under the bar. While Claude works, the bar is a taller strip, with
+ * a small picture of the step it's on beside two lines of what it's doing. Stop is for a run
+ * that's starting, working or waiting on the user. Otherwise it's Close, which quits Claude Code
+ * that's done, or ready with nothing to do, and closes the run's tab in one click, or takes a
+ * task waiting in line out of it.
  */
 export function PanelHeader({
   title = 'Claude',
@@ -23,6 +33,7 @@ export function PanelHeader({
   plan,
   problem,
   text,
+  scene = null,
   elapsed = null,
   action = null,
   workShown = false,
@@ -39,6 +50,8 @@ export function PanelHeader({
   problem: string | undefined;
   /** What Claude is doing, what it's waiting for, or what it made. */
   text: ReactNode;
+  /** The picture of the step Claude is on, while it works, which makes the bar a working strip. */
+  scene?: Scene | null;
   /** How long the task has taken so far, such as "1:24", while it runs. */
   elapsed?: string | null;
   /** What to do next, such as answering Claude or opening what it made. */
@@ -56,14 +69,16 @@ export function PanelHeader({
 }) {
   const stoppable = BUSY.includes(phase);
   const busy = phase === 'starting' || phase === 'working';
+  const strip = busy && scene && !problem ? scene : null;
   return (
     <div
-      className={`${styles.header} ${busy ? styles.busy : ''} ${finished ? styles.finished : ''}`}
+      className={`${styles.header} ${strip ? styles.strip : ''} ${finished ? styles.finished : ''}`}
     >
       <span role="status">
         <RunStatus state={failed ? 'failed' : chipState(phase, problem)} />
       </span>
       <span className={styles.title}>{title}</span>
+      {strip && <WorkingScene kind={strip.kind} lanes={strip.lanes} />}
       <span className={styles.hint}>{problem ?? text}</span>
       {elapsed && (
         <span className={styles.elapsed}>

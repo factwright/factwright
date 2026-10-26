@@ -1,4 +1,5 @@
 import type { RunSignal } from '../../shared/api.ts';
+import { helpersAtWork } from './activity.ts';
 import { canonical } from './questions.ts';
 
 /**
@@ -94,12 +95,14 @@ export class RunSignals {
         }
         return;
       // A turn that ends in an error, such as a rate limit, is over too, and Claude Code waits
-      // for the user's next message: the window says what the error was.
+      // for the user's next message: the window says what the error was. One that ends while
+      // Claude's helpers work in the background isn't: Claude Code wakes Claude once they're
+      // back, so the run still has work going.
       case 'Stop':
       case 'StopFailure':
         this.waiting.length = 0;
         this.answeredInApp.length = 0;
-        this.emit('done');
+        this.emit((helpersAtWork(fields)?.size ?? 0) > 0 ? 'working' : 'done');
         return;
     }
   }

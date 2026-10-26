@@ -64,6 +64,15 @@
   white-space: nowrap;
 }
 
+/* How far a run at work has come on its to-do list, such as 3/7, after its name. */
+.step {
+  flex: none;
+  color: var(--fw-muted);
+  font-size: var(--fw-text-sm);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
 .dot {
   flex: none;
   box-sizing: border-box;

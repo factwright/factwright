@@ -1,0 +1,322 @@
+/* A small tile beside what Claude is doing, in the accent's soft tint. */
+.scene {
+  display: inline-flex;
+  flex: none;
+  overflow: hidden;
+  border-radius: 9px;
+  background: var(--fw-accent-soft);
+}
+
+.scene svg {
+  display: block;
+}
+
+/* Lines of text, and what's drawn on paper. */
+.faint {
+  fill: var(--fw-accent);
+  opacity: 0.3;
+}
+
+.inkFaint {
+  fill: var(--fw-accent);
+  opacity: 0.6;
+}
+
+.paper,
+.leaf,
+.box {
+  fill: var(--fw-surface);
+  stroke: var(--fw-accent);
+  stroke-width: 1;
+  stroke-opacity: 0.45;
+}
+
+.leaf {
+  stroke-opacity: 0.8;
+}
+
+/* Reading: the page on the right turns over onto the left one, then a new one comes. */
+.turn {
+  transform-box: view-box;
+  transform-origin: 26px 18px;
+  animation: turn 2.6s ease-in-out infinite;
+}
+
+@keyframes turn {
+  0%,
+  12% {
+    transform: scaleX(1);
+    opacity: 1;
+  }
+
+  55%,
+  82% {
+    transform: scaleX(-1);
+    opacity: 1;
+  }
+
+  100% {
+    transform: scaleX(-1);
+    opacity: 0;
+  }
+}
+
+/* Searching: a lens sweeps back and forth over the lines. */
+.lens {
+  fill: var(--fw-surface);
+  fill-opacity: 0.55;
+  stroke: var(--fw-accent);
+  stroke-width: 2;
+}
+
+.handle {
+  stroke: var(--fw-accent);
+  stroke-width: 2.6;
+  stroke-linecap: round;
+}
+
+.sweep {
+  transform: translateX(12px);
+  animation: sweep 2.8s ease-in-out infinite alternate;
+}
+
+@keyframes sweep {
+  from {
+    transform: translateX(0);
+  }
+
+  to {
+    transform: translateX(24px);
+  }
+}
+
+/* Writing: the pen draws its line left to right. Still, the line is done and the pen at its end. */
+.ink {
+  fill: none;
+  stroke: var(--fw-accent);
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-dasharray: 100;
+  stroke-dashoffset: 0;
+  animation: write 2.6s linear infinite;
+}
+
+@keyframes write {
+  0% {
+    stroke-dashoffset: 100;
+    opacity: 1;
+  }
+
+  70%,
+  88% {
+    stroke-dashoffset: 0;
+    opacity: 1;
+  }
+
+  100% {
+    stroke-dashoffset: 0;
+    opacity: 0;
+  }
+}
+
+.pen {
+  transform: translateX(34px);
+  animation: pen 2.6s linear infinite;
+}
+
+.penBody {
+  fill: var(--fw-accent);
+}
+
+.nib {
+  fill: var(--fw-text);
+}
+
+@keyframes pen {
+  0% {
+    transform: translateX(0);
+    opacity: 1;
+  }
+
+  70%,
+  88% {
+    transform: translateX(34px);
+    opacity: 1;
+  }
+
+  100% {
+    transform: translateX(34px);
+    opacity: 0;
+  }
+}
+
+/* Checking facts: a tick lands in each box, one after another. Still, every box has its tick. */
+.tick {
+  fill: none;
+  stroke: var(--fw-ok);
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-dasharray: 10;
+  stroke-dashoffset: 0;
+}
+
+.landing {
+  animation: land 2.8s ease-out infinite backwards;
+  animation-delay: calc(var(--at) * 0.35s);
+}
+
+@keyframes land {
+  0% {
+    stroke-dashoffset: 10;
+    transform: translateY(-3px);
+    opacity: 0;
+  }
+
+  12% {
+    opacity: 1;
+  }
+
+  32%,
+  84% {
+    stroke-dashoffset: 0;
+    transform: translateY(0);
+    opacity: 1;
+  }
+
+  100% {
+    stroke-dashoffset: 0;
+    opacity: 0;
+  }
+}
+
+/* Building a PDF: a page slides out from under the top. Still, it's all the way out. */
+.slot {
+  fill: var(--fw-accent);
+}
+
+.slide {
+  animation: slide 2.8s ease-in-out infinite;
+}
+
+@keyframes slide {
+  0% {
+    transform: translateY(-24px);
+    opacity: 1;
+  }
+
+  60%,
+  85% {
+    transform: translateY(0);
+    opacity: 1;
+  }
+
+  100% {
+    transform: translateY(0);
+    opacity: 0;
+  }
+}
+
+/* Helpers at work: a runner for each in its lane, going along at its own pace. */
+.lane {
+  stroke: var(--fw-accent);
+  stroke-dasharray: 2.5 2.5;
+  stroke-linecap: round;
+  stroke-opacity: 0.35;
+  stroke-width: 1.2;
+}
+
+.dot {
+  fill: var(--fw-accent);
+}
+
+.runner {
+  transform: translateX(calc(var(--at) * 7px + 6px));
+  animation: run calc(1.9s + var(--at) * 0.3s) linear infinite backwards;
+  animation-delay: calc(var(--at) * -0.55s);
+}
+
+@keyframes run {
+  0% {
+    transform: translateX(-4px);
+    opacity: 0;
+  }
+
+  15%,
+  85% {
+    opacity: 1;
+  }
+
+  100% {
+    transform: translateX(30px);
+    opacity: 0;
+  }
+}
+
+/* Thinking: three dots drift up and down, each a moment after the one before. */
+.drift {
+  fill: var(--fw-accent);
+  animation: drift 1.8s ease-in-out infinite backwards;
+  animation-delay: calc(var(--at) * 0.22s);
+}
+
+@keyframes drift {
+  0%,
+  100% {
+    transform: translateY(2px);
+    opacity: 0.45;
+  }
+
+  50% {
+    transform: translateY(-3px);
+    opacity: 1;
+  }
+}
+
+/* Less motion: every picture stays still, as it looks with its step done. */
+@media (prefers-reduced-motion: reduce) {
+  .turn,
+  .sweep,
+  .ink,
+  .pen,
+  .landing,
+  .slide,
+  .runner,
+  .drift {
+    animation: none;
+  }
+}
+
+/* High contrast draws each picture in the system's colors. */
+@media (forced-colors: active) {
+  .scene {
+    outline: 1px solid CanvasText;
+    background: Canvas;
+  }
+
+  .faint,
+  .inkFaint,
+  .penBody,
+  .nib,
+  .slot,
+  .dot,
+  .drift {
+    fill: CanvasText;
+  }
+
+  .paper,
+  .leaf,
+  .box,
+  .lens {
+    fill: Canvas;
+    stroke: CanvasText;
+  }
+
+  .ink,
+  .handle,
+  .tick,
+  .lane {
+    stroke: CanvasText;
+  }
+}

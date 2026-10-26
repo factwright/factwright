@@ -147,6 +147,24 @@ describe('RunSignals', () => {
     expect(tracker.hasWork()).toBe(true);
   });
 
+  it('keeps a run working whose turn ends with Claude’s helpers at work in the background', () => {
+    const signals: string[] = [];
+    const tracker = new RunSignals((signal) => signals.push(signal));
+    const stop = (...tasks: Record<string, string>[]) =>
+      tracker.hear({ hook_event_name: 'Stop', background_tasks: tasks });
+    tracker.hear({ hook_event_name: 'UserPromptSubmit', prompt: 'hi' });
+    stop({ id: 'agent-a1', type: 'subagent', status: 'running' });
+    expect(signals).toEqual(['working', 'working']);
+    expect(tracker.hasWork()).toBe(true);
+    // Claude Code wakes Claude once its helpers are back, and that turn's end is the run done.
+    stop();
+    expect(signals.at(-1)).toBe('done');
+    // Background work of another kind, or a helper that's over, keeps nothing going.
+    stop({ id: 'bash-1', type: 'shell', status: 'running' });
+    stop({ id: 'agent-a2', type: 'subagent', status: 'completed' });
+    expect(signals.slice(-2)).toEqual(['done', 'done']);
+  });
+
   it('says the run has work going until it’s done, or ready with nothing to do', () => {
     const signals: string[] = [];
     const tracker = new RunSignals((signal) => signals.push(signal));

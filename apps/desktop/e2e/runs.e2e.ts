@@ -1,6 +1,6 @@
 import { rmSync } from 'node:fs';
 import { expect, type Locator, test } from '@playwright/test';
-import { type Opened, openApp, terminalStart } from './app.ts';
+import { type Opened, openApp, showWork, terminalStart, terminalText } from './app.ts';
 import { newDataFolder } from './workspace.ts';
 
 test.describe.configure({ mode: 'serial' });
@@ -158,6 +158,38 @@ test('takes a task out of line when its tab is closed', async () => {
   // Stopping it leaves its tab saying so, until it's closed.
   await claudePanel().getByRole('button', { name: 'Stop' }).click();
   await expect(claudePanel().getByRole('status')).toHaveText('Stopped');
+  await claudePanel().getByRole('button', { name: 'Close' }).click();
+  await expect(claudePanel()).toHaveCount(0);
+});
+
+test('shows where a run is in its working strip: its step on Claude’s to-do list, and its helpers at work', async () => {
+  const { window } = opened;
+  await window.getByRole('button', { name: 'Find jobs' }).click();
+  await window
+    .getByRole('dialog', { name: 'Find jobs' })
+    .getByRole('button', { name: /^Search/ })
+    .click();
+  const status = claudePanel().getByRole('status').first();
+  await expect(status).toHaveText('Done');
+  // A follow-up typed into its terminal makes a to-do list, then starts two helpers in the
+  // background and ends its turn while they work.
+  await showWork(window);
+  const typing = claudePanel().locator('[data-shown] .xterm-helper-textarea');
+  await typing.pressSequentially('plan it with helpers');
+  await typing.press('Enter');
+  await expect
+    .poll(() => terminalText(window))
+    .toContain('Two helpers are filtering the listings.');
+  await expect(claudePanel()).toContainText('Step 2 of 3: Filtering the listings');
+  await expect(claudePanel()).toContainText('2 helpers going through the jobs');
+  await expect(claudePanel().locator('[data-scene="helpers"]')).toBeVisible();
+  // Its turn is over, but with its helpers at work, the run isn't done.
+  await expect(status).toHaveText('Working');
+  // They're back, Claude finishes the list, and the run is done, with no strip.
+  await typing.pressSequentially('go on');
+  await typing.press('Enter');
+  await expect(status).toHaveText('Done');
+  await expect(claudePanel().locator('[data-scene]')).toHaveCount(0);
   await claudePanel().getByRole('button', { name: 'Close' }).click();
   await expect(claudePanel()).toHaveCount(0);
 });

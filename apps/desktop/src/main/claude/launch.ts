@@ -26,6 +26,14 @@ export interface LaunchOptions {
   prompt?: string;
 }
 
+/**
+ * What every run asks of Claude Code through its environment: the to-do list Claude keeps, which
+ * Claude Code leaves out on its newest models, so the working strip can say "Step 3 of 7".
+ */
+export const RUN_VARIABLES: Readonly<Record<string, string>> = {
+  CLAUDE_CODE_ENABLE_TODO_TOOLS: '1',
+};
+
 // Set by a Claude Code session for its own children. Left in, they'd change how this one starts.
 // Agent teams are off too: Factwright files the user's answers only for the run's own Claude,
 // which it tells apart from a subagent by Claude Code's hooks, and teammates are another kind.

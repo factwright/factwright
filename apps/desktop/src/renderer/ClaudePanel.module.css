@@ -18,7 +18,6 @@
 
 /* One line, whatever the width: what Claude is doing shortens first, so the buttons never move. */
 .header {
-  position: relative;
   display: flex;
   flex: 0 0 auto;
   align-items: center;
@@ -28,27 +27,13 @@
   container-type: inline-size;
 }
 
-/* While Claude starts or works, a light moves along the top of the bar. */
-.busy::before {
-  position: absolute;
-  top: -1px;
-  right: 0;
-  left: 0;
-  height: 2px;
-  background: linear-gradient(90deg, transparent, var(--fw-accent), transparent) no-repeat;
-  background-size: 35% 100%;
-  animation: working 1.8s ease-in-out infinite;
-  content: "";
-}
-
-@keyframes working {
-  from {
-    background-position: -40% 0;
-  }
-
-  to {
-    background-position: 140% 0;
-  }
+/*
+ * While Claude starts or works, the bar is a taller strip: a picture of the step it's on, beside
+ * two lines of what it's doing.
+ */
+.strip {
+  padding-top: 11px;
+  padding-bottom: 11px;
 }
 
 /* Done, with something to show for it: the bar turns green for a moment, then stays tinted. */
@@ -64,12 +49,6 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .busy::before {
-    background: var(--fw-accent);
-    opacity: 0.5;
-    animation: none;
-  }
-
   .finished {
     animation: none;
   }
@@ -89,6 +68,18 @@
   text-overflow: ellipsis;
 }
 
+/* In the working strip, two lines, each of which shortens on its own, so it keeps its height. */
+.strip .hint {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.strip .hint > * {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .finished .hint {
   color: var(--fw-text);
   font-weight: 600;
@@ -99,22 +90,26 @@
   display: none;
 }
 
-/* The last step done, quietly, then the one Claude is on. */
-.did {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  margin-right: 10px;
-}
-
-.didMark {
-  flex: none;
-  color: var(--fw-ok);
-}
-
+/* The step Claude is on, or where it is on its to-do list. */
 .doing {
   color: var(--fw-text);
   font-weight: 550;
+}
+
+/* Under it, quietly: what it's doing within that step, its helpers, and the last step done. */
+.also {
+  font-size: 12.5px;
+}
+
+.alsoPart,
+.did {
+  margin-right: 12px;
+}
+
+.didMark {
+  margin-right: 4px;
+  color: var(--fw-ok);
+  vertical-align: -2px;
 }
 
 .elapsed {
