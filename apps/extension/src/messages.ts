@@ -21,10 +21,14 @@ export type Message =
   | { type: 'kept'; tabId: number }
   | { type: 'keep'; fill: KeptFill };
 
-/** What Fill did on a tab, as the background keeps it: its fill, and the notes on its pages. */
+/**
+ * What Fill did on a tab, as the background keeps it: its fill, the notes on its pages, and
+ * whether a note's Details opened the panel a moment ago (`fromNote`).
+ */
 export interface KeptHere {
   fill: KeptFill | null;
   notes: Note[];
+  fromNote: boolean;
 }
 
 /** Whether something is a save the popup asked for, with every field a string. */
@@ -143,8 +147,12 @@ export async function askKept(
 ): Promise<KeptHere> {
   try {
     const kept = (await send({ type: 'kept', tabId } satisfies Message)) as KeptHere | null;
-    return { fill: kept?.fill ?? null, notes: Array.isArray(kept?.notes) ? kept.notes : [] };
+    return {
+      fill: kept?.fill ?? null,
+      notes: Array.isArray(kept?.notes) ? kept.notes : [],
+      fromNote: kept?.fromNote === true,
+    };
   } catch {
-    return { fill: null, notes: [] };
+    return { fill: null, notes: [], fromNote: false };
   }
 }

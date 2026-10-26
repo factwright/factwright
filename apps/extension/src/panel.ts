@@ -1371,7 +1371,13 @@ async function begin(how: Start = {}): Promise<void> {
   }
   // Filled in its page a moment ago, as the note's Details or the popup opens the panel: as it
   // was, without filling it again.
-  if (how.shown && (await showKept(tab.id, ways, before, later))) return;
+  let afterNote = false;
+  if (how.shown) {
+    const here = await askKept((asked) => ext.runtime.sendMessage(asked), tab.id);
+    if (later()) return;
+    if (here.fill && (await showKept(here.fill, ways, before, later))) return;
+    afterNote = here.fromNote;
+  }
   if (later()) return;
   const found = await findForm(tab.id);
   if (later()) return;
@@ -1455,11 +1461,10 @@ async function begin(how: Start = {}): Promise<void> {
   };
   filling = state;
   render(state);
-  // A form it couldn't fill isn't one you submitted: it only looks once it's filled. Opened as you
-  // asked, from the note's Details or the popup, with no fill kept for the page, as one through
-  // sync once the browser stopped the background, it fills only the fields that are empty, so
-  // nothing you typed since goes.
-  if (state.copyOnly || (await fill(state, how.onlyEmpty || how.shown))) keepLooking(state);
+  // A form it couldn't fill isn't one you submitted: it only looks once it's filled. Opened from a
+  // note's Details with no fill kept for the page, as one through sync once the browser stopped
+  // the background, it fills only the fields that are empty, so nothing you typed since goes.
+  if (state.copyOnly || (await fill(state, how.onlyEmpty || afterNote))) keepLooking(state);
 }
 
 /**
@@ -1468,13 +1473,12 @@ async function begin(how: Start = {}): Promise<void> {
  * applied. Says whether it did.
  */
 async function showKept(
-  tabId: number,
+  kept: KeptFill,
   ways: FillWay[],
   before: Filling | null,
   later: () => boolean,
 ): Promise<boolean> {
-  const { fill: kept } = await askKept((asked) => ext.runtime.sendMessage(asked), tabId);
-  if (!kept || later()) return false;
+  const { tabId } = kept;
   const way = ways.find((each) => each.via === kept.via);
   const read = way ? await formValues(kept.place, []) : null;
   if (!way || !read || !onSamePage(kept.form, read) || read.step !== kept.form.step) return false;

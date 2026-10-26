@@ -38,7 +38,7 @@ import {
   type ToScript,
   type Written,
 } from './job-site-messages.ts';
-import { forgetFill } from './kept-fill.ts';
+import { forgetFill, openedFromNote } from './kept-fill.ts';
 import { forgetNotes, hideLostNote, hideNote, noteFor } from './notes.ts';
 import type { FieldAnswer, PageField, PageForm } from './page/form.ts';
 import { openPanel } from './panel-open.ts';
@@ -647,7 +647,10 @@ async function answerNote(
   tab: Tab & { id: number },
   opening: Promise<boolean> | null,
 ): Promise<unknown> {
-  if (message.do === 'details') return { opened: (await opening) === true };
+  if (message.do === 'details') {
+    openedFromNote(tab.id);
+    return { opened: (await opening) === true };
+  }
   const note = await noteFor(tab.id, message.token);
   if (message.do === 'unnote') {
     if (note) await hideNote(note);

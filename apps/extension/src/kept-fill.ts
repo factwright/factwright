@@ -54,6 +54,25 @@ export const forgetFill = (tabId: number) =>
     delete all[tabId];
   });
 
+/** How long after a note's Details opens the panel it counts as opened from it. */
+const FROM_NOTE_MS = 10_000;
+
+/** When a note's Details last opened the panel, by tab: nothing of what the note says. */
+const fromNotes = new Map<number, number>();
+
+/** A note's Details opened the panel for a tab, whose form Fill filled. */
+export function openedFromNote(tabId: number): void {
+  fromNotes.set(tabId, Date.now());
+}
+
+/**
+ * Whether a note's Details opened the panel for a tab a moment ago: the form there was filled,
+ * though its fill may not be kept anymore, as one through sync once the browser stopped the
+ * background meanwhile.
+ */
+export const justFromNote = (tabId: number): boolean =>
+  Date.now() - (fromNotes.get(tabId) ?? 0) < FROM_NOTE_MS;
+
 /**
  * How many fields a fill filled, left as they were, and needs you for: those needed and left for
  * you, and those whose answer didn't take. What it left as it was, as a file you attached, doesn't.

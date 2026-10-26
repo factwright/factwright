@@ -6,7 +6,7 @@ import { canReachComputer, canSendNow, destination, saveOnComputer } from './com
 import { ext, type Tab } from './ext.ts';
 import { isCopyOnly } from './fill.ts';
 import { fillAndNote } from './in-place.ts';
-import { keepFill, keptFill } from './kept-fill.ts';
+import { justFromNote, keepFill, keptFill } from './kept-fill.ts';
 import {
   isApplied,
   isFill,
@@ -374,7 +374,10 @@ ext.runtime.onMessage.addListener((message, sender, sendResponse) => {
   // memory alone, which they can't reach themselves.
   if (ours && isKept(message)) {
     void Promise.all([keptFill(message.tabId), notesOn(message.tabId)])
-      .then(([fill, notes]) => ({ fill, notes }) satisfies KeptHere)
+      .then(
+        ([fill, notes]) =>
+          ({ fill, notes, fromNote: justFromNote(message.tabId) }) satisfies KeptHere,
+      )
       .then(sendResponse, () => sendResponse(null));
     return true;
   }
