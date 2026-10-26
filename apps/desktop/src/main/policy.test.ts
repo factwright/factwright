@@ -11,12 +11,14 @@ import {
   openableFile,
   parseRunTask,
   parseTerminalSize,
+  permitsNothing,
   previewablePdf,
   QUICK_ASKS_NOTHING,
   readableWord,
   resolveInside,
   runPrompt,
   SEVERAL_ASK_NOTHING,
+  SEVERAL_PERMITS_NOTHING,
   saveableFileName,
 } from './policy.ts';
 
@@ -569,6 +571,24 @@ describe('analyzing several jobs', () => {
     }
     expect(asksNothing(runPrompt({ skill: 'analyze-job', jobId: 'acme--staff' }))).toBeNull();
     expect(SEVERAL_ASK_NOTHING).toMatch(/^Analyzing several jobs asks the user nothing/);
+  });
+
+  it('turns away permission prompts too, while one job and a quick resume leave them to the user', () => {
+    const several = runPrompt({ skill: 'analyze-job', jobIds: [...jobIds], auto: true });
+    expect(permitsNothing(several)).toBe(SEVERAL_PERMITS_NOTHING);
+    expect(permitsNothing(runPrompt({ skill: 'analyze-job', jobId: 'acme--staff' }))).toBeNull();
+    expect(
+      permitsNothing(runPrompt({ skill: 'focused-resume', jobId: 'acme--staff', quick: true })),
+    ).toBeNull();
+    // A prompt sent next, by the app or the user, starts another task, by the same rule.
+    const sent = (prompt: string) => ({ hook_event_name: 'UserPromptSubmit', prompt });
+    expect(asksNothingAfter(null, sent(several), permitsNothing)).toBe(SEVERAL_PERMITS_NOTHING);
+    expect(
+      asksNothingAfter(SEVERAL_PERMITS_NOTHING, sent('Why did Acme score low?'), permitsNothing),
+    ).toBeNull();
+    expect(
+      asksNothingAfter(SEVERAL_PERMITS_NOTHING, { hook_event_name: 'Stop' }, permitsNothing),
+    ).toBe(SEVERAL_PERMITS_NOTHING);
   });
 });
 

@@ -7,6 +7,7 @@ import {
   startedOnItsOwn,
   taskJob,
   taskJobs,
+  usersTask,
 } from './runs.ts';
 
 describe('what a task works on', () => {
@@ -52,6 +53,13 @@ describe('what a task works on', () => {
     );
     expect(startedOnItsOwn({ skill: 'analyze-job', jobIds: ['acme--staff'] })).toBe(false);
     expect(startedOnItsOwn(null)).toBe(false);
+    // Started again by the user, it's theirs.
+    expect(usersTask({ skill: 'analyze-job', jobIds: ['acme--staff'], auto: true })).toEqual({
+      skill: 'analyze-job',
+      jobIds: ['acme--staff'],
+    });
+    const resume = { skill: 'focused-resume', jobId: 'acme--staff' } as const;
+    expect(usersTask(resume)).toBe(resume);
   });
 
   it('keeps two tasks apart when they share one, and Claude with no task apart from none', () => {

@@ -24,6 +24,7 @@ import {
   SEARCH_SKILL,
   startedOnItsOwn,
   TEMPLATE_SKILL,
+  usersTask,
 } from '../shared/runs.ts';
 import styles from './App.module.css';
 import { GetStarted } from './about/GetStarted.tsx';
@@ -517,9 +518,9 @@ export function App({ api }: { api: FactwrightApi }) {
       stoppedShort: settled.has(view.id) && !outcome && makesSomething(view.task),
       onRetry: task
         ? () => {
-            // The task starts again in a run of its own, in place of this one.
+            // The task starts again in a run of its own, in place of this one, as the user's.
             closeRun(view.id);
-            startRun(task);
+            startRun(usersTask(task));
           }
         : undefined,
       filed: filedFor(view.id),

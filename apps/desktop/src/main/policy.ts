@@ -422,6 +422,13 @@ export const SEVERAL_ASK_NOTHING =
   'Analyzing several jobs asks the user nothing, so this wasn’t asked. Go on with what’s on file, and put what you wanted to ask in the job’s write-up, under Worth asking you, or say in your reply what’s missing, such as a posting that wouldn’t load.';
 
 /**
+ * What Claude Code reads in place of the user's OK when it asks for one analyzing several jobs, for
+ * a call that then never runs.
+ */
+export const SEVERAL_PERMITS_NOTHING =
+  'Analyzing several jobs asks the user nothing, so this wasn’t asked, and the call didn’t run. Go on without it, with Factwright’s tools and what’s on file, and say in the job’s line what’s missing.';
+
+/**
  * Why a task asks the user nothing, by its prompt, for Claude to read when it asks anyway: a
  * quick resume's, or analyzing several jobs, which goes on while the user does other things, or
  * which Claude started on its own. Null for any other task, which may ask.
@@ -434,12 +441,27 @@ export function asksNothing(prompt: unknown): string | null {
 }
 
 /**
- * Why the task at hand asks the user nothing, once another hook comes from its run: a prompt
- * sent, the app's or one the user typed, starts another task, which asks nothing only if it's a
- * quick resume's. Any other hook leaves it as it was.
+ * Why a task turns away Claude Code's permission prompts too, by its prompt: analyzing several
+ * jobs, which goes on while the user does other things, or which Claude started on its own. Null
+ * for any other task, whose prompts the user answers.
  */
-export function asksNothingAfter(reason: string | null, event: unknown): string | null {
+export function permitsNothing(prompt: unknown): string | null {
+  return typeof prompt === 'string' && ANALYZE_SEVERAL.test(prompt.trim())
+    ? SEVERAL_PERMITS_NOTHING
+    : null;
+}
+
+/**
+ * Why the task at hand asks the user nothing, once another hook comes from its run: a prompt
+ * sent, the app's or one the user typed, starts another task, which asks nothing only if its
+ * prompt says so, by the same rule. Any other hook leaves it as it was.
+ */
+export function asksNothingAfter(
+  reason: string | null,
+  event: unknown,
+  rule: (prompt: unknown) => string | null = asksNothing,
+): string | null {
   if (typeof event !== 'object' || event === null) return reason;
   const fields = event as Record<string, unknown>;
-  return fields.hook_event_name === 'UserPromptSubmit' ? asksNothing(fields.prompt) : reason;
+  return fields.hook_event_name === 'UserPromptSubmit' ? rule(fields.prompt) : reason;
 }

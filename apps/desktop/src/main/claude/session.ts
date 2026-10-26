@@ -13,7 +13,7 @@ import type { RunScope } from '../../shared/runs.ts';
 import type { BoundRevision } from '../jobs/revisions.ts';
 import type { BoundChanges } from '../jobs/versions.ts';
 import { workspaceDir } from '../jobs/workspace.ts';
-import { asksNothing, asksNothingAfter } from '../policy.ts';
+import { asksNothing, asksNothingAfter, permitsNothing } from '../policy.ts';
 import { RunActivity, turnEnd } from './activity.ts';
 import { claudeCommand } from './command.ts';
 import { findClaude, nodeFindDeps } from './find.ts';
@@ -138,7 +138,7 @@ export interface RunOptions {
   revision?: BoundRevision | undefined;
   /** The changes the user asked for, which its calls to requested_changes read. */
   changes?: BoundChanges | undefined;
-  /** The jobs its task is on, by their IDs, which its tool calls know as its own. */
+  /** The jobs it analyzes, by their IDs, which its tool calls know as its own. */
   jobs?: readonly string[] | undefined;
 }
 
@@ -243,8 +243,9 @@ export async function openRun(
   const firstRun = new ScreenWatch(FIRST_RUN_SCREENS);
   let heard = false;
   // A quick resume asks the user nothing, so from its prompt, the app's or one the user typed,
-  // until the next prompt, Claude's questions are turned away.
-  const quiet = { reason: asksNothing(prompt) };
+  // until the next prompt, Claude's questions are turned away. Analyzing several jobs turns away
+  // Claude Code's permission prompts too.
+  const quiet = { reason: asksNothing(prompt), permits: permitsNothing(prompt) };
   const pastScreens = () => {
     if (!heard) events.past();
     heard = true;
@@ -257,6 +258,7 @@ export async function openRun(
     (event) => {
       pastScreens();
       quiet.reason = asksNothingAfter(quiet.reason, event);
+      quiet.permits = asksNothingAfter(quiet.permits, event, permitsNothing);
       const hadWork = signals.hasWork();
       signals.hear(event);
       activity?.hear(event);
@@ -287,6 +289,7 @@ export async function openRun(
       onFiled: events.filed,
       ask: deps.ask,
       noQuestions: () => quiet.reason,
+      noPermits: () => quiet.permits,
       permit: deps.permit,
       // A call the user answered in the app is one the run no longer waits on them for.
       onAnswered: (call) => signals.answered(call),

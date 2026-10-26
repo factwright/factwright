@@ -567,6 +567,15 @@ describe('runs on several jobs, and runs of Claude’s own', () => {
     await settle();
     run('run-2').events.past();
     expect(claude.startOwn(own('acme'))).toBe('run-3');
+    await settle();
+    // Past them, Claude Code shows one again, as a new version of it can: none starts again, one
+    // after another, until a run of the user's is past it too.
+    run('run-3').events.screen('trust');
+    expect(claude.startOwn(own('acme'))).toBeNull();
+    claude.start(resume('initech'));
+    await settle();
+    run('run-4').events.past();
+    expect(claude.startOwn(own('acme'))).toBe('run-5');
   });
 
   it('holds no update for a run of its own, which steps aside as the app restarts', async () => {
@@ -604,5 +613,25 @@ describe('runs on several jobs, and runs of Claude’s own', () => {
     run('run-3').events.signal('working');
     run('run-3').exit('failed');
     expect(ended).toEqual(['run-1 ended acme', 'run-2 ended', 'run-3 ended']);
+  });
+
+  it('closes the tab of one it started before, once done, as it starts the next', async () => {
+    const claude = ownRuns();
+    claude.startOwn(own('acme'));
+    await settle();
+    run('run-1').events.past();
+    run('run-1').events.signal('done');
+    // A task of the user's that's done stays, and so does one going.
+    claude.start(resume('globex'));
+    await settle();
+    run('run-2').events.signal('done');
+    claude.startOwn(own('initech'));
+    await settle();
+    run('run-3').events.signal('working');
+    claude.startOwn(own('umbrella'));
+    await settle();
+    expect(stops).toEqual(['run-1']);
+    expect(lastView()).toEqual(['run-2 done', 'run-3 working', 'run-4 starting']);
+    expect(ended).toEqual(['run-1 ended']);
   });
 });

@@ -303,8 +303,9 @@ function start(home: string, profile: ProfileFolder, stopped: ProfileFolder | nu
       onApplied: () => {
         window.send('jobs:changed', jobs.read());
         reminders.check({ synced: true });
-        // A job saved on another device may be one for Claude to analyze on its own.
-        analyzeNew?.look();
+        // A job saved on another device may be one for Claude to analyze on its own, once that
+        // device has had time to.
+        analyzeNew?.look('sync');
       },
     });
     const jobs = new JobsService({
@@ -573,7 +574,11 @@ function start(home: string, profile: ProfileFolder, stopped: ProfileFolder | nu
             // Only work going waits, in any run: Claude Code that's done closes first, then it
             // installs.
             busy: () => claude.working(),
-            closeClaude: () => claude.closeIdle(),
+            // No run of Claude's own starts once the restart begins.
+            closeClaude: () => {
+              analyzing.stop();
+              return claude.closeIdle();
+            },
             onStatus: (status) => window.send('updates:changed', status),
             // Updates are the app's, not a profile's, so their log is in the app's own folder.
             log: (message) => logUpdate(home, message),

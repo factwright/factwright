@@ -191,6 +191,32 @@ describe('Claude analyzing new jobs on its own', () => {
     ]);
   });
 
+  it('waits ten minutes for a job from another device, which that device may analyze meanwhile', async () => {
+    const claude = analyzing();
+    await claude.load();
+    jobs = [saved('acme--staff'), saved('globex--staff')];
+    claude.look('sync');
+    await wait(5 * 60_000);
+    // Analyzed on the device it was saved on, it comes back checked.
+    analyzed('acme--staff');
+    claude.look('sync');
+    await wait(4 * 60_000 + 59_000);
+    expect(started).toEqual([]);
+    await wait(2000);
+    expect(started).toEqual([{ skill: 'analyze-job', jobIds: ['globex--staff'], auto: true }]);
+  });
+
+  it('starts nothing once stopped, as the app restarts to update', async () => {
+    const claude = analyzing(0);
+    await claude.load();
+    jobs = [saved('acme--staff')];
+    claude.stop();
+    claude.look();
+    claude.ended({ id: 'run-0', task: null }, 'stepped-aside', []);
+    await wait(60_000);
+    expect(started).toEqual([]);
+  });
+
   it('starts nothing while Claude isn’t ready, isn’t free, or it’s turned off', async () => {
     writeFileSync(
       join(dataDir, 'analyze-new.json'),

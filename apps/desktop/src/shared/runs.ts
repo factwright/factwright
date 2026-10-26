@@ -230,6 +230,10 @@ export const taskJobs = (task: RunTask | null): readonly string[] =>
 export const startedOnItsOwn = (task: RunTask | null): boolean =>
   Boolean(task && 'auto' in task && task.auto);
 
+/** A task as the user's, as when they start again one that Claude started on its own. */
+export const usersTask = (task: RunTask): RunTask =>
+  'jobIds' in task ? { skill: task.skill, jobIds: task.jobIds } : task;
+
 /** How many of Claude's runs may go at once: three, unless the user picks from one to five. */
 export const AT_ONCE = { least: 1, most: 5, usual: 3 } as const;
 

@@ -10,7 +10,7 @@ import type {
 } from '../../shared/api.ts';
 import type { FiledFacts } from '../../shared/facts.ts';
 import type { RunChanges as RunChangesView } from '../../shared/run-changes.ts';
-import { AT_ONCE, lanesOf, type RunTask, taskJobs } from '../../shared/runs.ts';
+import { AT_ONCE, lanesOf, type RunTask, startedOnItsOwn, taskJobs } from '../../shared/runs.ts';
 import type { OpenRun, RunEvents, RunOptions, RunScreen } from './session.ts';
 
 /**
@@ -127,7 +127,10 @@ export class ClaudeRuns {
   private count = 0;
   /** Whether a run got past Claude Code's first screens, so the rest skip them. */
   private pastScreens = false;
-  /** Whether a run of Claude's own met one of those screens, which only the user answers. */
+  /**
+   * Whether a run of Claude's own met one of those screens, which only the user answers, at any
+   * time: none starts again until a run of the user's is past them.
+   */
   private screened = false;
   /** The size the last terminal said, which each run starts at. */
   private size: TerminalSize | null = null;
@@ -167,11 +170,19 @@ export class ClaudeRuns {
     const going = this.entries.filter(hasWork);
     const taken = new Set(going.flatMap((entry) => entry.lanes));
     const free =
-      (this.pastScreens || (!this.screened && !this.entries.some(isSettingUp))) &&
+      !this.screened &&
+      (this.pastScreens || !this.entries.some(isSettingUp)) &&
       !this.entries.some((entry) => entry.phase === 'in-line') &&
       going.length < this.atOnce &&
       !lanesOf(task).some((lane) => taken.has(lane));
     if (!free) return null;
+    // The tab of one it started before, which is done, makes way for this one's, so they don't
+    // pile up, each with its Claude Code open. What it did shows in the jobs.
+    for (const done of this.entries.filter(
+      (entry) => startedOnItsOwn(entry.task) && entry.phase !== 'in-line' && !hasWork(entry),
+    )) {
+      this.closeEntry(done, 'ended');
+    }
     const entry = { ...this.entryFor(task), own: true };
     this.entries.push(entry);
     this.pump();
@@ -476,6 +487,8 @@ export class ClaudeRuns {
       past: () => {
         entry.screen = null;
         this.pastScreens = true;
+        // A run of the user's past them: Claude's own may try again.
+        if (live() && !entry.own) this.screened = false;
         if (live()) this.pump();
       },
       step: (step) => {

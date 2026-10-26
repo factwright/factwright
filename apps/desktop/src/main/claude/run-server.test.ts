@@ -518,6 +518,30 @@ describe('RunServer', () => {
       return { permit, answer, signals };
     }
 
+    it('turns the prompt away when the task asks nothing, its subagents’ too, before anything hears it', async () => {
+      await server.start();
+      const { permit } = dialog();
+      const hooks = vi.fn();
+      const why = 'Analyzing several jobs asks the user nothing.';
+      server.listen(TOKEN, hooks, { permit, noPermits: () => why, noQuestions: () => why });
+      for (const event of [prompted, { ...prompted, agent_id: 'helper' }]) {
+        const response = await post(server.hookUrl, event);
+        expect(response.status).toBe(200);
+        expect(await response.json()).toEqual({
+          hookSpecificOutput: {
+            hookEventName: 'PermissionRequest',
+            decision: { behavior: 'deny', message: why },
+          },
+        });
+      }
+      expect(permit).not.toHaveBeenCalled();
+      expect(hooks).not.toHaveBeenCalled();
+      // A task that only turns away questions leaves the prompt to the user.
+      server.listen(TOKEN, hooks, { permit, noQuestions: () => why });
+      void post(server.hookUrl, prompted);
+      await vi.waitFor(() => expect(permit).toHaveBeenCalledOnce());
+    });
+
     it('holds the hook while the user decides in the app, and allows the call as Claude asked it', async () => {
       await server.start();
       const { permit, answer } = dialog();

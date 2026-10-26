@@ -83,6 +83,8 @@ interface RunListeners {
   ask: QuestionAsker | undefined;
   /** Why the task at hand asks the user nothing, or null when it may ask. */
   noQuestions: (() => string | null) | undefined;
+  /** Why the task at hand turns away permission prompts, or null when the user answers them. */
+  noPermits: (() => string | null) | undefined;
   permit: PermissionAsker | undefined;
   onAnswered: AnsweredListener | undefined;
   /** What the words of its permission prompts come from, such as its workspace. */
@@ -119,7 +121,7 @@ export interface ListenOptions {
   keep?: (path: string) => void;
   /** Hears each page one of Factwright's tools read, by its address. */
   read?: (url: string) => void;
-  /** The jobs the run's task is on, by their IDs. */
+  /** The jobs the run analyzes, by their IDs. */
   jobs?: readonly string[];
   /** Hears each job the run finished analyzing, by its ID. */
   analyzed?: (jobId: string) => void;
@@ -141,6 +143,12 @@ export interface ListenOptions {
    * them, so Claude reads why and goes on.
    */
   noQuestions?: () => string | null;
+  /**
+   * Why the task at hand turns away Claude Code's permission prompts too, as analyzing several
+   * jobs does, or null when the user answers them. The call then never runs, and no dialog or
+   * terminal waits on the user, its subagents' prompts included.
+   */
+  noPermits?: () => string | null;
   /** Asks the user for Claude Code's permission prompts in the app. Without it, the terminal does. */
   permit?: PermissionAsker;
   /** Hears each call the user answered in the app, which Claude Code no longer waits on them for. */
@@ -156,10 +164,25 @@ const isQuestion = (event: unknown) =>
   (event as Record<string, unknown>).hook_event_name === 'PreToolUse' &&
   (event as Record<string, unknown>).tool_name === 'AskUserQuestion';
 
+/** Whether a hook is Claude Code about to ask the user's OK for a call, from any agent. */
+const isPermissionRequest = (event: unknown) =>
+  typeof event === 'object' &&
+  event !== null &&
+  (event as Record<string, unknown>).hook_event_name === 'PermissionRequest';
+
 /** Why the run's task asks nothing, if it doesn't. One the app can't tell lets the question be. */
 function noQuestionsFor(listener: RunListeners): string | null {
+  return quietBy(listener.noQuestions);
+}
+
+/** Why the run's task turns away permission prompts, if it does. One the app can't tell asks. */
+function noPermitsFor(listener: RunListeners): string | null {
+  return quietBy(listener.noPermits);
+}
+
+function quietBy(rule: (() => string | null) | undefined): string | null {
   try {
-    return listener.noQuestions?.() ?? null;
+    return rule?.() ?? null;
   } catch {
     return null;
   }
@@ -223,6 +246,7 @@ export class RunServer {
       changes,
       ask,
       noQuestions,
+      noPermits,
       permit,
       onAnswered,
     } = options;
@@ -235,6 +259,7 @@ export class RunServer {
       tools,
       ask,
       noQuestions,
+      noPermits,
       permit,
       onAnswered,
       context,
@@ -302,6 +327,20 @@ export class RunServer {
                 hookEventName: 'PreToolUse',
                 permissionDecision: 'deny',
                 permissionDecisionReason: refusal,
+              },
+            }),
+          );
+          return;
+        }
+        // A task that asks nothing turns away Claude Code's permission prompts too, its subagents'
+        // included: the call never runs, and no dialog or terminal waits on the user.
+        const declined = isPermissionRequest(event) ? noPermitsFor(listener) : null;
+        if (declined) {
+          response.writeHead(200, { 'Content-Type': 'application/json' }).end(
+            JSON.stringify({
+              hookSpecificOutput: {
+                hookEventName: 'PermissionRequest',
+                decision: { behavior: 'deny', message: declined },
               },
             }),
           );

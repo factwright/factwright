@@ -21,6 +21,12 @@ const FILE = 'analyze-new.json';
  */
 const QUIET_MS = 60_000;
 
+/**
+ * How much longer a job that came from another device waits: one saved on a computer with the app
+ * open is usually analyzed there by then, and comes back checked, so the two don't both analyze it.
+ */
+const SYNCED_MS = 9 * 60_000;
+
 /** How soon it looks again once something changed, so changes that come together look once. */
 const LOOK_MS = 500;
 
@@ -117,7 +123,8 @@ export interface AnalyzeNewDeps {
 /**
  * Claude analyzing new jobs on its own, while it's free, several in one run, until the user turns
  * it off. Jobs saved together wait a moment, so they go in one run, and a run takes as many as it
- * can, the oldest first. It starts only when it can start at once, never in line. A run that ends,
+ * can, the oldest first. A job that came from another device waits longer, for that device to
+ * analyze it. It starts only when it can start at once, never in line. A run that ends,
  * done, stopped, closed or failed, leaves the jobs it didn't finish to the user, so none is tried
  * over and over. One that steps aside for a task the user starts, or goes as the window closes or
  * the app quits, leaves them for the next.
@@ -125,8 +132,15 @@ export interface AnalyzeNewDeps {
 export class AnalyzeNew {
   private readonly deps: AnalyzeNewDeps;
   private state: AnalyzeNewState | null = null;
-  /** When the app first saw each job it could take. */
+  /**
+   * When the app first saw each job it could take, or for one that came from another device, nine
+   * minutes after, so it waits ten in all.
+   */
   private readonly seen = new Map<string, number>();
+  /** Whether sync brought changes in since it last looked, so the jobs new since came with them. */
+  private synced = false;
+  /** Whether it stopped for good, as the app quits or restarts to update. */
+  private stopped = false;
   private timer: ReturnType<typeof setTimeout> | undefined;
   /** When the timer is due, so a later look never puts it off. */
   private due = Number.POSITIVE_INFINITY;
@@ -160,13 +174,18 @@ export class AnalyzeNew {
     return on;
   }
 
-  /** Looks again in a moment whether to start, as when a job is saved, or a run ends. */
-  look(): void {
+  /**
+   * Looks again in a moment whether to start, as when a job is saved, a run ends, or sync brings in
+   * changes from another device.
+   */
+  look(from: 'here' | 'sync' = 'here'): void {
+    if (from === 'sync') this.synced = true;
     this.at(LOOK_MS);
   }
 
-  /** Stops looking, as the app quits. */
+  /** Stops looking for good, as the app quits or restarts to update, so no run starts meanwhile. */
   stop(): void {
+    this.stopped = true;
     clearTimeout(this.timer);
     this.timer = undefined;
     this.due = Number.POSITIVE_INFINITY;
@@ -191,6 +210,7 @@ export class AnalyzeNew {
   }
 
   private at(ms: number): void {
+    if (this.stopped) return;
     const when = this.now() + ms;
     if (this.timer !== undefined && this.due <= when) return;
     clearTimeout(this.timer);
@@ -216,7 +236,9 @@ export class AnalyzeNew {
     for (const id of this.seen.keys()) {
       if (!waiting.some((job) => job.id === id)) this.seen.delete(id);
     }
-    for (const job of waiting) if (!this.seen.has(job.id)) this.seen.set(job.id, now);
+    const later = this.synced ? SYNCED_MS : 0;
+    this.synced = false;
+    for (const job of waiting) if (!this.seen.has(job.id)) this.seen.set(job.id, now + later);
     if (waiting.length === 0) return;
     const newest = Math.max(...waiting.map((job) => this.seen.get(job.id) ?? now));
     const wait = newest + (this.deps.quietMs ?? QUIET_MS) - now;
