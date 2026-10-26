@@ -109,13 +109,24 @@ describe('claims on jobs, on one computer', () => {
     expect(requests).toBe(0);
   });
 
-  it('leaves a job another computer holds until its claim lapses', () => {
-    tracker.setClaim({ job: JOB, ...claimBy('pc', START + 5 * MINUTE) });
+  it('leaves a job another computer holds until it has seen the claim go unrenewed ten minutes', () => {
+    // The PC's clock runs a day fast, which counts for nothing here.
+    tracker.setClaim({ job: JOB, ...claimBy('pc', START + 24 * 60 * MINUTE) });
     const here = claims();
     expect(here.elsewhere(JOB)).toBe(true);
     expect(here.elsewhere(OTHER)).toBe(false);
-    clock += 5 * MINUTE;
+    clock += 9 * MINUTE;
+    expect(here.elsewhere(JOB)).toBe(true);
+    // Renewed, as sync brings it in, it holds ten minutes more.
+    tracker.setClaim({ job: JOB, ...claimBy('pc', START + 24 * 60 * MINUTE + 9 * MINUTE) });
+    here.synced();
+    clock += 9 * MINUTE;
+    expect(here.elsewhere(JOB)).toBe(true);
+    clock += MINUTE;
     expect(here.elsewhere(JOB)).toBe(false);
+    // One left behind long ago, by the clock it was made by, has lapsed as soon as it's seen.
+    tracker.setClaim({ job: OTHER, ...claimBy('pc', clock - 2 * 60 * MINUTE) });
+    expect(here.elsewhere(OTHER)).toBe(false);
   });
 
   it('holds a job once the server took its claim, ahead of any other computer’s', async () => {
@@ -148,9 +159,10 @@ describe('claims on jobs, on one computer', () => {
     });
     expect(tracker.claim(OTHER)?.device).toBe('pc');
     expect(requests).toBe(1);
-    // A run of its own never takes a claim that holds.
+    // A run of its own never takes a claim that holds: it steps aside.
     here.heard(runs(own('run-3', OTHER)));
     expect(tracker.claim(OTHER)?.device).toBe('pc');
+    expect(stepped).toEqual(['run-3']);
   });
 
   it('lets go of a claim once its run ends, putting back what the server has', async () => {
@@ -176,12 +188,33 @@ describe('claims on jobs, on one computer', () => {
     vi.advanceTimersByTime(CLAIM_RENEW_MS);
     expect(tracker.claim(JOB)?.until).toBe(new Date(clock + CLAIM_LAPSE_MS).toISOString());
     // A long analysis keeps it, renewal after renewal.
-    clock += 4 * CLAIM_RENEW_MS;
-    vi.advanceTimersByTime(4 * CLAIM_RENEW_MS);
+    for (let renewal = 0; renewal < 4; renewal++) {
+      clock += CLAIM_RENEW_MS;
+      vi.advanceTimersByTime(CLAIM_RENEW_MS);
+    }
     expect(here.elsewhere(JOB)).toBe(false);
     expect(tracker.claim(JOB)?.until).toBe(new Date(clock + CLAIM_LAPSE_MS).toISOString());
+    expect(stepped).toEqual([]);
     here.heard(runs());
     expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('makes a run of its own step aside once it slept past its claim, which it never renews', async () => {
+    vi.useFakeTimers();
+    const here = claims();
+    expect(await here.take([JOB])).toEqual([JOB]);
+    here.heard(runs(own('run-1', JOB), users('run-2', OTHER)));
+    // The computer sleeps a quarter of an hour, and its renewal comes late, as it wakes. Another
+    // computer may have taken the job and analyzed it meanwhile.
+    clock += 15 * MINUTE;
+    vi.advanceTimersByTime(CLAIM_RENEW_MS);
+    expect(stepped).toEqual(['run-1']);
+    expect(tracker.claim(JOB)).toBeNull();
+    // A task of the user's is never held back: it claims its job again.
+    expect(tracker.claim(OTHER)).toEqual({
+      job: OTHER,
+      ...claimBy('mac', clock + CLAIM_LAPSE_MS, false),
+    });
   });
 
   it('makes a run of its own step aside once another computer holds its job', async () => {
@@ -308,6 +341,7 @@ describe('claims on jobs, between two computers', () => {
   });
 
   afterEach(() => {
+    vi.useRealTimers();
     mac?.close();
     pc?.close();
   });
@@ -337,12 +371,71 @@ describe('claims on jobs, between two computers', () => {
     clock += CLAIM_LAPSE_MS + MINUTE;
     expect(pc.claims.elsewhere(JOB)).toBe(false);
     expect(await pc.claims.take([JOB])).toEqual([JOB]);
-    // Waking, the Mac renews its claim, finds the PC's in its place, and its run steps aside.
+    // Waking, the Mac's run steps aside, as its claim lapsed, and it finds the PC's in its place.
     mac.claims.heard(runs(own('run-1', JOB)));
+    expect(mac.stepped).toEqual(['run-1']);
+    mac.claims.heard(runs());
+    await mac.sync();
+    expect(mac.tracker.claim(JOB)?.device).toBe(pc.device);
+    expect(pc.claims.elsewhere(JOB)).toBe(false);
+  });
+
+  /**
+   * The Mac's run of its own is on the job, and its lid closes past its claim: the PC takes the job
+   * over, analyzes it, and lets go. Returns the Mac's run's tab, by its ID.
+   */
+  const sleepWhileTheOtherAnalyzes = async () => {
+    await shareJob();
+    expect(await mac.claims.take([JOB])).toEqual([JOB]);
+    mac.claims.heard(runs(own('run-1', JOB)));
+    await pc.sync();
+    expect(pc.claims.elsewhere(JOB)).toBe(true);
+    clock += CLAIM_LAPSE_MS + MINUTE;
+    expect(await pc.claims.take([JOB])).toEqual([JOB]);
+    pc.claims.heard(runs(own('run-5', JOB)));
+    pc.claims.heard(runs());
+    await pc.sync();
+    expect(pc.tracker.claim(JOB)).toBeNull();
+  };
+
+  it('makes a run that slept past its claim step aside as it syncs, though the other let the job go', async () => {
+    await sleepWhileTheOtherAnalyzes();
     await mac.sync();
     mac.claims.synced();
     expect(mac.stepped).toEqual(['run-1']);
-    expect(mac.tracker.claim(JOB)?.device).toBe(pc.device);
+    expect(mac.tracker.claim(JOB)).toBeNull();
+  });
+
+  it('makes a run that slept past its claim step aside as its renewal comes, never renewing it', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    await sleepWhileTheOtherAnalyzes();
+    vi.advanceTimersByTime(CLAIM_RENEW_MS);
+    expect(mac.stepped).toEqual(['run-1']);
+    await mac.sync();
+    await pc.sync();
+    expect(mac.tracker.claim(JOB)).toBeNull();
+    expect(pc.tracker.claim(JOB)).toBeNull();
+  });
+
+  it('makes a run step aside once it syncs, when a task of the user’s took its job and let go', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    await shareJob();
+    expect(await mac.claims.take([JOB])).toEqual([JOB]);
+    mac.claims.heard(runs(own('run-1', JOB)));
+    await pc.sync();
+    // On the PC, the user's task takes the job and finishes, while the Mac's sync is slow.
+    pc.claims.heard(runs(users('run-7', JOB)));
+    await pc.sync();
+    pc.claims.heard(runs());
+    await pc.sync();
+    // The Mac renews its claim, which still holds by its clock, and then hears of the PC's.
+    clock += CLAIM_RENEW_MS;
+    vi.advanceTimersByTime(CLAIM_RENEW_MS);
+    expect(mac.stepped).toEqual([]);
+    await mac.sync();
+    mac.claims.synced();
+    expect(mac.stepped).toEqual(['run-1']);
+    expect(mac.tracker.claim(JOB)).toBeNull();
   });
 
   it('lets a task the user starts take a job from the other computer’s run of its own', async () => {
@@ -390,6 +483,7 @@ describe('claims on jobs, between two computers', () => {
         jobs: () => [job],
         runs: {
           view: () => runs(),
+          canStartOwn: () => true,
           startOwn: () => {
             started.push(name);
             return 'run-1';

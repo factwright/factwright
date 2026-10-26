@@ -167,15 +167,7 @@ export class ClaudeRuns {
    * a run of the user's is past them. Answers with its ID, or null when it can't start now.
    */
   startOwn(task: RunTask): string | null {
-    const going = this.entries.filter(hasWork);
-    const taken = new Set(going.flatMap((entry) => entry.lanes));
-    const free =
-      !this.screened &&
-      (this.pastScreens || !this.entries.some(isSettingUp)) &&
-      !this.entries.some((entry) => entry.phase === 'in-line') &&
-      going.length < this.atOnce &&
-      !lanesOf(task).some((lane) => taken.has(lane));
-    if (!free) return null;
+    if (!this.canStartOwn(task)) return null;
     // The tab of one it started before, which is done, makes way for this one's, so they don't
     // pile up, each with its Claude Code open. What it did shows in the jobs.
     for (const done of this.entries.filter(
@@ -187,6 +179,22 @@ export class ClaudeRuns {
     this.entries.push(entry);
     this.pump();
     return entry.id;
+  }
+
+  /**
+   * Whether a run on a task of Claude's own could start now, as `startOwn` would start it: before
+   * claiming its jobs, so a computer that couldn't start never claims them from the others.
+   */
+  canStartOwn(task: RunTask): boolean {
+    const going = this.entries.filter(hasWork);
+    const taken = new Set(going.flatMap((entry) => entry.lanes));
+    return (
+      !this.screened &&
+      (this.pastScreens || !this.entries.some(isSettingUp)) &&
+      !this.entries.some((entry) => entry.phase === 'in-line') &&
+      going.length < this.atOnce &&
+      !lanesOf(task).some((lane) => taken.has(lane))
+    );
   }
 
   private entryFor(task: RunTask | null): Entry {

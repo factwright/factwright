@@ -501,10 +501,13 @@ describe('runs on several jobs, and runs of Claude’s own', () => {
     // Not on a job a task holds.
     claude.start(resume('globex'));
     await settle();
+    expect(claude.canStartOwn(own('globex'))).toBe(false);
     expect(claude.startOwn(own('globex'))).toBeNull();
     // Not past as many as may go at once.
+    expect(claude.canStartOwn(own('initech'))).toBe(false);
     expect(claude.startOwn(own('initech'))).toBeNull();
     run('run-1').events.signal('done');
+    expect(claude.canStartOwn(own('initech'))).toBe(true);
     expect(claude.startOwn(own('initech'))).toBe('run-3');
     // Not while a task waits in line.
     claude.start(letter('globex'));

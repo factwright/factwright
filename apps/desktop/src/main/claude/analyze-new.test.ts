@@ -105,6 +105,7 @@ describe('Claude analyzing new jobs on its own', () => {
       jobs: () => jobs,
       runs: {
         view,
+        canStartOwn: () => free,
         startOwn: (task) => {
           if (!free) return null;
           started.push(task);
@@ -239,6 +240,39 @@ describe('Claude analyzing new jobs on its own', () => {
     expect(started).toEqual([{ skill: 'analyze-job', jobIds: ['acme--staff'], auto: true }]);
   });
 
+  it('claims nothing while a run of its own couldn’t start, so another computer may take the jobs', async () => {
+    const take = vi.fn(async (ids: readonly string[]) => [...ids]);
+    const claude = analyzing(0, { elsewhere: () => false, take, letGo: () => {} });
+    await claude.load();
+    jobs = [saved('acme--staff')];
+    free = false;
+    claude.look();
+    await wait(10 * 60_000);
+    expect(take).not.toHaveBeenCalled();
+    // A run of the user's ending looks again.
+    free = true;
+    claude.look();
+    await wait(1000);
+    expect(take).toHaveBeenCalledTimes(1);
+    expect(started).toEqual([{ skill: 'analyze-job', jobIds: ['acme--staff'], auto: true }]);
+  });
+
+  it('keeps a job’s wait going while another computer holds it a moment', async () => {
+    let held = true;
+    const take = vi.fn(async (ids: readonly string[]) => [...ids]);
+    const claude = analyzing(60_000, { elsewhere: () => held, take, letGo: () => {} });
+    await claude.load();
+    jobs = [saved('acme--staff')];
+    claude.look();
+    await wait(40_000);
+    // The other computer let go of it without starting: the minute still counts from when it
+    // turned up here.
+    held = false;
+    claude.look();
+    await wait(21_000);
+    expect(take).toHaveBeenCalledTimes(1);
+  });
+
   it('lets go of the jobs it held when Claude got busy as it claimed them', async () => {
     const letGo = vi.fn();
     const take = vi.fn(async (ids: readonly string[]) => {
@@ -252,6 +286,9 @@ describe('Claude analyzing new jobs on its own', () => {
     await wait(1000);
     expect(started).toEqual([]);
     expect(letGo).toHaveBeenCalledWith(['acme--staff']);
+    // It doesn't claim again by itself, over and over: the runs changing looks again.
+    await wait(10 * 60_000);
+    expect(take).toHaveBeenCalledTimes(1);
   });
 
   it('starts nothing once stopped, as the app restarts to update', async () => {

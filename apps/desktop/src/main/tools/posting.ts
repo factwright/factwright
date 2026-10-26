@@ -192,14 +192,23 @@ export interface SavePostingDeps extends ReadDeps {
   /** Hears the posting's path just before it's saved, so the app can note it's new. */
   keep?: ((path: string) => void) | undefined;
   /** A job on file, by its ID: the job kept, for one merged into another. Null for none. */
-  job?: ((jobId: string) => { id: string; links: readonly { url: string }[] } | null) | undefined;
+  job?: ((jobId: string) => JobLinks | null) | undefined;
+  /** Every job on file, with its links. */
+  jobs?: (() => readonly JobLinks[]) | undefined;
+}
+
+/** A job on file, by its ID, with its links. */
+interface JobLinks {
+  id: string;
+  links: readonly { url: string }[];
 }
 
 /**
  * Why a job's folder is another job's, or null when nothing says so. Two jobs with the same
  * company and title make the same folder name, as two runs analyzing them at once both can, so the
  * second must never take the first's folder for its own: the folder's job.md names the job it's
- * for, and before that's written, its posting came from one of that job's links.
+ * for, and before that's written, its posting came from the other job's link. A link no job on
+ * file has, such as a role's own that its board's listing led to, says nothing.
  */
 async function anotherJobsFolder(
   folder: string,
@@ -220,10 +229,17 @@ async function anotherJobsFolder(
   const posting = await readFile(join(dir, 'posting.md'), 'utf8').catch(() => null);
   const source = posting === null ? null : readSavedPosting('posting.md', posting).source;
   if (!source || !URL.canParse(source)) return null;
+  const from = normalizeUrl(source);
   const ours = [url, ...job.links.map((link) => link.url)].map(normalizeUrl);
-  return ours.includes(normalizeUrl(source))
-    ? null
-    : `${folder} is another job’s folder: its posting came from ${source}, which isn’t one of this job’s links.`;
+  if (ours.includes(from)) return null;
+  const theirs = deps
+    .jobs?.()
+    .find(
+      (other) => other.id !== job.id && other.links.some((link) => normalizeUrl(link.url) === from),
+    );
+  return theirs
+    ? `${folder} is another job’s folder: its posting came from ${source}, the link of ${theirs.id}.`
+    : null;
 }
 
 /** A job's ID as the extension and Add job make them: lowercase letters, digits and hyphens. */

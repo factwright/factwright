@@ -347,8 +347,9 @@ function start(home: string, profile: ProfileFolder, stopped: ProfileFolder | nu
         workspace,
         printer,
         templates,
-        // Analyze job merges a job only while no other task is on it.
-        busy: (jobId) => claude.holds(jobId),
+        // Analyze job merges a job only while no other task is on it, here or on another
+        // computer whose claim holds it.
+        busy: (jobId) => claude.holds(jobId) || (claims?.elsewhere(jobId) ?? false),
       }),
       version: app.getVersion(),
     });

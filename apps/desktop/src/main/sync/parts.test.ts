@@ -186,6 +186,24 @@ describe('rowHash', () => {
   });
 });
 
+describe('SyncState', () => {
+  it('keeps this computer’s own ID as sync starts over, and forgets the rest', () => {
+    const state = new SyncState(join(folder, 'sync.db'));
+    try {
+      const device = state.device();
+      expect(state.device()).toBe(device);
+      state.setCursor(42);
+      state.setMeta('email', 'sam@example.com');
+      state.clear();
+      expect(state.device()).toBe(device);
+      expect(state.cursor()).toBe(0);
+      expect(state.meta('email')).toBeNull();
+    } finally {
+      state.close();
+    }
+  });
+});
+
 describe('SyncRunner', () => {
   it('syncs now when asked, after any round going, and says whether it got through', async () => {
     const report: SyncReport = {
@@ -223,6 +241,10 @@ describe('SyncRunner', () => {
       fails = false;
       report.full = true;
       expect(await runner.now()).toBe(false);
+      expect(runner.working()).toBe(false);
+      report.full = false;
+      expect(await runner.now()).toBe(true);
+      expect(runner.working()).toBe(true);
     } finally {
       await runner.stop();
       state.close();

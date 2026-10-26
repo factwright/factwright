@@ -1386,10 +1386,13 @@ describe('save_posting', () => {
     const leftAlone = (why: string) =>
       `Not saved: ${FOLDER} is another job’s folder: ${why}. Use a folder of this job’s own, ${FOLDER}-2 or the next number that’s free, and save the posting there.`;
     const kept = `Kept the posting already saved in applications/${FOLDER}/posting.md.`;
-    // Another run, analyzing its twin, saved the posting here first.
+    // Its twin is on file too, saved from another posting.
+    const twin = jobs.addJob({ company: 'Acme Robotics', role: 'Staff Engineer', link: theirs });
+    if (!twin.ok) throw new Error(twin.message);
+    // Another run, analyzing the twin, saved its posting here first.
     writeFileSync(posting, `# Job posting\n\n- **Source:** ${theirs}\n\n---\n\nTheirs.\n`);
     expect(await tool('save_posting').run({ url: ASHBY, folder: FOLDER, job })).toBe(
-      leftAlone(`its posting came from ${theirs}, which isn’t one of this job’s links`),
+      leftAlone(`its posting came from ${theirs}, the link of ${twin.jobId}`),
     );
     // Once the twin's job.md is written, that names the job it's for.
     rmSync(posting);
@@ -1406,6 +1409,10 @@ describe('save_posting', () => {
     writeFileSync(notes, heading);
     expect(await tool('save_posting').run({ url: theirs, folder: FOLDER, job })).toBe(kept);
     expect(await tool('save_posting').run({ url: ASHBY, folder: FOLDER })).toBe(kept);
+    // A folder from before Job ID lines, whose posting came from a link no job has, such as the
+    // role's own that its board's listing led to, is the job's own still.
+    writeFileSync(posting, '# Job posting\n\n- **Source:** https://jobs.ashbyhq.com/acme/role\n');
+    expect(await tool('save_posting').run({ url: ASHBY, folder: FOLDER, job })).toBe(kept);
   });
 
   it('refuses unsafe fetches, and folders outside the job folders', async () => {

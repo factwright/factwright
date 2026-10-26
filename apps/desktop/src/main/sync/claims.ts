@@ -1,4 +1,3 @@
-import { randomUUID } from 'node:crypto';
 import { rowName } from '@factwright/sync';
 import type { RunPhase, RunsView } from '../../shared/api.ts';
 import { startedOnItsOwn, taskJobs } from '../../shared/runs.ts';
@@ -17,11 +16,12 @@ export const CLAIM_RENEW_MS = 3 * 60_000;
 /** The phases in which a run holds its jobs: it's starting, working, or waits on the user. */
 const WORKING: readonly RunPhase[] = ['starting', 'working', 'needs-answer'];
 
-/** Where sync's notes keep this computer's ID, which its claims name it by. */
-const CLAIMANT = 'claimant';
-
-/** Whether a claim still holds, by this computer's clock. */
-export const holdsAt = (claim: Claim, now: number): boolean => Date.parse(claim.until) > now;
+/**
+ * How long ago another computer's claim lapsed, by the clock of the computer that made it, for this
+ * one to take it as lapsed as soon as it sees it, as one left behind long ago: far more than any
+ * two computers' clocks are apart.
+ */
+const LONG_GONE_MS = 60 * 60_000;
 
 const iso = (ms: number) => new Date(ms).toISOString();
 
@@ -44,20 +44,14 @@ export interface ClaimsSync {
 }
 
 /**
- * What sync's notes on this computer say for claims: this computer's ID, made the first time it's
- * asked for, which jobs reached the server, and the claim the server had on each.
+ * What sync's notes on this computer say for claims: this computer's own ID, which jobs reached
+ * the server, and the claim the server had on each.
  */
 export function claimNotes(
-  state: Pick<SyncState, 'get' | 'meta' | 'setMeta'>,
+  state: Pick<SyncState, 'get' | 'device'>,
 ): Pick<ClaimsSync, 'device' | 'reached' | 'server'> {
   return {
-    device: () => {
-      const known = state.meta(CLAIMANT);
-      if (known) return known;
-      const made = randomUUID();
-      state.setMeta(CLAIMANT, made);
-      return made;
-    },
+    device: () => state.device(),
     reached: (job) => state.get(rowName('jobs', job)) !== null,
     server: (job) => {
       const synced = state.get(rowName('claims', job));
@@ -82,8 +76,9 @@ export interface ClaimsDeps {
  * waiting for it, and takes the claim from another computer's run of Claude's own, which steps
  * aside, as one does for a task the user starts on the same computer. Each claim holds while its
  * run works, renewed every few minutes, and goes when the run ends. One a computer stops renewing,
- * as it sleeps, goes offline or quits, lapses on its own. Without sync, this is the only computer,
- * and nothing is claimed.
+ * as it sleeps, goes offline or quits, lapses on its own, and that computer's run, if it comes
+ * back, steps aside: another may have analyzed the job meanwhile. Without sync, this is the only
+ * computer, and nothing is claimed.
  */
 export class Claims {
   private readonly deps: ClaimsDeps;
@@ -91,6 +86,11 @@ export class Claims {
   private runs: { id: string; own: boolean; jobs: readonly string[] }[] = [];
   /** Jobs claimed for a run of Claude's own that hasn't started yet. */
   private readonly starting = new Set<string>();
+  /**
+   * Other computers' claims, by job, as this computer first saw each one stand: its time, and
+   * when this computer saw it, by its own clock.
+   */
+  private readonly seen = new Map<string, { until: string; at: number }>();
   private timer: ReturnType<typeof setInterval> | undefined;
   private stopped = false;
 
@@ -106,7 +106,8 @@ export class Claims {
     const { sync, tracker } = this.deps;
     if (!sync.on()) return false;
     const claim = tracker.claim(job);
-    return claim !== null && claim.device !== sync.device() && holdsAt(claim, this.now());
+    const me = sync.device();
+    return claim !== null && claim.device !== me && this.holds(claim, me, this.now());
   }
 
   /**
@@ -134,7 +135,7 @@ export class Claims {
     const held = free.filter((job) => {
       if (tracker.claim(job)?.device !== me) return false;
       const server = sync.server(job);
-      return server ? server.device === me && holdsAt(server, now) : !sync.reached(job);
+      return server ? server.device === me && this.holds(server, me, now) : !sync.reached(job);
     });
     this.letGo(free.filter((job) => !held.includes(job)));
     return held;
@@ -161,16 +162,10 @@ export class Claims {
   }
 
   /**
-   * Hears sync bring in changes from other devices. A run of Claude's own whose job another
-   * computer now holds steps aside: a task the user started there took it, or this computer slept
-   * past its claim and another took the job over.
+   * Hears sync bring in changes from other devices: a run of Claude's own whose job another
+   * computer took steps aside.
    */
   synced(): void {
-    if (this.stopped || !this.deps.sync.on()) return;
-    const losing = this.runs.filter(
-      (run) => run.own && run.jobs.some((job) => this.elsewhere(job)),
-    );
-    for (const run of losing) this.deps.stepAside(run.id);
     this.settle();
   }
 
@@ -182,10 +177,30 @@ export class Claims {
   }
 
   /**
-   * Claims the jobs the runs here are on, for as long as they work, and lets go of the rest. A
-   * claim of another computer's that holds stays, unless it's for a run of Claude's own and a
-   * task the user started here is on the job: that task takes it. With sync off, this computer's
-   * claims go, as no other computer will see them.
+   * Whether a claim holds now. This computer's own holds until the time it set, by its own clock.
+   * Another computer's holds while that computer keeps renewing it, as this one sees it change: it
+   * lapses once it has stood unrenewed for as long as a claim lasts, by this computer's clock, so
+   * neither computer's clock being off moves it. One whose time passed long ago, by the clock it
+   * was made by, lapsed already.
+   */
+  private holds(claim: Claim, me: string, now: number): boolean {
+    if (claim.device === me) return Date.parse(claim.until) > now;
+    let seen = this.seen.get(claim.job);
+    if (seen?.until !== claim.until) {
+      const gone = Date.parse(claim.until) < now - LONG_GONE_MS;
+      seen = { until: claim.until, at: gone ? now - CLAIM_LAPSE_MS : now };
+      this.seen.set(claim.job, seen);
+    }
+    return now - seen.at < CLAIM_LAPSE_MS;
+  }
+
+  /**
+   * Claims the jobs the runs here are on, for as long as they work, and lets go of the rest. A run
+   * of Claude's own whose claim didn't hold all along, as when this computer slept past it, or
+   * another computer took the job, steps aside: another may have analyzed the job meanwhile. A
+   * claim of another computer's that holds stays, unless it's for a run of Claude's own and a task
+   * the user started here is on the job: that task takes it. With sync off, this computer's claims
+   * go, as no other computer will see them.
    */
   private settle(): void {
     const { sync, tracker } = this.deps;
@@ -197,6 +212,19 @@ export class Claims {
       return;
     }
     const now = this.now();
+    // A run of Claude's own steps aside once the claim on one of its jobs is another computer's,
+    // lapsed or gone. Only a job that never reached the server, which no other computer can have,
+    // is claimed again instead.
+    const lost = this.runs.filter(
+      (run) =>
+        run.own &&
+        run.jobs.some((job) => {
+          const claim = tracker.claim(job);
+          return claim ? claim.device !== me || !this.holds(claim, me, now) : sync.reached(job);
+        }),
+    );
+    this.runs = this.runs.filter((run) => !lost.includes(run));
+    for (const run of lost) this.deps.stepAside(run.id);
     // Each job a run here is on, or a run of Claude's own is about to be, and whether only runs
     // of Claude's own are on it.
     const wanted = new Map<string, boolean>();
@@ -208,10 +236,16 @@ export class Claims {
     for (const [job, own] of wanted) {
       const claim = tracker.claim(job);
       // This computer's, holding past the next renewal.
-      if (claim?.device === me && claim.own === own && holdsAt(claim, now + CLAIM_RENEW_MS)) {
+      if (
+        claim?.device === me &&
+        claim.own === own &&
+        this.holds(claim, me, now + CLAIM_RENEW_MS)
+      ) {
         continue;
       }
-      if (claim && claim.device !== me && holdsAt(claim, now) && (own || !claim.own)) continue;
+      if (claim && claim.device !== me && this.holds(claim, me, now) && (own || !claim.own)) {
+        continue;
+      }
       tracker.setClaim({ job, device: me, until: iso(now + CLAIM_LAPSE_MS), own });
       changed = true;
     }
@@ -220,6 +254,15 @@ export class Claims {
       this.release(claim.job);
       changed = true;
     }
+    // Each other computer's claim is seen as sync brings it in, from when its lapse counts. Those
+    // that went are forgotten.
+    const others = new Set<string>();
+    for (const claim of tracker.claims()) {
+      if (claim.device === me) continue;
+      others.add(claim.job);
+      this.holds(claim, me, now);
+    }
+    for (const job of this.seen.keys()) if (!others.has(job)) this.seen.delete(job);
     if (changed) sync.request();
     this.renewing(wanted.size > 0);
   }
@@ -245,19 +288,24 @@ export class Claims {
     }
   }
 
-  /** Renews the claims this computer holds, so they hold while its runs work. */
+  /**
+   * Renews the claims this computer holds, so they hold while its runs work. One that lapsed, as
+   * this computer slept, isn't: its run steps aside, and a task of the user's claims its job again.
+   */
   private renew(): void {
     const { sync, tracker } = this.deps;
     if (this.stopped || !sync.on()) return;
     const me = sync.device();
-    const until = iso(this.now() + CLAIM_LAPSE_MS);
+    const now = this.now();
+    const until = iso(now + CLAIM_LAPSE_MS);
     let renewed = false;
     for (const claim of tracker.claims()) {
-      if (claim.device !== me) continue;
+      if (claim.device !== me || !this.holds(claim, me, now)) continue;
       tracker.setClaim({ ...claim, until });
       renewed = true;
     }
     if (renewed) sync.request();
+    this.settle();
   }
 
   private now(): number {

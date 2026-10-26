@@ -55,6 +55,8 @@ export class SyncRunner {
   private running: Promise<boolean> | null = null;
   private again = false;
   private failures = 0;
+  /** Whether the last round found the account out of space, so nothing new got through. */
+  private full = false;
   private stopped = false;
   private socket: WebSocket | undefined;
   private ping: ReturnType<typeof setInterval> | undefined;
@@ -90,9 +92,9 @@ export class SyncRunner {
     this.timer = setTimeout(() => void this.run(), delay);
   }
 
-  /** Whether sync is working: it's running, and its last round got through. */
+  /** Whether sync is working: it's running, and its last round got through, with room for it. */
   working(): boolean {
-    return !this.stopped && this.failures === 0;
+    return !this.stopped && this.failures === 0 && !this.full;
   }
 
   /**
@@ -122,6 +124,7 @@ export class SyncRunner {
     try {
       const report = await this.deps.engine.syncOnce();
       this.failures = 0;
+      this.full = report.full;
       this.deps.onReport(report);
       this.deps.onActivity(
         report.full ? 'problem' : 'idle',

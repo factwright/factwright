@@ -577,6 +577,7 @@ export function factwrightTools(deps: ToolDeps): McpTool[] {
             ...reading,
             workspace: deps.workspace,
             job: (id) => deps.jobs.job(id),
+            jobs: () => deps.jobs.list().jobs,
             ...(call?.keep && { keep: call.keep }),
           },
           textInput(input, 'job', false) ?? undefined,
