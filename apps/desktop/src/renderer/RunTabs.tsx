@@ -70,12 +70,15 @@ export interface RunTab {
   /** What the run is for, such as "Talkiatry · Tailored resume". */
   title: string;
   state: TabState;
+  /** Where its Claude is on its to-do list, while it works with one, such as step 3 of 7. */
+  step?: { at: number; of: number } | null;
 }
 
 /**
  * The tabs along the top of Claude's panel, one for each run and each task in line, each with a
- * dot that says where it stands, and the runs summed up beside them: "3 running · 1 waiting on
- * you · 1 in line". The arrow keys move between tabs, as tabs do.
+ * dot that says where it stands, and for a run at work on a to-do list, how far it's come, such
+ * as "3/7", and the runs summed up beside them: "3 running · 1 waiting on you · 1 in line". The
+ * arrow keys move between tabs, as tabs do.
  */
 export function RunTabs({
   tabs,
@@ -129,7 +132,17 @@ export function RunTabs({
             >
               <span className={`${styles.dot} ${styles[tab.state]}`} aria-hidden="true" />
               <span className={styles.name}>{tab.title}</span>
-              <VisuallyHidden>, {STATE_WORDS[tab.state]}</VisuallyHidden>
+              {tab.state === 'working' && tab.step && (
+                <span className={styles.step} aria-hidden="true">
+                  {tab.step.at}/{tab.step.of}
+                </span>
+              )}
+              <VisuallyHidden>
+                , {STATE_WORDS[tab.state]}
+                {tab.state === 'working' && tab.step
+                  ? `, step ${tab.step.at} of ${tab.step.of}`
+                  : ''}
+              </VisuallyHidden>
             </button>
           );
         })}

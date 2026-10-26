@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { RunActivity } from './activity.ts';
 import { bearerToken, RunSignals } from './signals.ts';
 
 const TOKEN = 'a'.repeat(64);
@@ -145,6 +146,80 @@ describe('RunSignals', () => {
     tracker.hear(idle);
     expect(signals.at(-1)).toBe('needs-answer');
     expect(tracker.hasWork()).toBe(true);
+  });
+
+  it('keeps a run working whose turn ends with Claude’s helpers at work in the background', () => {
+    const signals: string[] = [];
+    const tracker = new RunSignals((signal) => signals.push(signal));
+    const stop = (...tasks: Record<string, string>[]) =>
+      tracker.hear({ hook_event_name: 'Stop', background_tasks: tasks });
+    tracker.hear({ hook_event_name: 'UserPromptSubmit', prompt: 'hi' });
+    stop({ id: 'agent-a1', type: 'subagent', status: 'running' });
+    expect(signals).toEqual(['working', 'working']);
+    expect(tracker.hasWork()).toBe(true);
+    // Claude Code wakes Claude once its helpers are back, and that turn's end is the run done.
+    stop();
+    expect(signals.at(-1)).toBe('done');
+    // Background work of another kind, or a helper that's over, keeps nothing going.
+    stop({ id: 'bash-1', type: 'shell', status: 'running' });
+    stop({ id: 'agent-a2', type: 'subagent', status: 'completed' });
+    expect(signals.slice(-2)).toEqual(['done', 'done']);
+  });
+
+  it('keeps a run working whose turn ends in an error while helpers work, as the app knows them', () => {
+    const signals: string[] = [];
+    let helpers = true;
+    const tracker = new RunSignals(
+      (signal) => signals.push(signal),
+      () => helpers,
+    );
+    tracker.hear({ hook_event_name: 'UserPromptSubmit', prompt: 'hi' });
+    // Claude Code's StopFailure doesn't list them, as its Stop does.
+    tracker.hear({ hook_event_name: 'StopFailure', error: 'server_error' });
+    expect(signals).toEqual(['working', 'working']);
+    expect(tracker.hasWork()).toBe(true);
+    // Back, they wake Claude, and its turn's end, by Claude Code's own list, is the run done.
+    tracker.hear({ hook_event_name: 'UserPromptSubmit', prompt: '<task-notification>' });
+    tracker.hear({ hook_event_name: 'Stop', background_tasks: [] });
+    expect(signals.at(-1)).toBe('done');
+    // With none at work, a turn that ends in an error is the run done.
+    helpers = false;
+    tracker.hear({ hook_event_name: 'UserPromptSubmit', prompt: 'again' });
+    tracker.hear({ hook_event_name: 'StopFailure', error: 'rate_limit' });
+    expect(signals.at(-1)).toBe('done');
+    expect(tracker.hasWork()).toBe(false);
+  });
+
+  it('reads a turn that ends in an error after a helper starts in the background as working', () => {
+    const signals: string[] = [];
+    const activity = new RunActivity(() => {}, '/workspace');
+    const tracker = new RunSignals(
+      (signal) => signals.push(signal),
+      () => activity.hasHelpersAtWork(),
+    );
+    // As a run hears each hook: its signals first, then its activity.
+    const hear = (event: Record<string, unknown>) => {
+      tracker.hear(event);
+      activity.hear(event);
+    };
+    const launch = {
+      tool_name: 'Agent',
+      tool_use_id: 'toolu_1',
+      tool_input: { description: 'Fact-check the resume' },
+    };
+    hear({ hook_event_name: 'UserPromptSubmit', prompt: 'Tailor my resume' });
+    activity.started({ hook_event_name: 'PreToolUse', ...launch });
+    hear({
+      hook_event_name: 'PostToolUse',
+      ...launch,
+      tool_response: { status: 'async_launched', agentId: 'agent-a1' },
+    });
+    hear({ hook_event_name: 'StopFailure', error: 'max_output_tokens' });
+    expect(signals.at(-1)).toBe('working');
+    hear({ hook_event_name: 'SubagentStop', agent_id: 'agent-a1', agent_type: 'x' });
+    hear({ hook_event_name: 'UserPromptSubmit', prompt: '<task-notification>' });
+    hear({ hook_event_name: 'Stop', background_tasks: [] });
+    expect(signals.at(-1)).toBe('done');
   });
 
   it('says the run has work going until it’s done, or ready with nothing to do', () => {

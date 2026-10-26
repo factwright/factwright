@@ -1,12 +1,22 @@
 import { Button, IconButton, Input, Markdown, Notice, VisuallyHidden } from '@factwright/ui';
 import { ArrowDown, BookCheck, Check, X } from 'lucide-react';
 import { type FormEvent, type ReactNode, useEffect, useId, useState } from 'react';
-import { type RunStep, stepWords } from '../shared/activity.ts';
+import {
+  HELPER_TOOLS,
+  helperKind,
+  helpersWords,
+  type RunStep,
+  type StepKind,
+  type StepWords,
+  stepKind,
+  stepWords,
+  todoWords,
+} from '../shared/activity.ts';
 import type { FactwrightApi, RunPhase, RunView } from '../shared/api.ts';
 import type { FiledFacts } from '../shared/facts.ts';
 import { taskJob } from '../shared/runs.ts';
 import styles from './ClaudePanel.module.css';
-import { PanelHeader } from './PanelHeader.tsx';
+import { PanelHeader, type Scene } from './PanelHeader.tsx';
 import { isBoolean, usePref } from './prefs.ts';
 import { lineWords, RunTabs, type TabState } from './RunTabs.tsx';
 import { TaskChanges } from './TaskChanges.tsx';
@@ -81,20 +91,82 @@ function useNow(ticking: boolean): number {
 }
 
 /**
- * What Claude is doing, in a line: the step it's on, or that it's thinking between steps, after
- * the last one it finished. Steps with nothing worth showing, such as keeping its to-do list,
- * leave the line as it was.
+ * What the run's own Claude is doing, in a line: the step it's on, with how the working strip
+ * draws it, after the last one it finished, or no step while it thinks between steps, or waits
+ * on its helpers. Its helpers' steps are theirs, and so is a call that starts one, which goes on
+ * for as long as a helper Claude waits for works: the helpers at work say it. Steps with nothing
+ * worth showing, such as ticking off its to-do list, leave the line as it was.
  */
-export function doingLine(steps: readonly RunStep[]): { did: string | null; doing: string } {
+export function doingLine(steps: readonly RunStep[]): {
+  did: string | null;
+  doing: string | null;
+  kind: StepKind | null;
+} {
   let did: string | null = null;
-  let doing: string | null = null;
+  let doing: StepWords | null = null;
+  let kind: StepKind | null = null;
   for (const step of steps) {
+    if (step.helper) continue;
+    if (step.state === 'running' && HELPER_TOOLS.includes(step.tool)) continue;
     const words = stepWords(step);
     if (!words) continue;
     if (step.state === 'done') did = words.did;
-    doing = step.state === 'running' ? words.doing : doing === words.doing ? null : doing;
+    if (step.state === 'running') {
+      doing = words;
+      kind = stepKind(step);
+    } else if (doing?.doing === words.doing) {
+      doing = null;
+    }
   }
-  return { did, doing: `${doing ?? 'Thinking'}…` };
+  return { did, doing: doing ? `${doing.doing}…` : null, kind: doing ? kind : null };
+}
+
+/** How the working strip draws what a helper is on: its latest step still going. */
+function helperStepKind(steps: readonly RunStep[], helper: string): StepKind | null {
+  for (let at = steps.length - 1; at >= 0; at -= 1) {
+    const step = steps[at];
+    if (step?.helper === helper && step.state === 'running' && stepWords(step)) {
+      return stepKind(step);
+    }
+  }
+  return null;
+}
+
+/**
+ * The working strip's picture: lanes side by side for helpers at work, or else the step the
+ * run's own Claude is on, or else a helper alone's, drawn as the run's skill says its helpers
+ * work, such as checking facts, or as the step the helper is on, or else drifting dots while
+ * Claude thinks.
+ */
+export function sceneOf(activity: RunActivity, skill: string | null): Scene {
+  const { helpers, steps } = activity;
+  const lanes = helpers.length;
+  if (lanes > 1) return { kind: 'helpers', lanes };
+  const own = doingLine(steps);
+  if (own.doing) return { kind: own.kind ?? 'thinking', lanes };
+  const [helper] = helpers;
+  if (!helper) return { kind: 'thinking', lanes };
+  return { kind: helperKind(skill) ?? helperStepKind(steps, helper.id) ?? 'thinking', lanes };
+}
+
+/**
+ * What the working strip says, in two lines: where Claude is on its to-do list, such as "Step 3
+ * of 7: Tailoring the summary", or else what it's doing, then what it's doing within that step,
+ * its helpers at work, such as "4 helpers analyzing jobs", and the last step it finished.
+ */
+export function workingLines(
+  activity: RunActivity,
+  skill: string | null,
+): { lead: string; also: string[]; did: string | null } {
+  const { did, doing } = doingLine(activity.steps);
+  const step = todoWords(activity.todo);
+  const helpers = helpersWords(activity.helpers, skill);
+  if (step) {
+    const now = doing ?? helpers ?? 'Thinking…';
+    return { lead: step, also: doing && helpers ? [now, helpers] : [now], did };
+  }
+  if (doing) return { lead: doing, also: helpers ? [helpers] : [], did };
+  return { lead: helpers ? `${helpers}…` : 'Thinking…', also: [], did };
 }
 
 /** What a finished task made, in a sentence, with a way to open it. */
@@ -207,7 +279,12 @@ export function ClaudePanel({
 
   const tabs =
     runs.length > 1
-      ? runs.map(({ view: each, title, state }) => ({ id: each.id, title, state }))
+      ? runs.map(({ view: each, title, state, activity }) => ({
+          id: each.id,
+          title,
+          state,
+          step: activity.todo,
+        }))
       : null;
   // A task in line has no work to show yet.
   const workShown = open && hasTerminal(view);
@@ -380,6 +457,14 @@ function RunBar({
 
   let text: ReactNode;
   let action: ReactNode = null;
+  // While Claude starts and works, the bar is a working strip, with a picture of its step, or of
+  // Claude thinking while it starts, or has said nothing for a while.
+  const scene: Scene | null =
+    aside || (shown !== 'starting' && shown !== 'working')
+      ? null
+      : shown === 'starting' || quiet
+        ? { kind: 'thinking', lanes: 0 }
+        : sceneOf(activity, view.task?.skill ?? null);
   if (shown === 'in-line') {
     text = lineWords(view.waits, claude.atOnce, view.task !== null && 'jobId' in view.task);
   } else if (aside) {
@@ -399,22 +484,32 @@ function RunBar({
         : 'Claude Code is asking for your OK.'
       : 'Claude Code is asking you something in its work below.';
   } else if (shown === 'starting') {
-    text = 'Your Claude is starting…';
+    text = <span>Your Claude is starting…</span>;
   } else if (shown === 'ready') {
     text = 'Your Claude is ready. Type what you’d like in its work below.';
   } else if (shown === 'working') {
-    const { did, doing } = doingLine(activity.steps);
+    const { lead, also, did } = workingLines(activity, view.task?.skill ?? null);
     text = quiet ? (
-      'No word from Claude for a few minutes. Show its work to see where it is.'
+      <span>No word from Claude for a few minutes. Show its work to see where it is.</span>
     ) : (
       <>
-        {did && (
-          <span className={styles.did}>
-            <Check size={13} strokeWidth={2.6} aria-hidden="true" className={styles.didMark} />
-            {did}
+        <span className={styles.doing}>{lead}</span>
+        {(also.length > 0 || did) && (
+          <span className={styles.also}>
+            {/* Each part ends with a space, so a screen reader doesn't run them together. */}
+            {also.map((each) => (
+              <span key={each} className={styles.alsoPart}>
+                {each}{' '}
+              </span>
+            ))}
+            {did && (
+              <span className={styles.did}>
+                <Check size={13} strokeWidth={2.6} aria-hidden="true" className={styles.didMark} />
+                {did}
+              </span>
+            )}
           </span>
         )}
-        <span className={styles.doing}>{doing}</span>
       </>
     );
   } else if (shown === 'done' && error) {
@@ -461,6 +556,7 @@ function RunBar({
         plan={plan}
         problem={problem}
         text={text}
+        scene={scene}
         elapsed={working && view.startedAt !== null ? clock(now - view.startedAt) : null}
         action={action}
         {...(hasTerminal(view) && { workShown: claude.open, onShowWork: claude.showWork })}

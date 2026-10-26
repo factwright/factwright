@@ -1,4 +1,5 @@
 import type { RunSignal } from '../../shared/api.ts';
+import { helpersAtWork } from './activity.ts';
 import { canonical } from './questions.ts';
 
 /**
@@ -21,6 +22,8 @@ const MAX_ANSWERED = 50;
  */
 export class RunSignals {
   private readonly tell: (signal: RunSignal) => void;
+  /** Whether a helper is still at work, as the app knows, for a turn's end that doesn't say. */
+  private readonly helpersKnown: () => boolean;
   /** The tool calls waiting on the user, oldest first. */
   private readonly waiting: string[] = [];
   /**
@@ -31,8 +34,9 @@ export class RunSignals {
   /** Where the run stands, by the last signal, or null while Claude Code starts. */
   private last: RunSignal | null = null;
 
-  constructor(emit: (signal: RunSignal) => void) {
+  constructor(emit: (signal: RunSignal) => void, helpersKnown: () => boolean = () => false) {
     this.tell = emit;
+    this.helpersKnown = helpersKnown;
   }
 
   /**
@@ -94,12 +98,19 @@ export class RunSignals {
         }
         return;
       // A turn that ends in an error, such as a rate limit, is over too, and Claude Code waits
-      // for the user's next message: the window says what the error was.
+      // for the user's next message: the window says what the error was. One that ends either
+      // way while Claude's helpers work in the background isn't: Claude Code wakes Claude once
+      // they're back, so the run still has work going. A Stop hook lists them. A StopFailure
+      // doesn't, so the helpers the app knows of say.
       case 'Stop':
+        this.waiting.length = 0;
+        this.answeredInApp.length = 0;
+        this.emit((helpersAtWork(fields)?.size ?? 0) > 0 ? 'working' : 'done');
+        return;
       case 'StopFailure':
         this.waiting.length = 0;
         this.answeredInApp.length = 0;
-        this.emit('done');
+        this.emit(this.helpersKnown() ? 'working' : 'done');
         return;
     }
   }

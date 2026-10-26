@@ -12,6 +12,8 @@ import {
   endsAsking,
   type PanelRun,
   QUIET_AFTER_MS,
+  sceneOf,
+  workingLines,
 } from './ClaudePanel.tsx';
 import type { RunActivity } from './useRunActivity.ts';
 
@@ -35,7 +37,7 @@ const terminalOf = (runId = 'run-1') =>
 /** Whether the run's terminal was last drawn outlined, as waiting on the user. */
 const outlined = (runId = 'run-1') => terminalOf(runId)?.attention === true;
 
-const NOTHING: RunActivity = { steps: [], lastAt: null, end: null };
+const NOTHING: RunActivity = { steps: [], lastAt: null, end: null, todo: null, helpers: [] };
 
 /** A run as the app says it stands: a tailored resume, a minute and a half in. */
 const view = (phase: RunPhase, changed: Partial<RunView> = {}): RunView => ({
@@ -190,6 +192,7 @@ describe('ClaudePanel', () => {
 
   it('says what Claude is doing, a step at a time, and for how long', () => {
     const activity: RunActivity = {
+      ...NOTHING,
       steps: [
         step('Read', 'facts/platform.md', 'done', 'a'),
         step('mcp__factwright__build_resume', null, 'running', 'b'),
@@ -205,6 +208,7 @@ describe('ClaudePanel', () => {
 
   it('points to Claude’s work when Claude has gone quiet for a while', () => {
     const activity: RunActivity = {
+      ...NOTHING,
       steps: [step('Read', 'facts/platform.md', 'done')],
       lastAt: Date.now() - QUIET_AFTER_MS - 1000,
       end: null,
@@ -254,6 +258,7 @@ describe('ClaudePanel', () => {
 
   it('shows what Claude said when it stopped to ask, and sends the user’s reply to its run', async () => {
     const activity: RunActivity = {
+      ...NOTHING,
       steps: [],
       lastAt: null,
       end: { said: 'Which template would you like, Classic or Minimal?', error: null },
@@ -288,6 +293,7 @@ describe('ClaudePanel', () => {
 
   it('says a task stopped short without saying it’s done', () => {
     const activity: RunActivity = {
+      ...NOTHING,
       steps: [],
       lastAt: null,
       end: { said: 'I need the posting.', error: null },
@@ -299,6 +305,7 @@ describe('ClaudePanel', () => {
   it('says a turn ended in an error, such as a rate limit, and tries the task again', async () => {
     const onRetry = vi.fn();
     const activity: RunActivity = {
+      ...NOTHING,
       steps: [],
       lastAt: null,
       end: { said: null, error: { kind: 'rate_limit', message: 'API Error: Rate limit reached' } },
@@ -407,6 +414,7 @@ describe('runs side by side', () => {
 
 describe('endsAsking', () => {
   const ended = (said: string | null, error = false): RunActivity => ({
+    ...NOTHING,
     steps: [],
     lastAt: null,
     end: { said, error: error ? { kind: 'rate_limit', message: 'Rate limit' } : null },
@@ -425,20 +433,181 @@ describe('endsAsking', () => {
       false,
     );
     expect(endsAsking('working', ended('Classic or Minimal?'), null)).toBe(false);
-    expect(endsAsking('done', { steps: [], lastAt: null, end: null }, null)).toBe(false);
+    expect(endsAsking('done', NOTHING, null)).toBe(false);
   });
 });
 
 describe('doingLine', () => {
-  it('says the step Claude is on after the last one done, or that it’s thinking', () => {
-    expect(doingLine([])).toEqual({ did: null, doing: 'Thinking…' });
+  it('says the step Claude is on after the last one done, or none while it thinks', () => {
+    expect(doingLine([])).toEqual({ did: null, doing: null, kind: null });
     const read = step('Read', 'guide/writing.md', 'running', 'a');
-    expect(doingLine([read])).toEqual({ did: null, doing: 'Reading your writing guide…' });
+    expect(doingLine([read])).toEqual({
+      did: null,
+      doing: 'Reading your writing guide…',
+      kind: 'reading',
+    });
     const done = { ...read, state: 'done' as const };
-    expect(doingLine([done])).toEqual({ did: 'Read your writing guide', doing: 'Thinking…' });
-    // Its to-do list says nothing worth showing, and leaves the line as it was.
+    expect(doingLine([done])).toEqual({ did: 'Read your writing guide', doing: null, kind: null });
+    // A tick on its to-do list says nothing worth showing, and leaves the line as it was.
     const todo = step('TodoWrite', null, 'running', 'b');
-    expect(doingLine([done, todo])).toEqual({ did: 'Read your writing guide', doing: 'Thinking…' });
+    expect(doingLine([done, todo])).toMatchObject({ did: 'Read your writing guide', doing: null });
+  });
+
+  it('leaves its helpers’ steps to them', () => {
+    const own = step('mcp__factwright__build_resume', null, 'running', 'a');
+    const helpers = { ...step('Read', 'facts/a.md', 'running', 'b'), helper: 'agent-a1' };
+    expect(doingLine([own, helpers])).toEqual({
+      did: null,
+      doing: 'Building the resume…',
+      kind: 'building',
+    });
+    expect(doingLine([helpers]).doing).toBeNull();
+  });
+});
+
+describe('the working strip', () => {
+  const helper = (id: string, what: string | null = null) => ({ id, what });
+  /** Claude on step `at` of a to-do list of `of`. */
+  const onStep = (at: number, of: number) => ({
+    at,
+    of,
+    item: { text: `Do part ${at}`, doing: `Doing part ${at}`, state: 'in_progress' as const },
+  });
+  const activity = (changed: Partial<RunActivity>): RunActivity => ({
+    ...NOTHING,
+    lastAt: Date.now(),
+    ...changed,
+  });
+
+  it('says where Claude is on its to-do list, what it’s doing in that step, and the last step done', () => {
+    const working = activity({
+      steps: [
+        step('Read', 'applications/acme--staff/posting.md', 'done', 'a'),
+        step('Read', 'facts/platform.md', 'running', 'b'),
+      ],
+      todo: onStep(3, 7),
+    });
+    expect(workingLines(working, 'focused-resume')).toEqual({
+      lead: 'Step 3 of 7: Doing part 3',
+      also: ['Reading your fact bank…'],
+      did: 'Read the posting',
+    });
+    const { container } = panel([run('working', { activity: working })]);
+    expect(bar().textContent).toContain('Step 3 of 7: Doing part 3');
+    expect(bar().textContent).toContain('Reading your fact bank…');
+    expect(bar().textContent).toContain('Read the posting');
+    expect(container.querySelector('[data-scene]')?.getAttribute('data-scene')).toBe('reading');
+  });
+
+  it('says what a run’s helpers do, and draws them side by side', () => {
+    const helping = activity({
+      steps: [step('Agent', 'Analyze Acme', 'done', 'a')],
+      helpers: [helper('agent-1'), helper('agent-2'), helper('agent-3'), helper('agent-4')],
+    });
+    expect(workingLines(helping, 'analyze-job')).toEqual({
+      lead: '4 helpers analyzing jobs…',
+      also: [],
+      did: 'Started a helper for “Analyze Acme”',
+    });
+    expect(sceneOf(helping, 'analyze-job')).toEqual({ kind: 'helpers', lanes: 4 });
+    // With a to-do list, under the step it's on.
+    expect(workingLines({ ...helping, todo: onStep(2, 3) }, 'job-search')).toMatchObject({
+      lead: 'Step 2 of 3: Doing part 2',
+      also: ['4 helpers going through the jobs'],
+    });
+  });
+
+  it('draws a helper alone as its run’s skill says it works, or as the step it’s on', () => {
+    const checking = activity({
+      steps: [{ ...step('Read', 'facts/a.md', 'running', 'b'), helper: 'agent-1' }],
+      helpers: [helper('agent-1', 'Fact-check the resume')],
+    });
+    expect(sceneOf(checking, 'focused-resume')).toEqual({ kind: 'checking', lanes: 1 });
+    expect(workingLines(checking, 'focused-resume').lead).toBe('A helper is checking the facts…');
+    expect(sceneOf(checking, 'salary-check')).toEqual({ kind: 'reading', lanes: 1 });
+    expect(workingLines(checking, 'salary-check').lead).toBe(
+      'A helper is on “Fact-check the resume”…',
+    );
+  });
+
+  it('says a helper Claude waits for is at work, not that Claude is still starting it', () => {
+    // A helper Claude waits for keeps the call that started it going until it's done.
+    const waiting = activity({
+      steps: [
+        step('Agent', 'Fact-check the resume', 'running', 'a'),
+        { ...step('Read', 'facts/a.md', 'running', 'b'), helper: 'agent-1' },
+      ],
+      helpers: [helper('agent-1', 'Fact-check the resume')],
+    });
+    expect(workingLines(waiting, 'focused-resume').lead).toBe('A helper is checking the facts…');
+    expect(sceneOf(waiting, 'focused-resume')).toEqual({ kind: 'checking', lanes: 1 });
+    // Once it's done, the call says it started one.
+    const back = activity({ steps: [step('Agent', 'Fact-check the resume', 'done', 'a')] });
+    expect(workingLines(back, 'focused-resume')).toMatchObject({
+      lead: 'Thinking…',
+      did: 'Started a helper for “Fact-check the resume”',
+    });
+  });
+
+  it('draws drifting dots beside its words when Claude has gone quiet', () => {
+    const quiet = activity({
+      steps: [step('mcp__factwright__build_resume', null, 'running')],
+      lastAt: Date.now() - QUIET_AFTER_MS - 1000,
+    });
+    const { container } = panel([run('working', { activity: quiet })]);
+    expect(container.querySelector('[data-scene]')?.getAttribute('data-scene')).toBe('thinking');
+    expect(bar().textContent).toContain('No word from Claude for a few minutes.');
+  });
+
+  it('keeps each part of its second line apart, for a screen reader too', () => {
+    const working = activity({
+      steps: [
+        step('Read', 'applications/acme--staff/posting.md', 'done', 'a'),
+        step('Read', 'facts/platform.md', 'running', 'b'),
+      ],
+      todo: onStep(3, 7),
+    });
+    panel([run('working', { activity: working })]);
+    expect(bar().textContent).toContain('Reading your fact bank… Read the posting');
+  });
+
+  it('draws the step Claude itself is on, or drifting dots while it thinks', () => {
+    const building = activity({ steps: [step('mcp__factwright__build_resume', null, 'running')] });
+    expect(sceneOf(building, null)).toEqual({ kind: 'building', lanes: 0 });
+    expect(sceneOf(activity({}), null)).toEqual({ kind: 'thinking', lanes: 0 });
+    expect(workingLines(activity({}), null)).toEqual({ lead: 'Thinking…', also: [], did: null });
+    // Claude both on a step and with a helper: the step first, its helper under it.
+    const both = activity({ ...building, helpers: [helper('agent-1')] });
+    expect(sceneOf(both, null)).toEqual({ kind: 'building', lanes: 1 });
+    expect(workingLines(both, null)).toMatchObject({
+      lead: 'Building the resume…',
+      also: ['A helper is at work'],
+    });
+  });
+
+  it('draws a run starting as drifting dots, and nothing once it’s done', () => {
+    const { container } = panel([run('starting')]);
+    expect(container.querySelector('[data-scene]')?.getAttribute('data-scene')).toBe('thinking');
+    cleanup();
+    const done = panel([run('done', { activity: activity({ todo: onStep(2, 3) }) })]);
+    expect(done.container.querySelector('[data-scene]')).toBeNull();
+    expect(bar().textContent).not.toContain('Step 2 of 3');
+  });
+
+  it('gives a run at work on a to-do list its step in its tab', () => {
+    panel([
+      run('working', { activity: activity({ todo: onStep(3, 7) }) }),
+      run(
+        'working',
+        { title: 'Globex · Cover letter' },
+        { id: 'run-2', task: { skill: 'cover-letter', jobId: 'globex--pm' } },
+      ),
+    ]);
+    expect(
+      screen.getByRole('tab', { name: /^Acme · Tailored resume, working, step 3 of 7$/ })
+        .textContent,
+    ).toContain('3/7');
+    expect(screen.getByRole('tab', { name: /^Globex · Cover letter, working$/ })).toBeTruthy();
   });
 });
 

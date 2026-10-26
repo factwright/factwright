@@ -18,7 +18,7 @@ import type {
   WorkHistory,
 } from '@factwright/core';
 import type { AboutYou, AnswerChanges, Contact } from './about.ts';
-import type { RunStep, TurnEnd } from './activity.ts';
+import type { RunProgress, RunStep, TurnEnd } from './activity.ts';
 import type { EffortChoices } from './effort.ts';
 import type {
   FactBank,
@@ -391,6 +391,13 @@ export interface FactwrightApi {
    * done, to say so in Claude's panel. Returns a function that stops listening.
    */
   onClaudeStep(listener: (step: { runId: string; step: RunStep }) => void): () => void;
+  /**
+   * Listens for where each run's task stands, as that changes: the to-do list Claude keeps, and
+   * its helpers at work, for the working strip. Returns a function that stops listening.
+   */
+  onClaudeProgress(
+    listener: (progress: { runId: string; progress: RunProgress }) => void,
+  ): () => void;
   /**
    * Listens for how each of Claude's turns ends, in each run: what it said last, or the error
    * that ended it. Returns a function that stops listening.

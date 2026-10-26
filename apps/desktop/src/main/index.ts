@@ -395,6 +395,7 @@ function start(home: string, profile: ProfileFolder, stopped: ProfileFolder | nu
         if (drafting) formDrafts.waitsOnYou(drafting);
       },
       onStep: (runId, step) => window.send('claude:step', { runId, step }),
+      onProgress: (runId, progress) => window.send('claude:progress', { runId, progress }),
       onTurnEnd: (runId, end) => window.send('claude:turn-end', { runId, end }),
       onFiled: (runId, filed) => window.send('facts:filed', { runId, filed }),
       onChanges: (runId, changes) => window.send('claude:changes', { runId, changes }),

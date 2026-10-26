@@ -1,5 +1,11 @@
 import { localDate } from '@factwright/core';
-import type { RunStep, TurnEnd } from '../shared/activity.ts';
+import {
+  type RunProgress,
+  type RunStep,
+  type TodoItem,
+  type TurnEnd,
+  todoAt,
+} from '../shared/activity.ts';
 import type {
   ClaudeStatus,
   FactwrightApi,
@@ -540,6 +546,7 @@ export function sampleApi(): FactwrightApi {
   };
   const outputListeners = new Set<(output: RunOutput) => void>();
   const stepListeners = new Set<(step: { runId: string; step: RunStep }) => void>();
+  const progressListeners = new Set<(progress: { runId: string; progress: RunProgress }) => void>();
   const endListeners = new Set<(end: { runId: string; end: TurnEnd }) => void>();
   const filedListeners = new Set<(filed: { runId: string; filed: FiledFacts }) => void>();
   // What the runs wait on the user for in the window's dialog, in the order it came in.
@@ -583,6 +590,9 @@ export function sampleApi(): FactwrightApi {
   };
   const step = (sample: Sample, value: RunStep) => {
     for (const listener of stepListeners) listener({ runId: sample.id, step: value });
+  };
+  const progress = (sample: Sample, value: RunProgress) => {
+    for (const listener of progressListeners) listener({ runId: sample.id, progress: value });
   };
   const ended = (sample: Sample, end: TurnEnd) => {
     for (const listener of endListeners) listener({ runId: sample.id, end });
@@ -778,13 +788,20 @@ export function sampleApi(): FactwrightApi {
   };
   // ?runs=side opens on runs side by side: three at work, one done that stopped on a question,
   // and a cover letter in line for its job's resume. ?runs=asking has three runs waiting on the
-  // user at once: two rounds of questions and a permission prompt.
+  // user at once: two rounds of questions and a permission prompt. ?runs=strips has a run on each
+  // kind of step the working strip draws, held there: reading, searching, writing, checking
+  // facts with a helper, building a PDF, a job search at step 3 of 7 with four helpers, and
+  // thinking.
   const scene = query.get('runs');
   const sideBySide = (tasks: RunTask[], start: (sample: Sample, at: number) => void) => {
     const now = Date.now();
     const started = tasks.map((task, at) => {
       const sample = add(task);
-      set(sample.id, { phase: 'working', waits: null, startedAt: now - (4 - at) * 61_000 });
+      set(sample.id, {
+        phase: 'working',
+        waits: null,
+        startedAt: now - Math.max(4 - at, 1) * 61_000,
+      });
       return sample;
     });
     // What each run says comes once the window listens.
@@ -826,6 +843,140 @@ export function sampleApi(): FactwrightApi {
     );
     add({ skill: 'cover-letter', jobId: 'tidewater-analytics--senior-backend-engineer' });
     pump();
+  } else if (scene === 'strips') {
+    const at = (tool: string, detail: string | null, helper?: string): RunStep => ({
+      id: `${tool}-${detail}-${helper}`,
+      tool,
+      detail,
+      state: 'running',
+      ...(helper && { helper }),
+    });
+    const done = (step: RunStep): RunStep => ({ ...step, state: 'done' });
+    // Where Claude is on a to-do list, given as what each item is and what Claude says while it's
+    // on it: on the one given.
+    const onList = (items: [string, string][], on: number) =>
+      todoAt(
+        items.map(
+          ([text, doing], i): TodoItem => ({
+            text,
+            doing,
+            state: i < on ? 'completed' : i === on ? 'in_progress' : 'pending',
+          }),
+        ),
+      );
+    const posting = (jobId: string) => `applications/${jobId}/posting.md`;
+    const strips: { task: RunTask; steps: RunStep[]; progress?: RunProgress }[] = [
+      {
+        task: { skill: 'focused-resume', jobId: 'tidewater-analytics--senior-backend-engineer' },
+        steps: [
+          done(at('Read', posting('tidewater-analytics--senior-backend-engineer'))),
+          at('Read', 'facts/platform-engineering.md'),
+        ],
+      },
+      {
+        task: { skill: 'who-to-message', jobId: 'copperleaf-energy--principal-engineer' },
+        steps: [
+          done(at('Read', posting('copperleaf-energy--principal-engineer'))),
+          at('WebSearch', 'Copperleaf Energy engineering manager platform'),
+        ],
+      },
+      {
+        task: { skill: 'cover-letter', jobId: 'acme-robotics--staff-engineer-developer-tools' },
+        steps: [
+          done(at('Read', 'facts/platform-engineering.md')),
+          at(
+            'Write',
+            'applications/acme-robotics--staff-engineer-developer-tools/cover-letter.json',
+          ),
+        ],
+      },
+      {
+        task: { skill: 'focused-resume', jobId: 'quarry-labs--senior-software-engineer' },
+        steps: [
+          done(at('mcp__factwright__build_resume', null)),
+          done(at('Agent', 'Fact-check the resume')),
+          at('Read', 'facts/platform-engineering.md', 'agent-fact-check'),
+        ],
+        progress: {
+          todo: onList(
+            [
+              ['Set up the folder', 'Setting up the folder'],
+              ['Research the company', 'Researching the company'],
+              ['Pull out what the posting asks for', 'Pulling out what the posting asks for'],
+              ['Map your facts to it', 'Mapping your facts to it'],
+              ['Ask about the gaps', 'Asking about the gaps'],
+              ['Draft the resume', 'Drafting the resume'],
+              ['Build it and fit the pages', 'Building it and fitting the pages'],
+              ['Fact-check the resume', 'Fact-checking the resume'],
+              ['Sum up what changed', 'Summing up what changed'],
+            ],
+            7,
+          ),
+          helpers: [{ id: 'agent-fact-check', what: 'Fact-check the resume' }],
+        },
+      },
+      {
+        task: {
+          skill: 'projects-page',
+          jobId: 'northwind-labs--senior-software-engineer-platform',
+        },
+        steps: [
+          done(
+            at(
+              'Write',
+              'applications/northwind-labs--senior-software-engineer-platform/projects-page.json',
+            ),
+          ),
+          at('mcp__factwright__build_projects_page', null),
+        ],
+      },
+      {
+        task: { skill: 'job-search', sources: { sites: ['hn', 'boards'] } },
+        steps: [
+          done(at('mcp__factwright__hn_jobs', null)),
+          ...['1–50', '51–100', '101–150', '151–186'].map((part) =>
+            done(at('Agent', `Filter listings ${part}`)),
+          ),
+          at('Read', 'searches/2026-10-hn/listings.md', 'agent-1'),
+          at('mcp__factwright__job_board', null, 'agent-2'),
+          at('WebSearch', 'Lakeside Data platform team remote', 'agent-3'),
+          at('mcp__factwright__find_job', null, 'agent-4'),
+        ],
+        progress: {
+          todo: onList(
+            [
+              ['Read HN’s October thread', 'Reading HN’s October thread'],
+              ['Read the company boards', 'Reading the company boards'],
+              ['Filter the listings', 'Filtering the listings'],
+              ['Verify and score the jobs', 'Verifying and scoring the jobs'],
+              ['Write the report', 'Writing the report'],
+              ['List the near misses', 'Listing the near misses'],
+              ['Sum up the search', 'Summing up the search'],
+            ],
+            2,
+          ),
+          helpers: [
+            { id: 'agent-1', what: 'Filter listings 1–50' },
+            { id: 'agent-2', what: 'Filter listings 51–100' },
+            { id: 'agent-3', what: 'Filter listings 101–150' },
+            { id: 'agent-4', what: 'Filter listings 151–186' },
+          ],
+        },
+      },
+      {
+        task: { skill: 'salary-check', jobId: 'granite-health--staff-software-engineer' },
+        steps: [done(at('Read', posting('granite-health--staff-software-engineer')))],
+      },
+    ];
+    sideBySide(
+      strips.map(({ task }) => task),
+      (sample, index) => {
+        const strip = strips[index];
+        if (!strip) return;
+        for (const each of strip.steps) step(sample, each);
+        if (strip.progress) progress(sample, strip.progress);
+      },
+    );
   } else if (scene === 'asking') {
     sideBySide(
       [
@@ -954,6 +1105,10 @@ export function sampleApi(): FactwrightApi {
     onClaudeStep: (listener) => {
       stepListeners.add(listener);
       return () => stepListeners.delete(listener);
+    },
+    onClaudeProgress: (listener) => {
+      progressListeners.add(listener);
+      return () => progressListeners.delete(listener);
     },
     onClaudeTurnEnd: (listener) => {
       endListeners.add(listener);
