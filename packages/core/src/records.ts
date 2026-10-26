@@ -249,21 +249,39 @@ const byName = (a: WorkspaceEntry, b: WorkspaceEntry) =>
 const companyFromSlug = (slug: string) =>
   /^[a-z0-9]{2,4}$/.test(slug) ? slug.toUpperCase() : slug.split('-').map(capitalize).join(' ');
 
+/** What ends a line of text, in each of the ways a regular expression's `$` knows. */
+const LINE_BREAK = /\r\n?|[\n\u2028\u2029]/;
+
+/**
+ * A job.md's heading: the text of its first line that's "#", whitespace, then something to say,
+ * such as "# Acme Robotics: Staff Engineer". It goes a line at a time, so a lone "#" never takes
+ * the line after it, and no run of tabs in a file, however long, makes it slow.
+ */
+function headingOf(markdown: string): string {
+  for (const line of markdown.split(LINE_BREAK)) {
+    const text = /^#\s+(\S.*)$/.exec(line)?.[1];
+    if (text) return text.trim();
+  }
+  return '';
+}
+
 /** The heading and "- **Field:** value" lines at the top of a job's job.md. */
 function readJobNotes(markdown: string) {
-  const heading = markdown.match(/^#\s+(.+)$/m)?.[1]?.trim() ?? '';
+  const heading = headingOf(markdown);
   const split = [': ', ' — ', ' – ', ' - ']
     .map((separator) => ({ separator, at: heading.indexOf(separator) }))
     .filter(({ at }) => at > 0)
     .sort((a, b) => a.at - b.at)[0];
   const company = split ? heading.slice(0, split.at) : heading;
   const role = split ? heading.slice(split.at + split.separator.length) : '';
+  // A role ends at its first full stop and space, as in "Staff Engineer. Remote first."
+  const stop = role.search(/\.\s/);
   // A field's value is on its own line: an empty one is nothing, never the line after it.
   const field = (name: string) =>
     markdown.match(new RegExp(`^- \\*\\*${name}:\\*\\*[ \\t]*(.+)$`, 'mi'))?.[1]?.trim() || null;
   return {
     company: company.trim(),
-    role: role.replace(/\.\s.*$/, '').trim(),
+    role: (stop < 0 ? role : role.slice(0, stop)).trim(),
     date: field('Date'),
     pay: field('Pay'),
     links: [

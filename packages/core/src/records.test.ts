@@ -175,6 +175,36 @@ describe('readRecords', () => {
     ]);
   });
 
+  it('reads a job’s heading a line at a time, quickly, whatever its file holds', () => {
+    const folder = (notes: string) =>
+      of(readRecords(memoryWorkspace({ 'applications/acme/job.md': notes })), 'folder')[0];
+    // Tabs after the #, and a role that says more after a full stop.
+    expect(folder('#\t\tAcme Robotics: Staff Engineer. Remote first.\r\n')).toMatchObject({
+      company: 'Acme Robotics',
+      role: 'Staff Engineer',
+    });
+    // A full stop with no space after it is part of the role.
+    expect(folder('# Acme Robotics: Engineer, Node.js platform\n')).toMatchObject({
+      role: 'Engineer, Node.js platform',
+    });
+    // A lone # is no heading, and never takes the line after it: the first line that says
+    // something after its # is the heading.
+    expect(
+      folder('#\nAcme Robotics: Staff Engineer\n#\t\n# Globex: Data Engineer\n'),
+    ).toMatchObject({
+      company: 'Globex',
+      role: 'Data Engineer',
+    });
+    expect(folder('#\nAcme Robotics: Staff Engineer\n')).toMatchObject({ company: '', role: '' });
+    // Long runs of tabs after a #, and of full stops and tabs in a role, read in a moment.
+    const started = Date.now();
+    expect(folder(`#\t${'\t\t'.repeat(100_000)}\n`)).toMatchObject({ company: '' });
+    expect(folder(`# Acme Robotics: Staff Engineer${'.\t'.repeat(100_000)}`)).toMatchObject({
+      role: 'Staff Engineer',
+    });
+    expect(Date.now() - started).toBeLessThan(1000);
+  });
+
   it('reads a job’s folder: its notes, documents and resumes', () => {
     const [folder] = of(records, 'folder');
     expect(folder).toMatchObject({
