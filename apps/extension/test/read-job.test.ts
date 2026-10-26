@@ -239,15 +239,52 @@ describe('reading a job page', () => {
     expect(readJobPage(stepped, 'https://lumen.example/apply/2', '').posting).toBe('');
   });
 
-  it('reads a page with thousands of boxes to tick quickly', () => {
-    const boxes = Array.from(
-      { length: 5000 },
-      (_, at) => `<label><input type="checkbox" name="skills" value="${at}"> Skill ${at}</label>`,
-    ).join('');
-    const doc = page(`<main><h1>Data Lead</h1><p>Lead data.</p><div>${boxes}</div></main>`);
-    const start = performance.now();
-    expect(readJobPage(doc, 'https://lumen.example/careers/7', '').posting).toContain('Lead data.');
-    expect(performance.now() - start).toBeLessThan(3000);
+  it('takes no more time for each box to tick on a page with more of them', () => {
+    /** A page with this many boxes to tick, all answering one question. */
+    const boxes = (count: number) =>
+      page(
+        `<main><h1>Data Lead</h1><p>Lead data.</p><div>${Array.from(
+          { length: count },
+          (_, at) =>
+            `<label><input type="checkbox" name="skills" value="${at}"> Skill ${at}</label>`,
+        ).join('')}</div></main>`,
+      );
+    /** How long reading a page takes, in milliseconds. */
+    const timed = (doc: Document) => {
+      const start = performance.now();
+      expect(readJobPage(doc, 'https://lumen.example/careers/7', '').posting).toContain(
+        'Lead data.',
+      );
+      return performance.now() - start;
+    };
+    const few = boxes(1000);
+    const many = boxes(8000);
+    timed(boxes(100));
+    // The quickest of three reads of each, taken in turn, so a busy moment slows both alike.
+    let fewest = Number.POSITIVE_INFINITY;
+    let most = Number.POSITIVE_INFINITY;
+    for (let run = 0; run < 3; run++) {
+      fewest = Math.min(fewest, timed(few));
+      most = Math.min(most, timed(many));
+    }
+    // Eight times the boxes take about eight times as long. A read that went through every box
+    // for each box would take sixty-four times as long.
+    expect(most / fewest).toBeLessThan(24);
+  });
+
+  it('counts no field a page hides, as a closed dialog’s, toward an application form', () => {
+    const about = 'Pull great shots for our regulars every morning, and keep the bar spotless. ';
+    for (const closed of ['hidden', 'aria-hidden="true"', 'style="display: none"']) {
+      // No main part, a closed dialog of choices about cookies, and a box to sign up.
+      const doc = page(`<body><h1>Barista</h1><p>${about}</p>
+        <div role="dialog" ${closed}><p>Your choices</p>
+          <input type="checkbox" name="analytics"><input type="checkbox" name="ads">
+          <input type="checkbox" name="social"></div>
+        <div class="news"><span>Our newsletter</span><input type="email"></div></body>`);
+      expect(readJobPage(doc, 'https://bean.example/jobs/barista', '').posting, closed).toBe(
+        `Barista\n\n${about.trim()}\n\nOur newsletter`,
+      );
+    }
   });
 
   it('reads no application form as a job site’s posting, as Ashby’s is on its application’s tab', () => {

@@ -421,20 +421,20 @@ export function readJobPage(
 
   /**
    * The questions a form asks inside an element, each with its fields: radio buttons and boxes to
-   * tick that share a name ask one. Fields inside the elements `skip` names, which the element's
-   * text leaves out anyway, as a form element, don't count, and nor does a field inside another,
-   * as a list's own box, which is part of it.
+   * tick that share a name ask one. What the element's text leaves out doesn't count: a field the
+   * page hides, or inside an element it hides, as a closed dialog's, or inside the elements `skip`
+   * names, as a form element. Nor does a field inside another, as a list's own box, part of it.
    */
   function questionsIn(root: Element, skip: ReadonlySet<string>): Element[][] {
     const fields = Array.from(root.querySelectorAll(FIELDS));
     const isField = new Set(fields);
     const asked = new Map<string, Element[]>();
     for (const [at, field] of fields.entries()) {
-      let inside = false;
-      for (let up = field.parentElement; up && up !== root && !inside; up = up.parentElement) {
-        inside = isField.has(up) || skip.has(up.tagName.toUpperCase());
+      let left = hidden(field);
+      for (let up = field.parentElement; up && up !== root && !left; up = up.parentElement) {
+        left = isField.has(up) || skip.has(up.tagName.toUpperCase()) || hidden(up);
       }
-      if (inside) continue;
+      if (left) continue;
       const name = field.getAttribute('name');
       const key =
         /^(radio|checkbox)$/i.test(field.getAttribute('type') ?? '') && name
