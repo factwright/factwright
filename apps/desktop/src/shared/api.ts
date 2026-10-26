@@ -114,20 +114,76 @@ export interface TerminalSize {
   rows: number;
 }
 
-/** Whether a run started, or took a task, and if not, why. */
-export type StartResult =
-  | { ok: true }
-  | {
-      ok: false;
-      /**
-       * "new-run": the task needs a run of its own, since the open one is on another model, or
-       * may change other files without asking. "revision": the app has no revision prepared for
-       * it, such as after a restart, so it needs sending again. "changes": the same, for the
-       * changes the user asked for.
-       */
-      reason: 'not-ready' | 'busy' | 'failed' | 'not-running' | 'new-run' | 'revision' | 'changes';
-      message?: string;
-    };
+/**
+ * Why a run didn't start. "revision": the app has no revision prepared for it, such as after a
+ * restart, so it needs sending again. "changes": the same, for the changes the user asked for.
+ */
+export type StartProblem = 'not-ready' | 'failed' | 'revision' | 'changes';
+
+/**
+ * What a task in line waits for: its turn, while as many run as may at once; Claude's other task
+ * on the same job, or the same part of the job hunt; or Claude Code getting past its first
+ * screens in another run, which one run answers for all of them.
+ */
+export type LineWait = 'turn' | 'job' | 'setup';
+
+/**
+ * Where one of Claude's runs stands, as its tab shows it: waiting in line, starting, or as its
+ * signals say.
+ */
+export type RunPhase = 'in-line' | 'starting' | RunSignal;
+
+/** One of Claude's runs, or a task waiting in line for one: a tab in Claude's panel. */
+export interface RunView {
+  /** Its ID, such as "run-3", which everything about it carries. */
+  id: string;
+  /** What it's for, or null for Claude with nothing to do yet, waiting for what the user types. */
+  task: RunTask | null;
+  phase: RunPhase;
+  /** What a task in line waits for, or null once it's started. */
+  waits: LineWait | null;
+  /**
+   * A screen of Claude Code's own that only its terminal answers, which it shows now: its
+   * first-run screens, or its question about trusting the workspace.
+   */
+  screen: 'first-run' | 'trust' | null;
+  /** When it started, in milliseconds, or null while it waits in line. */
+  startedAt: number | null;
+  /** Why it didn't start, if it didn't. */
+  problem: StartProblem | null;
+}
+
+/** Claude's runs, in the order they were asked for, and how many may run at once. */
+export interface RunsView {
+  runs: RunView[];
+  atOnce: number;
+  /**
+   * Whether a run got past Claude Code's first-run screens and its question about trust. Until
+   * one does, runs start one at a time.
+   */
+  setUp: boolean;
+}
+
+/**
+ * Something one of Claude's runs waits on the user to answer in the app, such as a round of
+ * questions: which run asked, and its place in the order they came in, to take them in turn.
+ */
+export interface FromRun {
+  runId: string;
+  since: number;
+}
+
+/** A round of Claude's questions waiting on the user, from one of the runs. */
+export type WaitingRound = QuestionRound & FromRun;
+
+/** One of Claude Code's permission prompts waiting on the user, from one of the runs. */
+export type WaitingAsk = PermissionAsk & FromRun;
+
+/** What one of Claude's runs printed, for its own terminal. */
+export interface RunOutput {
+  runId: string;
+  data: string;
+}
 
 /** Every job, as the app last read them from the workspace and the tracker. */
 export interface JobList {
@@ -301,39 +357,51 @@ export interface FactwrightApi {
   checkSetup(): Promise<SetupCheck | null>;
   /** Listens for new setup checks. Returns a function that stops listening. */
   onSetupCheck(listener: (check: SetupCheck) => void): () => void;
-  /** Starts the user's Claude Code in the panel. Only one run happens at a time. */
-  startClaude(size: TerminalSize, task?: RunTask): Promise<StartResult>;
-  /** Gives the run that's open a skill to run on a job, as if the user typed it. */
-  runTask(task: RunTask): Promise<StartResult>;
+  /**
+   * Starts the user's Claude Code in a run of its own, maybe with a task, and answers with the
+   * run's ID. A task waits in line while as many run as may at once, or while Claude has another
+   * on the same job, and starts by itself.
+   */
+  startClaude(task?: RunTask): Promise<string>;
+  /** Claude's runs, and the tasks waiting in line, as they stand. */
+  claudeRuns(): Promise<RunsView>;
+  /** Listens for changes to Claude's runs. Returns a function that stops listening. */
+  onClaudeRuns(listener: (view: RunsView) => void): () => void;
+  /** How many of Claude's runs may go at once, and changing it, from 1 to 5. */
+  runsAtOnce(): Promise<number>;
+  setRunsAtOnce(count: number): Promise<number>;
   /**
    * Keeps what one job search looks for, on top of what the user wants in Profile, for that
    * search alone, and answers with the ID its task names it by.
    */
   saveSearchFocus(focus: SearchFocus): Promise<SaveFocusResult>;
-  stopClaude(): void;
-  /** Sends what the user types in the panel to Claude Code. */
-  writeToClaude(data: string): void;
-  resizeClaude(size: TerminalSize): void;
-  /** Listens for Claude Code's output. Returns a function that stops listening. */
-  onClaudeOutput(listener: (data: string) => void): () => void;
-  /** Listens for changes in where the run stands. Returns a function that stops listening. */
-  onClaudeSignal(listener: (signal: RunSignal) => void): () => void;
+  stopClaude(runId: string): void;
   /**
-   * Listens for what Claude does, a tool call at a time, as it starts and once it's done, to say
-   * so in Claude's panel. Returns a function that stops listening.
+   * Closes a run's tab: Claude Code quits, if it's still open, and a task waiting in line leaves
+   * the line.
    */
-  onClaudeStep(listener: (step: RunStep) => void): () => void;
+  closeRun(runId: string): void;
+  /** Sends what the user types in a run's terminal to its Claude Code. */
+  writeToClaude(runId: string, data: string): void;
+  resizeClaude(runId: string, size: TerminalSize): void;
+  /** Listens for each run's output. Returns a function that stops listening. */
+  onClaudeOutput(listener: (output: RunOutput) => void): () => void;
   /**
-   * Listens for how each of Claude's turns ends: what it said last, or the error that ended it.
-   * Returns a function that stops listening.
+   * Listens for what Claude does in each run, a tool call at a time, as it starts and once it's
+   * done, to say so in Claude's panel. Returns a function that stops listening.
    */
-  onClaudeTurnEnd(listener: (end: TurnEnd) => void): () => void;
+  onClaudeStep(listener: (step: { runId: string; step: RunStep }) => void): () => void;
   /**
-   * Listens for what Claude's task at hand changed in the job hunt, and the pages it read: nothing
-   * as a task starts, then all of it once each of its turns ends. Returns a function that stops
+   * Listens for how each of Claude's turns ends, in each run: what it said last, or the error
+   * that ended it. Returns a function that stops listening.
+   */
+  onClaudeTurnEnd(listener: (end: { runId: string; end: TurnEnd }) => void): () => void;
+  /**
+   * Listens for what each run's task changed in the job hunt, and the pages it read: nothing as
+   * the task starts, then all of it once each of its turns ends. Returns a function that stops
    * listening.
    */
-  onRunChanges(listener: (changes: RunChanges) => void): () => void;
+  onRunChanges(listener: (changes: { runId: string; changes: RunChanges }) => void): () => void;
   /**
    * A file of text a task changed, before and after it, by the task's ID and the file's path in
    * the workspace. Null for one that isn't text, or is too long to show.
@@ -344,8 +412,8 @@ export interface FactwrightApi {
    * trash. One that changed again since the task is left as it is, unless `anyway`.
    */
   undoChange(runId: string, path: string, anyway: boolean): Promise<UndoResult>;
-  /** Sends Claude a reply, such as to a question it stopped to ask, as if typed and sent. */
-  replyToClaude(text: string): void;
+  /** Sends a run's Claude a reply, such as to a question it stopped to ask, as if typed and sent. */
+  replyToClaude(runId: string, text: string): void;
   /**
    * Tells the user a task is done, and what it made, in a notification, if they're looking
    * somewhere else.
@@ -357,38 +425,28 @@ export interface FactwrightApi {
    */
   onOpenRunResult(listener: () => void): () => void;
   /**
-   * Listens for Claude Code asking whether to trust the workspace, which it does once, in the
-   * first run. Returns a function that stops listening.
-   */
-  onClaudeTrust(listener: () => void): () => void;
-  /**
-   * Listens for Claude Code showing its first-run screens, which it does until someone presses
-   * Enter through them once. Returns a function that stops listening.
-   */
-  onClaudeFirstRun(listener: () => void): () => void;
-  /**
    * Listens for the app asking the window to start a run on a task, as when the browser
    * extension asks for drafts of a form's questions. Returns a function that stops listening.
    */
   onRunRequest(listener: (request: RunRequest) => void): () => void;
   /** Says whether the window started a run the app asked for, and if not, why. */
   answerRunRequest(id: string, answer: RunRequestAnswer): void;
-  /** The round of Claude's questions waiting on the user to answer in the window, or null. */
-  claudeQuestion(): Promise<QuestionRound | null>;
+  /** The rounds of Claude's questions waiting on the user to answer in the window, oldest first. */
+  claudeQuestions(): Promise<WaitingRound[]>;
   /**
-   * Listens for Claude's questions: the round waiting on the user, or null once none is. Returns
-   * a function that stops listening.
+   * Listens for Claude's questions: every round waiting on the user, from every run, oldest
+   * first. Returns a function that stops listening.
    */
-  onClaudeQuestion(listener: (round: QuestionRound | null) => void): () => void;
+  onClaudeQuestions(listener: (rounds: WaitingRound[]) => void): () => void;
   /** Answers a round of Claude's questions, or sends it to the terminal to answer there. */
   answerClaude(id: string, reply: RoundReply | 'terminal'): Promise<EditResult>;
-  /** The permission prompt Claude Code is waiting on the user to answer in the window, or null. */
-  claudePermission(): Promise<PermissionAsk | null>;
+  /** The permission prompts Claude Code is waiting on the user to answer in the window. */
+  claudePermissions(): Promise<WaitingAsk[]>;
   /**
-   * Listens for Claude Code's permission prompts: the one waiting on the user, or null once none
-   * is. Returns a function that stops listening.
+   * Listens for Claude Code's permission prompts: every one waiting on the user, from every run,
+   * oldest first. Returns a function that stops listening.
    */
-  onClaudePermission(listener: (ask: PermissionAsk | null) => void): () => void;
+  onClaudePermissions(listener: (asks: WaitingAsk[]) => void): () => void;
   /** Answers a permission prompt, or sends it to the terminal to answer there. */
   answerPermission(id: string, answer: PermissionAnswer | 'terminal'): Promise<EditResult>;
   listJobs(): Promise<JobList>;
@@ -630,7 +688,7 @@ export interface FactwrightApi {
    * Listens for facts Claude files from the user's answers in a run, with all it has filed so far
    * in that run. Returns a function that stops listening.
    */
-  onFactsFiled(listener: (filed: FiledFacts) => void): () => void;
+  onFactsFiled(listener: (filed: { runId: string; filed: FiledFacts }) => void): () => void;
   /** Opens the system's terminal app, where the user runs Claude Code's own commands. */
   openTerminal(): Promise<EditResult>;
   /** Where an update to Factwright stands. */

@@ -86,7 +86,7 @@ export const ASK_WITHOUT_COPY = {
  * the hook's answer: nothing, so the call runs as it would have, or asking the user first when no
  * copy could be kept. Null for a call that changes no file.
  */
-export function keepBefore(changes: Pick<RunChanges, 'keep'>, event: unknown): unknown {
+export function keepBefore(changes: Pick<TaskChanges, 'keep'>, event: unknown): unknown {
   const path = editedPath(event);
   if (!path) return null;
   try {
@@ -111,6 +111,11 @@ interface Kept {
   after: string | null;
   /** Changed again since the task's last turn ended, by the task itself. */
   touched: boolean;
+  /**
+   * Another task, side by side with this one, changed it too after this one kept its copy, so
+   * putting the copy back would undo that task's change as well.
+   */
+  shared?: boolean;
   /** Once the user undid it: what it was, as the list showed it. */
   undone: Pick<ChangedFile, 'change' | 'lines'> | null;
 }
@@ -160,6 +165,20 @@ export interface RunChangesDeps {
   now?: () => Date;
 }
 
+/** What one run's tasks change: its task at hand, from its start to each turn's end. */
+export interface TaskChanges {
+  /** Starts a new task's record, with nothing changed yet. */
+  begin(): RunChangesView;
+  /** Keeps a copy of a file before the task first changes it, and says what became of it. */
+  keep(path: string): KeepResult;
+  /** Notes a page the task read, by its address. */
+  read(url: string): void;
+  /** What the task changed, as it stands once a turn ends, or null before it began. */
+  settle(): RunChangesView | null;
+  /** The run ended: its task's record stays on file, with the newest tasks', for Undo. */
+  end(): void;
+}
+
 /**
  * What each of Claude's tasks changes in the workspace, with a copy of each file from before the
  * task first changed it, kept outside the workspace, so Claude can't reach them. Claude's own
@@ -172,8 +191,8 @@ export class RunChanges {
   private readonly folder: string;
   private readonly trash: (path: string) => Promise<void>;
   private readonly now: () => Date;
-  /** The task at hand, which what changes from now on belongs to. */
-  private current: RunRecord | null = null;
+  /** Each run's task at hand, which what that run changes from now on belongs to. */
+  private readonly live = new Set<RunRecord>();
 
   constructor(deps: RunChangesDeps) {
     this.workspace = resolve(deps.workspace);
@@ -183,39 +202,73 @@ export class RunChanges {
   }
 
   /**
-   * Starts a new task's record, with nothing changed yet, and lets the oldest tasks' copies go. A
-   * task before it that changed and read nothing leaves no record, so it takes no newer one's place.
+   * What one run's tasks change, in a record of their own, beside every other run's, so runs side
+   * by side each list only what they changed.
    */
-  begin(): RunChangesView {
-    const was = this.current;
+  forRun(): TaskChanges {
+    let current: RunRecord | null = null;
+    return {
+      begin: () => {
+        if (current) this.live.delete(current);
+        current = this.begin(current);
+        this.live.add(current);
+        return { id: current.id, files: [], pages: [], morePages: 0 };
+      },
+      keep: (path) => (current ? this.keep(current, path) : 'ignored'),
+      read: (url) => {
+        if (current) this.read(current, url);
+      },
+      settle: () => (current ? this.settle(current) : null),
+      end: () => {
+        if (!current) return;
+        this.live.delete(current);
+        // A task that changed and read nothing leaves no record, so it takes no other's place.
+        if (current.files.length === 0 && current.pages.length === 0) {
+          rmSync(join(this.folder, current.id), { recursive: true, force: true });
+        }
+      },
+    };
+  }
+
+  /**
+   * Starts a new task's record, with nothing changed yet, and lets the oldest tasks' copies go. A
+   * task before it in the same run that changed and read nothing leaves no record, so it takes no
+   * newer one's place.
+   */
+  private begin(was: RunRecord | null): RunRecord {
     if (was && was.files.length === 0 && was.pages.length === 0) {
       rmSync(join(this.folder, was.id), { recursive: true, force: true });
     }
     const id = newId(this.now());
-    this.current = { id, started: this.now().toISOString(), files: [], pages: [], bytes: 0 };
+    const run: RunRecord = {
+      id,
+      started: this.now().toISOString(),
+      files: [],
+      pages: [],
+      bytes: 0,
+    };
     try {
       mkdirSync(join(this.folder, id, COPIES), { recursive: true });
-      this.save(this.current);
+      this.save(run);
     } catch {
       // Nothing can be kept, so nothing can be undone. The task goes on.
     }
-    this.prune();
-    return { id, files: [], pages: [], morePages: 0 };
+    this.prune(run);
+    return run;
   }
 
   /**
-   * Keeps a copy of a file before the task at hand first changes it, by its path in full or in
-   * the workspace, and says what became of it. A file outside the workspace is left alone. One
-   * that isn't there yet is noted as new. One too big to copy is noted with no copy, so nothing
-   * can put it back, and one reached through a link, there or not, gets no copy either. A file the user undid that changes again is
-   * the task's again, with the copy from before the task.
+   * Keeps a copy of a file before a run's task first changes it, by its path in full or in the
+   * workspace, and says what became of it. A file outside the workspace is left alone. One that
+   * isn't there yet is noted as new. One too big to copy is noted with no copy, so nothing can put
+   * it back, and one reached through a link, there or not, gets no copy either. A file the user
+   * undid that changes again is the task's again, with the copy from before the task.
    */
-  keep(path: string): KeepResult {
-    const run = this.current;
-    if (!run) return 'ignored';
+  private keep(run: RunRecord, path: string): KeepResult {
     const full = resolve(this.workspace, path);
     const inside = this.inside(full);
     if (!inside) return 'ignored';
+    this.sharing(run, inside);
     const known = run.files.find((each) => each.path === inside);
     if (known) {
       known.touched = true;
@@ -272,22 +325,33 @@ export class RunChanges {
     return copy ? 'kept' : 'no-copy';
   }
 
-  /** Notes a page the task at hand read, by its address, and counts the ones past what it keeps. */
-  read(url: string): void {
-    const run = this.current;
-    if (!run || run.pages.includes(url)) return;
+  /**
+   * Notes that a run is about to change a file another run's task at hand has a copy of, so
+   * Undo there asks first: the copy would put back what this run changes too.
+   */
+  private sharing(run: RunRecord, path: string): void {
+    for (const other of this.live) {
+      if (other === run) continue;
+      const kept = other.files.find((each) => each.path === path && !each.undone);
+      if (!kept || kept.shared) continue;
+      kept.shared = true;
+      this.trySave(other);
+    }
+  }
+
+  /** Notes a page a run's task read, by its address, and counts the ones past what it keeps. */
+  private read(run: RunRecord, url: string): void {
+    if (run.pages.includes(url)) return;
     if (run.pages.length >= MAX_PAGES) run.morePages = (run.morePages ?? 0) + 1;
     else run.pages.push(url);
     this.trySave(run);
   }
 
   /**
-   * What the task at hand changed, once a turn of it ends, with each file as it is then: that's
-   * what Undo checks a file against, to tell whether it changed again since. Null before any task.
+   * What a run's task changed, once a turn of it ends, with each file as it is then: that's what
+   * Undo checks a file against, to tell whether it changed again since.
    */
-  settle(): RunChangesView | null {
-    const run = this.current;
-    if (!run) return null;
+  private settle(run: RunRecord): RunChangesView {
     for (const each of run.files) {
       if (!each.touched || each.undone) continue;
       each.after = hashOf(this.bytesOf(each.path));
@@ -343,6 +407,14 @@ export class RunChanges {
     }
     const full = join(this.workspace, ...kept.path.split('/'));
     const now = this.bytesOf(kept.path);
+    if (!anyway && kept.shared) {
+      return {
+        ok: false,
+        reason: 'since',
+        message:
+          'Another of Claude’s tasks changed this file too. Undo puts it back as it was before this task, and what the other task changed is lost.',
+      };
+    }
     if (!anyway && kept.after !== null && hashOf(now) !== kept.after) {
       return {
         ok: false,
@@ -497,10 +569,10 @@ export class RunChanges {
     }
   }
 
-  /** A task's record by its ID, the one at hand from memory. */
+  /** A task's record by its ID, a run's task at hand from memory. */
   private load(id: string): RunRecord | null {
     if (!RUN_CHANGES_ID.test(id)) return null;
-    if (this.current?.id === id) return this.current;
+    for (const run of this.live) if (run.id === id) return run;
     try {
       const record = JSON.parse(readFileSync(join(this.folder, id, RECORD), 'utf8')) as RunRecord;
       return record.id === id && Array.isArray(record.files) && Array.isArray(record.pages)
@@ -532,8 +604,8 @@ export class RunChanges {
     }
   }
 
-  /** Lets go of every task's copies but the newest. */
-  private prune(): void {
+  /** Lets go of every task's copies but the newest, and any run's task at hand. */
+  private prune(started: RunRecord): void {
     let ids: string[];
     try {
       ids = readdirSync(this.folder).filter((name) => RUN_CHANGES_ID.test(name));
@@ -541,8 +613,9 @@ export class RunChanges {
       return;
     }
     ids.sort();
+    const live = new Set([started.id, ...[...this.live].map((run) => run.id)]);
     for (const id of ids.slice(0, Math.max(0, ids.length - KEPT_RUNS))) {
-      if (id === this.current?.id) continue;
+      if (live.has(id)) continue;
       rmSync(join(this.folder, id), { recursive: true, force: true });
     }
   }

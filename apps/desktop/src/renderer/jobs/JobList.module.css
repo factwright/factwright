@@ -323,6 +323,43 @@
   max-width: 100%;
 }
 
+/* Claude's on a task for the job, or one waits in line for it: the first thing to keep. */
+.claude {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+  padding: 0 7px;
+  border-radius: var(--fw-radius-full);
+  background: var(--fw-accent-soft);
+  color: var(--fw-accent-text);
+  font-size: var(--fw-text-xs);
+  font-weight: 600;
+  line-height: 18px;
+  white-space: nowrap;
+}
+
+.claudeLater {
+  background: var(--fw-sunken);
+  color: var(--fw-muted);
+}
+
+.claudeSpin {
+  animation: claude-spin 1.2s linear infinite;
+}
+
+@keyframes claude-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .claudeSpin {
+    animation: none;
+  }
+}
+
 /* Which kind of job it's under, while every kind shows: an outline, to tell it from the search
    that found it. */
 .kind {

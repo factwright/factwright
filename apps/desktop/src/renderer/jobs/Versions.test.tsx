@@ -8,7 +8,7 @@ import type { FactwrightApi } from '../../shared/api.ts';
 import type { RunTask } from '../../shared/runs.ts';
 import type { DocVersion } from '../../shared/versions.ts';
 import { ResumesSection } from './ResumesSection.tsx';
-import type { RunControls } from './RunActions.tsx';
+import { type RunControls, runControlsFor } from './RunActions.tsx';
 import { sampleJob } from './sample-jobs.ts';
 import { EarlierVersions, NewVersionButton, RequestChanges } from './Versions.tsx';
 
@@ -94,10 +94,9 @@ function apiStub() {
   };
 }
 
+/** The job panel's run controls, with Claude at work on a task, or on none. */
 const controls = (task: RunTask | null = null): RunControls => ({
-  phase: task ? 'working' : 'idle',
-  task,
-  start: vi.fn(),
+  ...runControlsFor(task ? [{ id: 'run-1', task, phase: 'working' }] : [], vi.fn(), vi.fn()),
   show: vi.fn(),
 });
 

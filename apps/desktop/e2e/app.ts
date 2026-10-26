@@ -98,13 +98,16 @@ const foldWork = (window: Page) =>
     .getByRole('button', { name: 'Hide Claude’s work' })
     .click();
 
+/** The terminal of the run Claude's panel shows: its own tab's, with runs side by side. */
+const shownTerminal = (window: Page) => window.locator('section[aria-label="Claude"] [data-shown]');
+
 /**
  * Reads what Claude's work shows, as a person does: the terminal draws only while it shows, so
  * this shows it while it reads, then folds it away again if it was.
  */
 async function reading<T>(window: Page, read: (rows: Locator) => Promise<T>): Promise<T> {
   const folded = await showWork(window);
-  const rows = window.locator('section[aria-label="Claude"] .xterm-rows');
+  const rows = shownTerminal(window).locator('.xterm-rows');
   try {
     // Shown again, it notices a moment later, then draws its rows on the next frames, over what it
     // drew when it last showed. Once they hold still, they're all there.
@@ -141,7 +144,7 @@ export const terminalText = (window: Page) => reading(window, (rows) => rows.inn
  */
 export const terminalStart = (window: Page) =>
   reading(window, async (rows) => {
-    await window.locator('section[aria-label="Claude"] .xterm-screen').hover();
+    await shownTerminal(window).locator('.xterm-screen').hover();
     await window.mouse.wheel(0, -100_000);
     const text = await rows.innerText();
     await window.mouse.wheel(0, 100_000);

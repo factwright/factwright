@@ -44,6 +44,6 @@ Use web searches first: snippets often show posted ranges. `read_posting` reads 
 - If the job has a folder (`find_job` says so), append the result to its `notes.md` under `## Pay`.
 
 ## 5. Log it
-Append one row to `searches/salary-checks.md` (create it with this header if it's missing): `| Date | Company | Role | Estimate | Confidence | Link |`.
+Call `log_check` with log `salary-checks` and the row: `company`, `role`, `estimate`, `confidence` and `link`. The app writes it into `searches/salary-checks.md`, one row at a time, as other runs may be logging theirs at once, so never edit that file yourself.
 
 The app picks up the row on its own. There's nothing to commit or sync.

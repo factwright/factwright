@@ -24,7 +24,13 @@ afterEach(cleanup);
 function apiWith(start: { models?: ModelChoices; effort?: EffortChoices } = {}) {
   let models = start.models ?? DEFAULT_MODELS;
   let effort = start.effort ?? DEFAULT_EFFORT;
+  let atOnce = 3;
   return {
+    runsAtOnce: vi.fn(async () => atOnce),
+    setRunsAtOnce: vi.fn(async (count: number) => {
+      atOnce = count;
+      return count;
+    }),
     claudeModels: vi.fn(async () => models),
     setClaudeModels: vi.fn(async (chosen: ModelChoices) => {
       models = chosen;
@@ -216,6 +222,28 @@ describe('ClaudeSettingsDialog', () => {
     await screen.findByRole('combobox', { name: 'Model for everything' });
     expect(screen.queryByText(/On a Pro plan/)).toBeNull();
     expect(screen.queryByText(/Every token is billed/)).toBeNull();
+  });
+
+  it('runs three tasks at once until the user picks from one to five', async () => {
+    const api = apiWith();
+    render(<ClaudeSettingsDialog api={api} onClose={vi.fn()} />);
+    const atOnce = (await screen.findByRole('combobox', {
+      name: 'Tasks at once',
+    })) as HTMLSelectElement;
+    expect(atOnce.value).toBe('3');
+    expect([...atOnce.options].map((option) => option.textContent)).toEqual([
+      '1 task',
+      '2 tasks',
+      '3 tasks (recommended)',
+      '4 tasks',
+      '5 tasks',
+    ]);
+    await userEvent.selectOptions(atOnce, '5');
+    expect(api.setRunsAtOnce).toHaveBeenCalledWith(5);
+    await waitFor(() => expect(atOnce.value).toBe('5'));
+    expect(
+      screen.getByText(/Past this many, a task waits in line and starts by itself/),
+    ).toBeTruthy();
   });
 
   it('closes with Done', async () => {

@@ -48,7 +48,7 @@ function open(ask: PermissionAsk = TEMPLATE, result: EditResult = { ok: true }) 
     <ClaudePermission
       api={api}
       ask={ask}
-      about="Revised resume · Acme Robotics"
+      about="Acme Robotics · Resume revision"
       onClose={onClose}
     />,
   );
@@ -62,7 +62,7 @@ describe('ClaudePermission', () => {
       name: 'Let Claude replace your template “Executive”?',
     });
     expect(dialog.textContent).toContain(
-      'Claude Code asks, as your Claude works on Revised resume · Acme Robotics.',
+      'Claude Code asks, as your Claude works on Acme Robotics · Resume revision.',
     );
     expect((await axe.run(container)).violations).toEqual([]);
     // A click the moment it shows, such as a double-click's second, answers nothing.
@@ -71,6 +71,31 @@ describe('ClaudePermission', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Allow' }));
     expect(api.answerPermission).toHaveBeenCalledWith('perm_1', { allow: true });
     expect(onClose).toHaveBeenCalled();
+  });
+
+  it('names the run asking among several waiting, and goes on to the next once answered', async () => {
+    const api = { answerPermission: vi.fn(async () => ({ ok: true as const })) };
+    const go = vi.fn();
+    const onAnswered = vi.fn();
+    const onClose = vi.fn();
+    render(
+      <ClaudePermission
+        api={api}
+        ask={TEMPLATE}
+        about="A template of your own"
+        turn={{ run: 'A template of your own', at: 3, of: 3, go }}
+        onAnswered={onAnswered}
+        onClose={onClose}
+      />,
+    );
+    expect(screen.getByRole('dialog').textContent).toContain('A template of your own3 of 3');
+    expect(screen.getByRole('button', { name: 'Next' })).toHaveProperty('disabled', true);
+    await userEvent.click(screen.getByRole('button', { name: 'Previous' }));
+    expect(go).toHaveBeenCalledWith(-1);
+    await answerable();
+    await userEvent.click(screen.getByRole('button', { name: 'Allow' }));
+    expect(onAnswered).toHaveBeenCalled();
+    expect(onClose).not.toHaveBeenCalled();
   });
 
   it('says no with a note for Claude, or leaves it to the terminal', async () => {

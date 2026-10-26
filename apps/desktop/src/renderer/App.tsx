@@ -9,28 +9,30 @@ import {
 } from '@factwright/core';
 import { Button, Dialog, DialogActions } from '@factwright/ui';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { FactwrightApi } from '../shared/api.ts';
+import type { FactwrightApi, RunView } from '../shared/api.ts';
 import { signInCommand } from '../shared/claude-commands.ts';
 import type { FiledFacts } from '../shared/facts.ts';
 import { hasKinds, kindsOf } from '../shared/kinds.ts';
 import type { ProfileEntry } from '../shared/profiles.ts';
-import { REVISE_SKILL } from '../shared/revision.ts';
 import {
-  FACTS_SKILL,
   GET_STARTED_SKILL,
-  HISTORY_SKILL,
+  lanesOf,
   type RunRequest,
   type RunTask,
   SEARCH_SKILL,
   TEMPLATE_SKILL,
-  THANKS_SKILL,
-  taskJob,
 } from '../shared/runs.ts';
 import styles from './App.module.css';
 import { GetStarted } from './about/GetStarted.tsx';
 import { ProfilePage } from './about/ProfilePage.tsx';
 import { needsGettingStarted, useProfile } from './about/useProfile.ts';
-import { ClaudePanel, endsAsking, type RunResult, turnErrorWords } from './ClaudePanel.tsx';
+import {
+  ClaudePanel,
+  endsAsking,
+  type PanelRun,
+  type RunResult,
+  turnErrorWords,
+} from './ClaudePanel.tsx';
 import { ClaudePermission } from './ClaudePermission.tsx';
 import { ClaudeQuestions } from './ClaudeQuestions.tsx';
 import { ClaudeSettingsDialog } from './ClaudeSettingsDialog.tsx';
@@ -44,7 +46,7 @@ import { JobsPage } from './jobs/JobsPage.tsx';
 import { JourneyDialog } from './jobs/JourneyDialog.tsx';
 import { MergeDialog } from './jobs/MergeDialog.tsx';
 import { showSection } from './jobs/PanelSection.tsx';
-import { BUSY, RUN_ACTIONS, type RunControls, requestedRun } from './jobs/RunActions.tsx';
+import { BUSY, requestedRun, runControlsFor, type TaskState } from './jobs/RunActions.tsx';
 import {
   filterForAdded,
   isListSort,
@@ -63,12 +65,12 @@ import { useCallReminders } from './jobs/useCallReminders.ts';
 import { useJobs } from './jobs/useJobs.ts';
 import { useCallClock, useToday } from './jobs/useToday.ts';
 import { WithdrawDialog } from './jobs/WithdrawDialog.tsx';
-import { isRunning } from './PanelHeader.tsx';
 import { planName } from './plan.ts';
 import { isBoolean, readPref, usePref, writePref } from './prefs.ts';
 import { AddProfileDialog } from './profiles/AddProfileDialog.tsx';
 import { ManageProfilesDialog } from './profiles/ManageProfilesDialog.tsx';
 import { useProfiles } from './profiles/useProfiles.ts';
+import { tabState } from './RunTabs.tsx';
 import {
   makesSomething,
   type RunBefore,
@@ -76,20 +78,20 @@ import {
   runBefore,
   runOutcome,
 } from './runOutcome.ts';
+import { runTitle } from './runTitle.ts';
 import { type Page, Sidebar } from './Sidebar.tsx';
 import { SyncDialog } from './sync/SyncDialog.tsx';
 import { useApprovals, useSync } from './sync/useSync.ts';
 import { TopBar } from './TopBar.tsx';
 import { hasUnsaved } from './unsaved.ts';
 import { useUpdates } from './updates/useUpdates.ts';
-import { useClaudePermission } from './useClaudePermission.ts';
-import { useClaudeQuestions } from './useClaudeQuestions.ts';
-import { useClaudeRun } from './useClaudeRun.ts';
+import { isOpen, startsNow, useClaudeRuns } from './useClaudeRuns.ts';
 import { typedClaude, useClaudeStatus } from './useClaudeStatus.ts';
 import { useLevelChoices } from './useLevelChoices.ts';
 import { useRunActivity } from './useRunActivity.ts';
 import { useRunChanges } from './useRunChanges.ts';
 import { useSetupCheck } from './useSetupCheck.ts';
+import { type Choice, type Turn, useWaitingTurns } from './useWaitingTurns.ts';
 
 const isView = (value: unknown): value is JobView =>
   (JOB_VIEWS as readonly unknown[]).includes(value);
@@ -114,11 +116,11 @@ export function App({ api }: { api: FactwrightApi }) {
   const setup = useSetupCheck(api);
   const sync = useSync(api);
   const approvals = useApprovals(api);
-  const run = useClaudeRun(api);
-  const activity = useRunActivity(api, run.taskId);
-  const changes = useRunChanges(api, run.taskId);
-  const questions = useClaudeQuestions(api);
-  const permission = useClaudePermission(api);
+  const claude = useClaudeRuns(api);
+  const runIds = useMemo(() => claude.runs.map((run) => run.id), [claude.runs]);
+  const activityOf = useRunActivity(api, runIds);
+  const changesOf = useRunChanges(api, runIds);
+  const turns = useWaitingTurns(api);
   const { jobs, reload } = useJobs(api);
   const about = useProfile(api);
   const today = useToday();
@@ -198,22 +200,17 @@ export function App({ api }: { api: FactwrightApi }) {
   const viewChosen = useRef(false);
   // The page the user picked in the sidebar, or null to let the app choose.
   const [picked, setPicked] = useState<Page | null>(null);
-  // What the run filed in the fact bank from the user's answers, and what of it the user has
-  // seen, by opening it or dismissing the note. A new run starts with nothing filed.
-  const [filedIn, setFiled] = useState<{
-    runId: number;
-    facts: FiledFacts;
-    seen: { facts: string[]; gaps: number };
-  } | null>(null);
-  const runId = useRef(run.runId);
-  runId.current = run.runId;
+  // What each run filed in the fact bank from the user's answers, and what of it the user has
+  // seen, by opening it or dismissing the note, by the run's ID. A new run starts with nothing.
+  const [filedIn, setFiled] = useState<
+    Readonly<Record<string, { facts: FiledFacts; seen: { facts: string[]; gaps: number } }>>
+  >({});
   useEffect(
     () =>
-      api.onFactsFiled((facts) =>
-        setFiled((was) => ({
-          runId: runId.current,
-          facts,
-          seen: was?.runId === runId.current ? was.seen : { facts: [], gaps: 0 },
+      api.onFactsFiled(({ runId, filed }) =>
+        setFiled((all) => ({
+          ...all,
+          [runId]: { facts: filed, seen: all[runId]?.seen ?? { facts: [], gaps: 0 } },
         })),
       ),
     [api],
@@ -222,17 +219,30 @@ export function App({ api }: { api: FactwrightApi }) {
   // shows again.
   const factKey = ({ path, title, save }: FiledFacts['facts'][number]) =>
     `${path}#${title}#${save}`;
-  const filed: FiledFacts | null =
-    filedIn?.runId === run.runId
+  const filedFor = (runId: string): FiledFacts | null => {
+    const filedHere = filedIn[runId];
+    return filedHere
       ? {
-          facts: filedIn.facts.facts.filter((each) => !filedIn.seen.facts.includes(factKey(each))),
-          gaps: Math.max(0, filedIn.facts.gaps - filedIn.seen.gaps),
+          facts: filedHere.facts.facts.filter(
+            (each) => !filedHere.seen.facts.includes(factKey(each)),
+          ),
+          gaps: Math.max(0, filedHere.facts.gaps - filedHere.seen.gaps),
         }
       : null;
-  const seeFiled = () =>
-    setFiled((was) =>
-      was ? { ...was, seen: { facts: was.facts.facts.map(factKey), gaps: was.facts.gaps } } : was,
-    );
+  };
+  const seeFiled = (runId: string) =>
+    setFiled((all) => {
+      const was = all[runId];
+      return was
+        ? {
+            ...all,
+            [runId]: {
+              ...was,
+              seen: { facts: was.facts.facts.map(factKey), gaps: was.facts.gaps },
+            },
+          }
+        : all;
+    });
   // A part of the fact bank to go to, such as the facts a run just filed.
   const [factsShown, setFactsShown] = useState<{ part: 'unverified' | 'gaps'; at: number } | null>(
     null,
@@ -354,51 +364,27 @@ export function App({ api }: { api: FactwrightApi }) {
     const next = stepFrom(order, selectedId ?? '', offset, (id) => ids.has(id));
     if (next) setSelectedId(next);
   };
-  // What the jobs looked like as the task at hand started, to tell once it's done what it made.
-  const [before, setBefore] = useState<RunBefore | null>(null);
-  const { requestStart } = run;
-  const startRun = useCallback(
-    (next?: RunTask) => {
-      setBefore(runBefore(next ?? null, rows));
-      requestStart(next);
+  const { start: startClaude, close: closeRun, show: showRun } = claude;
+  const startRun = useCallback((next?: RunTask) => startClaude(next), [startClaude]);
+  // Whether a task waits in line, or has a run going, on a job or a part of the job hunt.
+  const taken = (lane: string) =>
+    claude.runs.some(
+      (run) =>
+        (run.phase === 'in-line' || BUSY.includes(run.phase)) && lanesOf(run.task).includes(lane),
+    );
+  const runControls = useMemo(
+    () => runControlsFor(claude.runs, startRun, showRun),
+    [claude.runs, startRun, showRun],
+  );
+  // Whether Claude is on a task for a job, or has one in line for it, for the jobs list.
+  const claudeOn = useCallback(
+    (jobId: string): TaskState | null => {
+      const tasks = runControls.tasksOn(jobId);
+      if (tasks.length === 0) return null;
+      return tasks.some(({ state }) => state === 'running') ? 'running' : 'in-line';
     },
-    [rows, requestStart],
+    [runControls],
   );
-  const runControls = useMemo<RunControls>(
-    () => ({ phase: run.phase, task: run.task, start: startRun, show: run.show }),
-    [run.phase, run.task, startRun, run.show],
-  );
-  // The run's name in Claude's panel, such as "Fit check · Acme", when a Run button started it.
-  const task = run.task;
-  const runJob = rows.find((row) => row.job.id === taskJob(task))?.job;
-  const runLabel =
-    task?.skill === 'ask'
-      ? 'Your question'
-      : task?.skill === REVISE_SKILL
-        ? 'Resume revision'
-        : task?.skill === THANKS_SKILL
-          ? 'Thank-you notes'
-          : task && 'callId' in task
-            ? 'practice' in task && task.practice
-              ? 'Practice'
-              : 'Call prep'
-            : task && 'quick' in task
-              ? 'Quick resume'
-              : task && RUN_ACTIONS.find((action) => action.skill === task.skill)?.label;
-  const runTitle =
-    task?.skill === SEARCH_SKILL
-      ? 'Job search'
-      : task?.skill === GET_STARTED_SKILL
-        ? 'Getting to know you'
-        : task?.skill === FACTS_SKILL
-          ? 'Your fact bank'
-          : task?.skill === TEMPLATE_SKILL
-            ? 'A template of your own'
-            : task?.skill === HISTORY_SKILL
-              ? 'Your work history'
-              : runJob && runLabel
-                ? `${runLabel} · ${runJob.company}`
-                : undefined;
 
   // A job the window goes to for what a run made, with the section of its panel to show it in,
   // once the job has opened.
@@ -429,67 +415,208 @@ export function App({ api }: { api: FactwrightApi }) {
     setOpening(place.jobId);
     if (place.section) setReveal({ jobId: place.jobId, section: place.section });
   };
-  // What the task made, once it's done, as the jobs catch up with it. Some moments on, with
-  // nothing to show, it stopped short of what it was for, such as to ask the user something.
-  const outcome = useMemo(
-    () =>
-      run.phase === 'done' && before && before.task === run.task
-        ? runOutcome(before, rows, activity.steps)
-        : null,
-    [run.phase, run.task, before, rows, activity.steps],
-  );
-  const [settled, setSettled] = useState(false);
+  // What the jobs looked like as each run started, to tell once it's done what it made. A task
+  // that waits in line starts later, so what it starts from is taken once it does.
+  const [befores, setBefores] = useState<Readonly<Record<string, RunBefore>>>({});
+  const rowsNow = useRef(rows);
+  rowsNow.current = rows;
+  const runsNow = useRef(claude.runs);
+  runsNow.current = claude.runs;
+  const startedKey = claude.runs
+    .filter((run) => run.phase !== 'in-line')
+    .map((run) => run.id)
+    .join(' ');
   useEffect(() => {
-    setSettled(false);
-    if (run.phase !== 'done') return;
-    const timer = setTimeout(() => setSettled(true), SETTLE_MS);
-    return () => clearTimeout(timer);
-  }, [run.phase, run.taskId]);
-  const stoppedShort = settled && !outcome && makesSomething(run.task);
-  const result: RunResult | null = outcome && {
-    text: outcome.text,
-    open: outcome.place && {
-      label: 'view' in outcome.place ? 'See them' : 'Open it',
-      go: () => outcome.place && goTo(outcome.place),
-    },
-  };
+    const started = new Set(startedKey.split(' ').filter(Boolean));
+    setBefores((all) => {
+      const kept = Object.entries(all).filter(([id]) => started.has(id));
+      const fresh = runsNow.current
+        .filter((run) => started.has(run.id) && !all[run.id])
+        .map((run) => [run.id, runBefore(run.task, rowsNow.current)] as const);
+      return fresh.length === 0 && kept.length === Object.keys(all).length
+        ? all
+        : Object.fromEntries([...kept, ...fresh]);
+    });
+  }, [startedKey]);
+  // Which runs have been done a few moments, as the jobs catch up with what they made. With
+  // nothing to show by then, a run stopped short of what it was for, such as to ask something.
+  const [settled, setSettled] = useState<ReadonlySet<string>>(() => new Set());
+  const settling = useRef(new Map<string, ReturnType<typeof setTimeout>>());
+  const doneKey = claude.runs
+    .filter((run) => run.phase === 'done')
+    .map((run) => run.id)
+    .join(' ');
+  useEffect(() => {
+    const done = new Set(doneKey.split(' ').filter(Boolean));
+    for (const [id, timer] of settling.current) {
+      if (done.has(id)) continue;
+      clearTimeout(timer);
+      settling.current.delete(id);
+    }
+    setSettled((was) => {
+      const still = [...was].filter((id) => done.has(id));
+      return still.length === was.size ? was : new Set(still);
+    });
+    for (const id of done) {
+      if (settling.current.has(id)) continue;
+      settling.current.set(
+        id,
+        setTimeout(() => setSettled((was) => new Set(was).add(id)), SETTLE_MS),
+      );
+    }
+  }, [doneKey]);
+  useEffect(() => {
+    const timers = settling.current;
+    return () => {
+      for (const timer of timers.values()) clearTimeout(timer);
+    };
+  }, []);
+  // Each run as its tab and bar show it: its name, what it's done and made, and what it waits on
+  // the user for.
+  const titleOf = (run: RunView) => runTitle(run.task, listed);
+  const panelRuns = claude.runs.map((view): PanelRun => {
+    const activity = activityOf(view.id);
+    const before = befores[view.id];
+    const outcome =
+      view.phase === 'done' && before ? runOutcome(before, rows, activity.steps) : null;
+    const result: RunResult | null = outcome && {
+      text: outcome.text,
+      open: outcome.place && {
+        label: 'view' in outcome.place ? 'See them' : 'Open it',
+        go: () => outcome.place && goTo(outcome.place),
+      },
+    };
+    const waiting = turns.turns.filter((turn) => turn.item.runId === view.id);
+    const first = waiting[0];
+    const task = view.task;
+    return {
+      view,
+      title: titleOf(view),
+      state: tabState(view, {
+        waiting: waiting.length > 0 || endsAsking(view.phase, activity, result),
+        failed: view.phase === 'done' && Boolean(activity.end?.error),
+      }),
+      activity,
+      result,
+      stoppedShort: settled.has(view.id) && !outcome && makesSomething(view.task),
+      onRetry: task
+        ? () => {
+            // The task starts again in a run of its own, in place of this one.
+            closeRun(view.id);
+            startRun(task);
+          }
+        : undefined,
+      filed: filedFor(view.id),
+      changes: changesOf(view.id),
+      asking: first
+        ? {
+            what: first.kind,
+            count: first.kind === 'questions' ? first.item.questions.length : 1,
+            open: turns.shown?.item.runId === view.id,
+            onAnswer: () => turns.show(view.id),
+          }
+        : null,
+    };
+  });
   // Work going, which restarting the app would stop: a run that's starting, working or waiting on
-  // the user, as for a reply to a question Claude asked in its own words. Updates and switching
-  // profiles wait for it. Claude Code that's done closes as the app restarts.
-  const workGoing = BUSY.includes(run.phase) || endsAsking(run.phase, activity, result);
-  // Opens what the task made from the notification that says so, too.
+  // the user, as for a reply to a question Claude asked in its own words, or a task in line.
+  // Updates and switching profiles wait for it. Claude Code that's done closes as the app restarts.
+  const workGoing = panelRuns.some(
+    ({ view, state }) =>
+      view.phase === 'in-line' || BUSY.includes(view.phase) || state === 'waiting',
+  );
+  // Opens what the task made from the notification that says so, too: the last one told of, as
+  // it stands now.
+  const toldLast = useRef<string | null>(null);
   const openResult = useRef<(() => void) | null>(null);
-  openResult.current = result?.open?.go ?? null;
+  openResult.current =
+    panelRuns.find(({ view }) => view.id === toldLast.current)?.result?.open?.go ?? null;
   useEffect(() => api.onOpenRunResult(() => openResult.current?.()), [api]);
   // A run the app asks for, as when the browser extension asks for drafts of a form's questions,
-  // starts as a Run button's does, unless Claude is busy or isn't ready. The window stays where
-  // it is.
+  // starts as a Run button's does, if it can start now, without waiting in line, and once Claude
+  // Code is ready. The window stays where it is.
   const runRequested = useRef<(request: RunRequest) => void>(() => {});
   runRequested.current = ({ id, task: asked }) => {
-    const answer = requestedRun(ready, run.phase);
+    const answer = requestedRun(ready, startsNow(claude, asked));
     api.answerRunRequest(id, answer);
-    if (answer === 'started') startRun(asked);
+    // It starts in the background, leaving the tab the user is on, and their work, as they were.
+    if (answer === 'started') startClaude(asked, { background: true });
   };
   useEffect(() => api.onRunRequest((request) => runRequested.current(request)), [api]);
-  // A notification says what the task made, or that Claude is done, once, if the user is away.
-  const turnError = run.phase === 'done' ? activity.end?.error : null;
-  const said = run.phase === 'done' ? (activity.end?.said ?? null) : null;
-  const note = useMemo(() => {
-    if (run.phase !== 'done') return null;
-    if (turnError) return { title: 'Claude didn’t finish', body: turnErrorWords(turnError.kind) };
-    if (outcome) return { title: outcome.text, body: 'Open Factwright to see it.' };
-    if (said?.endsWith('?')) return { title: 'Claude has a question for you', body: said };
-    return settled
-      ? { title: 'Claude is done', body: `${runTitle ?? 'Your task'}. Open Factwright to see it.` }
-      : null;
-  }, [run.phase, turnError, outcome, said, settled, runTitle]);
-  const told = useRef(false);
+  // A notification says what each task made, or that Claude is done, once, if the user is away.
+  const told = useRef(new Set<string>());
   useEffect(() => {
-    if (run.phase !== 'done') told.current = false;
-    if (!note || told.current) return;
-    told.current = true;
-    api.tellRunDone(note);
-  }, [api, run.phase, note]);
+    for (const { view, activity, result, title } of panelRuns) {
+      if (view.phase !== 'done') {
+        told.current.delete(view.id);
+        continue;
+      }
+      if (told.current.has(view.id)) continue;
+      const error = activity.end?.error;
+      const said = activity.end?.said ?? null;
+      const note = error
+        ? { title: 'Claude didn’t finish', body: turnErrorWords(error.kind) }
+        : result
+          ? { title: result.text, body: 'Open Factwright to see it.' }
+          : said?.endsWith('?')
+            ? { title: 'Claude has a question for you', body: said }
+            : settled.has(view.id)
+              ? {
+                  title: 'Claude is done',
+                  body: `${view.task ? title : 'Your task'}. Open Factwright to see it.`,
+                }
+              : null;
+      if (!note) continue;
+      told.current.add(view.id);
+      toldLast.current = view.id;
+      openResult.current = result?.open?.go ?? null;
+      api.tellRunDone(note);
+    }
+  });
+
+  // The run Claude's panel would show for Claude Code's first screens: one showing them, or else
+  // one that's open, the one shown first.
+  const openRun =
+    claude.runs.find((run) => run.screen !== null) ??
+    (claude.selected && isOpen(claude.selected.phase) ? claude.selected : null) ??
+    claude.runs.find((run) => isOpen(run.phase)) ??
+    null;
+  // What the run asking the user is for, in the dialog's words, or null for Claude with no task.
+  const aboutRun = (runId: string) => {
+    const view = claude.runs.find((run) => run.id === runId);
+    return view?.task ? titleOf(view) : null;
+  };
+  // With runs side by side, or several things waiting, the dialog names the run asking, and
+  // which of them it is.
+  const turnOf = (turn: Turn) => {
+    if (claude.runs.length < 2 && turns.turns.length < 2) return undefined;
+    const view = claude.runs.find((run) => run.id === turn.item.runId);
+    return {
+      run: view ? titleOf(view) : 'Claude',
+      at: turns.turns.indexOf(turn) + 1,
+      of: turns.turns.length,
+      go: turns.go,
+    };
+  };
+  // A turn left to the terminal shows its run's terminal, whichever tab was showing.
+  const answeredFor = (runId: string) => (inTerminal: boolean) => {
+    if (inTerminal) claude.show(runId);
+  };
+  // Claude with no task waits for what the user types: one that's open shows again, rather than
+  // another opening beside it.
+  const startFree = () => {
+    const free = claude.runs.find((run) => run.task === null && isOpen(run.phase));
+    if (free) claude.show(free.id);
+    else startRun();
+  };
+  const shownRound = turns.shown?.kind === 'questions' ? turns.shown.item.id : null;
+  const { keepDraft } = turns;
+  const keepShownDraft = useCallback(
+    (choices: Choice[]) => {
+      if (shownRound) keepDraft(shownRound, choices);
+    },
+    [shownRound, keepDraft],
+  );
 
   return (
     <div className={styles.app}>
@@ -535,11 +662,14 @@ export function App({ api }: { api: FactwrightApi }) {
           linkRequests={approvals.requests}
           linkAsking={approvals.asking}
           onOpenSync={() => setDialog('sync')}
-          // Claude's panel, for Claude Code's first-run screens: the run that's open, or a new one.
+          // Claude's panel, for Claude Code's first-run screens: the run showing them, or another
+          // that's open, or a new one.
           onOpenClaude={
-            run.open && isRunning(run.phase)
-              ? undefined
-              : () => (isRunning(run.phase) ? run.show() : startRun())
+            openRun
+              ? claude.open && claude.selected?.id === openRun.id
+                ? undefined
+                : () => claude.show(openRun.id)
+              : startFree
           }
           onOpenClaudeSettings={() => setDialog('claude-settings')}
           onOpenExtension={() => setDialog('extension')}
@@ -569,7 +699,7 @@ export function App({ api }: { api: FactwrightApi }) {
                 api={api}
                 claude={status}
                 onRecheckClaude={recheck}
-                canStartClaude={ready && !BUSY.includes(run.phase)}
+                canStartClaude={ready && !taken('profile')}
                 onStart={() => {
                   // The profile follows Claude as it gets to know the user.
                   setPicked('profile');
@@ -592,7 +722,7 @@ export function App({ api }: { api: FactwrightApi }) {
               <ProfilePage
                 state={{ ...about, profile }}
                 api={api}
-                phase={run.phase}
+                busy={taken('profile')}
                 ready={ready}
                 onRun={(next) => startRun(next)}
                 onOpenFacts={() => setPicked('facts')}
@@ -632,9 +762,11 @@ export function App({ api }: { api: FactwrightApi }) {
                 selectedId={selectedId}
                 onSelect={pick}
                 onRetry={reload}
-                canStartClaude={ready && !isRunning(run.phase)}
-                onStartClaude={() => startRun()}
-                canFindJobs={ready && !BUSY.includes(run.phase)}
+                canStartClaude={ready}
+                onStartClaude={startFree}
+                // A search waits in line behind another, so Find jobs is never busy.
+                canFindJobs={ready}
+                claudeOn={claudeOn}
                 onFindJobs={() => setDialog('find-jobs')}
                 onOpenJourney={() => setDialog('journey')}
                 onGetStarted={gettingStarted ? () => setPicked('profile') : undefined}
@@ -682,36 +814,15 @@ export function App({ api }: { api: FactwrightApi }) {
           </div>
           <ClaudePanel
             api={api}
-            run={run}
+            runs={panelRuns}
+            claude={claude}
             plan={plan}
-            title={runTitle}
-            activity={activity}
-            result={result}
-            stoppedShort={stoppedShort}
-            onRetry={run.task ? () => startRun(run.task ?? undefined) : undefined}
-            filed={filed}
-            onReviewFiled={(part) => {
-              seeFiled();
+            onReviewFiled={(runId, part) => {
+              seeFiled(runId);
               setPicked('facts');
               setFactsShown((was) => ({ part, at: (was?.at ?? 0) + 1 }));
             }}
             onDismissFiled={seeFiled}
-            changes={changes}
-            asking={
-              questions.round
-                ? {
-                    what: 'questions',
-                    count: questions.round.questions.length,
-                    open: questions.open,
-                    onAnswer: questions.show,
-                  }
-                : permission.ask && {
-                    what: 'permission',
-                    count: 1,
-                    open: permission.open,
-                    onAnswer: permission.show,
-                  }
-            }
           />
         </div>
       </div>
@@ -845,24 +956,29 @@ export function App({ api }: { api: FactwrightApi }) {
           )}
         </Dialog>
       )}
-      {questions.round && questions.open && (
+      {turns.shown?.kind === 'questions' && (
         <ClaudeQuestions
-          key={questions.round.id}
+          key={turns.shown.item.id}
           api={api}
-          round={questions.round}
-          about={runTitle ?? null}
-          draft={questions.draft}
-          onDraft={questions.keepDraft}
-          onClose={questions.hide}
+          round={turns.shown.item}
+          about={aboutRun(turns.shown.item.runId)}
+          turn={turnOf(turns.shown)}
+          draft={turns.draft(turns.shown.item.id)}
+          onDraft={keepShownDraft}
+          // Answered, it goes on to what waits next, as the app takes the round off the list.
+          onAnswered={answeredFor(turns.shown.item.runId)}
+          onClose={turns.hide}
         />
       )}
-      {permission.ask && permission.open && (
+      {turns.shown?.kind === 'permission' && (
         <ClaudePermission
-          key={permission.ask.id}
+          key={turns.shown.item.id}
           api={api}
-          ask={permission.ask}
-          about={runTitle ?? null}
-          onClose={permission.hide}
+          ask={turns.shown.item}
+          about={aboutRun(turns.shown.item.runId)}
+          turn={turnOf(turns.shown)}
+          onAnswered={answeredFor(turns.shown.item.runId)}
+          onClose={turns.hide}
         />
       )}
       {profileProblem && (

@@ -95,8 +95,8 @@ Every job checked gets a folder, so its posting and this write-up survive dead l
 List the job's 3–6 core work items under Work, so the user can see where those points came from. Leave out **Worth asking you** when there's nothing worth asking.
 
 ## 6. Log it
-Append one row to `searches/fit-checks.md` (create it with this header if it's missing): `| Date | Company | Role | Verdict | Score | Link | Pay | Note |`.
-- **Pay:** the listed pay as written, or blank.
+Call `log_check` with log `fit-checks` and the row: `company`, `role`, `verdict`, `score`, `link`, `pay` and `note`. The app writes it into `searches/fit-checks.md`, one row at a time, as other runs may be logging theirs at once, so never edit that file yourself.
+- **Pay:** the listed pay as written, or leave it out.
 - **Note:** the deciding reason in 60 characters or fewer (e.g. "Skip: hybrid in Austin", "Java/Spring + AWS are hard reqs").
 
 The app picks up the folder and the row on its own. There's nothing to commit or sync.

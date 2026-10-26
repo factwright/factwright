@@ -4,11 +4,10 @@ import { MessageCircleQuestionMark, Plus } from 'lucide-react';
 import { type FormEvent, useEffect, useRef, useState } from 'react';
 import type { FactwrightApi, JobExtras } from '../../shared/api.ts';
 import { LIMITS } from '../../shared/limits.ts';
-import { taskJob } from '../../shared/runs.ts';
 import styles from './AskSection.module.css';
 import panel from './JobPanel.module.css';
 import { PanelSection, Placeholder } from './PanelSection.tsx';
-import { BUSY, type RunControls } from './RunActions.tsx';
+import type { RunControls, TaskState } from './RunActions.tsx';
 import {
   type PickedShot,
   pictureUrl,
@@ -195,6 +194,7 @@ function AskItem({
   answer,
   shots,
   answering,
+  inLine,
   canRun,
   api,
   onRun,
@@ -207,6 +207,8 @@ function AskItem({
   answer: string | undefined;
   shots: readonly JobShot[];
   answering: boolean;
+  /** Claude's task to answer it waits in line for its turn. */
+  inLine: boolean;
   canRun: boolean;
   api: FactwrightApi;
   onRun: () => void;
@@ -228,7 +230,7 @@ function AskItem({
     setRemoving(next);
   };
   const shown = answer ? askAnswer(answer) : null;
-  const state = answering ? 'Answering' : shown ? 'Answered' : 'Waiting';
+  const state = answering ? 'Answering' : inLine ? 'In line' : shown ? 'Answered' : 'Waiting';
   const remove = async () => {
     const result = await api.removeAsk(job.id, ask.id);
     if (!result.ok) setProblem(result.message);
@@ -244,7 +246,17 @@ function AskItem({
           <span className={styles.asked}>{ask.question}</span>
           <span className={styles.meta}>
             {shortDate(ask.on, today)}
-            <Pill tone={state === 'Answered' ? 'green' : state === 'Answering' ? 'blue' : 'amber'}>
+            <Pill
+              tone={
+                state === 'Answered'
+                  ? 'green'
+                  : state === 'Answering'
+                    ? 'blue'
+                    : state === 'In line'
+                      ? 'gray'
+                      : 'amber'
+              }
+            >
               {state}
             </Pill>
           </span>
@@ -259,11 +271,13 @@ function AskItem({
             <p className={panel.quiet}>
               {answering
                 ? 'Claude is working on it in its panel.'
-                : 'Claude hasn’t answered this yet.'}
+                : inLine
+                  ? 'It’s in line for Claude, and starts by itself.'
+                  : 'Claude hasn’t answered this yet.'}
             </p>
           )}
           <div className={styles.actions}>
-            {!answering && (
+            {!answering && !inLine && (
               <Button size="sm" variant="quiet" disabled={!canRun} onClick={onRun}>
                 {shown ? 'Ask again' : 'Answer now'}
               </Button>
@@ -329,22 +343,24 @@ export function AskSection({
     };
   }, [api, job]);
 
-  const busy = run ? BUSY.includes(run.phase) : true;
-  const task = run?.task;
-  const mine = task?.skill === 'ask' && taskJob(task) === job.id;
-  // The question the open run is answering: the one it names, or every one waiting.
-  const answering = (ask: Ask) =>
-    mine && busy && (task && 'askId' in task ? task.askId === ask.id : !extras?.asked[ask.id]);
+  const tasks = run ? run.tasksOn(job.id).filter(({ task }) => task.skill === 'ask') : [];
+  // The question a task is on, running or in line: the one it names, or every one waiting.
+  const on = (ask: Ask, state: TaskState) =>
+    tasks.some(
+      (each) =>
+        each.state === state &&
+        ('askId' in each.task ? each.task.askId === ask.id : !extras?.asked[ask.id]),
+    );
   const start = (askId: string) => run?.start({ skill: 'ask', jobId: job.id, askId });
   const asks = [...job.asks].reverse();
   const empty = asks.length === 0;
   const waiting = asks.filter((ask) => !extras?.asked[ask.id]).length;
-  // While Claude answers one, another waits.
+  // While Claude answers one, another waits in line for its turn.
   const askButton = (
     <Button
       size="sm"
       icon={<Plus size={14} aria-hidden="true" />}
-      disabled={!run || busy}
+      disabled={!run}
       onClick={() => setAsking(true)}
     >
       Ask a question
@@ -393,8 +409,9 @@ export function AskSection({
               newest={i === 0}
               answer={extras?.asked[ask.id]}
               shots={extras?.shots.filter((shot) => shot.ask === ask.id) ?? []}
-              answering={answering(ask)}
-              canRun={Boolean(run) && !busy}
+              answering={on(ask, 'running')}
+              inLine={!on(ask, 'running') && on(ask, 'in-line')}
+              canRun={Boolean(run)}
               api={api}
               onRun={() => start(ask.id)}
               today={today}

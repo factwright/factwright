@@ -188,61 +188,62 @@ const changedOf = (file: SampleFile, undone: boolean): ChangedFile => ({
 });
 
 /**
- * What the made-up runs change, for the card once a task is done: the files a task like it
- * would change and the pages it would read, kept until the page reloads. ?changes=none has a
+ * What the made-up runs change, for each run's card once its task is done: the files a task like
+ * it would change and the pages it would read, kept until the page reloads. ?changes=none has a
  * task change nothing, and ?changes=since has the first Undo find its file changed again since.
  */
 export function sampleChanges(mode: string | null) {
-  const listeners = new Set<(changes: RunChanges) => void>();
+  const listeners = new Set<(changes: { runId: string; changes: RunChanges }) => void>();
+  /** Each task's files and what's undone, by its record's ID, with the run it's in. */
+  const tasks = new Map<
+    string,
+    { runId: string; files: SampleFile[]; undone: Set<string>; pages: string[] }
+  >();
   let count = 0;
-  let files: SampleFile[] = [];
-  let undone = new Set<string>();
   let asked = mode !== 'since';
-  let current: RunChanges = {
-    id: '20261025-140311-000-a1b2c3',
-    files: [],
-    pages: [],
-    morePages: 0,
+  const view = (id: string): RunChanges => {
+    const task = tasks.get(id);
+    return {
+      id,
+      files: (task?.files ?? []).map((file) =>
+        changedOf(file, task?.undone.has(file.path) ?? false),
+      ),
+      pages: task?.pages ?? [],
+      morePages: 0,
+    };
   };
-  const view = (): RunChanges => ({
-    ...current,
-    files: files.map((file) => changedOf(file, undone.has(file.path))),
-  });
-  const tell = () => {
-    current = view();
-    for (const listener of listeners) listener(current);
+  const tell = (id: string) => {
+    const task = tasks.get(id);
+    if (!task) return;
+    for (const listener of listeners) listener({ runId: task.runId, changes: view(id) });
   };
   return {
-    /** A task starts, with nothing changed yet. */
-    begin: () => {
+    /** A run's task starts, with nothing changed yet, and answers its record's ID. */
+    begin: (runId: string) => {
       count += 1;
-      files = [];
-      undone = new Set();
-      current = {
-        id: `20261025-14${String(count).padStart(4, '0')}-000-a1b2c3`,
-        files: [],
-        pages: [],
-        morePages: 0,
-      };
-      tell();
+      const id = `20261025-14${String(count).padStart(4, '0')}-000-a1b2c3`;
+      tasks.set(id, { runId, files: [], undone: new Set(), pages: [] });
+      tell(id);
+      return id;
     },
     /** A task's turn ends, with what it changed. */
-    done: (task: RunTask | null) => {
-      if (mode === 'none') return;
-      files = sampleFiles(task);
-      current = { ...current, pages: samplePages(task) };
-      tell();
+    done: (id: string, task: RunTask | null) => {
+      const kept = tasks.get(id);
+      if (mode === 'none' || !kept) return;
+      kept.files = sampleFiles(task);
+      kept.pages = samplePages(task);
+      tell(id);
     },
     api: {
       onRunChanges: (listener) => {
         listeners.add(listener);
         return () => listeners.delete(listener);
       },
-      viewChange: async (_id, path) => {
-        const file = files.find((each) => each.path === path);
+      viewChange: async (id, path) => {
+        const file = tasks.get(id)?.files.find((each) => each.path === path);
         return file?.text ? { before: file.before, after: file.after } : null;
       },
-      undoChange: async (_id, path, anyway): Promise<UndoResult> => {
+      undoChange: async (id, path, anyway): Promise<UndoResult> => {
         if (!asked && !anyway) {
           asked = true;
           return {
@@ -252,9 +253,9 @@ export function sampleChanges(mode: string | null) {
               'This file changed again after Claude’s task. Undo puts it back as it was before the task, and what changed since is lost.',
           };
         }
-        undone.add(path);
-        tell();
-        return { ok: true, changes: current };
+        tasks.get(id)?.undone.add(path);
+        tell(id);
+        return { ok: true, changes: view(id) };
       },
     } satisfies Pick<FactwrightApi, 'onRunChanges' | 'viewChange' | 'undoChange'>,
   };

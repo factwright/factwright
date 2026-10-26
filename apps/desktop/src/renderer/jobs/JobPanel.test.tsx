@@ -6,7 +6,7 @@ import axe from 'axe-core';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { FactwrightApi } from '../../shared/api.ts';
 import { JobPanel } from './JobPanel.tsx';
-import type { RunControls } from './RunActions.tsx';
+import { type RunControls, runControlsFor } from './RunActions.tsx';
 import { jobRows } from './rows.ts';
 import { sampleDocs, sampleJobs } from './sample-jobs.ts';
 
@@ -68,7 +68,7 @@ function panel(
   return { api: fullApi, onClose, ...view };
 }
 
-const controls = (): RunControls => ({ phase: 'idle', task: null, start: vi.fn(), show: vi.fn() });
+const controls = (): RunControls => runControlsFor([], vi.fn(), vi.fn());
 
 /** Opens what's saved for the job, which waits folded at first, once it shows. */
 const openSaved = async () =>
@@ -153,8 +153,12 @@ describe('sorting a job before applying', () => {
         versions: [],
       })),
     } as unknown as FactwrightApi;
-    // A fit check is running on another job, so its button here can't take focus.
-    const run: RunControls = { ...controls(), phase: 'working' };
+    // The job's fit check waits in line, so it has no button here to take focus.
+    const run = runControlsFor(
+      [{ id: 'run-1', task: { skill: 'fit-check', jobId: job.id }, phase: 'in-line' }],
+      vi.fn(),
+      vi.fn(),
+    );
     const shown = (each: Job) => (
       <JobPanel
         row={jobRows([each], TODAY)[0] ?? null}
@@ -177,7 +181,7 @@ describe('sorting a job before applying', () => {
     await userEvent.click(within(box).getByRole('button', { name: 'Undo “Marked Later”' }));
     expect(api.undoStatusChange).toHaveBeenCalledWith('later-1');
     rerender(shown(job));
-    // Back in New, with the fit check waiting on Claude, the first move has it.
+    // Back in New, with the fit check in line for Claude, the first move has it.
     expect(document.activeElement).toBe(screen.getByRole('button', { name: 'To review' }));
   });
 

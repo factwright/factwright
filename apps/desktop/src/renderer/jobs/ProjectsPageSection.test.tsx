@@ -7,7 +7,7 @@ import { afterEach, describe, expect, it, type Mock, vi } from 'vitest';
 import type { FactwrightApi } from '../../shared/api.ts';
 import type { RunTask } from '../../shared/runs.ts';
 import { ProjectsPagePart, readPageOutline } from './ProjectsPageSection.tsx';
-import type { RunControls } from './RunActions.tsx';
+import { type RunControls, runControlsFor } from './RunActions.tsx';
 import { sampleJob } from './sample-jobs.ts';
 
 const TODAY = localDate();
@@ -69,10 +69,9 @@ describe('readPageOutline', () => {
   });
 });
 
+/** The job panel's run controls, with Claude at work on a task, or on none. */
 const controls = (task: RunTask | null = null): RunControls => ({
-  phase: task ? 'working' : 'idle',
-  task,
-  start: vi.fn(),
+  ...runControlsFor(task ? [{ id: 'run-1', task, phase: 'working' }] : [], vi.fn(), vi.fn()),
   show: vi.fn(),
 });
 

@@ -19,8 +19,9 @@ let folder: string;
 let trashed: string[];
 let clock: number;
 
-const changes = () =>
-  new RunChanges({
+/** The record of what tasks changed, and one run's tasks in it, as the tests drive them. */
+const changes = () => {
+  const store = new RunChanges({
     workspace,
     folder,
     trash: async (path) => {
@@ -29,6 +30,15 @@ const changes = () =>
     },
     now: () => new Date(clock++),
   });
+  return {
+    ...store.forRun(),
+    undo: (id: string, path: string, anyway?: boolean) => store.undo(id, path, anyway),
+    see: (id: string, path: string) => store.see(id, path),
+    changes: (id: string) => store.changes(id),
+    /** Another run's tasks, side by side with this one's. */
+    forRun: () => store.forRun(),
+  };
+};
 
 const at = (path: string) => join(workspace, ...path.split('/'));
 const write = (path: string, text: string) => {
@@ -177,6 +187,45 @@ describe('what a task changed', () => {
     const kept = readdirSync(folder).sort();
     expect(kept).toEqual(ids.slice(-KEPT_RUNS));
     expect(readdirSync(workspace)).toEqual([]);
+  });
+
+  it('asks before undoing a file another run changed too, side by side', async () => {
+    write('searches/fit-checks.md', '| Date | Company |\n|---|---|\n');
+    const first = changes();
+    const second = first.forRun();
+    const one = first.begin();
+    second.begin();
+    first.keep('searches/fit-checks.md');
+    write('searches/fit-checks.md', '| Date | Company |\n|---|---|\n| 2026-10-25 | Acme |\n');
+    second.keep('searches/fit-checks.md');
+    write(
+      'searches/fit-checks.md',
+      '| Date | Company |\n|---|---|\n| 2026-10-25 | Acme |\n| 2026-10-25 | Globex |\n',
+    );
+    first.settle();
+    second.settle();
+    const asked = await first.undo(one.id, 'searches/fit-checks.md');
+    expect(asked).toMatchObject({ ok: false, reason: 'since' });
+    expect(asked.ok ? '' : asked.message).toContain(
+      'Another of Claude’s tasks changed this file too.',
+    );
+    expect(read('searches/fit-checks.md')).toContain('Globex');
+    // Anyway puts it back as it was before the first run.
+    expect((await first.undo(one.id, 'searches/fit-checks.md', true)).ok).toBe(true);
+    expect(read('searches/fit-checks.md')).toBe('| Date | Company |\n|---|---|\n');
+  });
+
+  it('leaves no record of a run that changed and read nothing, once it ends', () => {
+    const run = changes();
+    const { id } = run.begin();
+    expect(readdirSync(folder)).toEqual([id]);
+    run.end();
+    expect(readdirSync(folder)).toEqual([]);
+    const kept = changes();
+    const second = kept.begin();
+    kept.read('https://acme.com/careers');
+    kept.end();
+    expect(readdirSync(folder)).toEqual([second.id]);
   });
 
   it('leaves no record of a task that changed and read nothing, so it takes no other’s place', () => {

@@ -6,7 +6,7 @@ import axe from 'axe-core';
 import { afterEach, describe, expect, it, type Mock, vi } from 'vitest';
 import type { FactwrightApi, JobExtras } from '../../shared/api.ts';
 import { ApplicationSection } from './ApplicationSection.tsx';
-import type { RunControls } from './RunActions.tsx';
+import { type RunControls, runControlsFor } from './RunActions.tsx';
 import { sampleJob } from './sample-jobs.ts';
 
 const TODAY = localDate();
@@ -61,7 +61,7 @@ function apiStub(form: SavedForm | null = null) {
   };
 }
 
-const controls = (): RunControls => ({ phase: 'idle', task: null, start: vi.fn(), show: vi.fn() });
+const controls = (): RunControls => runControlsFor([], vi.fn(), vi.fn());
 
 const GREENHOUSE = 'https://job-boards.greenhouse.io/acme/jobs/4012345';
 

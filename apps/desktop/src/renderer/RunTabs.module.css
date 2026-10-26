@@ -1,0 +1,136 @@
+/* The tabs, and the runs summed up at the end of the row, which shows folded too. */
+.strip {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: flex-end;
+  gap: var(--fw-space-3);
+  min-width: 0;
+  padding: 6px var(--fw-space-4) 0;
+  border-bottom: 1px solid var(--fw-border);
+  background: var(--fw-sunken);
+}
+
+/* As many tabs as fit, and the rest scroll sideways, so the summary never moves. */
+.tabs {
+  display: flex;
+  flex: 1 1 auto;
+  gap: 2px;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+
+.tab {
+  display: inline-flex;
+  flex: 0 1 auto;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  max-width: 240px;
+  height: 30px;
+  margin-bottom: -1px;
+  padding: 0 12px;
+  border: 1px solid transparent;
+  border-bottom: 0;
+  border-radius: 8px 8px 0 0;
+  background: transparent;
+  color: var(--fw-muted);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 550;
+  cursor: pointer;
+}
+
+.tab:hover {
+  color: var(--fw-text);
+}
+
+/* The tab shown sits on the panel, as one piece with the bar under it. */
+.shown {
+  border-color: var(--fw-border);
+  background: var(--fw-surface);
+  color: var(--fw-text);
+}
+
+.tab:focus-visible {
+  outline: 2px solid var(--fw-accent);
+  outline-offset: -2px;
+}
+
+.name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dot {
+  flex: none;
+  box-sizing: border-box;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.working {
+  background: var(--fw-accent);
+  animation: pulse 1.6s ease-in-out infinite;
+}
+
+.waiting {
+  background: var(--fw-need);
+}
+
+.done {
+  background: var(--fw-ok);
+}
+
+.stopped {
+  background: var(--fw-tone-gray-fg);
+}
+
+.failed {
+  background: var(--fw-bad);
+}
+
+/* Waiting its turn, with nothing going yet: a ring, which high contrast keeps too. */
+.in-line {
+  border: 1.5px solid var(--fw-tone-gray-fg);
+}
+
+@keyframes pulse {
+  50% {
+    opacity: 0.35;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .working {
+    animation: none;
+  }
+}
+
+/* High contrast draws every dot in the system's colors, so each keeps a shape of its own. */
+@media (forced-colors: active) {
+  .dot:not(.in-line) {
+    background: CanvasText;
+  }
+
+  .waiting {
+    border-radius: 1px;
+  }
+
+  .failed {
+    transform: rotate(45deg);
+    border-radius: 1px;
+  }
+}
+
+.summary {
+  flex: none;
+  margin: 0 0 7px;
+  color: var(--fw-muted);
+  font-size: var(--fw-text-sm);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}

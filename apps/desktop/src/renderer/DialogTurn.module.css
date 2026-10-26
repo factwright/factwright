@@ -1,0 +1,24 @@
+/* The run that asks, as its tab names it. */
+.run {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--fw-text);
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Which of those waiting it is, with the way to the others, at the end of the line. */
+.turns {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 2px;
+  margin-left: auto;
+}
+
+.count {
+  padding: 0 4px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}

@@ -145,6 +145,30 @@ describe('the plugin’s skills', () => {
     }
   });
 
+  it('log their checks with log_check, which writes one row at a time, and never edit a log', () => {
+    const logs = {
+      'fit-check': 'fit-checks',
+      'salary-check': 'salary-checks',
+      'unmask-job': 'unmask-checks',
+    };
+    for (const [folder, log] of Object.entries(logs)) {
+      const text = skills.find((skill) => skill.folder === folder)?.text ?? '';
+      expect(text.toLowerCase(), folder).toContain(`call \`log_check\` with log \`${log}\``);
+    }
+    const rules = readFileSync(join(pluginDir, STANDING_RULES), 'utf8');
+    for (const { folder, text } of [...skills, { folder: 'standing rules', text: rules }]) {
+      expect(text, folder).not.toMatch(/[Aa]ppend (?:one )?row/);
+    }
+    // Claude can't edit them itself, in any run.
+    for (const log of Object.values(logs)) {
+      const { deny } = sessionSettings({
+        hookUrl: 'http://127.0.0.1/hook',
+        dark: false,
+      }).permissions;
+      expect(deny).toContain(`Edit(./searches/${log}.md)`);
+    }
+  });
+
   it('make a quick resume that asks nothing, uses verified facts only, and says what could make it stronger', () => {
     const text = skills.find(({ folder }) => folder === 'focused-resume')?.text ?? '';
     // What the app types for a quick resume, a first one or a new version, word for word.

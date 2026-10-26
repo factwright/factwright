@@ -8,6 +8,11 @@ export interface DialogProps {
   title: string;
   /** A line under the title, saying what the dialog is for. */
   description?: string;
+  /**
+   * A line above the title, such as which of several the dialog shows, with ways to the others.
+   * It isn't part of the dialog's name.
+   */
+  above?: ReactNode;
   /** Called once the dialog has closed, by its close button, Escape, or a call to close it. */
   onClose: () => void;
   /** "lg" for reading, such as a saved posting, and "xl" for a chart. */
@@ -21,7 +26,7 @@ export interface DialogProps {
  * dialog, so focus stays inside it and returns where it was when it closes. It starts on the
  * element marked data-autofocus, if there is one.
  */
-export function Dialog({ title, description, onClose, size = 'md', children }: DialogProps) {
+export function Dialog({ title, description, above, onClose, size = 'md', children }: DialogProps) {
   const dialog = useRef<HTMLDialogElement>(null);
   const titleId = useId();
   const descriptionId = useId();
@@ -45,6 +50,7 @@ export function Dialog({ title, description, onClose, size = 'md', children }: D
     >
       <div className={styles.head}>
         <div className={styles.titles}>
+          {above && <div className={styles.above}>{above}</div>}
           <h2 id={titleId} className={styles.title}>
             {title}
           </h2>

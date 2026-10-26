@@ -18,7 +18,6 @@ import type {
   ProfileStatus,
   TemplateInfo,
 } from '../../shared/profile.ts';
-import type { RunPhase } from '../useClaudeRun.ts';
 import { ProfilePage } from './ProfilePage.tsx';
 import { useProfile } from './useProfile.ts';
 
@@ -130,12 +129,15 @@ function profileApi(
 
 function Harness({
   api,
-  phase = 'idle',
+  busy = false,
+  ready = true,
   onRun = () => {},
   onOpenFacts = () => {},
 }: {
   api: ReturnType<typeof profileApi>;
-  phase?: RunPhase;
+  /** Whether Claude has a task going, or in line, on the user's facts and Profile. */
+  busy?: boolean;
+  ready?: boolean;
   onRun?: (task: unknown) => void;
   onOpenFacts?: () => void;
 }) {
@@ -145,8 +147,8 @@ function Harness({
     <ProfilePage
       state={{ ...state, profile: state.profile }}
       api={api as unknown as FactwrightApi}
-      phase={phase}
-      ready
+      busy={busy}
+      ready={ready}
       onRun={onRun}
       onOpenFacts={onOpenFacts}
     />
@@ -183,8 +185,8 @@ describe('ProfilePage', () => {
     expect(onRun).toHaveBeenLastCalledWith({ skill: 'add-facts', mode: 'interview' });
   });
 
-  it('waits while Claude is busy', async () => {
-    render(<Harness api={profileApi()} phase="working" />);
+  it('waits while Claude has another task on your profile', async () => {
+    render(<Harness api={profileApi()} busy />);
     expect(
       await screen.findByText('Your Claude is working on it in the panel below.'),
     ).toBeTruthy();
@@ -703,7 +705,7 @@ describe('ProfilePage', () => {
 
   it('keeps a resume to copy until Claude can start on it', async () => {
     const api = profileApi();
-    render(<Harness api={api} phase="working" />);
+    render(<Harness api={api} ready={false} />);
     const card = await screen.findByRole('region', { name: 'Resume templates' });
     await userEvent.click(within(card).getByRole('button', { name: 'Change' }));
     const dialog = await screen.findByRole('dialog', { name: 'Resume templates' });

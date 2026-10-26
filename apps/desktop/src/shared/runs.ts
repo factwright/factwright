@@ -194,6 +194,33 @@ export function scopeOf(task: RunTask | null | undefined): RunScope {
 export const taskJob = (task: RunTask | null): string | null =>
   task && 'jobId' in task ? task.jobId : null;
 
+/** How many of Claude's runs may go at once: three, unless the user picks from one to five. */
+export const AT_ONCE = { least: 1, most: 5, usual: 3 } as const;
+
+/** A number of runs at once the app takes, or null. */
+export const atOnceFrom = (value: unknown): number | null =>
+  Number.isInteger(value) && (value as number) >= AT_ONCE.least && (value as number) <= AT_ONCE.most
+    ? (value as number)
+    : null;
+
+/**
+ * What a task works on, which no two tasks going at once share: its job, by the job's ID; the
+ * user's facts and Profile, which getting started, adding facts and filling in their work history
+ * all change; the job searches; or the templates. A task on several jobs at once would work on
+ * each of them. Nothing for Claude with no task, waiting for what the user types.
+ */
+export function lanesOf(task: RunTask | null): string[] {
+  if (!task) return [];
+  const job = taskJob(task);
+  if (job) return [`job:${job}`];
+  const profile = [GET_STARTED_SKILL, FACTS_SKILL, HISTORY_SKILL] as string[];
+  return [profile.includes(task.skill) ? 'profile' : task.skill];
+}
+
+/** Whether two tasks work on anything the same, so one waits for the other. */
+export const sharesLane = (a: RunTask | null, b: RunTask | null) =>
+  lanesOf(a).some((lane) => lanesOf(b).includes(lane));
+
 /** The call a task works on, such as prep for it, or null for one on no call in particular. */
 export const taskCall = (task: RunTask | null): string | null =>
   task && 'callId' in task ? task.callId : null;
