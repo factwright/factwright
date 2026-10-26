@@ -4,6 +4,8 @@ Notable changes to Factwright, newest first. The format follows [Keep a Changelo
 
 ## Unreleased
 
+## 0.18.0 - 2026-10-26
+
 ### Added
 - Your Claude works on several tasks at once, each in a run of its own, in a tab of Claude's panel, such as "Talkiatry · Tailored resume". Each tab has a dot that says where it stands, working, waiting on you, done or didn't finish, and its own bar, terminal and list of what it changed, with Undo. The bar sums them up beside the tabs, "3 running · 1 waiting on you · 1 in line", even with the panel folded. One task alone looks as before.
 - Up to three tasks run at once, and the rest wait in line and start by themselves, in the order you asked. Your Claude → Settings → Tasks at once picks from one to five. Two tasks on the same job never run together, so a cover letter waits for that job's resume, and neither do two on your facts and Profile, or two job searches. A task's button says In line, the jobs list marks each job Claude is on or has in line, and Close on a task in line takes it out.
