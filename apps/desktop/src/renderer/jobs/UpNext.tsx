@@ -17,8 +17,8 @@ const TONE = { urgent: styles.urgent, action: styles.action, info: styles.info }
 /** The steps Claude does, with the run that does each and what its button says. */
 function claudeStep(jobId: string, action: StepAction): { task: RunTask; label: string } | null {
   switch (action.kind) {
-    case 'fit-check':
-      return { task: { skill: 'fit-check', jobId }, label: 'Run a fit check' };
+    case 'analyze':
+      return { task: { skill: 'analyze-job', jobId }, label: 'Analyze job' };
     case 'resume':
       return { task: { skill: 'focused-resume', jobId }, label: 'Tailor a resume' };
     case 'letter':
@@ -53,13 +53,13 @@ const MOVE: Partial<Record<StepAction['kind'], JobStatus>> = {
   pass: 'passed',
 };
 
-/** Whether the step says no more than its button does, such as "Run a fit check". */
+/** Whether the step says no more than its button does, such as "Analyze job". */
 const said = (text: string, label: string) =>
   text.toLowerCase().replace(/[.?!]$/, '') === label.toLowerCase();
 
 /**
  * What to do next for a job, at the top of its panel, whatever its stage: the step the list shows
- * for it, and the button that does it, such as Run a fit check, Tailor a resume, Mark as applied,
+ * for it, and the button that does it, such as Analyze job, Tailor a resume, Mark as applied,
  * Add a call once the user hears back, Draft thank-you notes after a call, or Accept an offer. A
  * job not sorted yet has the moves to sort it beside the step: To review, To apply, Later, Pass.
  */

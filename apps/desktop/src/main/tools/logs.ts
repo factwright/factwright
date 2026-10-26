@@ -91,7 +91,10 @@ export function withRow(text: string | null, log: LogName, row: Record<string, s
   );
   if (gained.length > 0) {
     lines[start] = withCells(lines[start] ?? '', gained);
-    lines[start + 1] = withCells(lines[start + 1] ?? '', gained.map(() => '---'));
+    lines[start + 1] = withCells(
+      lines[start + 1] ?? '',
+      gained.map(() => '---'),
+    );
   }
   let end = start + 2;
   while (end < lines.length && (lines[end] ?? '').trim().startsWith('|')) end += 1;

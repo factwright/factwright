@@ -143,7 +143,7 @@ Reply in 6 lines or fewer, plus a line for each place after the first:
 - the funnel, in one line per place
 - the top 3, with scores
 - anything odd about a source
-- the next step: the ranked jobs are in the app under **New**, each place as a search of its own to filter by. Each job's panel sorts it in a click (To review, To apply, Later or Pass) and runs `/factwright:fit-check` or `/factwright:focused-resume` on it.
+- the next step: the ranked jobs are in the app under **New**, each place as a search of its own to filter by. Each job's panel sorts it in a click (To review, To apply, Later or Pass) and runs `/factwright:analyze-job` or `/factwright:focused-resume` on it.
 - when `find_job` says the user passed on jobs for the same reason more than once, one line suggesting it as a deal-breaker they can add in Profile, under What you want ("You've passed on 4 jobs over pay. Add a pay floor to your deal-breakers?"). Only suggest it; change nothing.
 
 The app picks up the search on its own. There's nothing to commit or sync.

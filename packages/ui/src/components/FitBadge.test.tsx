@@ -13,8 +13,8 @@ describe('FitBadge', () => {
     expect(screen.getByText('Worth a look')).toBeTruthy();
   });
 
-  it('says so before a fit check', () => {
+  it('says so before Claude analyzes the job', () => {
     render(<FitBadge score={null} tier={null} />);
-    expect(screen.getByText('Not scored yet')).toBeTruthy();
+    expect(screen.getByText('Not checked yet')).toBeTruthy();
   });
 });

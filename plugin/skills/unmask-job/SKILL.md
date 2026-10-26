@@ -51,11 +51,11 @@ Recommend one, with a one-line reason:
 - **Employer not confirmed:** ask the recruiter who the client is before agreeing to anything. Never let anyone submit the user without naming the company.
 
 ## 7. Deliver
-- Reply in 8 lines or fewer: the employer and confidence, the evidence (1–2 links), the direct apply link, the verdict and reason, any scam flags, and next steps (`/factwright:fit-check`, `/factwright:salary-check` if no pay is listed, `/factwright:focused-resume`).
+- Reply in 8 lines or fewer: the employer and confidence, the evidence (1–2 links), the direct apply link, the verdict and reason, any scam flags, and next steps (`/factwright:analyze-job`, `/factwright:salary-check` if no pay is listed, `/factwright:focused-resume`).
 - Once the employer is confirmed or likely, save the job so it survives the listing coming down:
   - Folder `applications/<YYYY-MM-DD>-<employer>-<role>/`. Reuse it if `find_job` with the employer and role finds one.
   - `posting.md`: `save_posting` with the employer's own posting link. If there's no direct posting, save the board listing instead, or save the user's pasted text with a `- **Source:** pasted by the user <YYYY-MM-DD>` line on top.
-  - `job.md`: `# <Employer>: <Role>`, then `- **Date:**`, `- **Company:**`, `- **Role:**`, `- **Links:**`, `- **Pay:**`, `- **Work arrangement:**`, and `- **Found via:** <board or agency name>`.
+  - `job.md`: `# <Employer>: <Role>`, then `- **Job ID:** <the job's id>` when the job is on file, `- **Date:**`, `- **Company:**`, `- **Role:**`, `- **Links:**`, `- **Pay:**`, `- **Work arrangement:**`, and `- **Found via:** <board or agency name>`.
   - `unmask.md`: employer and confidence, the evidence with links, the poster type, direct or recruiter and why, scam flags.
   - `apply.md`, only when the employer's posting has special application steps (apply by email, an exact subject line or phrase, specific attachments, "mention X", warnings like "no AI-written answers"). Skip it for a plain apply button. The app shows it as a How to apply alert. Format: `# How to apply: <Company>, <Role>`, then `- **Alert:** <one line>`, `- **Email:**` and `- **Subject:**` when they apply, then numbered steps with exact words in backticks.
   - Name the agency or board only, never the recruiter's personal name or contact details.

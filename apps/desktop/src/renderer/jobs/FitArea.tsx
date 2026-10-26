@@ -44,8 +44,8 @@ function Pay({ job, run }: { job: Job; run: RunControls | undefined }) {
 
 /**
  * How well the job fits, across the top of its panel: its score part by part, what people say
- * about the company, what the job search noted, its pay, and the pay to ask for there. Before a
- * fit check, what one does and the button that runs it.
+ * about the company, what the job search noted, its pay, and the pay to ask for there. Before
+ * Claude analyzes the job, what Analyze job does and the button that does it.
  */
 export function FitArea({
   job,
@@ -64,7 +64,7 @@ export function FitArea({
   /** Each kind of job the user wants, with their target pay for it. */
   targets?: readonly KindTarget[] | undefined;
 }) {
-  const task: RunTask = { skill: 'fit-check', jobId: job.id };
+  const task: RunTask = { skill: 'analyze-job', jobId: job.id };
   const scored = isScored(job);
   const { tier, score } = progress;
   const summary = tier && `${FIT_TIER_DISPLAY[tier].label}${score !== null ? ` ${score}` : ''}`;
@@ -77,14 +77,16 @@ export function FitArea({
       empty={!scored}
       actions={
         scored && (
-          <ClaudeButton run={run} task={task} label={job.fit ? 'Check again' : 'Run a fit check'} />
+          <ClaudeButton run={run} task={task} label={job.fit ? 'Analyze again' : 'Analyze job'} />
         )
       }
     >
       {!scored && (
-        <Placeholder action={<ClaudeButton run={run} task={task} label="Run a fit check" />}>
-          {summary ? `The job search rated it ${summary}. ` : ''}A fit check scores this job against
-          your fact bank, part by part, and looks up what people say about the company.
+        <Placeholder action={<ClaudeButton run={run} task={task} label="Analyze job" />}>
+          {summary ? `The job search rated it ${summary}. ` : ''}Analyze job reads the posting, puts
+          the job’s details right from it, and merges it with a job saved twice. Then it scores the
+          job against your fact bank, part by part, looks up what people say about the company, and
+          suggests the pay to ask for.
         </Placeholder>
       )}
       <Pay job={job} run={run} />

@@ -17,7 +17,7 @@ import {
   type ModelTask,
   modelWithout,
 } from '../shared/models.ts';
-import { AT_ONCE } from '../shared/runs.ts';
+import { ANALYZE_ON_ITS_OWN, AT_ONCE } from '../shared/runs.ts';
 import styles from './ClaudeSettingsDialog.module.css';
 import { RUN_ACTIONS } from './jobs/RunActions.tsx';
 
@@ -40,6 +40,8 @@ type SettingsApi = Pick<
   | 'setClaudeEffort'
   | 'runsAtOnce'
   | 'setRunsAtOnce'
+  | 'analyzesNewJobs'
+  | 'setAnalyzesNewJobs'
 >;
 
 /** How many tasks may run at once, as the setting offers them. */
@@ -60,8 +62,8 @@ function choose<T extends string>(
 
 /**
  * How Claude works on the job hunt: which model it runs on and how hard it thinks, for
- * everything and for each task, how many tasks it runs at once, and what it does without asking.
- * Each choice saves as it's made.
+ * everything and for each task, how many tasks it runs at once, whether it analyzes new jobs on
+ * its own, and what it does without asking. Each choice saves as it's made.
  */
 export function ClaudeSettingsDialog({
   api,
@@ -83,6 +85,7 @@ export function ClaudeSettingsDialog({
   const [models, setModels] = useState<ModelChoices | null>(null);
   const [effort, setEffort] = useState<EffortChoices | null>(null);
   const [atOnce, setAtOnce] = useState<number | null>(null);
+  const [analyzes, setAnalyzes] = useState<boolean | null>(null);
   const [byTask, setByTask] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
   const modelsHeading = useId();
@@ -96,6 +99,7 @@ export function ClaudeSettingsDialog({
       setByTask(Object.keys({ ...chosen.tasks, ...levels.tasks }).length > 0);
     });
     void api.runsAtOnce().then(setAtOnce, () => setAtOnce(AT_ONCE.usual));
+    void api.analyzesNewJobs().then(setAnalyzes, () => setAnalyzes(true));
   }, [api]);
 
   const failed = () => setProblem('That didn’t save. Try again.');
@@ -141,6 +145,17 @@ export function ClaudeSettingsDialog({
     }
   };
 
+  const changeAnalyzes = async (on: boolean) => {
+    setAnalyzes(on);
+    try {
+      setAnalyzes(await api.setAnalyzesNewJobs(on));
+      setProblem(null);
+    } catch {
+      failed();
+      setAnalyzes(await api.analyzesNewJobs().catch(() => !on));
+    }
+  };
+
   const options = MODELS.map((model) => (
     <option key={model} value={model}>
       {MODEL_NAMES[model]}
@@ -172,7 +187,7 @@ export function ClaudeSettingsDialog({
                   ? 'Every token is billed with an API key, a Console account or a cloud provider.'
                   : 'On a Pro plan, limits are the tightest.'}
               </strong>{' '}
-              So recommended runs fit checks, salary checks, job searches and who to message on
+              So recommended runs analyzing jobs, salary checks, job searches and who to message on
               Sonnet, which uses less, and keeps Opus for the writing, with High effort or lower.
             </p>
           )}
@@ -277,6 +292,22 @@ export function ClaudeSettingsDialog({
               ))}
             </Select>
           </div>
+          {analyzes !== null && (
+            <label className={styles.check}>
+              <input
+                type="checkbox"
+                checked={analyzes}
+                onChange={(event) => void changeAnalyzes(event.target.checked)}
+              />
+              <span className={styles.checkText}>
+                <span className={styles.checkName}>Analyze new jobs on their own</span>
+                <span className={styles.checkAbout}>
+                  When Claude is free, it analyzes the jobs you saved since, up to{' '}
+                  {ANALYZE_ON_ITS_OWN} in one run. It steps aside for any task you start.
+                </span>
+              </span>
+            </label>
+          )}
         </section>
       )}
       <section aria-labelledby={askingHeading} className={styles.section}>

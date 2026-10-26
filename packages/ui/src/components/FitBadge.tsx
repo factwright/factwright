@@ -17,9 +17,9 @@ export interface FitBadgeProps {
   tier?: FitTier | null;
 }
 
-/** A job's fit, such as "78 · Good", or "Not scored yet" before a fit check. */
+/** A job's fit, such as "78 · Good", or "Not checked yet" before Claude analyzes it. */
 export function FitBadge({ score, tier }: FitBadgeProps) {
   const display = tier ? FIT_TIER_DISPLAY[tier] : undefined;
   const parts = [score ?? undefined, display?.label].filter((part) => part !== undefined);
-  return <Pill tone={display?.tone ?? 'gray'}>{parts.join(' · ') || 'Not scored yet'}</Pill>;
+  return <Pill tone={display?.tone ?? 'gray'}>{parts.join(' · ') || 'Not checked yet'}</Pill>;
 }

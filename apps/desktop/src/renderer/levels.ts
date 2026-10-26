@@ -21,7 +21,7 @@ const TASK_NAMES: Readonly<Record<ModelTask, string>> = {
   'focused-resume': 'Tailored resumes',
   'cover-letter': 'Cover letters',
   'projects-page': 'Projects pages',
-  'fit-check': 'Fit checks',
+  'analyze-job': 'Analyzing jobs',
   'salary-check': 'Salary checks',
   'who-to-message': 'Who to message',
   'interview-prep': 'Interview prep',

@@ -2,12 +2,7 @@ import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { effectiveStatus, isIsoDate, type Job } from '@factwright/core';
 import type { RunPhase, RunsView } from '../../shared/api.ts';
-import {
-  ANALYZE_ON_ITS_OWN,
-  ANALYZE_SKILL,
-  type RunTask,
-  taskJobs,
-} from '../../shared/runs.ts';
+import { ANALYZE_ON_ITS_OWN, ANALYZE_SKILL, type RunTask, taskJobs } from '../../shared/runs.ts';
 import type { OwnEnd, RunHeard } from './runs.ts';
 import { saveJson, settled } from './save.ts';
 
@@ -63,12 +58,16 @@ export function jobsToAnalyze(
         !state.tried.includes(job.id) &&
         !taken.has(job.id),
     )
-    .sort((a, b) => (a.firstSeen ?? '').localeCompare(b.firstSeen ?? '') || a.id.localeCompare(b.id));
+    .sort(
+      (a, b) => (a.firstSeen ?? '').localeCompare(b.firstSeen ?? '') || a.id.localeCompare(b.id),
+    );
 }
 
 /** The jobs a task holds now, going or waiting in line. */
 const takenIn = (view: RunsView): Set<string> =>
-  new Set(view.runs.filter((run) => HOLDS.includes(run.phase)).flatMap((run) => taskJobs(run.task)));
+  new Set(
+    view.runs.filter((run) => HOLDS.includes(run.phase)).flatMap((run) => taskJobs(run.task)),
+  );
 
 /** What was kept, or on from today, when nothing was, or it won't read. */
 export async function loadAnalyzeNew(dataDir: string, today: string): Promise<AnalyzeNewState> {
@@ -211,7 +210,9 @@ export class AnalyzeNew {
     const picked = waiting.slice(0, ANALYZE_ON_ITS_OWN).map((job) => job.id);
     if (!this.deps.runs.startOwn({ skill: ANALYZE_SKILL, jobIds: picked, auto: true })) return;
     // Only jobs still waiting for Claude stay on the list of those it took, so it stays short.
-    const left = state.tried.filter((id) => jobs.some((job) => job.id === id && notCheckedYet(job)));
+    const left = state.tried.filter((id) =>
+      jobs.some((job) => job.id === id && notCheckedYet(job)),
+    );
     this.state = { ...state, tried: [...left, ...picked] };
     void this.save();
   }

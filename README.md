@@ -32,7 +32,7 @@ Factwright is a desktop app that runs your job hunt on top of Claude Code, using
 - **Getting started.** Share your old resumes, your LinkedIn, screenshots and everything you'd say about yourself, then say what you're looking for. Your Claude drafts your fact bank from it, interviews you to confirm it, and builds your first resumes.
 - **Fact bank.** Your experience as checkable claims: what you did, how far it got, and how to say it. It grows each time an application asks about something new, and you can read, search and fix every fact in the app.
 - **Find jobs.** Searches Hacker News's monthly "Who is hiring?" thread, companies' job boards, a company you have in mind, and LinkedIn's and Indeed's listings, which it finds through web search and reads on the employer's own site. Factwright never signs in to LinkedIn.
-- **Fit check.** Scores a job against your fact bank before you spend time on it, along with what people say about the company.
+- **Analyze job.** Fills in a job's posting, puts its title, company, pay and place right, merges a job you saved twice, scores it against your fact bank with what people say about the company, and suggests the pay to ask for. Jobs you save are analyzed on their own while Claude is free.
 - **Tailored resumes.** A resume for each job, in a template you pick, then a second pass that fact-checks every line. PDF or Word. Bring a resume whose look you like, and your Claude makes a template of your own in that look.
 - **Cover letters.** A letter for each job, in your own voice, from your facts and what's on file about the company, addressed to the hiring manager when one is known. It's fact-checked like the resume and built in the same template, so the two look like a set, with its text ready to copy into a form.
 - **Projects and life outside work.** Projects in any field, from an app or open source to volunteering or a club you run, with how much to show each, and who you are outside work. Your resumes show projects as you choose: in a section, as experience, or not at all. For a job they help with, a one-page Projects page in the same look goes only where you send it.
@@ -98,7 +98,7 @@ Factwright is free and open source. It's built by [Steve Hillyer](https://github
 | [`packages/ui`](packages/ui) | The design system and shared screens |
 | [`packages/engine`](packages/engine) | Turns resume data into PDF and Word files |
 | [`packages/xray`](packages/xray) | The ATS X-ray: reads a resume file the way an applicant tracking system does, and checks it |
-| [`plugin`](plugin) | The skills Factwright gives Claude Code, such as the fit check and interview prep |
+| [`plugin`](plugin) | The skills Factwright gives Claude Code, such as Analyze job and interview prep |
 | [`docs`](docs) | Architecture, security, releasing and the roadmap |
 
 ## Development
