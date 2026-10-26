@@ -208,6 +208,13 @@ describe('runOutcome', () => {
     expect(runOutcome(own, analyzed(first.id, second.id, third.id), [])?.text).toBe(
       'All 3 new jobs are analyzed.',
     );
+    // One merged into another of them is off the list, and its tab counts it done.
+    const merged = analyzed(first.id, third.id).filter(({ job }) => job.id !== second.id);
+    expect(runOutcome(before, merged, [], [first.id, second.id, third.id])?.text).toBe(
+      'All 3 jobs are analyzed.',
+    );
+    const partly = analyzed(first.id).filter(({ job }) => job.id !== second.id);
+    expect(runOutcome(before, partly, [], [second.id])?.text).toBe('2 of 3 jobs are analyzed.');
   });
 
   it('says nothing of a run with no task, such as one the user typed into', () => {

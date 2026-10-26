@@ -474,7 +474,7 @@ describe('job_details', () => {
     const answer = await tool('job_details').run({ job: id });
     expect(answer).toContain('## Acme, Staff Engineer');
     expect(answer).toContain(
-      '- The user’s own details: company “Acme”, place “Remote (US)”. They win over the posting: write them as they are, and never change them.',
+      '- The user’s own details: company “Acme”, place “Remote (US)”. They win over the posting: use them as they are, and never change them. job.md keeps what the posting says, which the app shows again if the user empties theirs.',
     );
     expect(answer).toContain(
       [
@@ -1375,6 +1375,37 @@ describe('save_posting', () => {
     );
     expect(fetch).not.toHaveBeenCalled();
     expect(readFileSync(file, 'utf8')).toContain('pasted by the user');
+  });
+
+  it('leaves another job’s folder to it, though it has the same company and title', async () => {
+    const job = 'acme-robotics--staff-engineer';
+    const notes = join(root, 'applications', FOLDER, 'job.md');
+    const posting = join(root, 'applications', FOLDER, 'posting.md');
+    const heading = `# Acme Robotics: Staff Engineer\n\n- **Apply:** Ashby ${ASHBY}\n`;
+    const theirs = 'https://boards.example.com/acme/other';
+    const leftAlone = (why: string) =>
+      `Not saved: ${FOLDER} is another job’s folder: ${why}. Use a folder of this job’s own, ${FOLDER}-2 or the next number that’s free, and save the posting there.`;
+    const kept = `Kept the posting already saved in applications/${FOLDER}/posting.md.`;
+    // Another run, analyzing its twin, saved the posting here first.
+    writeFileSync(posting, `# Job posting\n\n- **Source:** ${theirs}\n\n---\n\nTheirs.\n`);
+    expect(await tool('save_posting').run({ url: ASHBY, folder: FOLDER, job })).toBe(
+      leftAlone(`its posting came from ${theirs}, which isn’t one of this job’s links`),
+    );
+    // Once the twin's job.md is written, that names the job it's for.
+    rmSync(posting);
+    writeFileSync(notes, `${heading}- **Job ID:** acme-robotics--staff-engineer-2\n`);
+    expect(await tool('save_posting').run({ url: ASHBY, folder: FOLDER, job })).toBe(
+      leftAlone('its job.md is for acme-robotics--staff-engineer-2'),
+    );
+    expect(fetch).not.toHaveBeenCalled();
+    // The job's own folder keeps its posting, from any of its links, and so does a call that
+    // doesn't name the job, as before.
+    writeFileSync(posting, `# Job posting\n\n- **Source:** ${theirs}\n`);
+    writeFileSync(notes, `${heading}- **Job ID:** ${job}\n`);
+    expect(await tool('save_posting').run({ url: ASHBY, folder: FOLDER, job })).toBe(kept);
+    writeFileSync(notes, heading);
+    expect(await tool('save_posting').run({ url: theirs, folder: FOLDER, job })).toBe(kept);
+    expect(await tool('save_posting').run({ url: ASHBY, folder: FOLDER })).toBe(kept);
   });
 
   it('refuses unsafe fetches, and folders outside the job folders', async () => {

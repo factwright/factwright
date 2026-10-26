@@ -384,7 +384,7 @@ export async function jobDetails(
   add(
     'The user’s own details',
     ownDetails(job.own) &&
-      `${ownDetails(job.own)}. They win over the posting: write them as they are, and never change them.`,
+      `${ownDetails(job.own)}. They win over the posting: use them as they are, and never change them. job.md keeps what the posting says, which the app shows again if the user empties theirs.`,
   );
   add('Summary', job.summary);
   add(

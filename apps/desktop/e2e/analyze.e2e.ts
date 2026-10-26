@@ -105,10 +105,25 @@ test('analyzes new jobs on its own while Claude is free', async () => {
     FACTWRIGHT_ANALYZE_NEW: 'on',
     FACTWRIGHT_ANALYZE_WAIT_MS: '500',
   });
+  // The user is looking elsewhere. In quiet mode, notifications are only asked for, and kept here.
+  await opened.app.evaluate(({ app, BrowserWindow }) => {
+    const shown: unknown[] = [];
+    Object.assign(globalThis, { shown });
+    BrowserWindow.prototype.isFocused = () => false;
+    // An event of the app's own, which Electron's types don't list.
+    (app as unknown as NodeJS.EventEmitter).on('quiet-notification', (notification: unknown) =>
+      shown.push(notification),
+    );
+  });
   await addJob('Mosaic Health', 'Principal Engineer', 'https://jobs.example/mosaic/1');
   await opened.window.getByRole('button', { name: 'Close details' }).click();
   await expect(claudePanel()).toContainText(/Analyze · (1 new job|1 of 1 done)/);
   await expect(claudePanel()).toContainText('Mosaic Health is analyzed.');
+  // A run Claude started on its own stays quiet, even past the moment a done run's note waits.
+  await opened.window.waitForTimeout(4000);
+  expect(
+    await opened.app.evaluate(() => (globalThis as unknown as { shown: unknown[] }).shown.length),
+  ).toBe(0);
   await closeRuns();
   await pickView(/^To review/);
   await expect(jobRow('Mosaic Health')).toContainText('70 · Good');

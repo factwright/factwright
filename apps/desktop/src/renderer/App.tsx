@@ -495,7 +495,9 @@ export function App({ api }: { api: FactwrightApi }) {
     const activity = activityOf(view.id);
     const before = befores[view.id];
     const outcome =
-      view.phase === 'done' && before ? runOutcome(before, rows, activity.steps) : null;
+      view.phase === 'done' && before
+        ? runOutcome(before, rows, activity.steps, view.analyzed)
+        : null;
     const result: RunResult | null = outcome && {
       text: outcome.text,
       open: outcome.place && {
@@ -562,7 +564,8 @@ export function App({ api }: { api: FactwrightApi }) {
     if (answer === 'started') startClaude(asked, { background: true });
   };
   useEffect(() => api.onRunRequest((request) => runRequested.current(request)), [api]);
-  // A notification says what each task made, or that Claude is done, once, if the user is away.
+  // A notification says what each task made, or that Claude is done, once, if the user is away. A
+  // run Claude started on its own stays quiet: its tab and the jobs show how it went.
   const told = useRef(new Set<string>());
   useEffect(() => {
     for (const { view, activity, result, title } of panelRuns) {
@@ -570,7 +573,7 @@ export function App({ api }: { api: FactwrightApi }) {
         told.current.delete(view.id);
         continue;
       }
-      if (told.current.has(view.id)) continue;
+      if (told.current.has(view.id) || startedOnItsOwn(view.task)) continue;
       const error = activity.end?.error;
       const said = activity.end?.said ?? null;
       const note = error

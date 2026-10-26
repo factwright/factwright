@@ -35,7 +35,7 @@ function shown(job: Job, field: keyof OwnDetails): string {
  * The job's company, role, pay and place, in boxes the user can change, as Edit details opens
  * them. A detail they change is their own from then on: it wins over what the posting says, and
  * Analyze job and the rest of Claude's work never change it. Emptying a box goes back to what the
- * posting says. Only what changed is saved.
+ * posting says. Only the boxes the user changed are saved.
  */
 export function EditDetails({
   job,
@@ -46,12 +46,15 @@ export function EditDetails({
   api: Pick<FactwrightApi, 'updateJob'>;
   onClose: () => void;
 }) {
-  const [values, setValues] = useState<Record<keyof OwnDetails, string>>(() => ({
+  // What each box opened with. A box the user didn't change is never saved, even when the job
+  // changes meanwhile, as when a run of Claude's own puts its company right from the posting.
+  const [opened] = useState<Record<keyof OwnDetails, string>>(() => ({
     company: shown(job, 'company'),
     role: shown(job, 'role'),
     pay: shown(job, 'pay'),
     location: shown(job, 'location'),
   }));
+  const [values, setValues] = useState(opened);
   const [saving, setSaving] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
   const headingId = useId();
@@ -61,7 +64,7 @@ export function EditDetails({
     const changes: JobChanges = {};
     for (const { field } of FIELDS) {
       const typed = values[field].trim();
-      if (typed !== shown(job, field)) changes[field] = typed || null;
+      if (typed !== opened[field].trim()) changes[field] = typed || null;
     }
     if (Object.keys(changes).length === 0) {
       onClose();

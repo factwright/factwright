@@ -43,7 +43,7 @@ From the posting only, never guessed:
 
 They go in `job.md` (step 4): its heading, `- **Pay:**` and `- **Work arrangement:**`. The app shows the job by them, in place of what was saved with it.
 
-**The user's own details win.** `job_details` lists "The user's own details": the company, role, pay or place the user set in the app. Write each as they have it, never what the posting says, and never change it. When the posting says something else that matters, such as hybrid for a job they set as remote, say so in one line of the reply.
+**The user's own details stay theirs.** `job_details` lists "The user's own details": the company, role, pay or place the user set in the app. The app keeps them apart from job.md and shows them in its place, so job.md still has what the posting says, as above: when the user empties a box, the posting's shows again. Never change theirs. When the posting says something else that matters, such as hybrid for a job they set as remote, say so in one line of the reply.
 
 ## 3. Duplicates
 Once the details are right, call `find_job` with the company, the role and the posting's link. Each job it lists as **the same posting** or **the same role**, other than this one, may be this job found twice:
@@ -70,7 +70,7 @@ Once the details are right, call `find_job` with the company, the role and the p
 
 ### Save it
 Every job analyzed gets a folder, so its posting and this write-up survive dead links. The app shows them in the job's panel.
-- Folder: `applications/<YYYY-MM-DD>-<company>-<role>/`, lowercase with hyphens. If `find_job` or `job_details` found a folder for this job, reuse it. If they found none and one by that name is there already, it's another job's, as a job with the same company and title can have: add `-2` to the name, or the next number that's free.
+- Folder: `applications/<YYYY-MM-DD>-<company>-<role>/`, lowercase with hyphens. If `find_job` or `job_details` found a folder for this job, reuse it. If they found none and one by that name is there already, it's another job's, as a job with the same company and title can have: add `-2` to the name, or the next number that's free. `save_posting` says so too, when the folder is another job's.
 - `posting.md`, the posting word for word:
   - From a link: call `save_posting` with the link, the folder's name and the job's id. It saves what you read, or the posting the user saved from their browser, word for word, without asking.
   - Pasted text, or save_posting couldn't read it: save the user's text as `posting.md` with a `- **Source:** pasted by the user <YYYY-MM-DD>` line on top.

@@ -17,7 +17,7 @@ import type { WaitingAsk, WaitingRound } from '../shared/api.ts';
 import type { PermissionAnswer } from '../shared/permission-asks.ts';
 import { PRIVATE_FILE } from '../shared/private.ts';
 import type { RoundReply } from '../shared/rounds.ts';
-import type { RunTask } from '../shared/runs.ts';
+import { type RunTask, startedOnItsOwn } from '../shared/runs.ts';
 import { TemplatePreviews } from './about/previews.ts';
 import { PrivateAnswers } from './about/private.ts';
 import { AboutStore } from './about/store.ts';
@@ -406,13 +406,14 @@ function start(home: string, profile: ProfileFolder, stopped: ProfileFolder | nu
       onOwnEnded: (run, end, analyzed) => analyzeNew?.ended(run, end, analyzed),
       onOutput: (runId, data) => window.send('claude:output', { runId, data }),
       onSignal: (run, signal) => {
-        notifyIfAway(window, signal);
+        // A run Claude started on its own stays quiet: its tab and the jobs show how it went.
+        if (!startedOnItsOwn(run.task)) notifyIfAway(window, signal);
         const drafting = draftsFor(run.task);
         if (drafting) formDrafts.heard(signal, drafting);
       },
       // Claude Code's first-run screens and its question about trust wait on the user too.
       onScreen: (run) => {
-        notifyIfAway(window, 'needs-answer');
+        if (!startedOnItsOwn(run.task)) notifyIfAway(window, 'needs-answer');
         const drafting = draftsFor(run.task);
         if (drafting) formDrafts.waitsOnYou(drafting);
       },

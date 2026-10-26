@@ -548,7 +548,7 @@ export function factwrightTools(deps: ToolDeps): McpTool[] {
     {
       name: 'save_posting',
       description:
-        'Saves a job posting word for word as posting.md in the job’s folder, so it survives the link going dead: the posting the user saved from their browser for that link, which job_details names, LinkedIn’s included; what read_page or read_posting read from that link in this run; or a posting on Greenhouse, Lever, Ashby or Gem read from its feed. It reaches no other site. Use it for every posting with a link. A posting already saved in the folder is kept. If it says the page needs a sign-in, ask the user to paste the posting.',
+        'Saves a job posting word for word as posting.md in the job’s folder, so it survives the link going dead: the posting the user saved from their browser for that link, which job_details names, LinkedIn’s included; what read_page or read_posting read from that link in this run; or a posting on Greenhouse, Lever, Ashby or Gem read from its feed. It reaches no other site. Use it for every posting with a link. A posting already saved in the folder is kept, unless the folder is another job’s, which it says. If it says the page needs a sign-in, ask the user to paste the posting.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -573,7 +573,12 @@ export function factwrightTools(deps: ToolDeps): McpTool[] {
         savePosting(
           textInput(input, 'url', true) ?? '',
           textInput(input, 'folder', true) ?? '',
-          { ...reading, workspace: deps.workspace, ...(call?.keep && { keep: call.keep }) },
+          {
+            ...reading,
+            workspace: deps.workspace,
+            job: (id) => deps.jobs.job(id),
+            ...(call?.keep && { keep: call.keep }),
+          },
           textInput(input, 'job', false) ?? undefined,
         ),
     },

@@ -535,6 +535,20 @@ describe('JobPanel', () => {
     expect(second.api.updateJob).toHaveBeenCalledTimes(1);
   });
 
+  it('saves only the boxes the user changed, though the job changed while they were open', async () => {
+    const saved = sampleSaved()[0] as Job;
+    const { api, rerender } = panel(saved);
+    await userEvent.click(screen.getByRole('button', { name: 'Edit details' }));
+    // Meanwhile a run of Claude's own puts the company and place right from the posting.
+    const analyzed = { ...saved, company: 'Larkspur Benefits', location: 'Remote (US)' };
+    const row = jobRows([analyzed], TODAY)[0] ?? null;
+    rerender(<JobPanel row={row} api={api} today={TODAY} onClose={vi.fn()} />);
+    const form = screen.getByRole('form', { name: 'Edit details' });
+    await userEvent.type(within(form).getByRole('textbox', { name: 'Pay' }), '$150k');
+    await userEvent.click(within(form).getByRole('button', { name: 'Save' }));
+    expect(api.updateJob).toHaveBeenCalledWith(saved.id, { pay: '$150k' });
+  });
+
   it('says the pay is the user’s own when they set it', () => {
     const [analyzed] = sampleSaved().filter((job) => job.company === 'Keelson AI');
     if (!analyzed) throw new Error('No Keelson sample');

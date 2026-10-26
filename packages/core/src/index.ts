@@ -404,6 +404,7 @@ export {
 } from './progress.ts';
 export {
   folderFiles,
+  folderJobId,
   JOB_DOCS,
   type JobDocKind,
   type JobDocs,

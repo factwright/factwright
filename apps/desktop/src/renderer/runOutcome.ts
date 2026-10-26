@@ -99,12 +99,14 @@ const called = (steps: readonly RunStep[], tool: string) =>
  * What a finished task made, from how its job, or the jobs, changed since it started, and from
  * what Claude did: a resume, a letter, a job analyzed and so on, said in a sentence with where it
  * is. Null when there's nothing to show for it yet, such as when Claude stopped to ask the user
- * something, or for a task that makes nothing of its own to show.
+ * something, or for a task that makes nothing of its own to show. `analyzed` is the jobs its tab
+ * counts as done, by their IDs, which include one merged into another of its jobs.
  */
 export function runOutcome(
   before: RunBefore,
   rows: readonly JobRow[],
   steps: readonly RunStep[],
+  analyzed: readonly string[] = [],
 ): RunOutcome | null {
   const { task } = before;
   if (!task) return null;
@@ -126,24 +128,28 @@ export function runOutcome(
       : null;
   }
   // Several jobs analyzed: each one with a fit check new since the run started, which moves it
-  // to To review.
+  // to To review, and each its tab counts, as one merged into another of them is.
   if ('jobIds' in task) {
     const count = task.jobIds.length;
-    const done = rows.filter(
+    const checked = rows.filter(
       ({ job }) =>
         task.jobIds.includes(job.id) &&
         job.fit !== null &&
         marksOf(job).fit !== before.fits[job.id],
     );
-    const [first] = done;
+    const [first] = checked;
     if (!first) return null;
+    const done = new Set([
+      ...checked.map(({ job }) => job.id),
+      ...analyzed.filter((id) => task.jobIds.includes(id)),
+    ]).size;
     const jobs = task.auto ? 'new jobs' : 'jobs';
     const text =
       count === 1
         ? `${first.job.company} is analyzed.`
-        : done.length === count
+        : done === count
           ? `All ${count} ${jobs} are analyzed.`
-          : `${done.length} of ${count} ${jobs} are analyzed.`;
+          : `${done} of ${count} ${jobs} are analyzed.`;
     return { text, place: { view: 'review' } };
   }
   const jobId = taskJob(task);

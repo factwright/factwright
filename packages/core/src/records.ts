@@ -282,6 +282,9 @@ function readJobNotes(markdown: string) {
   };
 }
 
+/** The job a folder's job.md is for, by its Job ID line, or null for one that doesn't say. */
+export const folderJobId = (markdown: string): string | null => readJobNotes(markdown).job;
+
 /** A job's ID as a record gives it, in backticks or not, or null for anything else. */
 function jobId(value: string | null | undefined): string | null {
   const id = value?.replace(/^`|`$/g, '').trim().toLowerCase() ?? '';
