@@ -1,4 +1,5 @@
-// How often Factwright is downloaded, and how much sync is used: counts only, never who.
+// How often Factwright is downloaded, how many copies are open and pick up updates, and how much
+// sync is used: counts only, never who.
 // FACTWRIGHT_STATS_TOKEN=… CLOUDFLARE_ACCOUNT_ID=… pnpm --filter @factwright/site stats
 // The token needs Account Analytics Read and nothing else. This app's README says how to make it.
 import { PERMISSION, readStats, sourceProblem } from './stats-read.ts';

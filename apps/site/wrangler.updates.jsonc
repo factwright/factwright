@@ -1,0 +1,33 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  // The Worker in front of downloads.factwright.com's update feeds and update files, which counts
+  // installed copies' looks for an update and the updates they pick up (worker/updates.ts). The
+  // files themselves stay in R2, which answers every request as before.
+  "name": "factwright-updates",
+  // No usage data to Cloudflare from anyone running Wrangler here.
+  "send_metrics": false,
+  "main": "worker/updates-index.ts",
+  "compatibility_date": "2026-09-30",
+  // Only the feeds and the versioned files: the installers under fixed names, Factwright.dmg and
+  // Factwright-Setup.exe, keep their Cache Rule and never meet the Worker. Wildcards go only at a
+  // path's end, so the versioned files are matched by "Factwright-0" and "Factwright-Setup-0".
+  // test/update-routes.test.ts fails once the app's version leaves 0.x, so these change with it.
+  "routes": [
+    { "pattern": "downloads.factwright.com/latest*", "zone_name": "factwright.com" },
+    { "pattern": "downloads.factwright.com/Factwright-0*", "zone_name": "factwright.com" },
+    { "pattern": "downloads.factwright.com/Factwright-Setup-0*", "zone_name": "factwright.com" }
+  ],
+  "workers_dev": false,
+  "preview_urls": false,
+  // Each look and each update picked up, by computer and version only, for the stats command
+  // (scripts/stats.ts). Analytics Engine makes the dataset on its first write, and keeps each
+  // count for 3 months.
+  "analytics_engine_datasets": [{ "binding": "UPDATES", "dataset": "factwright_updates" }],
+  // Logs keep only what the Worker writes itself, which is nothing. Cloudflare's log of every
+  // request is off.
+  "observability": {
+    "enabled": true,
+    "redact_query_string": true,
+    "logs": { "enabled": true, "invocation_logs": false }
+  }
+}

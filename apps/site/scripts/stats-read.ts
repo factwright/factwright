@@ -2,11 +2,16 @@ import {
   DOWNLOADS_DATASET,
   DOWNLOADS_SQL,
   type DownloadRow,
+  LOOKS_SQL,
+  type LookRow,
+  PICKUPS_SQL,
+  type PickupRow,
   type Stats,
   SYNC_DATASET,
   SYNC_SQL,
   type SyncDay,
   type SyncTotals,
+  UPDATES_DATASET,
 } from './stats-report.ts';
 
 /** Cloudflare's API. */
@@ -67,6 +72,28 @@ function downloadRow(row: Record<string, unknown>): DownloadRow | null {
   if (typeof computer !== 'string' || typeof version !== 'string') return null;
   if (!Number.isFinite(downloads) || downloads < 0) return null;
   return { day, computer, version, downloads };
+}
+
+/** A count Analytics Engine gives, as text or a number, or null if it isn't one. */
+function count(value: unknown): number | null {
+  const n = Number(value);
+  return Number.isFinite(n) && n >= 0 ? n : null;
+}
+
+/** A row of looks for an update, or null if it isn't one. */
+function lookRow(row: Record<string, unknown>): LookRow | null {
+  const looks = count(row.looks);
+  const { slot, computer } = row;
+  if (typeof slot !== 'string' || !DATE.test(slot) || typeof computer !== 'string') return null;
+  return looks === null ? null : { slot, computer, looks };
+}
+
+/** A row of updates picked up, or null if it isn't one. */
+function pickupRow(row: Record<string, unknown>): PickupRow | null {
+  const copies = count(row.copies);
+  const { version, computer } = row;
+  if (typeof version !== 'string' || typeof computer !== 'string') return null;
+  return copies === null ? null : { version, computer, copies };
 }
 
 /** The totals the report shows, from the JSON the server wrote. One it doesn't have is 0. */
@@ -148,11 +175,16 @@ async function rows<Row>(
   }
 }
 
-/** Everything the report shows: the downloads, and the sync server's daily totals. */
+/**
+ * Everything the report shows: the downloads, installed copies' looks for an update and the
+ * updates they picked up, and the sync server's daily totals.
+ */
 export async function readStats(source: Source): Promise<Stats> {
-  const [downloads, sync] = await Promise.all([
+  const [downloads, looks, pickups, sync] = await Promise.all([
     rows(source, DOWNLOADS_DATASET, DOWNLOADS_SQL, downloadRow),
+    rows(source, UPDATES_DATASET, LOOKS_SQL, lookRow),
+    rows(source, UPDATES_DATASET, PICKUPS_SQL, pickupRow),
     rows(source, SYNC_DATASET, SYNC_SQL, syncDay),
   ]);
-  return { downloads, sync };
+  return { downloads, looks, pickups, sync };
 }
