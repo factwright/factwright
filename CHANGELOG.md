@@ -4,6 +4,9 @@ Notable changes to Factwright, newest first. The format follows [Keep a Changelo
 
 ## Unreleased
 
+### Added
+- Suggest a feature, in the sidebar beside Report a problem, opens Factwright's roadmap at factwright.com/roadmap in your browser, to suggest a feature or vote for the ideas there, with no account. The app sends nothing itself.
+
 ## 0.18.1 - 2026-10-27
 
 ### Changed
