@@ -2,7 +2,10 @@ import type { AppUpdater, UpdateInfo } from 'electron-updater';
 import type { UpdateStatus } from '../shared/updates.ts';
 
 /** What the app uses of electron-updater's updater, so tests can stand in for it. */
-export type Updater = Pick<AppUpdater, 'checkForUpdates' | 'quitAndInstall' | 'on'> & {
+export type Updater = Pick<
+  AppUpdater,
+  'checkForUpdates' | 'downloadUpdate' | 'quitAndInstall' | 'on'
+> & {
   autoDownload: boolean;
   autoInstallOnAppQuit: boolean;
   logger: AppUpdater['logger'];
@@ -69,7 +72,9 @@ export interface UpdateWatcherDeps {
  * Keeps an installed copy of Factwright up to date: it looks for a new version every few minutes
  * and when the user comes back to it (from the download site, as the installers set it up),
  * downloads one in the background, and installs it when the user restarts, or the next time they
- * quit. A problem looking is kept quiet: the next look tries again.
+ * quit. It goes on looking while an update waits, so a newer one that comes out meanwhile takes
+ * its place, and one restart brings the latest. A problem looking is kept quiet: the next look
+ * tries again.
  */
 export class UpdateWatcher {
   private readonly deps: UpdateWatcherDeps;
@@ -80,6 +85,8 @@ export class UpdateWatcher {
   private running = false;
   /** Set once it's restarting into the update, while Claude Code that's done closes first. */
   private installing = false;
+  /** Set while it looks, so a look that fails leaves an update that's waiting as it is. */
+  private looking = false;
   /** When it last looked, or started, as coming back to the app looks only if that was a while ago. */
   private lastLook = 0;
 
@@ -89,17 +96,17 @@ export class UpdateWatcher {
 
   start(): void {
     const { updater, macInstaller } = this.deps;
-    updater.autoDownload = true;
+    // It downloads what a look finds itself, and only a version that isn't already waiting: the
+    // Mac would otherwise check the same download all over again at every look.
+    updater.autoDownload = false;
     updater.autoInstallOnAppQuit = true;
     // Its own log prints each problem in full; the one line logged below says enough.
     updater.logger = null;
     updater.requestHeaders = { ...updater.requestHeaders, 'x-user-staging-id': NO_INSTALL_ID };
-    updater.on('update-available', (info) =>
-      this.set({ state: 'downloading', version: info.version, percent: 0 }),
-    );
     updater.on('download-progress', (progress) => {
       if (this.status.state !== 'downloading') return;
-      this.set({ ...this.status, percent: Math.round(progress.percent) });
+      const percent = Math.round(progress.percent);
+      if (percent !== this.status.percent) this.set({ ...this.status, percent });
     });
     updater.on('update-downloaded', (info) => {
       if (macInstaller) this.downloaded = info;
@@ -110,16 +117,18 @@ export class UpdateWatcher {
     });
     updater.on('error', (error) => {
       this.deps.log?.(`Update: ${error.message}`);
-      // Whatever failed, from the download to the Mac's check of it, or installing it, the next
-      // look tries again.
+      // A look that fails, as when the computer is offline, leaves the update that's waiting.
+      if (this.looking && !this.installing && this.status.state === 'ready') return;
+      // Whatever else failed, from the download to the Mac's check of it, or installing it, the
+      // next look tries again.
       this.downloaded = null;
       this.installing = false;
       if (this.status.state !== 'none') this.set({ state: 'none' });
     });
     this.running = true;
     this.lastLook = Date.now();
-    this.timers.push(setTimeout(() => this.check(), FIRST_CHECK_AFTER_MS));
-    this.timers.push(setInterval(() => this.check(), CHECK_EVERY_MS));
+    this.timers.push(setTimeout(() => void this.check(), FIRST_CHECK_AFTER_MS));
+    this.timers.push(setInterval(() => void this.check(), CHECK_EVERY_MS));
   }
 
   stop(): void {
@@ -134,7 +143,7 @@ export class UpdateWatcher {
    */
   lookAgain(): void {
     if (!this.running || Date.now() - this.lastLook < LOOK_AGAIN_AFTER_MS) return;
-    this.check();
+    void this.check();
   }
 
   current(): UpdateStatus {
@@ -156,18 +165,35 @@ export class UpdateWatcher {
     return true;
   }
 
-  /** Looks for an update, unless one is downloading or waiting to be installed. */
-  check(): void {
-    if (this.status.state !== 'none') return;
+  /**
+   * Looks for an update, unless one is downloading or installing, and downloads what it finds. A
+   * newer version than the one waiting to be installed takes its place. Settles once it has looked.
+   */
+  async check(): Promise<void> {
+    if (this.status.state === 'downloading' || this.installing) return;
     this.lastLook = Date.now();
-    const failed = (error: unknown) =>
-      this.deps.log?.(`Update: ${error instanceof Error ? error.message : String(error)}`);
-    this.deps.updater.checkForUpdates().then(
-      // A download that fails says so through the updater's error too, so this only keeps its
-      // promise from going unanswered, which would show an error box.
-      (result) => result?.downloadPromise?.catch(() => {}),
-      failed,
+    this.looking = true;
+    await this.deps.updater.checkForUpdates().then(
+      (result) => {
+        this.looking = false;
+        if (result?.isUpdateAvailable) this.download(result.updateInfo.version);
+      },
+      (error: unknown) => {
+        this.looking = false;
+        this.deps.log?.(`Update: ${error instanceof Error ? error.message : String(error)}`);
+      },
     );
+  }
+
+  /** Downloads the version a look found, unless it's on its way or already waiting. */
+  private download(version: string): void {
+    const { status } = this;
+    if (this.installing || status.state === 'downloading') return;
+    if (status.state === 'ready' && status.version === version) return;
+    this.set({ state: 'downloading', version, percent: 0 });
+    // A download that fails says so through the updater's error too, so this only keeps its
+    // promise from going unanswered, which would show an error box.
+    this.deps.updater.downloadUpdate().catch(() => {});
   }
 
   private ready(info: UpdateInfo): void {

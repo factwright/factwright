@@ -1,0 +1,45 @@
+/* Across the whole window, under the top bar, so an update waiting is hard to miss. */
+.banner {
+  display: flex;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--fw-space-2) var(--fw-space-3);
+  padding: var(--fw-space-2) var(--fw-space-5);
+  border-bottom: 1px solid var(--fw-border);
+  background: var(--fw-accent-soft);
+}
+
+/* Asking before a restart would lose something the user is writing. */
+.need {
+  background: var(--fw-need-soft);
+}
+
+.icon {
+  flex: 0 0 auto;
+  color: var(--fw-accent-text);
+}
+
+.need .icon {
+  color: var(--fw-need);
+}
+
+/* The words take the room there is, and the buttons wrap under them in a narrow window. */
+.text {
+  flex: 1 1 360px;
+  margin: 0;
+  color: var(--fw-text);
+  font-size: var(--fw-text-md);
+}
+
+.text strong {
+  font-weight: 650;
+}
+
+.actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: var(--fw-space-1);
+  margin-left: auto;
+}

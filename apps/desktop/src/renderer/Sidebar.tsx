@@ -35,10 +35,10 @@ export function reportUrl(version: string): string {
 }
 
 /**
- * The sidebar: the open profile when there's more than one, the app's places, then an update when
- * there's one, sync, the user's Claude and the levels it runs at, the browser extension, a way to
- * support Factwright, a way to report a problem, and Factwright's version, so an update shows it
- * landed.
+ * The sidebar: the open profile when there's more than one, the app's places, then an update on its
+ * way, or one that's ready once the user puts off the strip across the window, sync, the user's
+ * Claude and the levels it runs at, the browser extension, a way to support Factwright, a way to
+ * report a problem, and Factwright's version, so an update shows it landed.
  */
 export function Sidebar({
   profiles,
@@ -110,9 +110,11 @@ export function Sidebar({
   factCount?: number | undefined;
   /** How many of them wait for the user to verify them, which shows in place of the count. */
   factsToVerify?: number | undefined;
-  /** An update to Factwright that's ready to install, and restarting into it. */
+  /** An update to Factwright on its way or ready to install, and restarting into it. */
   update: {
     status: UpdateStatus;
+    /** Whether the strip across the window shows the update that's ready, rather than the card. */
+    inBanner: boolean;
     busy: boolean;
     unsaved: () => boolean;
     onRestart: () => Promise<boolean>;
@@ -157,6 +159,7 @@ export function Sidebar({
       <div className={styles.cards}>
         <UpdateCard
           status={update.status}
+          inBanner={update.inBanner}
           busy={update.busy}
           unsaved={update.unsaved}
           onRestart={update.onRestart}

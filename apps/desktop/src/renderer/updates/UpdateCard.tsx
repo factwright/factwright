@@ -1,22 +1,27 @@
-import { Dialog, Markdown } from '@factwright/ui';
 import { useState } from 'react';
 import type { UpdateStatus } from '../../shared/updates.ts';
 import { SidebarCard } from '../SidebarCard.tsx';
 import styles from './UpdateCard.module.css';
+import { useRestart } from './useRestart.ts';
+import { WhatsNew } from './WhatsNew.tsx';
 
 /**
- * The card at the bottom of the sidebar once an update has downloaded: restart into it now, or
- * it installs the next time the user quits. While Claude is working, or waits on the user,
- * restarting would stop the run, so Restart now waits until Claude is done. Claude Code that's
- * done closes first, which can take a few seconds, so the card says it's restarting meanwhile.
+ * The card at the bottom of the sidebar for an update: how far its download has got, then, once
+ * the user puts off the strip across the window, the update that's ready: restart into it now, or
+ * it installs the next time the user quits. While the strip shows, it says so itself, and the card
+ * stays out of the way. While Claude is working, or waits on the user, restarting would stop the
+ * run, so Restart now waits until Claude is done.
  */
 export function UpdateCard({
   status,
+  inBanner,
   busy,
   unsaved,
   onRestart,
 }: {
   status: UpdateStatus;
+  /** Whether the strip across the window shows the update that's ready. */
+  inBanner: boolean;
   /** Whether Claude has work going, which a restart would stop: working, or waiting on the user. */
   busy: boolean;
   /** Whether the user is writing something they haven't saved, which a restart would lose. */
@@ -25,36 +30,32 @@ export function UpdateCard({
   onRestart: () => Promise<boolean>;
 }) {
   const [reading, setReading] = useState(false);
-  const [asking, setAsking] = useState(false);
-  // Restarting, and whether the last try didn't, as when Claude started working meanwhile.
-  const [restarting, setRestarting] = useState(false);
-  const [refused, setRefused] = useState(false);
-  if (status.state !== 'ready') return null;
-  const restart = async () => {
-    setAsking(false);
-    setRefused(false);
-    setRestarting(true);
-    const restarted = await onRestart().catch(() => false);
-    if (restarted) return;
-    setRestarting(false);
-    setRefused(true);
-  };
+  const restart = useRestart(unsaved, onRestart);
+  if (status.state === 'downloading') {
+    return (
+      <SidebarCard
+        title="Downloading an update"
+        tone="checking"
+        line={`Factwright ${status.version} · ${status.percent < 100 ? `${status.percent}%` : 'almost ready'}`}
+        help="You can keep working meanwhile."
+      />
+    );
+  }
+  if (status.state !== 'ready' || inBanner) return null;
   const { version, notes } = status;
   const link = (label: string, onClick: () => void) => (
     <button type="button" className={styles.link} onClick={onClick}>
       {label}
     </button>
   );
-  if (asking && !busy) {
+  if (restart.asking && !busy) {
     return (
       <SidebarCard
         title="Update ready"
         tone="need"
         line="Something you’re writing isn’t saved"
-        help={
-          <>Save it first, or restart now and lose it. {link('Not now', () => setAsking(false))}</>
-        }
-        action={{ label: 'Restart anyway', onClick: () => void restart() }}
+        help={<>Save it first, or restart now and lose it. {link('Not now', restart.cancel)}</>}
+        action={{ label: 'Restart anyway', onClick: restart.restartAnyway }}
       />
     );
   }
@@ -68,7 +69,7 @@ export function UpdateCard({
           <>
             {busy
               ? 'You can restart into it once Claude is done, or it installs the next time you quit.'
-              : refused
+              : restart.refused
                 ? 'Factwright didn’t restart. Try again once Claude is done.'
                 : 'It installs when you restart, or the next time you quit.'}
             {notes && <> {link('What’s new', () => setReading(true))}</>}
@@ -77,22 +78,13 @@ export function UpdateCard({
         action={
           busy
             ? null
-            : restarting
+            : restart.restarting
               ? { label: 'Restarting…', onClick: () => {}, disabled: true }
-              : {
-                  label: 'Restart now',
-                  onClick: () => (unsaved() ? setAsking(true) : void restart()),
-                }
+              : { label: 'Restart now', onClick: restart.request }
         }
       />
       {reading && notes && (
-        <Dialog
-          title={`What’s new in Factwright ${version}`}
-          size="lg"
-          onClose={() => setReading(false)}
-        >
-          <Markdown text={notes} />
-        </Dialog>
+        <WhatsNew version={version} notes={notes} onClose={() => setReading(false)} />
       )}
     </>
   );

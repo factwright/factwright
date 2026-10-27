@@ -21,7 +21,13 @@ function renderSidebar(sync: SyncStatus | 'checking', onOpenExtension = vi.fn())
       onOpenClaudeSettings={vi.fn()}
       onOpenExtension={onOpenExtension}
       levels={null}
-      update={{ status: { state: 'none' }, busy: false, unsaved: () => false, onRestart: vi.fn() }}
+      update={{
+        status: { state: 'none' },
+        inBanner: false,
+        busy: false,
+        unsaved: () => false,
+        onRestart: vi.fn(),
+      }}
       version="0.9.1"
     />,
   );
