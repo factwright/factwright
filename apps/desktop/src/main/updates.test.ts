@@ -4,7 +4,6 @@ import type { UpdateStatus } from '../shared/updates.ts';
 import {
   CHECK_EVERY_MS,
   FIRST_CHECK_AFTER_MS,
-  LOOK_AGAIN_AFTER_MS,
   LOOK_FAILED,
   NO_INSTALL_ID,
   type Updater,
@@ -103,31 +102,40 @@ describe('UpdateWatcher', () => {
     expect(updater.checkForUpdates).toHaveBeenCalledTimes(2);
   });
 
-  it('looks again when the user comes back, at most once a minute', () => {
+  it('looks when the user comes back only once a look is due, as after the computer slept', () => {
     // Just started: the first look, a little later, is still to come.
     watcher.lookAgain();
     expect(updater.checkForUpdates).not.toHaveBeenCalled();
     vi.advanceTimersByTime(FIRST_CHECK_AFTER_MS);
     expect(updater.checkForUpdates).toHaveBeenCalledTimes(1);
-    vi.advanceTimersByTime(LOOK_AGAIN_AFTER_MS - 1);
+    // Switching back to the app between looks doesn't look again, so each copy counts once.
+    vi.advanceTimersByTime(CHECK_EVERY_MS / 2);
     watcher.lookAgain();
     expect(updater.checkForUpdates).toHaveBeenCalledTimes(1);
-    vi.advanceTimersByTime(1);
+    // The computer slept for an hour, with its timers stopped, and wakes.
+    vi.setSystemTime(Date.now() + 60 * 60 * 1000);
     watcher.lookAgain();
     expect(updater.checkForUpdates).toHaveBeenCalledTimes(2);
+    // The regular looks go on 10 minutes from there, not sooner.
+    vi.advanceTimersByTime(CHECK_EVERY_MS - 1);
+    expect(updater.checkForUpdates).toHaveBeenCalledTimes(2);
+    vi.advanceTimersByTime(1);
+    expect(updater.checkForUpdates).toHaveBeenCalledTimes(3);
   });
 
   it('doesn’t look again once stopped', () => {
-    vi.advanceTimersByTime(FIRST_CHECK_AFTER_MS + LOOK_AGAIN_AFTER_MS);
+    vi.advanceTimersByTime(FIRST_CHECK_AFTER_MS);
     watcher.stop();
+    vi.setSystemTime(Date.now() + CHECK_EVERY_MS);
     watcher.lookAgain();
+    vi.advanceTimersByTime(CHECK_EVERY_MS);
     expect(updater.checkForUpdates).toHaveBeenCalledTimes(1);
   });
 
   it('doesn’t look again while an update is on its way', async () => {
     nextLookFinds('0.2.0');
     await watcher.check();
-    vi.advanceTimersByTime(LOOK_AGAIN_AFTER_MS);
+    vi.advanceTimersByTime(CHECK_EVERY_MS);
     watcher.lookAgain();
     vi.advanceTimersByTime(FIRST_CHECK_AFTER_MS + CHECK_EVERY_MS);
     expect(updater.checkForUpdates).toHaveBeenCalledTimes(1);

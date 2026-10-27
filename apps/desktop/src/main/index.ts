@@ -604,8 +604,8 @@ function start(home: string, profile: ProfileFolder, stopped: ProfileFolder | nu
         : null;
     if (updates) {
       updates.start();
-      // Coming back to the app, or the computer waking, looks straight away, so an update that
-      // came out meanwhile doesn't wait for the next look.
+      // Coming back to the app, or the computer waking, looks if a look is due, as after the
+      // computer slept, so an update that came out meanwhile doesn't wait for the next look.
       app.on('browser-window-focus', () => updates.lookAgain());
       powerMonitor.on('resume', () => updates.lookAgain());
       powerMonitor.on('unlock-screen', () => updates.lookAgain());

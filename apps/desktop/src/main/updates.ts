@@ -17,15 +17,14 @@ export interface MacInstaller {
   on(event: 'update-downloaded', listener: () => void): unknown;
 }
 
-/** How often an installed copy looks for an update, so a new version shows within minutes. */
+/**
+ * How often an installed copy looks for an update, so a new version shows within minutes. It looks
+ * no more often than this, whatever wakes it, so the download site can count the copies open by
+ * their looks (apps/site/worker/updates.ts).
+ */
 export const CHECK_EVERY_MS = 10 * 60 * 1000;
 /** How long after starting it first looks, so looking never slows the start. */
 export const FIRST_CHECK_AFTER_MS = 30 * 1000;
-/**
- * The least time between looks when the user comes back to the app or the computer wakes, so
- * switching between windows doesn't look each time.
- */
-export const LOOK_AGAIN_AFTER_MS = 60 * 1000;
 
 /**
  * electron-updater sends an ID of its own, kept on the computer, with each look for an update,
@@ -88,7 +87,8 @@ export class UpdateWatcher {
   private status: UpdateStatus = { state: 'none' };
   /** A download the Mac is still checking, before it can install it. */
   private downloaded: UpdateInfo | null = null;
-  private timers: ReturnType<typeof setTimeout>[] = [];
+  private firstLook: ReturnType<typeof setTimeout> | undefined;
+  private regularLooks: ReturnType<typeof setInterval> | undefined;
   private running = false;
   /** Set once it's restarting into the update, while Claude Code that's done closes first. */
   private installing = false;
@@ -133,23 +133,32 @@ export class UpdateWatcher {
     });
     this.running = true;
     this.lastLook = Date.now();
-    this.timers.push(setTimeout(() => void this.check(), FIRST_CHECK_AFTER_MS));
-    this.timers.push(setInterval(() => void this.check(), CHECK_EVERY_MS));
+    this.firstLook = setTimeout(() => void this.check(), FIRST_CHECK_AFTER_MS);
+    this.lookEvery10Minutes();
   }
 
   stop(): void {
     this.running = false;
-    for (const timer of this.timers) clearTimeout(timer);
-    this.timers = [];
+    clearTimeout(this.firstLook);
+    clearInterval(this.regularLooks);
   }
 
   /**
-   * Looks now, unless it did within the last minute: for when the user comes back to the app or
-   * the computer wakes, so an update that came out meanwhile shows straight away.
+   * Looks now if a look is due, for when the user comes back to the app or the computer wakes: a
+   * computer's timers stop while it sleeps, so an update that came out meanwhile shows straight
+   * away. The regular looks go on 10 minutes from there. Coming back between looks doesn't look
+   * again, so each open copy looks about once every 10 minutes.
    */
   lookAgain(): void {
-    if (!this.running || Date.now() - this.lastLook < LOOK_AGAIN_AFTER_MS) return;
+    if (!this.running || Date.now() - this.lastLook < CHECK_EVERY_MS) return;
+    this.lookEvery10Minutes();
     void this.check();
+  }
+
+  /** Looks every 10 minutes from now. */
+  private lookEvery10Minutes(): void {
+    clearInterval(this.regularLooks);
+    this.regularLooks = setInterval(() => void this.check(), CHECK_EVERY_MS);
   }
 
   current(): UpdateStatus {
