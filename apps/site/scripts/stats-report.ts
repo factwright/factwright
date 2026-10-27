@@ -1,7 +1,9 @@
 /**
  * The numbers behind `pnpm --filter @factwright/site stats`: what it asks Workers Analytics Engine
- * for, and how it shows the answers. Both datasets hold counts only, never anything about a person:
- * the site's Worker counts each download, and the sync server counts its totals once a day.
+ * for, and how it shows the answers. Every dataset holds counts only, never anything about a
+ * person: the site's Worker counts each download, the Worker on downloads.factwright.com counts
+ * installed copies' looks for an update and the updates they pick up, and the sync server counts
+ * its totals once a day.
  */
 
 /** The dataset the site's Worker counts downloads in (wrangler.jsonc here). */
@@ -10,11 +12,23 @@ export const DOWNLOADS_DATASET = 'factwright_downloads';
 /** The dataset the sync server keeps each day's totals in (apps/server/wrangler.jsonc). */
 export const SYNC_DATASET = 'factwright_sync';
 
+/**
+ * The dataset the Worker on downloads.factwright.com counts installed copies' looks for an update
+ * and the updates they pick up in (wrangler.updates.jsonc here).
+ */
+export const UPDATES_DATASET = 'factwright_updates';
+
 /** How far back the downloads go. Analytics Engine keeps everything for 3 months. */
 export const DOWNLOAD_DAYS = 90;
 
 /** How far back the sync totals go: enough for a month of new accounts. */
 export const SYNC_DAYS = 31;
+
+/** How far back the copies open go, a day at a time. */
+export const LOOK_DAYS = 14;
+
+/** How often an open copy looks for an update (`CHECK_EVERY_MS` in the desktop app). */
+const LOOK_EVERY_MINUTES = 10;
 
 /** Downloads per day, computer and version. Each count may stand for several, if it was sampled. */
 export const DOWNLOADS_SQL = [
@@ -24,6 +38,29 @@ export const DOWNLOADS_SQL = [
   `WHERE timestamp > NOW() - INTERVAL '${DOWNLOAD_DAYS}' DAY`,
   'GROUP BY day, computer, version',
   'ORDER BY day DESC',
+  'FORMAT JSON',
+].join(' ');
+
+/**
+ * Installed copies' looks for an update, per 10 minutes and computer. An open copy looks every 10
+ * minutes, so a 10 minutes' looks are about how many copies were open then.
+ */
+export const LOOKS_SQL = [
+  `SELECT toStartOfInterval(timestamp, INTERVAL '${LOOK_EVERY_MINUTES}' MINUTE) AS slot,`,
+  'blob2 AS computer, SUM(_sample_interval) AS looks',
+  `FROM ${UPDATES_DATASET}`,
+  `WHERE blob1 = 'look' AND timestamp > NOW() - INTERVAL '${LOOK_DAYS}' DAY`,
+  'GROUP BY slot, computer',
+  'ORDER BY slot DESC',
+  'FORMAT JSON',
+].join(' ');
+
+/** The copies that picked up each version, per computer. */
+export const PICKUPS_SQL = [
+  'SELECT blob3 AS version, blob2 AS computer, SUM(_sample_interval) AS copies',
+  `FROM ${UPDATES_DATASET}`,
+  `WHERE blob1 = 'pickup' AND timestamp > NOW() - INTERVAL '${DOWNLOAD_DAYS}' DAY`,
+  'GROUP BY version, computer',
   'FORMAT JSON',
 ].join(' ');
 
@@ -68,9 +105,26 @@ export interface SyncDay {
   totals: SyncTotals;
 }
 
+/** Installed copies' looks for an update in 10 minutes, on one computer. */
+export interface LookRow {
+  /** When the 10 minutes began, in UTC, as Analytics Engine gives it: "2026-10-27 15:10:00". */
+  slot: string;
+  computer: string;
+  looks: number;
+}
+
+/** The copies that picked up a version, on one computer. */
+export interface PickupRow {
+  version: string;
+  computer: string;
+  copies: number;
+}
+
 /** What the command found, or why it couldn't. */
 export interface Stats {
   downloads: DownloadRow[] | { problem: string };
+  looks: LookRow[] | { problem: string };
+  pickups: PickupRow[] | { problem: string };
   sync: SyncDay[] | { problem: string };
 }
 
@@ -161,6 +215,69 @@ function downloadLines(rows: DownloadRow[]): string[] {
   ];
 }
 
+/** A moment as Analytics Engine gives one, such as "2026-10-27 15:10:00", in UTC. */
+const engineMoment = (at: Date) => at.toISOString().slice(0, 19).replace('T', ' ');
+
+/**
+ * The open copies part of the report, from their looks for an update: those open in the last full
+ * 10 minutes, and for each day, the most open at once and the hours they were open.
+ */
+function openLines(rows: LookRow[], now: Date): string[] {
+  if (rows.length === 0) {
+    return [
+      `Copies open: no looks for an update in the last ${LOOK_DAYS} days. The Worker on downloads.factwright.com counts them.`,
+    ];
+  }
+  const slotMs = LOOK_EVERY_MINUTES * 60 * 1000;
+  const lastFull = engineMoment(new Date(Math.floor(now.getTime() / slotMs) * slotMs - slotMs));
+  const latest = rows.filter((row) => row.slot === lastFull);
+  const slots = new Map<string, number>();
+  for (const row of rows) slots.set(row.slot, (slots.get(row.slot) ?? 0) + row.looks);
+  const days = new Map<string, { most: number; looks: number }>();
+  for (const [slot, looks] of slots) {
+    const day = days.get(slot.slice(0, 10)) ?? { most: 0, looks: 0 };
+    days.set(slot.slice(0, 10), { most: Math.max(day.most, looks), looks: day.looks + looks });
+  }
+  const newestDays = [...days].sort(([a], [b]) => b.localeCompare(a)).slice(0, DAYS_LISTED);
+  const looksPerHour = 60 / LOOK_EVERY_MINUTES;
+  return [
+    'Copies open, as their looks for an update count them',
+    line(
+      `In the last full ${LOOK_EVERY_MINUTES} minutes`,
+      latest.reduce((sum, row) => sum + row.looks, 0),
+      1,
+    ),
+    ...latest
+      .sort((a, b) => a.computer.localeCompare(b.computer))
+      .map((row) => line(COMPUTERS[row.computer] ?? row.computer, row.looks, 2)),
+    `  Most open at once, by UTC day, the last ${DAYS_LISTED} with any, newest first`,
+    ...newestDays.map(([day, { most }]) => line(shortDay(day), most, 2)),
+    `  Hours open, by UTC day, the last ${DAYS_LISTED} with any, newest first`,
+    ...newestDays.map(([day, { looks }]) =>
+      line(shortDay(day), Math.round(looks / looksPerHour), 2),
+    ),
+  ];
+}
+
+/** The updates part of the report: the copies that picked up each version, newest first. */
+function pickupLines(rows: PickupRow[]): string[] {
+  const total = rows.reduce((sum, row) => sum + row.copies, 0);
+  const heading = line(`Updates picked up, last ${DOWNLOAD_DAYS} days`, total);
+  if (total === 0) return [heading];
+  const versions = new Map<string, number>();
+  for (const row of rows) versions.set(row.version, (versions.get(row.version) ?? 0) + row.copies);
+  return [
+    heading,
+    ...[...versions].sort(byVersion).flatMap(([version, copies]) => [
+      line(version, copies, 1),
+      ...rows
+        .filter((row) => row.version === version)
+        .sort((a, b) => a.computer.localeCompare(b.computer))
+        .map((row) => line(COMPUTERS[row.computer] ?? row.computer, row.copies, 2)),
+    ]),
+  ];
+}
+
 /**
  * The sync part of the report, from the newest totals, and each day's new accounts. A day the
  * server counted twice, as when its daily job ran again, shows its newest count once.
@@ -203,11 +320,21 @@ export function report(stats: Stats, now: Date): string {
       ? [`Downloads: couldn’t read them. ${stats.downloads.problem}`]
       : downloadLines(stats.downloads)),
     '',
+    ...('problem' in stats.looks
+      ? [`Copies open: couldn’t read them. ${stats.looks.problem}`]
+      : openLines(stats.looks, now)),
+    '',
+    ...('problem' in stats.pickups
+      ? [`Updates picked up: couldn’t read them. ${stats.pickups.problem}`]
+      : pickupLines(stats.pickups)),
+    '',
     ...('problem' in stats.sync
       ? [`Sync: couldn’t read it. ${stats.sync.problem}`]
       : syncLines(stats.sync)),
     '',
-    'Counts only, never who. The app itself reports nothing, so someone who never turns on sync',
-    'shows up only as a download.',
+    'Counts only, never who. The app itself reports nothing: the download site counts its looks for',
+    'an update, by computer, and the updates it picks up, by computer and version. The counts are a',
+    'guide: copies before 0.18.1 also look each time you switch back to them, and an update',
+    'downloaded again counts again.',
   ].join('\n');
 }
