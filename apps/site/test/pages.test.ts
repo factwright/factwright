@@ -200,32 +200,35 @@ const holdingMadeUp = (doc: Document) =>
         ![...element.children].some((child) => namesMadeUp(child.textContent ?? ''))),
   );
 
+/** The site's style files. */
+const STYLES = join(SITE, 'src', 'styles');
+
+/** The style files in the order a page gets them: its main style, then the admin page's own. */
+const STYLE_FILES = [
+  ...[
+    ...readFileSync(join(STYLES, 'index.css'), 'utf8').matchAll(/@import "\.\/([\w-]+\.css)";/g),
+  ].map(([, file]) => file ?? ''),
+  'admin.css',
+];
+
 /**
- * The site's style rules that say how something shows, in the order a page gets them: its main
- * style, then the admin page's own. Each selector is on its own, and one in a media query counts
- * as always on.
+ * The site's style rules that say how something shows, in the order a page gets them. Each
+ * selector is on its own, and one in a media query counts as always on.
  */
-const DISPLAYS = (() => {
-  const folder = join(SITE, 'src', 'styles');
-  const files = [
-    ...readFileSync(join(folder, 'index.css'), 'utf8').matchAll(/@import "\.\/([\w-]+\.css)";/g),
-  ].map(([, file]) => file ?? '');
-  files.push('admin.css');
-  return files.flatMap((file) =>
-    [
-      ...readFileSync(join(folder, file), 'utf8')
-        .replace(/\/\*[\s\S]*?\*\//g, '')
-        .matchAll(/([^{}]+)\{([^{}]*)\}/g),
-    ].flatMap(([, selectors = '', body = '']) => {
-      const [, display, important] =
-        /(?:^|;)\s*display\s*:\s*([^;!]+?)\s*(!important)?\s*(?:;|$)/.exec(body) ?? [];
-      if (!display) return [];
-      return selectors
-        .split(/,(?![^()]*\))/)
-        .map((selector) => ({ selector: selector.trim(), display, important: !!important }));
-    }),
-  );
-})();
+const DISPLAYS = STYLE_FILES.flatMap((file) =>
+  [
+    ...readFileSync(join(STYLES, file), 'utf8')
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      .matchAll(/([^{}]+)\{([^{}]*)\}/g),
+  ].flatMap(([, selectors = '', body = '']) => {
+    const [, display, important] =
+      /(?:^|;)\s*display\s*:\s*([^;!]+?)\s*(!important)?\s*(?:;|$)/.exec(body) ?? [];
+    if (!display) return [];
+    return selectors
+      .split(/,(?![^()]*\))/)
+      .map((selector) => ({ selector: selector.trim(), display, important: !!important }));
+  }),
+);
 
 /** A selector's specificity, near enough for the site's own: IDs, then classes, then elements. */
 function specificity(selector: string): number {
@@ -354,10 +357,16 @@ describe.each([
     }
   });
 
-  it('keeps out of view what’s hidden, and what its script hides, whatever display the style gives it', () => {
+  it('keeps out of view what starts hidden, and what’s only for no JavaScript, whatever display the style gives it', () => {
     // A browser lets a page's own display, such as a class's flex, show an element over its hidden
     // attribute. jsdom doesn't, so this checks the rules: each that would show a hidden element
-    // needs a [hidden] rule that wins over it.
+    // needs a [hidden] rule that wins over it. It checks what the markup hides and what the script
+    // hides as it starts ([data-without-script]), not what a script hides later.
+    expect(
+      readdirSync(STYLES)
+        .filter((file) => file.endsWith('.css'))
+        .sort(),
+    ).toEqual([...STYLE_FILES, 'index.css'].sort());
     const doc = open(page);
     const wins = (
       hiding: (typeof DISPLAYS)[number],
