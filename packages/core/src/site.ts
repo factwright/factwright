@@ -12,6 +12,12 @@ export const EXTENSION_URL = 'https://factwright.com/extension';
 export const OWN_SERVER_GUIDE = 'https://factwright.com/own-server';
 
 /**
+ * Factwright's roadmap, on its website, which Suggest a feature opens in the app: what's planned,
+ * the ideas to vote on, with no account, and a form to suggest one.
+ */
+export const ROADMAP_URL = 'https://factwright.com/roadmap';
+
+/**
  * What sync on Factwright's own server costs, in whole US dollars, as its two Stripe prices are
  * set. The app and the web view show these, and Stripe's checkout adds tax where it applies.
  */
