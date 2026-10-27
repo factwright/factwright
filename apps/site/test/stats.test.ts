@@ -6,11 +6,16 @@ import {
   DOWNLOADS_DATASET,
   DOWNLOADS_SQL,
   type DownloadRow,
+  LOOKS_SQL,
+  type LookRow,
+  PICKUPS_SQL,
+  type PickupRow,
   report,
   SYNC_DATASET,
   SYNC_SQL,
   type SyncDay,
   type SyncTotals,
+  UPDATES_DATASET,
 } from '../scripts/stats-report.ts';
 
 const NOW = new Date('2026-10-16T18:00:00Z');
@@ -43,12 +48,33 @@ const SYNC: SyncDay[] = [
   { at: '2026-10-09 04:17:00', day: '2026-10-08', totals: totals(1231, 4) },
 ];
 
+/**
+ * Installed copies' looks for an update, a row per 10 minutes and computer. NOW is 18:00, so the
+ * last full 10 minutes began at 17:50.
+ */
+const LOOKS: LookRow[] = [
+  { slot: '2026-10-16 17:50:00', computer: 'mac', looks: 3 },
+  { slot: '2026-10-16 17:50:00', computer: 'windows', looks: 2 },
+  { slot: '2026-10-16 12:00:00', computer: 'mac', looks: 6 },
+  { slot: '2026-10-16 12:00:00', computer: 'windows', looks: 1 },
+  { slot: '2026-10-15 09:00:00', computer: 'windows', looks: 12 },
+];
+
+/** The copies that picked up each version, a row per computer. */
+const PICKUPS: PickupRow[] = [
+  { version: '0.18.0', computer: 'windows', copies: 2 },
+  { version: '0.18.1', computer: 'windows', copies: 4 },
+  { version: '0.18.1', computer: 'mac', copies: 8 },
+];
+
 /** The report's lines, without the spaces that line its counts up. */
 const lines = (text: string) => text.split('\n').map((each) => each.trim().replace(/\s+/g, ' '));
 
 describe('the stats report', () => {
   it('adds the downloads up by computer, by version and by UTC day', () => {
-    expect(lines(report({ downloads: DOWNLOADS, sync: SYNC }, NOW))).toEqual(
+    expect(
+      lines(report({ looks: [], pickups: [], downloads: DOWNLOADS, sync: SYNC }, NOW)),
+    ).toEqual(
       expect.arrayContaining([
         'Factwright stats, Oct 16, 2026, 18:00 UTC',
         'Downloads, last 90 days 11',
@@ -65,8 +91,61 @@ describe('the stats report', () => {
     );
   });
 
+  it('counts the copies open from their looks for an update, now and by UTC day', () => {
+    const text = lines(report({ downloads: [], looks: LOOKS, pickups: [], sync: [] }, NOW));
+    const from = text.indexOf('Copies open, as their looks for an update count them');
+    expect(from).toBeGreaterThan(-1);
+    expect(text.slice(from, from + 10)).toEqual([
+      'Copies open, as their looks for an update count them',
+      'In the last full 10 minutes 5',
+      'Mac 3',
+      'Windows 2',
+      'Most open at once, by UTC day, the last 14 with any, newest first',
+      'Oct 16 7',
+      'Oct 15 12',
+      'Hours open, by UTC day, the last 14 with any, newest first',
+      // 12 looks on each day, at 6 an hour.
+      'Oct 16 2',
+      'Oct 15 2',
+    ]);
+  });
+
+  it('lists the copies that picked up each version, newest first', () => {
+    const text = lines(report({ downloads: [], looks: [], pickups: PICKUPS, sync: [] }, NOW));
+    const from = text.indexOf('Updates picked up, last 90 days 14');
+    expect(text.slice(from, from + 6)).toEqual([
+      'Updates picked up, last 90 days 14',
+      '0.18.1 12',
+      'Mac 8',
+      'Windows 4',
+      '0.18.0 2',
+      'Windows 2',
+    ]);
+  });
+
+  it('says when no copy has looked for an update yet', () => {
+    const text = lines(report({ downloads: [], looks: [], pickups: [], sync: [] }, NOW));
+    expect(text).toContain(
+      'Copies open: no looks for an update in the last 14 days. The Worker on downloads.factwright.com counts them.',
+    );
+    expect(text).toContain('Updates picked up, last 90 days 0');
+    const unread = report(
+      {
+        downloads: [],
+        looks: { problem: 'timed out' },
+        pickups: { problem: 'timed out' },
+        sync: [],
+      },
+      NOW,
+    );
+    expect(unread).toContain('Copies open: couldn’t read them. timed out');
+    expect(unread).toContain('Updates picked up: couldn’t read them. timed out');
+  });
+
   it('shows the newest sync totals, and each day’s new accounts', () => {
-    expect(lines(report({ downloads: DOWNLOADS, sync: SYNC }, NOW))).toEqual(
+    expect(
+      lines(report({ looks: [], pickups: [], downloads: DOWNLOADS, sync: SYNC }, NOW)),
+    ).toEqual(
       expect.arrayContaining([
         'Sync, as the server counted it on Oct 16, 04:17 UTC',
         'Accounts 1,234',
@@ -85,14 +164,16 @@ describe('the stats report', () => {
 
   it('shows a day the server counted twice once, at its newest count', () => {
     const again = { at: '2026-10-16 04:31:00', day: '2026-10-15', totals: totals(1235, 3) };
-    const text = lines(report({ downloads: [], sync: [...SYNC, again] }, NOW));
+    const text = lines(
+      report({ looks: [], pickups: [], downloads: [], sync: [...SYNC, again] }, NOW),
+    );
     expect(text).toContain('Sync, as the server counted it on Oct 16, 04:31 UTC');
     expect(text).toContain('Accounts 1,235');
     expect(text.filter((each) => each.startsWith('Oct 15 '))).toEqual(['Oct 15 3']);
   });
 
   it('lines the counts up', () => {
-    const text = report({ downloads: DOWNLOADS, sync: SYNC }, NOW);
+    const text = report({ looks: LOOKS, pickups: PICKUPS, downloads: DOWNLOADS, sync: SYNC }, NOW);
     const ends = text
       .split('\n')
       .filter((each) => /\d$/.test(each) && !/^(Factwright|Sync,)/.test(each))
@@ -101,7 +182,7 @@ describe('the stats report', () => {
   });
 
   it('says plainly when there’s nothing to count yet', () => {
-    const text = lines(report({ downloads: [], sync: [] }, NOW));
+    const text = lines(report({ looks: [], pickups: [], downloads: [], sync: [] }, NOW));
     expect(text).toContain('Downloads, last 90 days 0');
     expect(text).not.toContain('By computer');
     expect(text).toContain(
@@ -110,17 +191,22 @@ describe('the stats report', () => {
   });
 
   it('says what it couldn’t read, and still shows the rest', () => {
-    const text = report({ downloads: { problem: '403: Authentication error' }, sync: SYNC }, NOW);
+    const text = report(
+      { looks: [], pickups: [], downloads: { problem: '403: Authentication error' }, sync: SYNC },
+      NOW,
+    );
     expect(text).toContain('Downloads: couldn’t read them. 403: Authentication error');
     expect(text).toContain('Accounts');
-    expect(report({ downloads: DOWNLOADS, sync: { problem: 'timed out' } }, NOW)).toContain(
-      'Sync: couldn’t read it. timed out',
-    );
+    expect(
+      report({ looks: [], pickups: [], downloads: DOWNLOADS, sync: { problem: 'timed out' } }, NOW),
+    ).toContain('Sync: couldn’t read it. timed out');
   });
 
   it('shows a day it can’t read as it came, rather than stopping', () => {
     const odd = [{ ...DOWNLOADS[0], day: 'someday' } as DownloadRow];
-    expect(lines(report({ downloads: odd, sync: [] }, NOW))).toContain('someday 3');
+    expect(lines(report({ looks: [], pickups: [], downloads: odd, sync: [] }, NOW))).toContain(
+      'someday 3',
+    );
   });
 });
 
@@ -151,14 +237,24 @@ describe('versions, newest first', () => {
 });
 
 describe('the stats queries', () => {
-  it('only read, and only from the two datasets that count', () => {
-    for (const sql of [DOWNLOADS_SQL, SYNC_SQL]) {
+  it('only read, and only from the three datasets that count', () => {
+    for (const sql of [DOWNLOADS_SQL, LOOKS_SQL, PICKUPS_SQL, SYNC_SQL]) {
       expect(sql).toMatch(/^SELECT /);
       expect(sql).not.toMatch(/\b(INSERT|UPDATE|DELETE|DROP|ALTER|CREATE)\b/i);
       expect(sql).not.toContain('*');
     }
     expect(DOWNLOADS_SQL).toContain(`FROM ${DOWNLOADS_DATASET}`);
+    expect(LOOKS_SQL).toContain(`FROM ${UPDATES_DATASET}`);
+    expect(PICKUPS_SQL).toContain(`FROM ${UPDATES_DATASET}`);
     expect(SYNC_SQL).toContain(`FROM ${SYNC_DATASET}`);
+  });
+
+  it('weigh each look and update picked up by how Analytics Engine sampled it', () => {
+    expect(LOOKS_SQL).toContain('SUM(_sample_interval) AS looks');
+    expect(PICKUPS_SQL).toContain('SUM(_sample_interval) AS copies');
+    // The counter on downloads.factwright.com names them so (worker/updates.ts).
+    expect(LOOKS_SQL).toContain("blob1 = 'look'");
+    expect(PICKUPS_SQL).toContain("blob1 = 'pickup'");
   });
 
   it('weigh each download by how Analytics Engine sampled it', () => {
@@ -173,6 +269,9 @@ describe('the stats queries', () => {
     );
     expect(config('server')).toContain(
       `{ "binding": "SYNC_TOTALS", "dataset": "${SYNC_DATASET}" }`,
+    );
+    expect(readFileSync(new URL('../wrangler.updates.jsonc', import.meta.url), 'utf8')).toContain(
+      `{ "binding": "UPDATES", "dataset": "${UPDATES_DATASET}" }`,
     );
   });
 });
@@ -245,13 +344,25 @@ describe('reading the stats', () => {
     }
   });
 
+  it('reads installed copies’ looks for an update and the updates they picked up', async () => {
+    const { stub } = source({
+      "blob1 = 'look'": () =>
+        json({ data: [{ slot: '2026-10-16 17:50:00', computer: 'mac', looks: '3' }] }),
+      "blob1 = 'pickup'": () =>
+        json({ data: [{ version: '0.18.1', computer: 'windows', copies: 4 }] }),
+    });
+    const stats = await readStats(stub);
+    expect(stats.looks).toEqual([{ slot: '2026-10-16 17:50:00', computer: 'mac', looks: 3 }]);
+    expect(stats.pickups).toEqual([{ version: '0.18.1', computer: 'windows', copies: 4 }]);
+  });
+
   it('counts nothing yet for a dataset Analytics Engine hasn’t made', async () => {
     const { stub } = source({
       'SHOW TABLES': () => json({ data: [{ dataset: DOWNLOADS_DATASET }] }),
       [DOWNLOADS_DATASET]: () => json({ data: [] }),
       [SYNC_DATASET]: () => new Response(`unknown dataset ${SYNC_DATASET}`, { status: 422 }),
     });
-    expect(await readStats(stub)).toEqual({ downloads: [], sync: [] });
+    expect(await readStats(stub)).toEqual({ downloads: [], looks: [], pickups: [], sync: [] });
   });
 
   it('says which permission a token without it needs', async () => {
@@ -307,9 +418,12 @@ describe('reading the stats', () => {
     const offline = new TypeError('fetch failed', {
       cause: new Error('getaddrinfo ENOTFOUND api.cloudflare.com'),
     });
+    const problem = { problem: 'fetch failed: getaddrinfo ENOTFOUND api.cloudflare.com' };
     expect(await readStats(failing(offline))).toEqual({
-      downloads: { problem: 'fetch failed: getaddrinfo ENOTFOUND api.cloudflare.com' },
-      sync: { problem: 'fetch failed: getaddrinfo ENOTFOUND api.cloudflare.com' },
+      downloads: problem,
+      looks: problem,
+      pickups: problem,
+      sync: problem,
     });
   });
 
