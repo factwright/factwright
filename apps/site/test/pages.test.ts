@@ -1039,7 +1039,9 @@ describe('the privacy policy’s part on ideas', () => {
       .join('\n');
     /** A table's columns, as it's made, then as later migrations add to them. */
     const columns = (table: string) => {
-      const made = new RegExp(`CREATE TABLE ${table} \\(([\\s\\S]*?)\\n\\)[^;]*;`, 'i').exec(sql)?.[1];
+      const made = new RegExp(`CREATE TABLE ${table} \\(([\\s\\S]*?)\\n\\)[^;]*;`, 'i').exec(
+        sql,
+      )?.[1];
       const added = new RegExp(`ALTER TABLE ${table} ADD COLUMN (\\w+)`, 'gi');
       return [
         ...[...(made ?? '').matchAll(/^\s+(\w+) (?:TEXT|INTEGER|REAL|BLOB)\b/gm)],
@@ -1219,13 +1221,19 @@ describe('the roadmap', () => {
     expect(limit('words')).toBe(LIMITS.words);
     expect(limit('email')).toBe(LIMITS.email);
     const admin = open('roadmap/admin.html');
-    expect(Number(admin.querySelector('#edit-title')?.getAttribute('maxlength'))).toBe(LIMITS.title);
-    expect(Number(admin.querySelector('#edit-words')?.getAttribute('maxlength'))).toBe(LIMITS.words);
+    expect(Number(admin.querySelector('#edit-title')?.getAttribute('maxlength'))).toBe(
+      LIMITS.title,
+    );
+    expect(Number(admin.querySelector('#edit-words')?.getAttribute('maxlength'))).toBe(
+      LIMITS.words,
+    );
   });
 
   it('says on its form that Steve reads each idea before it shows, and that the email is optional', () => {
     const doc = open('roadmap.html');
-    expect(said(doc.querySelector('#suggest .lede'))).toContain('I read each one before it shows here');
+    expect(said(doc.querySelector('#suggest .lede'))).toContain(
+      'I read each one before it shows here',
+    );
     expect(said(doc.querySelector('label[for="idea-email"]'))).toBe('Your email (optional)');
     expect(doc.querySelector('#idea-email')?.hasAttribute('required')).toBe(false);
     expect(doc.querySelector(`[data-suggest-form] a[href="${IDEAS_PRIVACY}"]`)).not.toBeNull();
@@ -1239,7 +1247,9 @@ describe('the roadmap', () => {
 
   it('keeps its admin page out of search engines', () => {
     const doc = open('roadmap/admin.html');
-    expect(doc.querySelector('meta[name="robots"]')?.getAttribute('content')).toBe('noindex, nofollow');
+    expect(doc.querySelector('meta[name="robots"]')?.getAttribute('content')).toBe(
+      'noindex, nofollow',
+    );
     expect(doc.querySelector('link[rel="canonical"]')).toBeNull();
     const rules = readFileSync(join(SITE, 'public', 'robots.txt'), 'utf8').split('\n');
     expect(rules).toContain('Disallow: /roadmap/admin');
