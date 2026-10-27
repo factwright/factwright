@@ -334,6 +334,7 @@ export function report(stats: Stats, now: Date): string {
     '',
     'Counts only, never who. The app itself reports nothing: the download site counts its looks for',
     'an update, by computer, and the updates it picks up, by computer and version. The counts are a',
-    'guide: a copy looks again when you come back to it, and a failed update is picked up again.',
+    'guide: copies before 0.18.1 also look each time you switch back to them, and an update',
+    'downloaded again counts again.',
   ].join('\n');
 }
