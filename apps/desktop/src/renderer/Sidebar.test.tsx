@@ -91,6 +91,17 @@ describe('Sidebar', () => {
     expect(draft.searchParams.get('body')).toContain('If it’s something Claude wrote');
   });
 
+  it('opens the roadmap to suggest a feature, just above Report a problem', () => {
+    renderSidebar({ state: 'off' });
+    const suggest = screen.getByRole('link', { name: 'Suggest a feature' });
+    // It opens in the user's own browser, as the window opens a link outside it. The app sends
+    // nothing itself.
+    expect(suggest.getAttribute('href')).toBe('https://factwright.com/roadmap');
+    expect(suggest.getAttribute('target')).toBe('_blank');
+    const links = screen.getAllByRole('link').map((link) => link.textContent);
+    expect(links.indexOf('Suggest a feature')).toBe(links.indexOf('Report a problem') - 1);
+  });
+
   it('drafts the report without a version when there isn’t one', () => {
     const draft = new URL(reportUrl(''));
     expect(draft.searchParams.get('subject')).toBe('A problem in Factwright');
