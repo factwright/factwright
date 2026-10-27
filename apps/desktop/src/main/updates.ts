@@ -2,7 +2,10 @@ import type { AppUpdater, UpdateInfo } from 'electron-updater';
 import type { UpdateStatus } from '../shared/updates.ts';
 
 /** What the app uses of electron-updater's updater, so tests can stand in for it. */
-export type Updater = Pick<AppUpdater, 'checkForUpdates' | 'quitAndInstall' | 'on'> & {
+export type Updater = Pick<
+  AppUpdater,
+  'checkForUpdates' | 'downloadUpdate' | 'quitAndInstall' | 'on'
+> & {
   autoDownload: boolean;
   autoInstallOnAppQuit: boolean;
   logger: AppUpdater['logger'];
@@ -30,6 +33,13 @@ export const LOOK_AGAIN_AFTER_MS = 60 * 1000;
  * the same for everyone, and the download site can't tell installs apart.
  */
 export const NO_INSTALL_ID = '00000000-0000-0000-0000-000000000000';
+
+/**
+ * How electron-updater's error begins when a look for an update fails, as when the computer is
+ * offline (its checkForUpdates). Its other errors come from a download, the Mac's check of one, or
+ * installing it.
+ */
+export const LOOK_FAILED = 'Cannot check for updates';
 
 /** An update's notes as text: electron-updater gives a string, or a note for each version. */
 function notesOf(info: UpdateInfo): string | null {
@@ -69,7 +79,9 @@ export interface UpdateWatcherDeps {
  * Keeps an installed copy of Factwright up to date: it looks for a new version every few minutes
  * and when the user comes back to it (from the download site, as the installers set it up),
  * downloads one in the background, and installs it when the user restarts, or the next time they
- * quit. A problem looking is kept quiet: the next look tries again.
+ * quit. It goes on looking while an update waits, so a newer one that comes out meanwhile takes
+ * its place, and one restart brings the latest. A problem looking is kept quiet: the next look
+ * tries again.
  */
 export class UpdateWatcher {
   private readonly deps: UpdateWatcherDeps;
@@ -89,17 +101,17 @@ export class UpdateWatcher {
 
   start(): void {
     const { updater, macInstaller } = this.deps;
-    updater.autoDownload = true;
+    // It downloads what a look finds itself, and only a version that isn't already waiting: the
+    // Mac would otherwise check the same download all over again at every look.
+    updater.autoDownload = false;
     updater.autoInstallOnAppQuit = true;
     // Its own log prints each problem in full; the one line logged below says enough.
     updater.logger = null;
     updater.requestHeaders = { ...updater.requestHeaders, 'x-user-staging-id': NO_INSTALL_ID };
-    updater.on('update-available', (info) =>
-      this.set({ state: 'downloading', version: info.version, percent: 0 }),
-    );
     updater.on('download-progress', (progress) => {
       if (this.status.state !== 'downloading') return;
-      this.set({ ...this.status, percent: Math.round(progress.percent) });
+      const percent = Math.round(progress.percent);
+      if (percent !== this.status.percent) this.set({ ...this.status, percent });
     });
     updater.on('update-downloaded', (info) => {
       if (macInstaller) this.downloaded = info;
@@ -108,18 +120,21 @@ export class UpdateWatcher {
     macInstaller?.on('update-downloaded', () => {
       if (this.downloaded) this.ready(this.downloaded);
     });
-    updater.on('error', (error) => {
+    updater.on('error', (error, message) => {
       this.deps.log?.(`Update: ${error.message}`);
-      // Whatever failed, from the download to the Mac's check of it, or installing it, the next
-      // look tries again.
+      // A look that fails changes nothing: the next look tries again, and an update that's waiting
+      // stays ready, even while the app restarts into it.
+      if (message?.startsWith(LOOK_FAILED)) return;
+      // Whatever else failed, from the download to the Mac's check of it, or installing it, the
+      // next look tries again.
       this.downloaded = null;
       this.installing = false;
       if (this.status.state !== 'none') this.set({ state: 'none' });
     });
     this.running = true;
     this.lastLook = Date.now();
-    this.timers.push(setTimeout(() => this.check(), FIRST_CHECK_AFTER_MS));
-    this.timers.push(setInterval(() => this.check(), CHECK_EVERY_MS));
+    this.timers.push(setTimeout(() => void this.check(), FIRST_CHECK_AFTER_MS));
+    this.timers.push(setInterval(() => void this.check(), CHECK_EVERY_MS));
   }
 
   stop(): void {
@@ -134,7 +149,7 @@ export class UpdateWatcher {
    */
   lookAgain(): void {
     if (!this.running || Date.now() - this.lastLook < LOOK_AGAIN_AFTER_MS) return;
-    this.check();
+    void this.check();
   }
 
   current(): UpdateStatus {
@@ -156,18 +171,38 @@ export class UpdateWatcher {
     return true;
   }
 
-  /** Looks for an update, unless one is downloading or waiting to be installed. */
-  check(): void {
-    if (this.status.state !== 'none') return;
+  /**
+   * Looks for an update, unless one is downloading or installing, and downloads what it finds. A
+   * newer version than the one waiting to be installed takes its place. Settles once it has looked.
+   */
+  async check(): Promise<void> {
+    if (this.status.state === 'downloading' || this.installing) return;
     this.lastLook = Date.now();
-    const failed = (error: unknown) =>
-      this.deps.log?.(`Update: ${error instanceof Error ? error.message : String(error)}`);
-    this.deps.updater.checkForUpdates().then(
+    // A look that fails says so through the updater's error too, which notes it.
+    const result = await this.deps.updater.checkForUpdates().catch(() => null);
+    if (result?.isUpdateAvailable) this.download(result.updateInfo.version);
+  }
+
+  /**
+   * Downloads the version a look found, unless it's on its way, already waiting, or the app is
+   * restarting. A newer version's download replaces the update that's waiting as it starts, so if
+   * it fails, the next look gets the newer one again.
+   */
+  private download(version: string): void {
+    const before = this.status;
+    if (this.installing || before.state === 'downloading') return;
+    if (before.state === 'ready' && before.version === version) return;
+    this.set({ state: 'downloading', version, percent: 0 });
+    try {
       // A download that fails says so through the updater's error too, so this only keeps its
       // promise from going unanswered, which would show an error box.
-      (result) => result?.downloadPromise?.catch(() => {}),
-      failed,
-    );
+      this.deps.updater.downloadUpdate().catch(() => {});
+    } catch (error) {
+      // A feed whose files it can't read throws before anything downloads, with no error of the
+      // updater's, so what was there stays as it was.
+      this.deps.log?.(`Update: ${error instanceof Error ? error.message : String(error)}`);
+      this.set(before);
+    }
   }
 
   private ready(info: UpdateInfo): void {

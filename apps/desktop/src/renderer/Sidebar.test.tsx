@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { SyncStatus } from '../shared/sync.ts';
+import type { UpdateStatus } from '../shared/updates.ts';
 import { reportUrl, Sidebar } from './Sidebar.tsx';
 
 afterEach(cleanup);
@@ -21,14 +22,54 @@ function renderSidebar(sync: SyncStatus | 'checking', onOpenExtension = vi.fn())
       onOpenClaudeSettings={vi.fn()}
       onOpenExtension={onOpenExtension}
       levels={null}
-      update={{ status: { state: 'none' }, busy: false, unsaved: () => false, onRestart: vi.fn() }}
+      update={{
+        status: { state: 'none' },
+        inBanner: false,
+        busy: false,
+        unsaved: () => false,
+        onRestart: vi.fn(),
+      }}
       version="0.9.1"
     />,
   );
   return onOpenExtension;
 }
 
+/** The sidebar with an update as given, its strip put off, and everything else quiet. */
+function sidebarWithUpdate(status: UpdateStatus, onRestart: () => Promise<boolean>) {
+  return (
+    <Sidebar
+      page="jobs"
+      onPage={vi.fn()}
+      gettingStarted={false}
+      claude="checking"
+      onRecheckClaude={vi.fn()}
+      setup={{ check: null, checking: false, checkAgain: vi.fn() }}
+      sync={{ state: 'off' }}
+      onOpenSync={vi.fn()}
+      onOpenClaudeSettings={vi.fn()}
+      onOpenExtension={vi.fn()}
+      levels={null}
+      update={{ status, inBanner: false, busy: false, unsaved: () => false, onRestart }}
+      version="0.18.0"
+    />
+  );
+}
+
 describe('Sidebar', () => {
+  it('starts the update card afresh for each update', async () => {
+    const ready: UpdateStatus = { state: 'ready', version: '0.18.1', notes: null };
+    const { rerender } = render(sidebarWithUpdate(ready, async () => false));
+    // The restart didn't happen, as when Claude started working meanwhile.
+    await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Restart now' })));
+    expect(screen.getByText(/Factwright didn’t restart/)).toBeTruthy();
+    // A newer update took its place.
+    rerender(sidebarWithUpdate({ state: 'downloading', version: '0.18.2', percent: 10 }, vi.fn()));
+    rerender(sidebarWithUpdate({ ...ready, version: '0.18.2' }, async () => true));
+    expect(screen.queryByText(/Factwright didn’t restart/)).toBeNull();
+    expect(screen.getByRole('button', { name: 'Restart now' })).toBeTruthy();
+  });
+
   it('opens the Browser extension window from its button', () => {
     const onOpenExtension = renderSidebar({ state: 'off' });
     fireEvent.click(screen.getByRole('button', { name: 'Browser extension' }));

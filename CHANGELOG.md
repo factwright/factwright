@@ -4,6 +4,12 @@ Notable changes to Factwright, newest first. The format follows [Keep a Changelo
 
 ## Unreleased
 
+### Changed
+- An update that's ready shows across the window, under the top bar: "Please update Factwright", with What's new, Remind me tomorrow and Restart now. Remind me tomorrow puts it off for the rest of the day, while the update waits in the sidebar's card, as it did before, and installs the next time you quit. A newer update shows again straight away. While an update downloads, the sidebar's card says how far it's got.
+
+### Fixed
+- Once an update was waiting to be installed, Factwright stopped looking for newer ones, so when another version came out meanwhile, restarting brought the one that was waiting, and a second restart the newest. It goes on looking while an update waits, and a newer one downloads in its place, so one restart brings the latest. This starts with this version: an update that was already waiting in an older one still takes the two restarts.
+
 ## 0.18.0 - 2026-10-26
 
 ### Added

@@ -1227,7 +1227,7 @@ export function sampleApi(): FactwrightApi {
       return () => filedListeners.delete(listener);
     },
     ...sampleProfiles(query.get('profiles')),
-    // ?update=ready shows an update waiting to be installed.
+    // ?update=ready shows an update waiting to be installed, and ?update=downloading one on its way.
     updateStatus: async () =>
       query.get('update') === 'ready'
         ? {
@@ -1236,7 +1236,9 @@ export function sampleApi(): FactwrightApi {
             notes:
               '- **Fact bank:** search reads what each tag means.\n- Resumes build faster on Windows.',
           }
-        : { state: 'none' },
+        : query.get('update') === 'downloading'
+          ? { state: 'downloading', version: '0.2.0', percent: 42 }
+          : { state: 'none' },
     onUpdateChanged: () => () => {},
     installUpdate: async () => true,
     ...sampleSaveHelper(query.get('helper'), query.get('platform') ?? 'darwin'),

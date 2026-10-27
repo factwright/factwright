@@ -88,6 +88,8 @@ import { SyncDialog } from './sync/SyncDialog.tsx';
 import { useApprovals, useSync } from './sync/useSync.ts';
 import { TopBar } from './TopBar.tsx';
 import { hasUnsaved } from './unsaved.ts';
+import { inBanner, isPutOff } from './updates/putOff.ts';
+import { UpdateBanner } from './updates/UpdateBanner.tsx';
 import { useUpdates } from './updates/useUpdates.ts';
 import { isOpen, startsNow, useClaudeRuns } from './useClaudeRuns.ts';
 import { typedClaude, useClaudeStatus } from './useClaudeStatus.ts';
@@ -131,6 +133,9 @@ export function App({ api }: { api: FactwrightApi }) {
   const listed = useMemo(() => (jobs.state === 'ready' ? jobs.list.jobs : []), [jobs]);
   const clock = useCallClock(listed, today);
   const update = useUpdates(api);
+  // Remind me tomorrow puts off the strip for the update that's ready, until the day moves on.
+  const [updatePutOff, setUpdatePutOff] = usePref('updatePutOff', null, isPutOff);
+  const updateInBanner = inBanner(update, updatePutOff, today);
   const levels = useLevelChoices(api);
   const profiles = useProfiles(api);
   const reminders = useCallReminders(api);
@@ -640,6 +645,14 @@ export function App({ api }: { api: FactwrightApi }) {
     [shownRound, keepDraft],
   );
 
+  // The profile saves as the user types, so what's waiting to save goes first. Facts and notes have
+  // Save buttons: the update's strip and card ask before restarting over them.
+  const restartIntoUpdate = () =>
+    about.flush().then(
+      () => api.installUpdate(),
+      () => api.installUpdate(),
+    );
+
   return (
     <div className={styles.app}>
       <TopBar
@@ -654,6 +667,15 @@ export function App({ api }: { api: FactwrightApi }) {
         searchRef={search}
         onAddJob={() => setDialog('add-job')}
       />
+      {updateInBanner && update.state === 'ready' && (
+        <UpdateBanner
+          status={update}
+          busy={workGoing}
+          unsaved={hasUnsaved}
+          onRestart={restartIntoUpdate}
+          onPutOff={() => setUpdatePutOff({ version: update.version, day: today })}
+        />
+      )}
       <div className={styles.body}>
         <Sidebar
           {...(profiles.list && {
@@ -701,15 +723,10 @@ export function App({ api }: { api: FactwrightApi }) {
           factsToVerify={profile?.status.facts.unconfirmed || undefined}
           update={{
             status: update,
+            inBanner: updateInBanner,
             busy: workGoing,
             unsaved: hasUnsaved,
-            // The profile saves as the user types, so what's waiting to save goes first. Facts and
-            // notes have Save buttons: the card asks before restarting over them.
-            onRestart: () =>
-              about.flush().then(
-                () => api.installUpdate(),
-                () => api.installUpdate(),
-              ),
+            onRestart: restartIntoUpdate,
           }}
           version={api.version}
         />
