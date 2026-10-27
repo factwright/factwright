@@ -12,6 +12,8 @@ import {
   type Store,
   storeSlot,
 } from '../src/stores.ts';
+import { type Idea, LIMITS } from '../worker/ideas.ts';
+import { countSlot, fillRoadmap, ideasSlot, LISTS } from '../worker/roadmap.ts';
 
 /** The site's folder. Paths, since jsdom's URL isn't one Node's file reading accepts. */
 const SITE = join(dirname(fileURLToPath(import.meta.url)), '..');
@@ -55,6 +57,15 @@ const OWN_SERVER_PAGE = '/own-server';
 
 /** The page about sync and what it costs, which every page's footer links to. */
 const SYNC_PAGE = '/sync';
+
+/** The roadmap and the ideas to vote on, which every page's footer links to. */
+const ROADMAP_PAGE = '/roadmap';
+
+/** What the privacy policy says about ideas and votes, which the roadmap's form links to. */
+const IDEAS_PRIVACY = '/privacy#ideas';
+
+/** Where Report a problem writes to, which the roadmap gives for what isn't working. */
+const REPORT = 'mailto:steve@factwright.com';
 
 /** What the terms and the privacy policy say about paying for sync, which the sync page links to. */
 const PAYING = ['/terms#paying', '/privacy#paying'];
@@ -197,6 +208,8 @@ describe.each([
   'extension.html',
   'own-server.html',
   'sync.html',
+  'roadmap.html',
+  'roadmap/admin.html',
   'privacy.html',
   'terms.html',
   '404.html',
@@ -234,12 +247,14 @@ describe.each([
       OWN_SERVER_PAGE,
       SYNC_PAGE,
       SYNC_PRIVACY,
+      ROADMAP_PAGE,
       ...PAYING,
       ...LISTINGS,
       ...MAKER,
       ...(legal ? [CONTACT, ...ANTHROPIC_LEGAL, STRIPE_PRIVACY, LINK_TERMS] : []),
       ...(FREE_SYNC_PAGES.includes(page) ? [MONEY_TIGHT] : []),
       ...(page === 'own-server.html' ? OWN_SERVER_STEPS : []),
+      ...(page === 'roadmap.html' ? [IDEAS_PRIVACY, REPORT] : []),
     ];
     for (const link of doc.querySelectorAll('a[href]')) {
       const href = link.getAttribute('href') ?? '';
@@ -263,6 +278,15 @@ describe.each([
     expect(link?.textContent).toBe('Your own sync server');
   });
 
+  it('links to the roadmap from its footer, after the own-server guide', () => {
+    const links = [...(open(page).querySelector('footer')?.querySelectorAll('a[href]') ?? [])];
+    const hrefs = links.map((link) => link.getAttribute('href'));
+    const roadmap = hrefs.indexOf(ROADMAP_PAGE);
+    expect(links[roadmap]?.textContent).toBe('Roadmap');
+    expect(roadmap).toBe(hrefs.indexOf(OWN_SERVER_PAGE) + 1);
+    expect(links[roadmap]?.hasAttribute('aria-current')).toBe(page === 'roadmap.html');
+  });
+
   it('has no inline script, style or event handler, which its security policy would block', () => {
     const doc = open(page);
     // A block of JSON-LD is data, not a script, so the policy doesn't apply to it.
@@ -274,8 +298,14 @@ describe.each([
       const handlers = [...element.attributes].filter((attribute) => /^on/i.test(attribute.name));
       expect(handlers, markup(element)).toEqual([]);
     }
-    // Nothing on the site is sent anywhere, and the policy allows no form to.
-    expect(doc.querySelectorAll('form')).toHaveLength(0);
+    // No form sends itself anywhere, as the policy allows none to. The roadmap's forms are sent
+    // by its script, to the site's own API, and nothing else on the site has one.
+    const forms = [...doc.querySelectorAll('form')];
+    if (!page.startsWith('roadmap')) expect(forms).toHaveLength(0);
+    for (const form of forms) {
+      expect(form.hasAttribute('action'), markup(form)).toBe(false);
+      expect(form.hasAttribute('method'), markup(form)).toBe(false);
+    }
   });
 
   it('links to Support Factwright from its footer', () => {
@@ -1000,6 +1030,70 @@ describe('the privacy policy', () => {
   });
 });
 
+describe('the privacy policy’s part on ideas', () => {
+  it('says what each column the ideas board keeps holds, so a new one waits on the policy', () => {
+    const folder = join(SITE, 'migrations');
+    const sql = readdirSync(folder)
+      .filter((file) => file.endsWith('.sql'))
+      .map((file) => readFileSync(join(folder, file), 'utf8'))
+      .join('\n');
+    /** A table's columns, as it's made, then as later migrations add to them. */
+    const columns = (table: string) => {
+      const made = new RegExp(`CREATE TABLE ${table} \\(([\\s\\S]*?)\\n\\)[^;]*;`, 'i').exec(sql)?.[1];
+      const added = new RegExp(`ALTER TABLE ${table} ADD COLUMN (\\w+)`, 'gi');
+      return [
+        ...[...(made ?? '').matchAll(/^\s+(\w+) (?:TEXT|INTEGER|REAL|BLOB)\b/gm)],
+        ...[...sql.matchAll(added)],
+      ].map((match) => match[1]);
+    };
+    /** The policy's words for each column. An ID, a status and dates say nothing of their own. */
+    const told: Record<string, Record<string, string | null>> = {
+      ideas: {
+        id: null,
+        title: 'we keep its title',
+        words: 'and the lines you write',
+        status: 'it shows on the page only once he’s approved it',
+        version: null,
+        votes: 'is kept, with its votes',
+        email: 'we keep it with your idea',
+        merged_into: 'merged into another idea',
+        created_at: null,
+        updated_at: null,
+      },
+      votes: {
+        hash: 'a vote sends only a one-way hash of that ID and the idea’s',
+        idea: null,
+        day: 'which is all we keep of it, with the day',
+      },
+    };
+    const policy = said(open('privacy.html').getElementById('ideas'));
+    for (const [table, words] of Object.entries(told)) {
+      expect(columns(table), table).toEqual(Object.keys(words));
+      for (const [column, phrase] of Object.entries(words)) {
+        if (phrase) expect(policy, `${table}.${column}`).toContain(phrase);
+      }
+    }
+  });
+
+  it('says votes need no account or cookie, and the IP address is only for the limits', () => {
+    const policy = said(open('privacy.html').getElementById('ideas'));
+    for (const part of [
+      'with no account',
+      'It isn’t a cookie, and it never leaves your browser',
+      'So we can’t tell who voted, or that two votes came from the same browser.',
+      'used only to limit how often one address can suggest or vote',
+      'which forgets it within a minute. We don’t keep it.',
+      'It’s deleted once the idea is closed',
+    ]) {
+      expect(policy).toContain(part);
+    }
+    // And what the site counts, and its short version, say so too.
+    expect(said(open('privacy.html').getElementById('site'))).toContain(
+      'the ideas and votes on its roadmap, which Ideas and the roadmap covers',
+    );
+  });
+});
+
 describe.each(['privacy.html', 'terms.html'])('%s', (page) => {
   /** How a page says sync is sold: through Link, as the merchant of record, or with Stripe as our processor. */
   const sold = (each: string) => {
@@ -1063,10 +1157,96 @@ describe('the site’s build', () => {
       EXTENSION_PAGE,
       SYNC_PAGE,
       OWN_SERVER_PAGE,
+      ROADMAP_PAGE,
       '/privacy',
       '/terms',
     ]) {
       expect(sitemap, path).toContain(`<loc>https://factwright.com${path}</loc>`);
     }
+    expect(sitemap).not.toContain('/roadmap/admin');
+  });
+});
+
+describe('the roadmap', () => {
+  /** The roadmap page as the Worker serves it, with an idea in each of its lists. */
+  const served = () => {
+    const ideas: Idea[] = LISTS.map((status, n) => ({
+      id: `00000000-0000-4000-8000-00000000000${n}`,
+      title: `An idea ${status}`,
+      words: 'A few lines about it.',
+      status,
+      version: status === 'shipped' ? '0.19.0' : null,
+      votes: n,
+      merged: [],
+    }));
+    const html = fillRoadmap(readFileSync(join(SITE, 'roadmap.html'), 'utf8'), ideas);
+    const parsed = new DOMParser().parseFromString(html, 'text/html');
+    document.replaceChild(
+      document.importNode(parsed.documentElement, true),
+      document.documentElement,
+    );
+    return document;
+  };
+
+  it('marks where the Worker fills in each list and its count, once each', () => {
+    const source = readFileSync(join(SITE, 'roadmap.html'), 'utf8');
+    for (const list of LISTS) {
+      expect(source.split(ideasSlot(list)), list).toHaveLength(2);
+    }
+    for (const list of ['planned', 'in-progress', 'shipped'] as const) {
+      expect(source.split(countSlot(list)), list).toHaveLength(2);
+    }
+  });
+
+  it('passes an accessibility check with its ideas filled in, and keeps its headings in order', async () => {
+    const doc = served();
+    expect(doc.querySelectorAll('[data-ideas] > li')).toHaveLength(LISTS.length);
+    const results = await axe.run(doc, { rules: { 'color-contrast': { enabled: false } } });
+    expect(results.violations.map((violation) => `${violation.id}: ${violation.help}`)).toEqual([]);
+    let level = 0;
+    for (const heading of doc.querySelectorAll('h1, h2, h3, h4, h5, h6')) {
+      const next = Number(heading.tagName[1]);
+      expect(next, heading.textContent ?? '').toBeLessThanOrEqual(level + 1);
+      level = next;
+    }
+  });
+
+  it('lets each field in its form hold as much as the Worker takes', () => {
+    const form = open('roadmap.html').querySelector('[data-suggest-form]');
+    const limit = (name: string) =>
+      Number(form?.querySelector(`[name="${name}"]`)?.getAttribute('maxlength'));
+    expect(limit('title')).toBe(LIMITS.title);
+    expect(limit('words')).toBe(LIMITS.words);
+    expect(limit('email')).toBe(LIMITS.email);
+    const admin = open('roadmap/admin.html');
+    expect(Number(admin.querySelector('#edit-title')?.getAttribute('maxlength'))).toBe(LIMITS.title);
+    expect(Number(admin.querySelector('#edit-words')?.getAttribute('maxlength'))).toBe(LIMITS.words);
+  });
+
+  it('says on its form that Steve reads each idea before it shows, and that the email is optional', () => {
+    const doc = open('roadmap.html');
+    expect(said(doc.querySelector('#suggest .lede'))).toContain('I read each one before it shows here');
+    expect(said(doc.querySelector('label[for="idea-email"]'))).toBe('Your email (optional)');
+    expect(doc.querySelector('#idea-email')?.hasAttribute('required')).toBe(false);
+    expect(doc.querySelector(`[data-suggest-form] a[href="${IDEAS_PRIVACY}"]`)).not.toBeNull();
+  });
+
+  it('keeps Report a problem an email, and GitHub’s issues for developers', () => {
+    const other = open('roadmap.html').querySelector('.road-other');
+    expect(other?.querySelector(`a[href="${REPORT}"]`)).not.toBeNull();
+    expect(other?.querySelector(`a[href="${SOURCE}/issues"]`)).not.toBeNull();
+  });
+
+  it('keeps its admin page out of search engines', () => {
+    const doc = open('roadmap/admin.html');
+    expect(doc.querySelector('meta[name="robots"]')?.getAttribute('content')).toBe('noindex, nofollow');
+    expect(doc.querySelector('link[rel="canonical"]')).toBeNull();
+    const rules = readFileSync(join(SITE, 'public', 'robots.txt'), 'utf8').split('\n');
+    expect(rules).toContain('Disallow: /roadmap/admin');
+    expect(rules).toContain('Disallow: /api/');
+  });
+
+  it('links to the part of the privacy policy about ideas, which it has', () => {
+    expect(open('privacy.html').getElementById('ideas')?.tagName).toBe('SECTION');
   });
 });

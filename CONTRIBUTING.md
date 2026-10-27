@@ -4,6 +4,7 @@ Thanks for your interest. Factwright is in beta, so here's what's open right now
 
 ## What's open
 - **Issues: yes.** Bug reports and ideas are welcome. Use the templates when you open one.
+- **Without GitHub:** suggest a feature, or vote for the ones there, on [Factwright's roadmap](https://factwright.com/roadmap), with no account. To report a problem, choose Report a problem in Factwright's sidebar, which drafts an email to steve@factwright.com.
 - **Pull requests: not yet.** They'll open once the contribution terms are settled, and this page will say so.
 - **Security problems:** please don't open an issue. Follow [SECURITY.md](SECURITY.md).
 

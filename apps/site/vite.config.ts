@@ -42,8 +42,8 @@ function storeButtons(): Plugin {
 
 /**
  * factwright.com: a static page, its download pages, the browser extension's page, sync and what
- * it costs, the guide to running your own sync server, its privacy policy and terms, and its "not
- * found" page, built on the app's design system.
+ * it costs, the guide to running your own sync server, the roadmap and its admin page, its privacy
+ * policy and terms, and its "not found" page, built on the app's design system.
  */
 export default defineConfig({
   plugins: [theme(), downloadLinks(), storeButtons()],
@@ -61,6 +61,8 @@ export default defineConfig({
         extension: 'extension.html',
         ownServer: 'own-server.html',
         sync: 'sync.html',
+        roadmap: 'roadmap.html',
+        roadmapAdmin: 'roadmap/admin.html',
         privacy: 'privacy.html',
         terms: 'terms.html',
         notFound: '404.html',

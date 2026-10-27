@@ -35,7 +35,7 @@
     <main id="main" class="wrap legal">
       <div class="legal-head">
         <h1>Privacy policy</h1>
-        <p class="legal-date">Effective <time datetime="2026-10-27">October 27, 2026</time></p>
+        <p class="legal-date">Effective <time datetime="2026-10-28">October 28, 2026</time></p>
         <p class="lede">
           Factwright is built so your job hunt stays yours. This policy says what we collect, what
           we never see, and the choices you have.
@@ -53,6 +53,7 @@
             <li><a href="#web">Web pages and job boards</a></li>
             <li><a href="#updates">Updates</a></li>
             <li><a href="#site">Our websites</a></li>
+            <li><a href="#ideas">Ideas and the roadmap</a></li>
             <li><a href="#sync">Sync and the web view</a></li>
             <li><a href="#paying">Paying for sync</a></li>
             <li><a href="#extension">The browser extension</a></li>
@@ -103,6 +104,10 @@
                 <b>If you pay for sync, Stripe takes the payment,</b> and we never see your full card
                 number. Our server keeps only Stripe’s IDs for you and your subscription, with its
                 status and dates, and our Stripe account keeps your payments for our records.
+              </li>
+              <li>
+                <b>Ideas and votes on our roadmap need no account.</b> A vote is kept only as a one-way
+                hash, and an email you leave with an idea is deleted once the idea is closed.
               </li>
               <li>
                 <b>We never sell your data</b> or share it for advertising. You can download or delete
@@ -205,13 +210,57 @@
             <h2>Our websites</h2>
             <p>
               factwright.com sets no cookies, has no ads, and loads nothing from other sites. Besides
-              the app’s update checks and updates, which <a href="#updates">Updates</a> covers, the
-              one thing it counts is downloads, so we can see how many people get Factwright: when you
+              the app’s update checks and updates, which <a href="#updates">Updates</a> covers, and the
+              ideas and votes on its roadmap, which <a href="#ideas">Ideas and the roadmap</a> covers,
+              the one thing it counts is downloads, so we can see how many people get Factwright: when you
               download it from the site, we count which computer it’s for, which version and when,
               and keep nothing about you, not even your IP address. We keep each count for three
               months. Cloudflare runs it, our downloads and the sync service. It handles each request, including your IP address and browser, to
               deliver it and keep it secure, and gives us traffic statistics for up to 30 days.
               Cloudflare may also set a cookie it needs to tell people from bots.
+            </p>
+          </section>
+
+          <section id="ideas">
+            <h2>Ideas and the roadmap</h2>
+            <p>
+              On factwright.com/roadmap, anyone can suggest a feature for Factwright and vote for the
+              ideas there, with no account.
+            </p>
+            <ul>
+              <li>
+                <b>What you suggest:</b> we keep its title and the lines you write. Steve reads each
+                one first, and it shows on the page only once he’s approved it, sometimes with its
+                words edited. Until then, only he sees it. A suggestion he declines is deleted. An idea
+                we decide not to build leaves the page, and is kept, with its votes, in case it comes
+                back.
+              </li>
+              <li>
+                <b>Your email, if you give one:</b> we keep it with your idea, only so Steve can write
+                to you about it, and never show it. It’s deleted once the idea is closed: when it
+                ships, when we decide not to build it, or when it’s merged into another idea or
+                declined, or sooner if you ask. We don’t add it to any list, or email you about
+                anything else.
+              </li>
+              <li>
+                <b>Votes:</b> the first time you vote or suggest an idea, your browser makes a random
+                ID, and keeps it in its own storage for factwright.com, with the ideas you voted for.
+                It isn’t a cookie, and it never leaves your browser: a vote sends only a one-way hash
+                of that ID and the idea’s, which is all we keep of it, with the day. So we can’t tell
+                who voted, or that two votes came from the same browser. Clearing this site’s data in
+                your browser forgets the ID, and the votes you cast stay counted.
+              </li>
+              <li>
+                <b>Your IP address:</b> used only to limit how often one address can suggest or
+                vote, through Cloudflare’s rate limiting, which forgets it within a minute. We don’t
+                keep it.
+              </li>
+            </ul>
+            <p>
+              We keep the ideas, and their votes, until we delete them. To have an idea of yours, or
+              your email, deleted sooner, email
+              <a href="mailto:privacy@factwright.com">privacy@factwright.com</a> with the idea’s
+              title.
             </p>
           </section>
 
@@ -519,7 +568,9 @@
             <p>
               If you email us, we use what you send to answer you. We keep it as long as we need to
               answer you, then up to 2 years for our records. If you ask for free sync, we also use
-              your email address to turn it on, as <a href="#paying">Paying for sync</a> explains.
+              your email address to turn it on, as <a href="#paying">Paying for sync</a> explains. An
+              email address you leave with an idea on our roadmap is kept as
+              <a href="#ideas">Ideas and the roadmap</a> says.
             </p>
           </section>
 
@@ -589,7 +640,9 @@
               accounts it has, how many are new and how many were used in the last week and month,
               and how many devices are signed in, in the app and in browsers. It keeps only those
               totals, for three months, so we can see how much it’s used, which is in our interest.
-              If you email us, we use what you send to answer you. We don’t use your information for
+              If you email us, we use what you send to answer you. The ideas and votes on our roadmap
+              help us decide what to build, which is in our interest, and an email address you leave
+              with an idea is used only to write to you about it. We don’t use your information for
               anything else, such as profiling or advertising.
             </p>
           </section>
@@ -673,6 +726,7 @@
           <a href="/extension">Browser extension</a>
           <a href="/sync">Sync</a>
           <a href="/own-server">Your own sync server</a>
+          <a href="/roadmap">Roadmap</a>
           <a href="/privacy" aria-current="page">Privacy policy</a>
           <a href="/terms">Terms of service</a>
           <a href="https://github.com/factwright/factwright">Source code</a>
