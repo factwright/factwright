@@ -1,5 +1,8 @@
 blank_issues_enabled: false
 contact_links:
+  - name: Vote for ideas on Factwright's roadmap
+    url: https://factwright.com/roadmap
+    about: See what's planned, and vote for the ideas you'd like most, with no account.
   - name: Report a security problem
     url: https://github.com/factwright/factwright/security/policy
     about: Please report security problems privately, not as public issues.

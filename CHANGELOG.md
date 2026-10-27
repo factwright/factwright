@@ -5,7 +5,11 @@ Notable changes to Factwright, newest first. The format follows [Keep a Changelo
 ## Unreleased
 
 ### Added
+- Factwright's roadmap, at factwright.com/roadmap: what's planned, what's in progress, and what's shipped, with the release each came in. Below it, the ideas to vote on, most votes first, and Suggest a feature, with a title, a few lines and an email to hear back, if you like. Steve reads each suggestion before it shows. Voting needs no account and sets no cookie: your browser keeps a random ID, and a vote sends only a one-way hash of it and the idea, so nobody can tell how you voted. Clicking again takes your vote back.
 - Suggest a feature, in the sidebar beside Report a problem, opens Factwright's roadmap at factwright.com/roadmap in your browser, to suggest a feature or vote for the ideas there, with no account. The app sends nothing itself.
+
+### Changed
+- The privacy policy has a part on ideas and the roadmap: what a suggestion keeps, that an email left with one is deleted once the idea is closed, that a vote is kept only as a one-way hash, and that your IP address only limits how often one address can suggest or vote, and isn't kept. It takes effect October 27, 2026.
 
 ## 0.18.1 - 2026-10-27
 

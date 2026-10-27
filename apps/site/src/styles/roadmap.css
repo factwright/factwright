@@ -1,0 +1,627 @@
+/*
+ * The roadmap page: Steve's roadmap in three columns, the ideas to vote on, most votes first,
+ * and the form to suggest one. The Worker fills in the ideas, and its script turns on the votes.
+ */
+
+.road-hero {
+  position: relative;
+  padding-block: clamp(40px, 6vw, 80px) clamp(56px, 8vw, 96px);
+  overflow-x: clip;
+  isolation: isolate;
+  text-align: center;
+}
+
+/* Faint graph paper behind the headline, as on the home page. */
+.road-hero::before {
+  position: absolute;
+  inset: calc(var(--header) * -1) 0 auto;
+  z-index: -1;
+  height: 620px;
+  background-image: radial-gradient(var(--grid-dot) 1px, transparent 1.4px);
+  background-size: 22px 22px;
+  content: "";
+  -webkit-mask-image: radial-gradient(ellipse 70% 80% at 50% 0%, #000 30%, transparent 75%);
+  mask-image: radial-gradient(ellipse 70% 80% at 50% 0%, #000 30%, transparent 75%);
+}
+
+.road-hero-copy {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.road-hero h1 {
+  font-family: var(--font-display);
+  font-size: clamp(40px, 6.2vw, 76px);
+  font-weight: 700;
+  line-height: 1.02;
+  letter-spacing: -0.045em;
+  text-wrap: balance;
+}
+
+.road-hero .lede {
+  max-width: 600px;
+}
+
+.road-hero-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 12px;
+  margin-top: 32px;
+}
+
+.road-hero-note {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 20px;
+  color: var(--fw-muted);
+  font-size: 14.5px;
+}
+
+.road-hero-note .icon {
+  width: 16px;
+  height: 16px;
+}
+
+/* The page's sections, a little closer together than the home page's. */
+.roadmap .section {
+  padding-block: clamp(72px, 9vw, 120px);
+}
+
+/* The roadmap: three columns, each in its own color. */
+.road-board {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 20px;
+  align-items: start;
+}
+
+.road-col {
+  --road: var(--fw-tone-blue-fg);
+  min-width: 0;
+}
+
+.road-col-progress {
+  --road: var(--fw-tone-amber-fg);
+}
+
+.road-col-shipped {
+  --road: var(--fw-ok);
+}
+
+.road-col-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 14px;
+  padding: 0 4px 12px;
+  border-bottom: 2px solid color-mix(in srgb, var(--road) 55%, transparent);
+  font-size: 16px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+}
+
+.road-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: var(--fw-radius-full);
+  background: var(--road);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--road) 18%, transparent);
+}
+
+.road-count {
+  margin-left: auto;
+  color: var(--fw-muted);
+  font-size: 14px;
+  font-weight: 550;
+  font-variant-numeric: tabular-nums;
+}
+
+.road-cards {
+  display: grid;
+  gap: 12px;
+}
+
+.road-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 16px 18px;
+  border: 1px solid var(--fw-border);
+  border-radius: 14px;
+  background: var(--fw-surface);
+  box-shadow: var(--shadow-card);
+}
+
+.road-card-title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 650;
+  line-height: 1.35;
+  letter-spacing: -0.01em;
+  overflow-wrap: anywhere;
+}
+
+.road-card-words,
+.idea-words {
+  color: var(--fw-muted);
+  font-size: 14.5px;
+  line-height: 1.5;
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+  text-wrap: pretty;
+}
+
+.road-card-foot {
+  display: flex;
+  margin-top: 6px;
+}
+
+/* A shipped idea's release, as a small green tag. */
+.road-version {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px 4px 8px;
+  border-radius: var(--fw-radius-full);
+  background: var(--fw-ok-soft);
+  color: var(--fw-ok);
+  font-size: 13.5px;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.road-version:hover {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.road-version .icon {
+  width: 15px;
+  height: 15px;
+  stroke-width: 2.25;
+}
+
+/* What a list says while it's empty, or couldn't load. */
+.road-empty {
+  padding: 18px;
+  border: 1px dashed var(--fw-control-border);
+  border-radius: 14px;
+  color: var(--fw-muted);
+  font-size: 14.5px;
+  text-align: center;
+}
+
+.road-empty a,
+.road-more a {
+  color: var(--fw-accent-text);
+  font-weight: 550;
+  text-underline-offset: 3px;
+}
+
+.road-more {
+  padding: 4px 4px 0;
+  font-size: 14.5px;
+}
+
+.idea-list .road-empty {
+  padding: 28px;
+  border-radius: 18px;
+}
+
+@media (max-width: 900px) {
+  .road-board {
+    grid-template-columns: minmax(0, 1fr);
+    max-width: 560px;
+    margin-inline: auto;
+    gap: 36px;
+  }
+}
+
+/* The ideas to vote on: a card each, with its vote button beside it. */
+.idea-list {
+  display: grid;
+  gap: 12px;
+  max-width: 760px;
+  margin-inline: auto;
+}
+
+.idea {
+  display: flex;
+  align-items: flex-start;
+  gap: 18px;
+  padding: 18px 22px 18px 18px;
+  border: 1px solid var(--fw-border);
+  border-radius: 18px;
+  background: var(--fw-surface);
+  transition:
+    border-color 200ms ease,
+    box-shadow 200ms var(--ease-out);
+}
+
+.idea:hover {
+  border-color: color-mix(in srgb, var(--fw-accent) 26%, var(--fw-border));
+  box-shadow: var(--shadow-card);
+}
+
+.idea-text {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  padding-top: 6px;
+}
+
+.idea-title {
+  font-size: 17px;
+  font-weight: 650;
+  line-height: 1.35;
+  letter-spacing: -0.01em;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 560px) {
+  .idea {
+    gap: 14px;
+    padding: 14px 16px 16px 14px;
+  }
+}
+
+/* Suggest a feature: the words beside the form. */
+.road-suggest {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.05fr);
+  gap: clamp(40px, 6vw, 80px);
+  align-items: start;
+  max-width: 1040px;
+}
+
+.road-suggest-copy h2 {
+  font-family: var(--font-display);
+  font-size: clamp(32px, 4.4vw, 48px);
+  font-weight: 700;
+  line-height: 1.06;
+  letter-spacing: -0.035em;
+  text-wrap: balance;
+}
+
+.road-other {
+  display: grid;
+  gap: 16px;
+  margin-top: 32px;
+  padding-top: 28px;
+  border-top: 1px solid var(--fw-border);
+}
+
+.road-other li {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  font-size: 15.5px;
+  text-wrap: pretty;
+}
+
+.road-other-icon {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
+  background: var(--fw-accent-soft);
+  color: var(--fw-accent-text);
+}
+
+.road-other-icon .icon {
+  width: 17px;
+  height: 17px;
+}
+
+.road-other p {
+  padding-top: 4px;
+}
+
+.road-other b {
+  font-weight: 650;
+}
+
+.road-other a,
+.road-fine a,
+.road-without-script a {
+  color: var(--fw-accent-text);
+  font-weight: 550;
+  text-underline-offset: 3px;
+}
+
+.road-suggest-card {
+  padding: clamp(24px, 3.4vw, 34px);
+  border: 1px solid var(--fw-border);
+  border-radius: 22px;
+  background: var(--fw-surface);
+  box-shadow: var(--shadow-card);
+}
+
+.road-form {
+  display: grid;
+  gap: 20px;
+}
+
+.road-form[hidden],
+.road-thanks[hidden] {
+  display: none;
+}
+
+.road-field {
+  display: grid;
+  gap: 8px;
+}
+
+.road-field label {
+  font-size: 15px;
+  font-weight: 650;
+}
+
+.road-optional {
+  color: var(--fw-muted);
+  font-weight: 500;
+}
+
+.road-field input,
+.road-field textarea {
+  width: 100%;
+  padding: 11px 13px;
+  border: 1px solid var(--fw-control-border);
+  border-radius: 10px;
+  background: var(--fw-surface);
+  color: var(--fw-text);
+  font: inherit;
+  /* 16px, so a phone doesn't zoom in on it. */
+  font-size: 16px;
+  line-height: 1.45;
+  transition: border-color 140ms ease;
+}
+
+.road-field textarea {
+  min-height: 132px;
+  resize: vertical;
+}
+
+.road-field input::placeholder,
+.road-field textarea::placeholder {
+  color: var(--fw-muted);
+  opacity: 1;
+}
+
+.road-field input:focus-visible,
+.road-field textarea:focus-visible {
+  border-color: var(--fw-accent);
+  outline: 2px solid var(--fw-accent);
+  outline-offset: 1px;
+}
+
+.road-help {
+  color: var(--fw-muted);
+  font-size: 14px;
+  text-wrap: pretty;
+}
+
+.road-form-end {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px 20px;
+  margin-top: 4px;
+}
+
+.road-fine {
+  color: var(--fw-muted);
+  font-size: 14px;
+}
+
+.road-problem {
+  color: var(--fw-bad);
+  font-size: 14.5px;
+  font-weight: 550;
+}
+
+.road-problem:empty {
+  display: none;
+}
+
+/* Once the idea's sent. */
+.road-thanks {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.road-thanks-icon {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border-radius: var(--fw-radius-full);
+  background: var(--fw-ok-soft);
+  color: var(--fw-ok);
+}
+
+.road-thanks-icon .icon {
+  width: 22px;
+  height: 22px;
+  stroke-width: 2.25;
+}
+
+.road-thanks h3 {
+  margin-top: 4px;
+  font-size: 21px;
+  font-weight: 680;
+  letter-spacing: -0.02em;
+}
+
+.road-thanks h3:focus {
+  outline: none;
+}
+
+.road-thanks p {
+  color: var(--fw-muted);
+  font-size: 16px;
+  text-wrap: pretty;
+}
+
+.road-thanks .button {
+  height: 42px;
+  margin-top: 8px;
+  padding: 0 16px;
+}
+
+.road-form[aria-busy="true"] .button {
+  opacity: 0.72;
+  cursor: progress;
+}
+
+.road-without-script {
+  color: var(--fw-muted);
+  font-size: 15.5px;
+}
+
+@media (max-width: 860px) {
+  .road-suggest {
+    grid-template-columns: minmax(0, 1fr);
+    max-width: 600px;
+  }
+}
+
+/* A note about a vote that didn't go through, at the foot of the window for a few seconds. */
+.road-note {
+  position: fixed;
+  bottom: max(20px, env(safe-area-inset-bottom));
+  left: 50%;
+  z-index: 60;
+  max-width: min(480px, calc(100% - 32px));
+  padding: 12px 18px;
+  border-radius: 12px;
+  background: var(--fw-text);
+  box-shadow: var(--shadow-lift);
+  color: var(--fw-bg);
+  font-size: 15px;
+  font-weight: 550;
+  text-align: center;
+  transform: translate(-50%, 16px);
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    opacity 200ms ease,
+    transform 240ms var(--ease-out);
+}
+
+.road-note.is-shown {
+  transform: translate(-50%, 0);
+  opacity: 1;
+}
+
+/* A vote: the arrow over its count, pressed once you've voted. */
+.vote {
+  display: inline-flex;
+  flex: none;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 58px;
+  min-height: 64px;
+  padding: 6px 0 8px;
+  border: 1px solid var(--fw-border);
+  border-radius: 14px;
+  background: var(--fw-bg);
+  color: var(--fw-text);
+  font: inherit;
+  cursor: pointer;
+  transition:
+    background-color 140ms ease,
+    border-color 140ms ease,
+    color 140ms ease,
+    transform 140ms ease;
+}
+
+.vote .icon {
+  width: 22px;
+  height: 22px;
+  color: var(--fw-muted);
+  stroke-width: 2.25;
+  transition:
+    color 140ms ease,
+    transform 200ms var(--ease-out);
+}
+
+.vote-count {
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+}
+
+/* The roadmap's own, smaller and on one line. */
+.vote-sm {
+  flex-direction: row;
+  gap: 4px;
+  width: auto;
+  min-height: 34px;
+  padding: 0 12px 0 8px;
+  border-radius: var(--fw-radius-full);
+}
+
+.vote-sm .icon {
+  width: 18px;
+  height: 18px;
+}
+
+.vote-sm .vote-count {
+  font-size: 14px;
+}
+
+.vote[aria-pressed="true"] {
+  border-color: color-mix(in srgb, var(--fw-accent) 55%, transparent);
+  background: var(--fw-accent-soft);
+  color: var(--fw-accent-text);
+}
+
+.vote[aria-pressed="true"] .icon {
+  color: var(--fw-accent-text);
+}
+
+.vote:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--fw-accent) 45%, var(--fw-border));
+}
+
+.vote:hover:not(:disabled) .icon {
+  color: var(--fw-accent-text);
+  transform: translateY(-2px);
+}
+
+.vote:active:not(:disabled) {
+  transform: scale(0.96);
+}
+
+/* Before the script turns it on, it shows the count, just as it will. */
+.vote:disabled {
+  cursor: default;
+}
+
+/* A vote just cast gives a little hop. */
+.vote.is-voting[aria-pressed="true"] .vote-count {
+  animation: vote-hop 320ms var(--ease-out);
+}
+
+@keyframes vote-hop {
+  40% {
+    transform: translateY(-3px) scale(1.12);
+  }
+}
+
+@media (max-width: 560px) {
+  .vote:not(.vote-sm) {
+    width: 52px;
+    min-height: 58px;
+  }
+}

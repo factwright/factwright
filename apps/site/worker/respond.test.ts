@@ -52,13 +52,18 @@ describe('the site', () => {
     }
   });
 
-  it('runs only its own scripts and styles, connects nowhere, and never shows inside another site', () => {
+  it('runs only its own scripts and styles, connects only to itself, and never shows inside another site', () => {
     const policy = SECURITY_HEADERS['Content-Security-Policy'];
     expect(policy).toContain("default-src 'none'");
     expect(policy).toContain("script-src 'self'");
     expect(policy).toContain("style-src 'self'");
     expect(policy).toContain("frame-ancestors 'none'");
-    expect(policy).not.toContain('connect-src');
+    // The roadmap page sends suggestions and votes to the site's own API, and nowhere else.
+    expect(policy?.split('; ').filter((rule) => rule.startsWith('connect-src'))).toEqual([
+      "connect-src 'self'",
+    ]);
+    // No form sends itself anywhere: the roadmap's are sent by its script.
+    expect(policy).toContain("form-action 'none'");
     expect(policy).not.toContain('unsafe');
   });
 
@@ -306,5 +311,55 @@ describe('a download', () => {
     }
     expect(counted).toEqual([]);
     expect(known.asked).toEqual([]);
+  });
+});
+
+describe('the ideas board', () => {
+  it('answers its own addresses first, with the security headers', async () => {
+    const pages = assets();
+    const asked: string[] = [];
+    const response = await respond(
+      get('https://factwright.com/roadmap'),
+      pages,
+      undefined,
+      undefined,
+      async (request, site) => {
+        asked.push(new URL(request.url).pathname);
+        expect(site).toBe(pages);
+        return new Response('the roadmap', { headers: { 'Cache-Control': 'no-cache' } });
+      },
+    );
+    expect(asked).toEqual(['/roadmap']);
+    expect(await response.text()).toBe('the roadmap');
+    expect(response.headers.get('Cache-Control')).toBe('no-cache');
+    for (const [name, value] of Object.entries(SECURITY_HEADERS)) {
+      expect(response.headers.get(name)).toBe(value);
+    }
+    expect(pages.asked).toEqual([]);
+  });
+
+  it('leaves the rest to the pages, and gets www and http only once they’re sent on', async () => {
+    const asked: string[] = [];
+    const board = async (request: Request) => {
+      asked.push(request.url);
+      return null;
+    };
+    const page = await respond(
+      get('https://factwright.com/sync'),
+      assets(),
+      undefined,
+      undefined,
+      board,
+    );
+    expect(await page.text()).toBe('/sync');
+    const www = await respond(
+      get('https://www.factwright.com/roadmap'),
+      assets(),
+      undefined,
+      undefined,
+      board,
+    );
+    expect(www.status).toBe(301);
+    expect(asked).toEqual(['https://factwright.com/sync']);
   });
 });
