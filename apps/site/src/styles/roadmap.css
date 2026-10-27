@@ -60,6 +60,11 @@
   font-size: 14.5px;
 }
 
+/* Its own display would otherwise still show the note about JavaScript once the script runs. */
+.road-hero-note[hidden] {
+  display: none;
+}
+
 .road-hero-note .icon {
   width: 16px;
   height: 16px;

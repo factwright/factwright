@@ -107,6 +107,11 @@
   gap: 16px;
 }
 
+/* A button's own display would otherwise show Decline all with fewer than two waiting. */
+.admin-section-head [hidden] {
+  display: none;
+}
+
 .admin-section-note {
   margin-top: 4px;
   color: var(--fw-muted);

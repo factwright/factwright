@@ -200,6 +200,52 @@ const holdingMadeUp = (doc: Document) =>
         ![...element.children].some((child) => namesMadeUp(child.textContent ?? ''))),
   );
 
+/**
+ * The site's style rules that say how something shows, in the order a page gets them: its main
+ * style, then the admin page's own. Each selector is on its own, and one in a media query counts
+ * as always on.
+ */
+const DISPLAYS = (() => {
+  const folder = join(SITE, 'src', 'styles');
+  const files = [
+    ...readFileSync(join(folder, 'index.css'), 'utf8').matchAll(/@import "\.\/([\w-]+\.css)";/g),
+  ].map(([, file]) => file ?? '');
+  files.push('admin.css');
+  return files.flatMap((file) =>
+    [
+      ...readFileSync(join(folder, file), 'utf8')
+        .replace(/\/\*[\s\S]*?\*\//g, '')
+        .matchAll(/([^{}]+)\{([^{}]*)\}/g),
+    ].flatMap(([, selectors = '', body = '']) => {
+      const [, display, important] =
+        /(?:^|;)\s*display\s*:\s*([^;!]+?)\s*(!important)?\s*(?:;|$)/.exec(body) ?? [];
+      if (!display) return [];
+      return selectors
+        .split(/,(?![^()]*\))/)
+        .map((selector) => ({ selector: selector.trim(), display, important: !!important }));
+    }),
+  );
+})();
+
+/** A selector's specificity, near enough for the site's own: IDs, then classes, then elements. */
+function specificity(selector: string): number {
+  const ids = selector.match(/#[\w-]+/g)?.length ?? 0;
+  const classes =
+    selector.match(/\.[\w-]+|\[[^\]]*\]|:(?!:|not\(|is\(|has\(|where\()[\w-]+/g)?.length ?? 0;
+  const elements =
+    selector.replace(/\[[^\]]*\]|::?[\w-]+/g, '').match(/(?:^|[\s>+~(])[a-z][\w-]*/gi)?.length ?? 0;
+  return ids * 1_000_000 + classes * 1_000 + elements;
+}
+
+/** Whether an element matches a selector, or false for one jsdom can't read. */
+function matching(element: Element, selector: string): boolean {
+  try {
+    return element.matches(selector);
+  } catch {
+    return false;
+  }
+}
+
 describe.each([
   'index.html',
   'download.html',
@@ -305,6 +351,39 @@ describe.each([
     for (const form of forms) {
       expect(form.hasAttribute('action'), markup(form)).toBe(false);
       expect(form.hasAttribute('method'), markup(form)).toBe(false);
+    }
+  });
+
+  it('keeps out of view what’s hidden, and what its script hides, whatever display the style gives it', () => {
+    // A browser lets a page's own display, such as a class's flex, show an element over its hidden
+    // attribute. jsdom doesn't, so this checks the rules: each that would show a hidden element
+    // needs a [hidden] rule that wins over it.
+    const doc = open(page);
+    const wins = (
+      hiding: (typeof DISPLAYS)[number],
+      showing: (typeof DISPLAYS)[number],
+    ): boolean =>
+      hiding.important !== showing.important
+        ? hiding.important
+        : specificity(hiding.selector) > specificity(showing.selector) ||
+          (specificity(hiding.selector) === specificity(showing.selector) &&
+            DISPLAYS.indexOf(hiding) > DISPLAYS.indexOf(showing));
+    for (const element of doc.querySelectorAll<HTMLElement>('[hidden], [data-without-script]')) {
+      element.hidden = true;
+      const hiding = DISPLAYS.filter(
+        (rule) =>
+          rule.display === 'none' &&
+          rule.selector.includes('[hidden]') &&
+          matching(element, rule.selector),
+      );
+      for (const showing of DISPLAYS.filter(
+        (rule) => rule.display !== 'none' && matching(element, rule.selector),
+      )) {
+        expect(
+          hiding.some((rule) => wins(rule, showing)),
+          `${markup(element)} shows with ${showing.selector}`,
+        ).toBe(true);
+      }
     }
   });
 
