@@ -353,9 +353,10 @@ describe('merging', () => {
     await castVote(db, from, voteOf('sam', from));
     await mergeIdea(db, from, into);
     expect(await allIdeas(db)).toEqual([expect.objectContaining({ id: into, votes: 1 })]);
-    expect(db.sqlite.prepare('SELECT email FROM ideas WHERE id = ?').get(from)).toEqual({
-      email: null,
-    });
+    // Only its ID is kept, for its vote: its words go, as its email does.
+    expect(
+      db.sqlite.prepare('SELECT title, words, email, votes FROM ideas WHERE id = ?').get(from),
+    ).toEqual({ title: '', words: '', email: null, votes: 0 });
   });
 
   it('goes only into another idea Steve approved', async () => {
@@ -456,6 +457,15 @@ describe('the admin page’s changes', () => {
     expect(db.sqlite.prepare('SELECT idea FROM votes').all()).toEqual([{ idea: kept }]);
   });
 
+  it('decline a suggestion only while it’s new, as when another tab approved it meanwhile', async () => {
+    const db = ideasDb();
+    const id = await suggested(db);
+    await changeIdea(db, id, { status: 'considering' });
+    await castVote(db, id, voteOf('sam', id));
+    expect(await declineNew(db, [id])).toBe(0);
+    expect(await allIdeas(db)).toEqual([expect.objectContaining({ id, votes: 1 })]);
+  });
+
   it('decline every new suggestion they list at once, and only those still new', async () => {
     const db = ideasDb();
     const flood: string[] = [];
@@ -522,9 +532,11 @@ describe('the admin page’s changes', () => {
 describe('the lists', () => {
   it('show the page’s ideas, most votes first, then the newest, and never an email', async () => {
     const db = ideasDb();
-    const quiet = await approved(db, 'Quiet', [], 'planned', new Date('2026-10-20T00:00:00Z'));
+    // The older idea is in progress, which SQLite comes to first: only the order by when each
+    // came puts the newer one ahead of it.
+    const quiet = await approved(db, 'Quiet', [], 'in-progress', new Date('2026-10-20T00:00:00Z'));
     const loved = await approved(db, 'Loved', ['sam', 'ana'], 'considering');
-    const newer = await approved(db, 'Newer', [], 'in-progress', new Date('2026-10-21T00:00:00Z'));
+    const newer = await approved(db, 'Newer', [], 'planned', new Date('2026-10-21T00:00:00Z'));
     await suggested(db, { title: 'Waiting', email: 'sam@example.com' });
     const shown = await shownIdeas(db);
     expect(shown.map((idea) => idea.id)).toEqual([loved, newer, quiet]);

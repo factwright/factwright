@@ -328,26 +328,24 @@ export async function allIdeas(db: Db): Promise<AdminIdea[]> {
 
 /**
  * Keeps a new suggestion for Steve to read. Its ID goes back to the browser that sent it alone,
- * which then votes for it. Turned away while too many already wait.
+ * which then votes for it. Turned away while too many already wait, counted in the same statement
+ * that keeps it, so many at once can't run past the limit.
  */
 export async function suggest(
   db: Db,
   { title, words, email }: Suggestion,
   at = new Date(),
 ): Promise<{ id: string } | 'busy'> {
-  const waiting = await db
-    .prepare("SELECT COUNT(*) AS count FROM ideas WHERE status = 'new'")
-    .first<{ count: number }>();
-  if ((waiting?.count ?? 0) >= WAITING_MAX) return 'busy';
   const id = crypto.randomUUID();
-  await db
+  const { meta } = await db
     .prepare(
       `INSERT INTO ideas (id, title, words, status, email, created_at, updated_at)
-       VALUES (?, ?, ?, 'new', ?, ?, ?)`,
+       SELECT ?, ?, ?, 'new', ?, ?, ?
+       WHERE (SELECT COUNT(*) FROM ideas WHERE status = 'new') < ?`,
     )
-    .bind(id, title, words, email, stamp(at), stamp(at))
+    .bind(id, title, words, email, stamp(at), stamp(at), WAITING_MAX)
     .run();
-  return { id };
+  return meta.changes ? { id } : 'busy';
 }
 
 /** Where a browser's vote stands after it's cast or taken back, and the idea's votes. */
@@ -441,9 +439,10 @@ export async function changeIdea(
 
 /**
  * Merges an idea into another that's been approved, which takes its votes and anything merged
- * into it before. The merged idea leaves the page, and whoever suggested it's email is forgotten.
- * A browser that voted for both counts twice: the votes can't tell it's the same one. Each step
- * checks both ideas again, so two merges at once, such as each into the other, can't both happen.
+ * into it before. The merged idea leaves the page, with only its ID kept, for its votes: its
+ * title, its lines and whoever suggested it's email are forgotten. A browser that voted for both
+ * counts twice: the votes can't tell it's the same one. Each step checks both ideas again, so two
+ * merges at once, such as each into the other, can't both happen.
  */
 export async function mergeIdea(
   db: Db,
@@ -471,8 +470,8 @@ export async function mergeIdea(
       .bind(id, into),
     db
       .prepare(
-        `UPDATE ideas SET status = 'merged', merged_into = ?2, version = NULL, email = NULL,
-           updated_at = ?3
+        `UPDATE ideas SET status = 'merged', merged_into = ?2, title = '', words = '',
+           version = NULL, email = NULL, updated_at = ?3
          WHERE id = ?1 AND ${both}`,
       )
       .bind(id, into, stamp(at)),
@@ -487,9 +486,9 @@ export async function mergeIdea(
 }
 
 /**
- * Deletes an idea: a new suggestion Steve declines, or one on the page, as when whoever suggested
- * it asks. Its votes go with it, its email, and the ideas merged into it, which only held their
- * votes' place.
+ * Deletes an idea on the page, as when whoever suggested it asks. Its votes go with it, its email,
+ * and the ideas merged into it, which only held their votes' place. A new suggestion is declined
+ * instead (declineNew), which leaves alone one approved meanwhile.
  */
 export async function deleteIdea(db: Db, id: string): Promise<'deleted' | 'not-found'> {
   const live = "EXISTS (SELECT 1 FROM ideas WHERE id = ?1 AND status != 'merged')";
@@ -505,8 +504,9 @@ export async function deleteIdea(db: Db, id: string): Promise<'deleted' | 'not-f
 const AT_ONCE = 90;
 
 /**
- * Declines the new suggestions the admin page shows, all at once, as after a flood of them. Only
- * those still new go: one approved meanwhile stays. Gives how many were declined.
+ * Declines new suggestions, which deletes them: one, or every one the admin page shows at once,
+ * as after a flood. Only those still new go: one approved meanwhile, as in another tab, stays.
+ * Gives how many were declined.
  */
 export async function declineNew(db: Db, ids: readonly string[]): Promise<number> {
   const statements: Statement[] = [];

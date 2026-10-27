@@ -1058,12 +1058,12 @@ describe('the privacy policy’s part on ideas', () => {
         version: null,
         votes: 'is kept, with its votes',
         email: 'we keep it with your idea',
-        merged_into: 'merged into another idea',
+        merged_into: 'merged into another idea keeps nothing of its own: its votes go to that idea',
         created_at: null,
         updated_at: null,
       },
       votes: {
-        hash: 'a vote sends only a one-way hash of that ID and the idea’s',
+        hash: 'a vote sends only one-way hashes of that ID with the idea’s',
         idea: null,
       },
     };
@@ -1081,7 +1081,7 @@ describe('the privacy policy’s part on ideas', () => {
     for (const part of [
       'with no account',
       'It isn’t a cookie, and it never leaves your browser',
-      'which is all we keep of it, not even when it came',
+      'We keep only the one for the idea, not even when it came.',
       'So a vote doesn’t say who cast it, or which other votes came from the same browser.',
       'Anything we delete can stay in Cloudflare’s own recovery systems for up to 30 days more, and those systems note when each change was made',
       'used only to limit how often one address can suggest or vote',

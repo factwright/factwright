@@ -18,6 +18,13 @@ export const DECLINE_NEW = '/roadmap/admin/api/decline-new';
 export const SIGNED_OUT =
   'Your Cloudflare Access sign-in has run out. Reload the page to sign in again.';
 
+/**
+ * What it says when Access let a request through but the Worker turned its sign-in away, as when
+ * the sign-in ran out on its way, or wrangler.jsonc names another Access application.
+ */
+export const NOT_SIGNED_IN =
+  'Factwright couldn’t check your Cloudflare Access sign-in. Reload the page, and if this shows again, check ACCESS_TEAM_DOMAIN and ACCESS_AUD in wrangler.jsonc.';
+
 /** How each status reads on the page. */
 const STATUS_WORDS: Readonly<Record<Status, string>> = {
   new: 'New',
@@ -66,9 +73,15 @@ export function adminBrowser(): AdminBrowser {
   };
 }
 
-/** Whether an answer says Access's sign-in has run out: its redirect, or the Worker's refusal. */
-const signedOut = (response: Response) =>
-  response.type === 'opaqueredirect' || response.status === 401 || response.status === 403;
+/**
+ * What an answer says about the sign-in: Access's redirect to sign in again, the Worker's refusal,
+ * or nothing, in words to show.
+ */
+function signInProblem(response: Response): string | null {
+  if (response.type === 'opaqueredirect') return SIGNED_OUT;
+  if (response.status === 401 || response.status === 403) return NOT_SIGNED_IN;
+  return null;
+}
 
 /** What the admin API answers with: who's signed in, and every idea. */
 interface Everything {
@@ -293,7 +306,8 @@ export async function adminPage(
   async function change(path: string, body: unknown): Promise<true | string> {
     try {
       const response = await browser.send(path, body);
-      if (signedOut(response)) return SIGNED_OUT;
+      const signIn = signInProblem(response);
+      if (signIn) return signIn;
       if (!response.ok) return (await problemIn(response)) ?? 'That didn’t save. Try again.';
       show((await response.json()) as Everything);
       return true;
@@ -536,9 +550,10 @@ export async function adminPage(
       );
       return;
     }
+    // Declining takes only a suggestion that's still new, in case another tab approved it.
     void save(
       dialog,
-      `${ADMIN_API}/${removing.idea.id}/delete`,
+      `${ADMIN_API}/${removing.idea.id}/${removing.mode}`,
       {},
       removing.mode === 'decline' ? 'Declined, and deleted.' : 'Deleted.',
       '',
@@ -558,8 +573,9 @@ export async function adminPage(
     if (summary) summary.textContent = 'Loading the ideas…';
     try {
       const response = await browser.load();
-      reloadToRetry = signedOut(response);
-      if (reloadToRetry) throw new Error(SIGNED_OUT);
+      const signIn = signInProblem(response);
+      reloadToRetry = signIn !== null;
+      if (signIn) throw new Error(signIn);
       if (!response.ok) throw new Error('The ideas couldn’t load. Try again in a minute.');
       show((await response.json()) as Everything);
     } catch (error) {

@@ -13,7 +13,6 @@ import {
   readVote,
   shownIdeas,
   suggest,
-  WAITING_MAX,
 } from './ideas.ts';
 import { fillRoadmap } from './roadmap.ts';
 
@@ -38,8 +37,12 @@ const SUGGESTIONS = `${API}/ideas`;
 /** A vote's address: an idea's, then /vote. */
 const VOTE = /^\/api\/ideas\/([^/]+)\/vote$/;
 
-/** What the admin page does to one idea: change it, or merge, delete it or forget its email. */
-const ADMIN_IDEA = /^\/roadmap\/admin\/api\/ideas\/([^/]+)(?:\/(merge|delete|forget-email))?$/;
+/**
+ * What the admin page does to one idea: change it, merge it, decline it while it's new, delete it
+ * once it's on the page, or forget its email.
+ */
+const ADMIN_IDEA =
+  /^\/roadmap\/admin\/api\/ideas\/([^/]+)(?:\/(merge|decline|delete|forget-email))?$/;
 
 /** Declining every new suggestion the admin page shows at once, as after a flood of them. */
 const DECLINE_NEW = `${ADMIN}/api/decline-new`;
@@ -138,9 +141,7 @@ async function api(request: Request, board: Board): Promise<Response> {
   const body = await readBody(request);
   if (body === undefined) return problem(400, 'bad-request', 'That didn’t come through right.');
   try {
-    return vote === undefined
-      ? await suggestion(db, body, board)
-      : await voting(db, vote, body, board);
+    return vote === undefined ? await suggestion(db, body, board) : await voting(db, vote, body);
   } catch (error) {
     console.error('The ideas board couldn’t save:', String(error));
     return unavailable();
@@ -163,7 +164,7 @@ async function suggestion(db: Db, body: unknown, board: Board): Promise<Response
 }
 
 /** A vote, or taking one back. */
-async function voting(db: Db, id: string, body: unknown, board: Board): Promise<Response> {
+async function voting(db: Db, id: string, body: unknown): Promise<Response> {
   const read = readVote(body);
   if (!read.ok) return problem(400, 'bad-request', read.problem);
   const voted = await castVote(db, id, read.value);
@@ -243,6 +244,7 @@ async function adminChange(
   body: unknown,
   at: Date,
 ): Promise<string | { problem: string }> {
+  if (action === 'decline') return (await declineNew(db, [id])) ? 'declined' : 'not-found';
   if (action === 'delete') return deleteIdea(db, id);
   if (action === 'forget-email') return forgetEmail(db, id, at);
   if (action === 'merge') {
@@ -257,14 +259,13 @@ async function adminChange(
   return changeIdea(db, id, read.value, at);
 }
 
-/** Declines the new suggestions the admin page lists, by their IDs. */
+/**
+ * Declines the new suggestions the admin page lists, by their IDs, as many as a request can hold,
+ * which is more than can wait at once.
+ */
 async function declineAll(db: Db, body: unknown): Promise<string | { problem: string }> {
   const ids = (body as { ids?: unknown } | null)?.ids;
-  if (
-    !Array.isArray(ids) ||
-    ids.length > WAITING_MAX ||
-    !ids.every((each) => typeof each === 'string' && ID.test(each))
-  ) {
+  if (!Array.isArray(ids) || !ids.every((each) => typeof each === 'string' && ID.test(each))) {
     return { problem: 'Those didn’t come through right. Reload the page and try again.' };
   }
   await declineNew(db, [...new Set(ids as string[])]);

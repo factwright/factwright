@@ -10,6 +10,7 @@ import {
   adminPage,
   CONFIRM_MS,
   DECLINE_NEW,
+  NOT_SIGNED_IN,
   SIGNED_OUT,
   writeTo,
 } from '../src/admin-page.ts';
@@ -323,7 +324,7 @@ describe('the admin page', () => {
     expect(dialog('decline').querySelector<HTMLElement>('[data-admin-closing]')?.hidden).toBe(true);
     submit('decline');
     await settle();
-    expect(sent).toEqual([[`${ADMIN_API}/${fresh.id}/delete`, {}]]);
+    expect(sent).toEqual([[`${ADMIN_API}/${fresh.id}/decline`, {}]]);
     expect(titles('new')).toEqual([]);
     expect(document.activeElement).toBe(document.querySelector('[data-admin-title]'));
   });
@@ -409,7 +410,7 @@ describe('the admin page', () => {
     }
   });
 
-  it('says to reload when a change finds the sign-in has run out', async () => {
+  it('says to reload, and to check the Access settings, when the Worker turns a sign-in away', async () => {
     const root = open();
     const planned = idea({ status: 'planned' });
     const browser: AdminBrowser = {
@@ -420,7 +421,7 @@ describe('the admin page', () => {
     button(planned.id, 'Change…').click();
     submit('edit');
     await settle();
-    expect(said(dialog('edit').querySelector('[data-admin-dialog-problem]'))).toBe(SIGNED_OUT);
+    expect(said(dialog('edit').querySelector('[data-admin-dialog-problem]'))).toBe(NOT_SIGNED_IN);
   });
 
   it('closes a dialog on Cancel, sending nothing', async () => {

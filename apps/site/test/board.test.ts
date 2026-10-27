@@ -379,7 +379,9 @@ describe('the admin page', () => {
     const merged = await read(await change(`${merge}/merge`, { into: target }));
     expect(merged.ideas).not.toContainEqual(expect.objectContaining({ id: merge }));
     expect(merged.ideas).toContainEqual(expect.objectContaining({ id: target, merged: [merge] }));
-    const declined = await read(await change(`${decline}/delete`, {}));
+    const declined = await read(await change(`${decline}/decline`, {}));
+    // Declining an idea that's been approved meanwhile, as from another tab, deletes nothing.
+    expect((await change(`${target}/decline`, {}))?.status).toBe(404);
     expect(declined.ideas).not.toContainEqual(expect.objectContaining({ id: decline }));
     await change(`${approve}/forget-email`, {});
     const after = await read(await answer(new Request(`${SITE}/roadmap/admin/api/ideas`)));
