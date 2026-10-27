@@ -34,6 +34,13 @@ export const LOOK_AGAIN_AFTER_MS = 60 * 1000;
  */
 export const NO_INSTALL_ID = '00000000-0000-0000-0000-000000000000';
 
+/**
+ * How electron-updater's error begins when a look for an update fails, as when the computer is
+ * offline (its checkForUpdates). Its other errors come from a download, the Mac's check of one, or
+ * installing it.
+ */
+export const LOOK_FAILED = 'Cannot check for updates';
+
 /** An update's notes as text: electron-updater gives a string, or a note for each version. */
 function notesOf(info: UpdateInfo): string | null {
   const notes = info.releaseNotes;
@@ -85,8 +92,6 @@ export class UpdateWatcher {
   private running = false;
   /** Set once it's restarting into the update, while Claude Code that's done closes first. */
   private installing = false;
-  /** Set while it looks, so a look that fails leaves an update that's waiting as it is. */
-  private looking = false;
   /** When it last looked, or started, as coming back to the app looks only if that was a while ago. */
   private lastLook = 0;
 
@@ -115,10 +120,11 @@ export class UpdateWatcher {
     macInstaller?.on('update-downloaded', () => {
       if (this.downloaded) this.ready(this.downloaded);
     });
-    updater.on('error', (error) => {
+    updater.on('error', (error, message) => {
       this.deps.log?.(`Update: ${error.message}`);
-      // A look that fails, as when the computer is offline, leaves the update that's waiting.
-      if (this.looking && !this.installing && this.status.state === 'ready') return;
+      // A look that fails changes nothing: the next look tries again, and an update that's waiting
+      // stays ready, even while the app restarts into it.
+      if (message?.startsWith(LOOK_FAILED)) return;
       // Whatever else failed, from the download to the Mac's check of it, or installing it, the
       // next look tries again.
       this.downloaded = null;
@@ -172,28 +178,31 @@ export class UpdateWatcher {
   async check(): Promise<void> {
     if (this.status.state === 'downloading' || this.installing) return;
     this.lastLook = Date.now();
-    this.looking = true;
-    await this.deps.updater.checkForUpdates().then(
-      (result) => {
-        this.looking = false;
-        if (result?.isUpdateAvailable) this.download(result.updateInfo.version);
-      },
-      (error: unknown) => {
-        this.looking = false;
-        this.deps.log?.(`Update: ${error instanceof Error ? error.message : String(error)}`);
-      },
-    );
+    // A look that fails says so through the updater's error too, which notes it.
+    const result = await this.deps.updater.checkForUpdates().catch(() => null);
+    if (result?.isUpdateAvailable) this.download(result.updateInfo.version);
   }
 
-  /** Downloads the version a look found, unless it's on its way or already waiting. */
+  /**
+   * Downloads the version a look found, unless it's on its way, already waiting, or the app is
+   * restarting. A newer version's download replaces the update that's waiting as it starts, so if
+   * it fails, the next look gets the newer one again.
+   */
   private download(version: string): void {
-    const { status } = this;
-    if (this.installing || status.state === 'downloading') return;
-    if (status.state === 'ready' && status.version === version) return;
+    const before = this.status;
+    if (this.installing || before.state === 'downloading') return;
+    if (before.state === 'ready' && before.version === version) return;
     this.set({ state: 'downloading', version, percent: 0 });
-    // A download that fails says so through the updater's error too, so this only keeps its
-    // promise from going unanswered, which would show an error box.
-    this.deps.updater.downloadUpdate().catch(() => {});
+    try {
+      // A download that fails says so through the updater's error too, so this only keeps its
+      // promise from going unanswered, which would show an error box.
+      this.deps.updater.downloadUpdate().catch(() => {});
+    } catch (error) {
+      // A feed whose files it can't read throws before anything downloads, with no error of the
+      // updater's, so what was there stays as it was.
+      this.deps.log?.(`Update: ${error instanceof Error ? error.message : String(error)}`);
+      this.set(before);
+    }
   }
 
   private ready(info: UpdateInfo): void {

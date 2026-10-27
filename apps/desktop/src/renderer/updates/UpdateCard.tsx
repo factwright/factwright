@@ -38,6 +38,7 @@ export function UpdateCard({
         tone="checking"
         line={`Factwright ${status.version} · ${status.percent < 100 ? `${status.percent}%` : 'almost ready'}`}
         help="You can keep working meanwhile."
+        live={false}
       />
     );
   }

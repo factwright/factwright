@@ -158,6 +158,13 @@ export function Sidebar({
       </nav>
       <div className={styles.cards}>
         <UpdateCard
+          // A new state or version starts the card afresh, so a restart that didn't happen, or
+          // What's new left open, doesn't carry over to the next update.
+          key={
+            update.status.state === 'none'
+              ? 'none'
+              : `${update.status.state} ${update.status.version}`
+          }
           status={update.status}
           inBanner={update.inBanner}
           busy={update.busy}

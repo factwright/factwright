@@ -22,12 +22,18 @@ export function SidebarCard({
   line,
   help,
   action,
+  live = true,
 }: {
   title: string;
   tone: CardTone;
   line: ReactNode;
   help?: ReactNode;
   action?: CardAction | null;
+  /**
+   * Whether screen readers read the line out when it changes. A line that changes by itself all the
+   * time, such as how far a download has got, isn't.
+   */
+  live?: boolean;
 }) {
   const titleId = useId();
   return (
@@ -36,7 +42,7 @@ export function SidebarCard({
         <span className={`${styles.dot} ${styles[tone]}`} aria-hidden="true" />
         {title}
       </h2>
-      <p className={styles.line} aria-live="polite">
+      <p className={styles.line} aria-live={live ? 'polite' : undefined}>
         {line}
       </p>
       {help && <p className={styles.help}>{help}</p>}

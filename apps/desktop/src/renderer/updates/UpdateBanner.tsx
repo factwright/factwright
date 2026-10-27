@@ -38,7 +38,7 @@ export function UpdateBanner({
     return (
       <section className={`${styles.banner} ${styles.need}`} aria-label="Update">
         <CircleAlert className={styles.icon} size={18} aria-hidden="true" />
-        <p className={styles.text} aria-live="polite">
+        <p className={styles.text}>
           <strong>Something you’re writing isn’t saved.</strong> Save it first, or restart now and
           lose it.
         </p>
@@ -56,7 +56,7 @@ export function UpdateBanner({
   return (
     <section className={styles.banner} aria-label="Update">
       <CircleArrowUp className={styles.icon} size={18} aria-hidden="true" />
-      <p className={styles.text} aria-live="polite">
+      <p className={styles.text}>
         <strong>Please update Factwright.</strong>{' '}
         {busy
           ? `Version ${version} is ready. You can restart into it once Claude is done, or it installs the next time you quit.`

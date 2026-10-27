@@ -52,6 +52,8 @@ describe('UpdateCard', () => {
     expect(screen.getByRole('heading', { name: 'Downloading an update' })).toBeTruthy();
     expect(container.textContent).toContain('Factwright 0.2.0 · 40%');
     expect(screen.queryByRole('button')).toBeNull();
+    // Screen readers don't read out each percent.
+    expect(container.querySelector('[aria-live]')).toBeNull();
     expect((await axe.run(container)).violations).toEqual([]);
     // The Mac checks it once it's all there.
     rerender(

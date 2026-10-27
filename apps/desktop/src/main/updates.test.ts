@@ -5,6 +5,7 @@ import {
   CHECK_EVERY_MS,
   FIRST_CHECK_AFTER_MS,
   LOOK_AGAIN_AFTER_MS,
+  LOOK_FAILED,
   NO_INSTALL_ID,
   type Updater,
   UpdateWatcher,
@@ -30,6 +31,15 @@ function nextLookFinds(version: string) {
     isUpdateAvailable: true,
     updateInfo: { version },
   }));
+}
+
+/** The next look fails, which electron-updater says both ways: by its error, and its answer. */
+function nextLookFails(problem: string) {
+  updater.checkForUpdates.mockImplementationOnce(async () => {
+    const error = new Error(problem);
+    updater.emit('error', error, `${LOOK_FAILED}: ${error.stack}`);
+    throw error;
+  });
 }
 
 let updater: FakeUpdater;
@@ -188,14 +198,42 @@ describe('UpdateWatcher', () => {
 
   it('keeps the update that’s waiting when a look fails', async () => {
     updater.emit('update-downloaded', { version: '0.2.0' });
-    // electron-updater says a look failed both ways: by its error, and its answer.
-    updater.checkForUpdates.mockImplementationOnce(async () => {
-      updater.emit('error', new Error('offline'));
-      throw new Error('offline');
-    });
+    nextLookFails('offline');
     await watcher.check();
     expect(watcher.current()).toMatchObject({ state: 'ready', version: '0.2.0' });
+    expect(logged).toEqual(['Update: offline']);
     expect(await watcher.install()).toBe(true);
+  });
+
+  it('gets a newer version at the next look when its download fails', async () => {
+    updater.emit('update-downloaded', { version: '0.2.0' });
+    nextLookFinds('0.2.1');
+    await watcher.check();
+    // The newer download took the waiting update's place as it started, so there's none now.
+    updater.emit('error', new Error('connection reset'));
+    expect(watcher.current()).toEqual({ state: 'none' });
+    nextLookFinds('0.2.1');
+    await watcher.check();
+    expect(updater.downloadUpdate).toHaveBeenCalledTimes(2);
+    expect(watcher.current()).toMatchObject({ state: 'downloading', version: '0.2.1' });
+  });
+
+  it('keeps what it had when a download can’t start', async () => {
+    // A feed whose files it can't read throws straight away, with no error of the updater's.
+    updater.downloadUpdate.mockImplementation(() => {
+      throw new Error('No files provided');
+    });
+    nextLookFinds('0.2.0');
+    await watcher.check();
+    expect(watcher.current()).toEqual({ state: 'none' });
+    expect(logged).toEqual(['Update: No files provided']);
+    updater.emit('update-downloaded', { version: '0.2.0' });
+    nextLookFinds('0.2.1');
+    await watcher.check();
+    expect(watcher.current()).toMatchObject({ state: 'ready', version: '0.2.0' });
+    // It isn't stuck downloading, so it looks again.
+    await watcher.check();
+    expect(updater.checkForUpdates).toHaveBeenCalledTimes(3);
   });
 
   it('reads notes given for each version, or none', () => {
@@ -212,7 +250,7 @@ describe('UpdateWatcher', () => {
   });
 
   it('keeps a problem quiet, and tries again at the next look', async () => {
-    updater.checkForUpdates.mockRejectedValueOnce(new Error('offline'));
+    nextLookFails('offline');
     await watcher.check();
     expect(logged).toEqual(['Update: offline']);
     nextLookFinds('0.2.0');
@@ -223,13 +261,21 @@ describe('UpdateWatcher', () => {
     expect(updater.checkForUpdates).toHaveBeenCalledTimes(3);
   });
 
-  it('doesn’t start a download once it’s restarting into the update', async () => {
+  it('doesn’t look, or download what a look finds, once it’s restarting into the update', async () => {
     updater.emit('update-downloaded', { version: '0.2.0' });
+    // A look started as the user came back to the window to click Restart now.
+    let answer: (found: Found) => void = () => {};
+    updater.checkForUpdates.mockImplementationOnce(
+      () => new Promise<Found>((resolve) => (answer = resolve)),
+    );
+    const looking = watcher.check();
     expect(await watcher.install()).toBe(true);
-    nextLookFinds('0.2.1');
+    answer({ isUpdateAvailable: true, updateInfo: { version: '0.2.1' } });
+    await looking;
     await watcher.check();
-    expect(updater.checkForUpdates).not.toHaveBeenCalled();
+    expect(updater.checkForUpdates).toHaveBeenCalledTimes(1);
     expect(updater.downloadUpdate).not.toHaveBeenCalled();
+    expect(watcher.current()).toMatchObject({ state: 'ready', version: '0.2.0' });
   });
 
   it('restarts into an update only once one is downloaded', async () => {
@@ -328,6 +374,31 @@ describe('UpdateWatcher on a Mac', () => {
     installer.emit('update-downloaded');
     expect(await watcher.install()).toBe(true);
     expect(updater.quitAndInstall).toHaveBeenCalledTimes(2);
+  });
+
+  it('goes on restarting when a look fails while Claude Code closes', async () => {
+    updater.emit('update-downloaded', { version: '0.2.0' });
+    installer.emit('update-downloaded');
+    // A look started as the user came back to the window to click Restart now, and fails once
+    // the restart has begun.
+    let fail: () => void = () => {};
+    updater.checkForUpdates.mockImplementationOnce(
+      () =>
+        new Promise<Found>((_, reject) => {
+          fail = () => {
+            const error = new Error('offline');
+            updater.emit('error', error, `${LOOK_FAILED}: ${error.stack}`);
+            reject(error);
+          };
+        }),
+    );
+    const looking = watcher.check();
+    const restarting = watcher.install();
+    fail();
+    await looking;
+    expect(await restarting).toBe(true);
+    expect(watcher.current()).toMatchObject({ state: 'ready', version: '0.2.0' });
+    expect(updater.quitAndInstall).toHaveBeenCalledTimes(1);
   });
 
   it('quits Claude Code that’s done first, then restarts into the update, once', async () => {
