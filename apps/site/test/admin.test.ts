@@ -2,8 +2,17 @@
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import axe from 'axe-core';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { ADMIN_API, type AdminBrowser, adminPage, CONFIRM_MS, writeTo } from '../src/admin-page.ts';
+import {
+  ADMIN_API,
+  type AdminBrowser,
+  adminPage,
+  CONFIRM_MS,
+  DECLINE_NEW,
+  SIGNED_OUT,
+  writeTo,
+} from '../src/admin-page.ts';
 import type { AdminIdea } from '../worker/ideas.ts';
 
 /** The page, as it's built. Paths, since jsdom's URL isn't one Node's file reading accepts. */
@@ -124,6 +133,30 @@ describe('the admin page', () => {
     expect(said(document.querySelector('[data-admin-summary]'))).toBe(
       'Nothing new · 0 on the page · 1 not planned',
     );
+  });
+
+  it('passes an accessibility check with its ideas listed, and with a dialog open', async () => {
+    const root = open();
+    const fresh = idea({ status: 'new', email: 'sam@example.com' });
+    await adminPage(
+      root,
+      api([
+        fresh,
+        idea({ status: 'planned', merged: ['x'] }),
+        idea({ status: 'shipped', version: '0.19.0' }),
+        idea({ status: 'not-planned' }),
+      ]).browser,
+    );
+    // jsdom can't lay out a page, so contrast is checked from the tokens in @factwright/ui.
+    const check = async () =>
+      (await axe.run(document, { rules: { 'color-contrast': { enabled: false } } })).violations.map(
+        (violation) => `${violation.id}: ${violation.help}`,
+      );
+    expect(await check()).toEqual([]);
+    button(fresh.id, 'Approve…').click();
+    field('status').value = 'shipped';
+    field('status').dispatchEvent(new Event('change'));
+    expect(await check()).toEqual([]);
   });
 
   it('keeps every heading a level below its list’s', async () => {
@@ -290,9 +323,104 @@ describe('the admin page', () => {
     expect(dialog('decline').querySelector<HTMLElement>('[data-admin-closing]')?.hidden).toBe(true);
     submit('decline');
     await settle();
-    expect(sent).toEqual([[`${ADMIN_API}/${fresh.id}/decline`, {}]]);
+    expect(sent).toEqual([[`${ADMIN_API}/${fresh.id}/delete`, {}]]);
     expect(titles('new')).toEqual([]);
     expect(document.activeElement).toBe(document.querySelector('[data-admin-title]'));
+  });
+
+  it('deletes an idea on the page from its Change dialog, once Steve’s sure', async () => {
+    const root = open();
+    const shown = idea({ status: 'planned', title: 'Asked to go', email: 'sam@example.com' });
+    const fresh = idea({ status: 'new' });
+    const { sent, browser } = api([shown, fresh], () =>
+      Response.json({ you: YOU, ideas: [fresh] }),
+    );
+    await adminPage(root, browser);
+    // A new suggestion's Change dialog has no Delete: its card has Decline.
+    button(fresh.id, 'Approve…').click();
+    expect(dialog('edit').querySelector<HTMLElement>('[data-edit-delete]')?.hidden).toBe(true);
+    dialog('edit').querySelector<HTMLButtonElement>('[data-admin-cancel]')?.click();
+    button(shown.id, 'Change…').click();
+    const remove = dialog('edit').querySelector<HTMLButtonElement>('[data-edit-delete]');
+    expect(remove?.hidden).toBe(false);
+    remove?.click();
+    expect(dialog('edit').open).toBe(false);
+    expect(dialog('decline').open).toBe(true);
+    expect(said(dialog('decline').querySelector('h2'))).toBe('Delete “Asked to go”?');
+    expect(said(dialog('decline').querySelector('[data-decline-submit]'))).toBe('Delete');
+    expect(said(dialog('decline').querySelector('[data-admin-closing]'))).toContain(
+      'which is forgotten once it’s deleted',
+    );
+    submit('decline');
+    await settle();
+    expect(sent).toEqual([[`${ADMIN_API}/${shown.id}/delete`, {}]]);
+    expect(said(document.querySelector('[data-road-note]'))).toBe('Deleted.');
+  });
+
+  it('declines every new suggestion at once, as after a flood, from two of them up', async () => {
+    const root = open();
+    const one = idea({ status: 'new' });
+    const two = idea({ status: 'new' });
+    const kept = idea({ status: 'planned' });
+    const { sent, browser } = api([one, two, kept], () =>
+      Response.json({ you: YOU, ideas: [kept] }),
+    );
+    await adminPage(root, browser);
+    const all = document.querySelector<HTMLButtonElement>('[data-decline-all]');
+    expect(all?.hidden).toBe(false);
+    all?.click();
+    expect(said(dialog('decline').querySelector('h2'))).toBe('Decline all 2 new suggestions?');
+    expect(said(dialog('decline').querySelector('[data-decline-text]'))).toContain(
+      'Approve or merge any you’d like to keep first.',
+    );
+    expect(said(dialog('decline').querySelector('[data-decline-submit]'))).toBe('Decline all 2');
+    expect(dialog('decline').querySelector<HTMLElement>('[data-admin-closing]')?.hidden).toBe(true);
+    submit('decline');
+    await settle();
+    expect(sent).toEqual([[DECLINE_NEW, { ids: [one.id, two.id] }]]);
+    expect(said(document.querySelector('[data-road-note]'))).toBe('Declined 2 suggestions.');
+    // With one, or none, left, its card's Decline does.
+    expect(all?.hidden).toBe(true);
+  });
+
+  it('says to reload once Access’s sign-in has run out, which sends the page to sign in elsewhere', async () => {
+    const root = open();
+    // What a fetch that won't follow Access's redirect to its sign-in page gives.
+    const redirect = { type: 'opaqueredirect', ok: false, status: 0 } as Response;
+    const planned = idea({ status: 'planned' });
+    const reload = vi.fn();
+    vi.stubGlobal('location', { ...window.location, reload });
+    try {
+      let loads = 0;
+      const browser: AdminBrowser = {
+        load: async () => {
+          loads += 1;
+          return loads === 1 ? redirect : Response.json({ you: YOU, ideas: [planned] });
+        },
+        send: async () => redirect,
+      };
+      await adminPage(root, browser);
+      expect(said(document.querySelector('[data-admin-problem-text]'))).toBe(SIGNED_OUT);
+      document.querySelector<HTMLButtonElement>('[data-admin-retry]')?.click();
+      expect(reload).toHaveBeenCalledTimes(1);
+      expect(loads).toBe(1);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('says to reload when a change finds the sign-in has run out', async () => {
+    const root = open();
+    const planned = idea({ status: 'planned' });
+    const browser: AdminBrowser = {
+      load: async () => Response.json({ you: YOU, ideas: [planned] }),
+      send: async () => new Response('Signed out', { status: 403 }),
+    };
+    await adminPage(root, browser);
+    button(planned.id, 'Change…').click();
+    submit('edit');
+    await settle();
+    expect(said(dialog('edit').querySelector('[data-admin-dialog-problem]'))).toBe(SIGNED_OUT);
   });
 
   it('closes a dialog on Cancel, sending nothing', async () => {
@@ -316,11 +444,16 @@ describe('the admin page', () => {
     await adminPage(root, browser);
     const forget = () =>
       document.querySelector<HTMLButtonElement>(`[data-idea="${asking.id}"] .admin-forget`);
-    expect(forget()?.getAttribute('aria-label')).toBe('Forget sam@example.com');
+    // Screen readers hear whose email it is, and that it's asking, as everyone sees.
+    expect(said(forget())).toBe('Forget sam@example.com');
+    expect(forget()?.hasAttribute('aria-label')).toBe(false);
     forget()?.click();
-    expect(said(forget())).toBe('Click again to forget');
+    expect(said(forget())).toBe('Click again to forget sam@example.com');
+    expect(said(document.querySelector('[data-road-note]'))).toBe(
+      'Click Forget again to forget their email.',
+    );
     await vi.advanceTimersByTimeAsync(CONFIRM_MS);
-    expect(said(forget())).toBe('Forget');
+    expect(said(forget())).toBe('Forget sam@example.com');
     expect(sent).toEqual([]);
     forget()?.click();
     forget()?.click();
@@ -332,7 +465,8 @@ describe('the admin page', () => {
 
   it('says why the ideas didn’t load, and tries again when asked', async () => {
     const root = open();
-    let answer: () => Promise<Response> = async () => new Response('No', { status: 403 });
+    let answer: () => Promise<Response> = async () =>
+      Response.json({ error: 'unavailable', message: 'Down.' }, { status: 503 });
     const browser: AdminBrowser = {
       load: () => answer(),
       send: async () => Response.json({}),
@@ -341,7 +475,7 @@ describe('the admin page', () => {
     const problem = document.querySelector<HTMLElement>('[data-admin-problem]');
     expect(problem?.hidden).toBe(false);
     expect(said(problem?.querySelector('p'))).toBe(
-      'Sign in through Cloudflare Access to see the ideas.',
+      'The ideas couldn’t load. Try again in a minute.',
     );
     answer = () => Promise.reject(new TypeError('Failed to fetch'));
     document.querySelector<HTMLButtonElement>('[data-admin-retry]')?.click();

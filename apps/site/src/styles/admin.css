@@ -93,11 +93,18 @@
   margin-top: clamp(44px, 6vw, 64px);
 }
 
-.admin-section > h2 {
+.admin-section h2 {
   font-family: var(--font-display);
   font-size: 24px;
   font-weight: 680;
   letter-spacing: -0.02em;
+}
+
+.admin-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
 }
 
 .admin-section-note {
@@ -394,6 +401,16 @@
 .admin-dialog-buttons .button {
   height: 42px;
   padding: 0 18px;
+}
+
+/* Deleting sits apart from the dialog's own buttons, at its other end. */
+.admin-dialog-buttons .admin-dialog-delete {
+  margin-right: auto;
+  padding: 0 12px;
+}
+
+.admin-dialog-delete[hidden] {
+  display: none;
 }
 
 .admin-dialog-form[aria-busy="true"] .admin-dialog-buttons .button {

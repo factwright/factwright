@@ -111,7 +111,7 @@ describe('the roadmap’s votes', () => {
     expect(voteButton(PLANNED).getAttribute('aria-pressed')).toBe('false');
   });
 
-  it('cast a vote with a hash of the voter ID and each idea it covers, and nothing else', async () => {
+  it('cast a vote with a hash of the voter ID and the idea’s, and nothing else', async () => {
     const root = open();
     const { fake, sent, store } = browser(counting(4));
     roadmap(root, fake);
@@ -120,11 +120,9 @@ describe('the roadmap’s votes', () => {
     expect(voteButton(LOVED).getAttribute('aria-pressed')).toBe('true');
     expect(said(voteButton(LOVED))).toBe('Vote, 5 votes');
     await settle();
+    // This browser never voted for the idea merged into it, so the vote names no other.
     expect(sent).toEqual([
-      [
-        `/api/ideas/${LOVED}/vote`,
-        { vote: true, hash: sha256(`voter-1:${LOVED}`), moved: [sha256(`voter-1:${MERGED}`)] },
-      ],
+      [`/api/ideas/${LOVED}/vote`, { vote: true, hash: sha256(`voter-1:${LOVED}`), moved: [] }],
     ]);
     expect(JSON.stringify(sent)).not.toContain('voter-1"');
     expect(store.kept[VOTER_KEY]).toBe('voter-1');
@@ -139,10 +137,35 @@ describe('the roadmap’s votes', () => {
     roadmap(root, fake);
     voteButton(LOVED).click();
     await settle();
-    expect(sent[0]?.[1]).toMatchObject({ vote: false, hash: sha256(`voter-9:${LOVED}`) });
+    // The vote that came along with the merge is named, so it's the one taken back.
+    expect(sent[0]?.[1]).toEqual({
+      vote: false,
+      hash: sha256(`voter-9:${LOVED}`),
+      moved: [sha256(`voter-9:${MERGED}`)],
+    });
     expect(voteButton(LOVED).getAttribute('aria-pressed')).toBe('false');
     expect(said(voteButton(LOVED))).toBe('Vote, 3 votes');
     expect(JSON.parse(store.kept[VOTED_KEY] ?? '[]')).toEqual([PLANNED]);
+  });
+
+  it('still work on an idea with more merged into it than a vote can name', async () => {
+    const many = Array.from(
+      { length: 60 },
+      (_, n) => `55555555-5555-4555-8555-${String(n).padStart(12, '0')}`,
+    );
+    const root = open([{ ...(IDEAS[0] as Idea), merged: many }]);
+    const { fake, sent, store } = browser(counting(4));
+    store.kept[VOTER_KEY] = 'voter-9';
+    store.kept[VOTED_KEY] = JSON.stringify([many[41]]);
+    roadmap(root, fake);
+    expect(voteButton(LOVED).getAttribute('aria-pressed')).toBe('true');
+    voteButton(LOVED).click();
+    await settle();
+    expect(sent[0]?.[1]).toEqual({
+      vote: false,
+      hash: sha256(`voter-9:${LOVED}`),
+      moved: [sha256(`voter-9:${many[41]}`)],
+    });
   });
 
   it('show the server’s count, and say “vote” for one', async () => {

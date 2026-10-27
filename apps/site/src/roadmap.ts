@@ -131,12 +131,18 @@ export function roadmap(root: HTMLElement, browser: RoadmapBrowser = roadmapBrow
   const ballot = ballotIn(browser);
   const note = noteFor(root.querySelector<HTMLElement>('[data-road-note]'));
 
-  /** Casts or takes back this browser's vote for an idea, by its hash with each idea it covers. */
+  /**
+   * Casts or takes back this browser's vote for an idea, by its hash, with the hashes of the
+   * ideas merged into it that this browser voted for, whose votes came along. Only those: an idea
+   * can have more merged into it than a vote can name.
+   */
   async function send(ids: readonly string[], vote: boolean) {
     const [id = '', ...merged] = ids;
     const voter = ballot.voter();
     const [hash, ...moved] = await Promise.all(
-      [id, ...merged].map((each) => browser.hash(`${voter}:${each}`)),
+      [id, ...merged.filter((each) => ballot.votedFor([each]))].map((each) =>
+        browser.hash(`${voter}:${each}`),
+      ),
     );
     return browser.send(`/api/ideas/${id}/vote`, { vote, hash, moved });
   }

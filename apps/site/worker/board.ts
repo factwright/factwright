@@ -3,7 +3,8 @@ import {
   castVote,
   changeIdea,
   type Db,
-  declineIdea,
+  declineNew,
+  deleteIdea,
   forgetEmail,
   ID,
   mergeIdea,
@@ -12,6 +13,7 @@ import {
   readVote,
   shownIdeas,
   suggest,
+  WAITING_MAX,
 } from './ideas.ts';
 import { fillRoadmap } from './roadmap.ts';
 
@@ -36,8 +38,11 @@ const SUGGESTIONS = `${API}/ideas`;
 /** A vote's address: an idea's, then /vote. */
 const VOTE = /^\/api\/ideas\/([^/]+)\/vote$/;
 
-/** What the admin page does to one idea: change it, or merge, decline it or forget its email. */
-const ADMIN_IDEA = /^\/roadmap\/admin\/api\/ideas\/([^/]+)(?:\/(merge|decline|forget-email))?$/;
+/** What the admin page does to one idea: change it, or merge, delete it or forget its email. */
+const ADMIN_IDEA = /^\/roadmap\/admin\/api\/ideas\/([^/]+)(?:\/(merge|delete|forget-email))?$/;
+
+/** Declining every new suggestion the admin page shows at once, as after a flood of them. */
+const DECLINE_NEW = `${ADMIN}/api/decline-new`;
 
 /** The most a request to the API can send, in bytes. A suggestion is well under it. */
 const BODY_MAX = 16 * 1024;
@@ -86,8 +91,11 @@ export async function answerBoard(
  * HEAD gets the same headers, without reading the ideas.
  */
 async function roadmapPage(request: Request, assets: Assets, board: Board): Promise<Response> {
-  const found = await assets.fetch(request);
-  if (found.status !== 200) return found;
+  // The page as it's built, asked for plainly: a browser's own If-None-Match is for the filled-in
+  // page, which has no ETag, never for the built one.
+  const found = await assets.fetch(new Request(request.url, { method: request.method }));
+  // An asset's headers can't be changed, and the site's security headers go on next.
+  if (found.status !== 200) return new Response(found.body, found);
   const headers = new Headers(found.headers);
   for (const name of ['Content-Length', 'ETag', 'Last-Modified']) headers.delete(name);
   headers.set('Cache-Control', 'no-cache');
@@ -158,7 +166,7 @@ async function suggestion(db: Db, body: unknown, board: Board): Promise<Response
 async function voting(db: Db, id: string, body: unknown, board: Board): Promise<Response> {
   const read = readVote(body);
   if (!read.ok) return problem(400, 'bad-request', read.problem);
-  const voted = await castVote(db, id, read.value, board.now?.());
+  const voted = await castVote(db, id, read.value);
   if (voted === 'not-found') {
     return problem(
       404,
@@ -194,7 +202,9 @@ async function adminAnswer(request: Request, assets: Assets, board: Board): Prom
   if (!api) return assets.fetch(request);
   const { db } = board;
   const idea = ADMIN_IDEA.exec(pathname);
-  if (pathname !== ADMIN_API && !idea) return problem(404, 'not-found', 'There’s nothing here.');
+  if (pathname !== ADMIN_API && pathname !== DECLINE_NEW && !idea) {
+    return problem(404, 'not-found', 'There’s nothing here.');
+  }
   if (pathname === ADMIN_API) {
     if (request.method !== 'GET') {
       return problem(405, 'method', 'Ask for this with GET.', { Allow: 'GET' });
@@ -208,12 +218,14 @@ async function adminAnswer(request: Request, assets: Assets, board: Board): Prom
   const refused = notFromThePage(request, true);
   if (refused) return refused;
   const [, id = '', action] = idea ?? [];
-  if (!ID.test(id)) return problem(404, 'not-found', 'That idea isn’t here anymore.');
+  if (idea && !ID.test(id)) return problem(404, 'not-found', 'That idea isn’t here anymore.');
   if (!db) return unavailable();
   const body = await readBody(request);
   if (body === undefined) return problem(400, 'bad-request', 'That didn’t come through right.');
   try {
-    const done = await adminChange(db, id, action, body, board.now?.() ?? new Date());
+    const done = idea
+      ? await adminChange(db, id, action, body, board.now?.() ?? new Date())
+      : await declineAll(db, body);
     if (done === 'not-found') return problem(404, 'not-found', 'That idea isn’t here anymore.');
     if (typeof done === 'object') return problem(400, 'bad-request', done.problem);
     return everything(db, you);
@@ -231,7 +243,7 @@ async function adminChange(
   body: unknown,
   at: Date,
 ): Promise<string | { problem: string }> {
-  if (action === 'decline') return declineIdea(db, id);
+  if (action === 'delete') return deleteIdea(db, id);
   if (action === 'forget-email') return forgetEmail(db, id, at);
   if (action === 'merge') {
     const into = (body as { into?: unknown } | null)?.into;
@@ -243,6 +255,20 @@ async function adminChange(
   const read = readChange(body);
   if (!read.ok) return { problem: read.problem };
   return changeIdea(db, id, read.value, at);
+}
+
+/** Declines the new suggestions the admin page lists, by their IDs. */
+async function declineAll(db: Db, body: unknown): Promise<string | { problem: string }> {
+  const ids = (body as { ids?: unknown } | null)?.ids;
+  if (
+    !Array.isArray(ids) ||
+    ids.length > WAITING_MAX ||
+    !ids.every((each) => typeof each === 'string' && ID.test(each))
+  ) {
+    return { problem: 'Those didn’t come through right. Reload the page and try again.' };
+  }
+  await declineNew(db, [...new Set(ids as string[])]);
+  return 'declined';
 }
 
 /** Every idea, for the admin page, after each change too, with who's signed in. */
@@ -278,13 +304,33 @@ function notFromThePage(request: Request, strict: boolean): Response | null {
   return null;
 }
 
-/** A request's JSON, or undefined when there's too much of it or it isn't JSON. */
+/**
+ * A request's JSON, or undefined when there's too much of it or it isn't JSON. It reads no more
+ * than it takes, so a body sent in pieces, with no length to check first, is turned away too.
+ */
 async function readBody(request: Request): Promise<unknown> {
   if (Number(request.headers.get('Content-Length') ?? 0) > BODY_MAX) return undefined;
-  const text = await request.text();
-  if (text.length > BODY_MAX) return undefined;
+  const reader = request.body?.getReader();
+  const parts: Uint8Array[] = [];
+  let size = 0;
+  while (reader) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    size += value.byteLength;
+    if (size > BODY_MAX) {
+      await reader.cancel();
+      return undefined;
+    }
+    parts.push(value);
+  }
+  const bytes = new Uint8Array(size);
+  let at = 0;
+  for (const part of parts) {
+    bytes.set(part, at);
+    at += part.byteLength;
+  }
   try {
-    return JSON.parse(text) as unknown;
+    return JSON.parse(new TextDecoder().decode(bytes)) as unknown;
   } catch {
     return undefined;
   }

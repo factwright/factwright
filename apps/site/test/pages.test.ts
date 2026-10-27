@@ -1065,7 +1065,6 @@ describe('the privacy policy’s part on ideas', () => {
       votes: {
         hash: 'a vote sends only a one-way hash of that ID and the idea’s',
         idea: null,
-        day: 'which is all we keep of it, with the day',
       },
     };
     const policy = said(open('privacy.html').getElementById('ideas'));
@@ -1082,7 +1081,9 @@ describe('the privacy policy’s part on ideas', () => {
     for (const part of [
       'with no account',
       'It isn’t a cookie, and it never leaves your browser',
-      'So we can’t tell who voted, or that two votes came from the same browser.',
+      'which is all we keep of it, not even when it came',
+      'So a vote doesn’t say who cast it, or which other votes came from the same browser.',
+      'Anything we delete can stay in Cloudflare’s own recovery systems for up to 30 days more, and those systems note when each change was made',
       'used only to limit how often one address can suggest or vote',
       'which forgets it within a minute. We don’t keep it.',
       'It’s deleted once the idea is closed',
@@ -1237,6 +1238,11 @@ describe('the roadmap', () => {
     expect(said(doc.querySelector('label[for="idea-email"]'))).toBe('Your email (optional)');
     expect(doc.querySelector('#idea-email')?.hasAttribute('required')).toBe(false);
     expect(doc.querySelector(`[data-suggest-form] a[href="${IDEAS_PRIVACY}"]`)).not.toBeNull();
+  });
+
+  it('says without its script that voting and suggesting need it', () => {
+    const hints = [...open('roadmap.html').querySelectorAll('[data-without-script]')].map(said);
+    expect(hints).toContain('Voting and suggesting need JavaScript, which is off in this browser.');
   });
 
   it('keeps Report a problem an email, and GitHub’s issues for developers', () => {

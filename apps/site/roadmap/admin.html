@@ -61,7 +61,10 @@
       </div>
 
       <section class="admin-section" aria-labelledby="new-title" data-admin-section="new" hidden>
-        <h2 id="new-title">New suggestions</h2>
+        <div class="admin-section-head">
+          <h2 id="new-title">New suggestions</h2>
+          <button class="button button-quiet button-sm" type="button" data-decline-all hidden>Decline all…</button>
+        </div>
         <ol class="admin-list" data-admin-list="new"></ol>
       </section>
 
@@ -130,6 +133,7 @@
           <p class="admin-closing" data-admin-closing hidden></p>
           <p class="admin-dialog-problem" role="alert" data-admin-dialog-problem></p>
           <div class="admin-dialog-buttons">
+            <button class="button button-quiet admin-dialog-delete" type="button" data-edit-delete hidden>Delete…</button>
             <button class="button button-secondary" type="button" data-admin-cancel>Cancel</button>
             <button class="button button-primary" type="submit" data-edit-submit>Approve</button>
           </div>
@@ -156,18 +160,18 @@
         </form>
       </dialog>
 
-      <!-- Declining a suggestion, which deletes it. -->
+      <!-- Declining a suggestion, or all of them, or deleting an idea on the page. -->
       <dialog class="admin-dialog" aria-labelledby="decline-heading" data-admin-dialog="decline">
         <form class="admin-dialog-form" data-admin-form="decline">
           <h2 id="decline-heading" data-decline-heading>Decline this idea?</h2>
-          <p class="admin-dialog-text">
+          <p class="admin-dialog-text" data-decline-text>
             It’s deleted, and never shows on the page. This can’t be undone.
           </p>
           <p class="admin-closing" data-admin-closing hidden></p>
           <p class="admin-dialog-problem" role="alert" data-admin-dialog-problem></p>
           <div class="admin-dialog-buttons">
             <button class="button button-secondary" type="button" data-admin-cancel>Cancel</button>
-            <button class="button button-danger" type="submit">Decline</button>
+            <button class="button button-danger" type="submit" data-decline-submit>Decline</button>
           </div>
         </form>
       </dialog>

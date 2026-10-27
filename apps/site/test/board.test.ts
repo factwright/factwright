@@ -379,12 +379,31 @@ describe('the admin page', () => {
     const merged = await read(await change(`${merge}/merge`, { into: target }));
     expect(merged.ideas).not.toContainEqual(expect.objectContaining({ id: merge }));
     expect(merged.ideas).toContainEqual(expect.objectContaining({ id: target, merged: [merge] }));
-    const declined = await read(await change(`${decline}/decline`, {}));
+    const declined = await read(await change(`${decline}/delete`, {}));
     expect(declined.ideas).not.toContainEqual(expect.objectContaining({ id: decline }));
     await change(`${approve}/forget-email`, {});
     const after = await read(await answer(new Request(`${SITE}/roadmap/admin/api/ideas`)));
     expect(after.ideas).toContainEqual(expect.objectContaining({ id: approve, email: null }));
     expect(after.ideas).toContainEqual(expect.objectContaining({ id: forget }));
+  });
+
+  it('declines every new suggestion it lists at once, and only those', async () => {
+    const { db, answer } = board({ signedIn: true });
+    const kept = await approvedIdea(db);
+    const ids: string[] = [];
+    for (let n = 0; n < 3; n += 1) {
+      const made = await suggest(db, { ...SUGGESTION, email: null });
+      if (made !== 'busy') ids.push(made.id);
+    }
+    const declined = await read(
+      await answer(sent('/roadmap/admin/api/decline-new', { ids: [...ids, kept] })),
+    );
+    expect(declined.ideas).toEqual([expect.objectContaining({ id: kept })]);
+    for (const body of [{}, { ids: 'all' }, { ids: ['not-an-id'] }]) {
+      const response = await answer(sent('/roadmap/admin/api/decline-new', body));
+      expect(response?.status, JSON.stringify(body)).toBe(400);
+    }
+    expect((await answer(new Request(`${SITE}/roadmap/admin/api/decline-new`)))?.status).toBe(405);
   });
 
   it('says what’s wrong with a change, in words for the page to show', async () => {
@@ -428,6 +447,66 @@ describe('the admin page', () => {
     expect((await answer(sent('/roadmap/admin/api/ideas', {})))?.status).toBe(405);
     const [idea] = db.sqlite.prepare('SELECT status FROM ideas').all();
     expect(idea).toEqual({ status: 'considering' });
+  });
+});
+
+describe('what the board takes and gives', () => {
+  it('turns away a body sent in pieces once it’s past what a suggestion needs', async () => {
+    const { db, answer } = board();
+    const pieces = new ReadableStream<Uint8Array>({
+      start(controller) {
+        for (let n = 0; n < 20; n += 1) controller.enqueue(new Uint8Array(1024).fill(32));
+        controller.close();
+      },
+    });
+    const request = new Request(`${SITE}/api/ideas`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Origin: SITE },
+      body: pieces,
+      duplex: 'half',
+    } as RequestInit);
+    expect(request.headers.get('Content-Length')).toBeNull();
+    expect((await answer(request))?.status).toBe(400);
+    expect(db.sqlite.prepare('SELECT COUNT(*) AS count FROM ideas').get()).toEqual({ count: 0 });
+  });
+
+  it('asks for the roadmap page plainly, and passes on any other answer as a copy it can change', async () => {
+    const asked: Request[] = [];
+    /** An answer whose headers can't change, as an asset's in the Workers runtime. */
+    const locked = (status: number) => {
+      const response = new Response(status === 304 ? null : 'Built page', { status });
+      const headers = new Proxy(response.headers, {
+        get: (target, name) => {
+          if (['set', 'append', 'delete'].includes(String(name))) {
+            return () => {
+              throw new TypeError('Can’t modify immutable headers.');
+            };
+          }
+          const value = Reflect.get(target, name, target);
+          return typeof value === 'function' ? value.bind(target) : value;
+        },
+      });
+      Object.defineProperty(response, 'headers', { value: headers });
+      return response;
+    };
+    const site: Board = { db: ideasDb(), admin: async () => 'steve@factwright.com' };
+    for (const [path, status] of [
+      ['/roadmap', 304],
+      ['/roadmap', 404],
+      ['/roadmap/admin', 200],
+    ] as const) {
+      const assets = {
+        fetch: async (request: Request) => {
+          asked.push(request);
+          return locked(status);
+        },
+      };
+      const request = new Request(`${SITE}${path}`, { headers: { 'If-None-Match': '"abc"' } });
+      const response = await answerBoard(request, assets, site);
+      expect(response?.status, path).toBe(status);
+      expect(() => response?.headers.set('X-Frame-Options', 'DENY'), path).not.toThrow();
+    }
+    expect(asked[0]?.headers.get('If-None-Match')).toBeNull();
   });
 });
 

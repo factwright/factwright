@@ -5,7 +5,8 @@ import {
   castVote,
   changeIdea,
   type Db,
-  declineIdea,
+  declineNew,
+  deleteIdea,
   forgetEmail,
   ID,
   LIMITS,
@@ -46,8 +47,14 @@ async function suggested(db: Db, suggestion: Partial<Suggestion> = {}, at?: Date
 }
 
 /** An approved idea's ID, with the votes of the browsers given. */
-async function approved(db: Db, title: string, voters: string[] = [], status = 'considering') {
-  const id = await suggested(db, { title });
+async function approved(
+  db: Db,
+  title: string,
+  voters: string[] = [],
+  status = 'considering',
+  at?: Date,
+) {
+  const id = await suggested(db, { title }, at);
   await changeIdea(db, id, { status: status as 'considering' });
   for (const voter of voters) await castVote(db, id, voteOf(voter, id));
   return id;
@@ -216,7 +223,7 @@ describe('a suggestion', () => {
     const ids: string[] = [];
     for (let n = 0; n < WAITING_MAX; n += 1) ids.push(await suggested(db));
     expect(await suggest(db, IDEA)).toBe('busy');
-    await declineIdea(db, ids[0] ?? '');
+    await deleteIdea(db, ids[0] ?? '');
     expect(await suggest(db, IDEA)).toMatchObject({ id: expect.stringMatching(ID) });
   });
 });
@@ -233,14 +240,44 @@ describe('a vote', () => {
     expect((await shownIdeas(db))[0]?.votes).toBe(1);
   });
 
-  it('keeps only the hash, the idea and the day, with no row numbers', async () => {
+  it('keeps only the hash and the idea, with no row numbers, nor when it came', async () => {
     const db = ideasDb();
     const id = await approved(db, 'Dark mode for PDFs');
-    await castVote(db, id, voteOf('sam', id), new Date('2026-10-27T15:04:05.000Z'));
+    await castVote(db, id, voteOf('sam', id));
     expect(db.sqlite.prepare('SELECT * FROM votes').all()).toEqual([
-      { hash: hashOf('sam', id), idea: id, day: '2026-10-27' },
+      { hash: hashOf('sam', id), idea: id },
     ]);
     expect(() => db.sqlite.prepare('SELECT rowid FROM votes').all()).toThrow();
+  });
+
+  it('keeps each idea’s count by its votes, one at a time, through merges and deletes', async () => {
+    const db = ideasDb();
+    const into = await approved(db, 'Dark mode', ['ana', 'lee']);
+    const from = await approved(db, 'A dark theme', ['sam', 'kim', 'jo']);
+    await castVote(db, into, voteOf('ana', into, false));
+    await mergeIdea(db, from, into);
+    await castVote(db, into, voteOf('sam', into, false, [from]));
+    const counted = () =>
+      db.sqlite
+        .prepare(
+          `SELECT id, votes, (SELECT COUNT(*) FROM votes WHERE idea = ideas.id) AS counted
+           FROM ideas ORDER BY id`,
+        )
+        .all() as { id: string; votes: number; counted: number }[];
+    for (const row of counted()) expect(row.votes, row.id).toBe(row.counted);
+    expect(counted().find((row) => row.id === into)?.votes).toBe(3);
+    await deleteIdea(db, into);
+    expect(counted()).toEqual([]);
+  });
+
+  it('stays off an idea merged away meanwhile, rather than counting where nobody sees it', async () => {
+    const db = ideasDb();
+    const into = await approved(db, 'Dark mode');
+    const from = await approved(db, 'A dark theme');
+    // The page still shows the idea that's just been merged.
+    await mergeIdea(db, from, into);
+    expect(await castVote(db, from, voteOf('sam', from))).toBe('not-found');
+    expect(db.sqlite.prepare('SELECT COUNT(*) AS count FROM votes').get()).toEqual({ count: 0 });
   });
 
   it('is open on a new suggestion, for its suggester’s own, and on the roadmap until it ships', async () => {
@@ -403,16 +440,36 @@ describe('the admin page’s changes', () => {
     expect(await shownIdeas(db)).toEqual([expect.objectContaining({ id, votes: 1 })]);
   });
 
-  it('decline only a new suggestion, deleting it with its vote', async () => {
+  it('delete a suggestion, or an idea on the page, with its votes and what was merged into it', async () => {
     const db = ideasDb();
     const fresh = await suggested(db, { email: 'sam@example.com' });
     await castVote(db, fresh, voteOf('sam', fresh));
-    const idea = await approved(db, 'Dark mode');
-    expect(await declineIdea(db, idea)).toBe('not-found');
-    expect(await declineIdea(db, fresh)).toBe('declined');
-    expect(await declineIdea(db, fresh)).toBe('not-found');
+    const idea = await approved(db, 'Dark mode', ['ana']);
+    const merged = await approved(db, 'A dark theme', ['lee']);
+    const kept = await approved(db, 'Import jobs', ['kim']);
+    await mergeIdea(db, merged, idea);
+    expect(await deleteIdea(db, fresh)).toBe('deleted');
+    expect(await deleteIdea(db, fresh)).toBe('not-found');
+    expect(await deleteIdea(db, merged)).toBe('not-found');
+    expect(await deleteIdea(db, idea)).toBe('deleted');
+    expect(db.sqlite.prepare('SELECT id FROM ideas').all()).toEqual([{ id: kept }]);
+    expect(db.sqlite.prepare('SELECT idea FROM votes').all()).toEqual([{ idea: kept }]);
+  });
+
+  it('decline every new suggestion they list at once, and only those still new', async () => {
+    const db = ideasDb();
+    const flood: string[] = [];
+    for (let n = 0; n < 120; n += 1) flood.push(await suggested(db, { title: `Spam ${n}` }));
+    const approvedMeanwhile = flood[7] ?? '';
+    await changeIdea(db, approvedMeanwhile, { status: 'considering' });
+    await castVote(db, flood[3] ?? '', voteOf('sam', flood[3] ?? ''));
+    const later = await suggested(db, { title: 'Came in after' });
+    expect(await declineNew(db, flood)).toBe(119);
+    expect((await allIdeas(db)).map((idea) => idea.id).sort()).toEqual(
+      [approvedMeanwhile, later].sort(),
+    );
     expect(db.sqlite.prepare('SELECT COUNT(*) AS count FROM votes').get()).toEqual({ count: 0 });
-    expect((await allIdeas(db)).map((each) => each.id)).toEqual([idea]);
+    expect(await declineNew(db, [])).toBe(0);
   });
 
   it('forget an email when asked', async () => {
@@ -421,6 +478,35 @@ describe('the admin page’s changes', () => {
     expect(await forgetEmail(db, id)).toBe('forgotten');
     expect((await allIdeas(db))[0]?.email).toBeNull();
     expect(await forgetEmail(db, crypto.randomUUID())).toBe('not-found');
+  });
+
+  it('turn away a change to an idea merged away meanwhile, and two merges into each other', async () => {
+    const db = ideasDb();
+    const first = await approved(db, 'Dark mode');
+    const second = await approved(db, 'A dark theme');
+    // Both admin tabs read the two ideas before either merges.
+    const before = db.sqlite.prepare('SELECT * FROM ideas').all();
+    const stale: Db = {
+      prepare: (query) =>
+        query.startsWith('SELECT * FROM ideas WHERE id')
+          ? ({
+              bind: (...ids: unknown[]) => ({
+                first: async () => before.find((row) => row.id === ids[0]) ?? null,
+                all: async () => ({ results: before.filter((row) => ids.includes(row.id)) }),
+              }),
+            } as unknown as ReturnType<Db['prepare']>)
+          : db.prepare(query),
+      batch: (statements) => db.batch(statements),
+    };
+    expect(await mergeIdea(db, first, second)).toBe('merged');
+    expect(await mergeIdea(stale, second, first)).toBe('not-found');
+    expect(await changeIdea(stale, first, { status: 'planned' })).toBe('not-found');
+    expect(
+      db.sqlite.prepare('SELECT id, status, merged_into FROM ideas ORDER BY status').all(),
+    ).toEqual([
+      { id: second, status: 'considering', merged_into: null },
+      { id: first, status: 'merged', merged_into: second },
+    ]);
   });
 
   it('can’t change a merged idea', async () => {
@@ -436,9 +522,9 @@ describe('the admin page’s changes', () => {
 describe('the lists', () => {
   it('show the page’s ideas, most votes first, then the newest, and never an email', async () => {
     const db = ideasDb();
-    const quiet = await approved(db, 'Quiet', [], 'planned');
-    const loved = await approved(db, 'Loved', ['sam', 'ana']);
-    const newer = await approved(db, 'Newer', [], 'in-progress');
+    const quiet = await approved(db, 'Quiet', [], 'planned', new Date('2026-10-20T00:00:00Z'));
+    const loved = await approved(db, 'Loved', ['sam', 'ana'], 'considering');
+    const newer = await approved(db, 'Newer', [], 'in-progress', new Date('2026-10-21T00:00:00Z'));
     await suggested(db, { title: 'Waiting', email: 'sam@example.com' });
     const shown = await shownIdeas(db);
     expect(shown.map((idea) => idea.id)).toEqual([loved, newer, quiet]);

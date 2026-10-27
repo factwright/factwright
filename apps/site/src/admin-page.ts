@@ -11,6 +11,13 @@ import type { AdminIdea, Move, Status } from '../worker/ideas.ts';
 /** The admin API, under the page, which Cloudflare Access covers too (worker/board.ts). */
 export const ADMIN_API = '/roadmap/admin/api/ideas';
 
+/** Where the admin page declines every new suggestion it shows at once. */
+export const DECLINE_NEW = '/roadmap/admin/api/decline-new';
+
+/** What the page says once Access's sign-in has run out, which a reload starts again. */
+export const SIGNED_OUT =
+  'Your Cloudflare Access sign-in has run out. Reload the page to sign in again.';
+
 /** How each status reads on the page. */
 const STATUS_WORDS: Readonly<Record<Status, string>> = {
   new: 'New',
@@ -42,17 +49,26 @@ export interface AdminBrowser {
   send: (path: string, body: unknown) => Promise<Response>;
 }
 
+/**
+ * The browser's own requests. Neither follows a redirect: Access answers one whose sign-in has
+ * run out by sending it to its sign-in page, on another site, which the page can't read.
+ */
 export function adminBrowser(): AdminBrowser {
   return {
-    load: () => fetch(ADMIN_API, { headers: { Accept: 'application/json' } }),
+    load: () => fetch(ADMIN_API, { headers: { Accept: 'application/json' }, redirect: 'manual' }),
     send: (path, body) =>
       fetch(path, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
+        redirect: 'manual',
       }),
   };
 }
+
+/** Whether an answer says Access's sign-in has run out: its redirect, or the Worker's refusal. */
+const signedOut = (response: Response) =>
+  response.type === 'opaqueredirect' || response.status === 401 || response.status === 403;
 
 /** What the admin API answers with: who's signed in, and every idea. */
 interface Everything {
@@ -149,6 +165,9 @@ export async function adminPage(
     merge: find<HTMLDialogElement>('[data-admin-dialog="merge"]'),
     decline: find<HTMLDialogElement>('[data-admin-dialog="decline"]'),
   };
+  const declineAll = find<HTMLButtonElement>('[data-decline-all]');
+  // Once the sign-in has run out, trying again means reloading the page, to sign in.
+  let reloadToRetry = false;
 
   /** Shows every idea afresh, each in its list. */
   function show(everything: Everything): void {
@@ -171,6 +190,7 @@ export async function adminPage(
     }
     const notPlanned = find('[data-admin-section="not-planned"]');
     if (notPlanned) notPlanned.hidden = off === 0;
+    if (declineAll) declineAll.hidden = waiting < 2;
     for (const list of root.querySelectorAll<HTMLElement>('[data-admin-list]')) {
       const status = list.dataset.adminList as Status;
       const listed = ideas.filter((idea) => idea.status === status);
@@ -224,7 +244,7 @@ export async function adminPage(
     if (idea.status === 'new') {
       action('Approve…', 'button-primary', () => openEdit(idea));
       action('Merge…', 'button-secondary', () => openMerge(idea));
-      action('Decline…', 'button-quiet', () => openDecline(idea));
+      action('Decline…', 'button-quiet', () => openRemove('decline', idea));
     } else {
       action('Change…', 'button-secondary', () => openEdit(idea));
       action('Merge…', 'button-secondary', () => openMerge(idea));
@@ -238,17 +258,21 @@ export async function adminPage(
     const span = made('span', 'admin-email');
     const link = made('a', '', idea.email ?? '');
     link.href = writeTo(idea);
-    const forget = made('button', 'admin-forget', 'Forget');
+    const forget = made('button', 'admin-forget');
     forget.type = 'button';
-    forget.setAttribute('aria-label', `Forget ${idea.email}`);
+    // What it says, and for screen readers, whose email it forgets.
+    const say = (words: string) =>
+      forget.replaceChildren(words, made('span', 'visually-hidden', ` ${idea.email}`));
+    say('Forget');
     let timer = 0;
     forget.addEventListener('click', async () => {
       if (!forget.classList.contains('is-asking')) {
         forget.classList.add('is-asking');
-        forget.textContent = 'Click again to forget';
+        say('Click again to forget');
+        note('Click Forget again to forget their email.');
         timer = window.setTimeout(() => {
           forget.classList.remove('is-asking');
-          forget.textContent = 'Forget';
+          say('Forget');
         }, CONFIRM_MS);
         return;
       }
@@ -269,6 +293,7 @@ export async function adminPage(
   async function change(path: string, body: unknown): Promise<true | string> {
     try {
       const response = await browser.send(path, body);
+      if (signedOut(response)) return SIGNED_OUT;
       if (!response.ok) return (await problemIn(response)) ?? 'That didn’t save. Try again.';
       show((await response.json()) as Everything);
       return true;
@@ -337,8 +362,11 @@ export async function adminPage(
     const approving = idea.status === 'new';
     const heading = dialog.querySelector('[data-edit-heading]');
     const submit = dialog.querySelector('[data-edit-submit]');
+    const remove = dialog.querySelector<HTMLElement>('[data-edit-delete]');
     if (heading) heading.textContent = approving ? 'Approve this idea' : 'Change this idea';
     if (submit) submit.textContent = approving ? 'Approve' : 'Save';
+    // A new one is declined from its card instead.
+    if (remove) remove.hidden = approving;
     const titleField = field('title');
     const words = field('words');
     const status = field('status');
@@ -368,6 +396,11 @@ export async function adminPage(
   }
 
   dialogs.edit?.querySelector('[name="status"]')?.addEventListener('change', showStatus);
+  dialogs.edit?.querySelector('[data-edit-delete]')?.addEventListener('click', () => {
+    if (!dialogs.edit || !editing) return;
+    closeDialog(dialogs.edit);
+    openRemove('delete', editing);
+  });
   dialogs.edit?.querySelector('form')?.addEventListener('submit', (event) => {
     event.preventDefault();
     const dialog = dialogs.edit;
@@ -441,17 +474,49 @@ export async function adminPage(
     );
   });
 
-  /** Declining a suggestion, once Steve's sure. */
-  let declining: AdminIdea | null = null;
-  function openDecline(idea: AdminIdea) {
+  /**
+   * Deleting, once Steve's sure: declining a new suggestion, deleting an idea on the page, as when
+   * whoever suggested it asks, or declining every new suggestion at once, as after a flood.
+   */
+  let removing:
+    | { mode: 'decline' | 'delete'; idea: AdminIdea }
+    | { mode: 'all'; ids: string[] }
+    | null = null;
+  function openRemove(mode: 'decline' | 'delete' | 'all', idea?: AdminIdea) {
     const dialog = dialogs.decline;
     if (!dialog) return;
-    declining = idea;
-    const heading = dialog.querySelector('[data-decline-heading]');
-    if (heading) heading.textContent = `Decline “${idea.title}”?`;
-    const said = dialog.querySelector('[data-admin-dialog-problem]');
-    if (said) said.textContent = '';
-    closingNote(dialog, idea, 'once it’s declined');
+    const waiting = ideas.filter((each) => each.status === 'new').map((each) => each.id);
+    removing = mode === 'all' ? { mode, ids: waiting } : idea ? { mode, idea } : null;
+    if (!removing) return;
+    const words = {
+      decline: {
+        heading: `Decline “${idea?.title}”?`,
+        text: 'It’s deleted, and never shows on the page. This can’t be undone.',
+        button: 'Decline',
+      },
+      delete: {
+        heading: `Delete “${idea?.title}”?`,
+        text: 'It leaves the page, and it’s deleted with its votes. This can’t be undone.',
+        button: 'Delete',
+      },
+      all: {
+        heading: `Decline all ${waiting.length} new suggestions?`,
+        text: 'They’re deleted, and never show on the page. Approve or merge any you’d like to keep first. This can’t be undone.',
+        button: `Decline all ${waiting.length}`,
+      },
+    }[mode];
+    const set = (selector: string, text: string) => {
+      const element = dialog.querySelector(selector);
+      if (element) element.textContent = text;
+    };
+    set('[data-decline-heading]', words.heading);
+    set('[data-decline-text]', words.text);
+    set('[data-decline-submit]', words.button);
+    set('[data-admin-dialog-problem]', '');
+    const closing = dialog.querySelector<HTMLElement>('[data-admin-closing]');
+    if (idea && mode !== 'all') {
+      closingNote(dialog, idea, mode === 'decline' ? 'once it’s declined' : 'once it’s deleted');
+    } else if (closing) closing.hidden = true;
     openDialog(dialog);
     dialog.querySelector<HTMLButtonElement>('[data-admin-cancel]')?.focus();
   }
@@ -459,9 +524,28 @@ export async function adminPage(
   dialogs.decline?.querySelector('form')?.addEventListener('submit', (event) => {
     event.preventDefault();
     const dialog = dialogs.decline;
-    if (!dialog || !declining) return;
-    void save(dialog, `${ADMIN_API}/${declining.id}/decline`, {}, 'Declined, and deleted.', '');
+    if (!dialog || !removing) return;
+    if (removing.mode === 'all') {
+      const count = removing.ids.length;
+      void save(
+        dialog,
+        DECLINE_NEW,
+        { ids: removing.ids },
+        `Declined ${count} ${count === 1 ? 'suggestion' : 'suggestions'}.`,
+        '',
+      );
+      return;
+    }
+    void save(
+      dialog,
+      `${ADMIN_API}/${removing.idea.id}/delete`,
+      {},
+      removing.mode === 'decline' ? 'Declined, and deleted.' : 'Deleted.',
+      '',
+    );
   });
+
+  declineAll?.addEventListener('click', () => openRemove('all'));
 
   for (const dialog of Object.values(dialogs)) {
     dialog
@@ -474,13 +558,9 @@ export async function adminPage(
     if (summary) summary.textContent = 'Loading the ideas…';
     try {
       const response = await browser.load();
-      if (!response.ok) {
-        throw new Error(
-          response.status === 403
-            ? 'Sign in through Cloudflare Access to see the ideas.'
-            : ((await problemIn(response)) ?? 'The ideas couldn’t load.'),
-        );
-      }
+      reloadToRetry = signedOut(response);
+      if (reloadToRetry) throw new Error(SIGNED_OUT);
+      if (!response.ok) throw new Error('The ideas couldn’t load. Try again in a minute.');
       show((await response.json()) as Everything);
     } catch (error) {
       if (summary) summary.textContent = '';
@@ -494,6 +574,9 @@ export async function adminPage(
     }
   }
 
-  find('[data-admin-retry]')?.addEventListener('click', () => void load());
+  find('[data-admin-retry]')?.addEventListener('click', () => {
+    if (reloadToRetry) window.location.reload();
+    else void load();
+  });
   await load();
 }

@@ -356,45 +356,49 @@ export interface Voted {
   votes: number;
 }
 
+/** The statuses that take votes, as SQL's IN takes them, and their values to bind. */
+const VOTABLE_IN = VOTABLE.map(() => '?').join(', ');
+
 /**
  * Casts a browser's vote for an idea, or takes it back. A browser has one vote per idea: its own,
  * or one that came along when an idea it voted for was merged into this one, which counts as the
- * same. Casting it again, or taking back one that isn't there, changes nothing.
+ * same. Casting it again, or taking back one that isn't there, changes nothing. It all happens in
+ * one batch, which checks the idea still takes votes, so a merge or a move along at the same
+ * moment can't leave a vote on an idea that's gone.
  */
 export async function castVote(
   db: Db,
   id: string,
   { vote, hash, moved }: Vote,
-  at = new Date(),
 ): Promise<Voted | 'not-found' | 'closed'> {
-  const idea = await db.prepare('SELECT status FROM ideas WHERE id = ?').bind(id).first<Row>();
-  if (!idea || idea.status === 'merged') return 'not-found';
-  if (!VOTABLE.includes(idea.status)) return 'closed';
   const hashes = [hash, ...moved];
   const any = hashes.map(() => '?').join(', ');
+  const takes = `EXISTS (SELECT 1 FROM ideas WHERE id = ? AND status IN (${VOTABLE_IN}))`;
   const change = vote
     ? db
         .prepare(
-          `INSERT INTO votes (hash, idea, day) SELECT ?, ?, ?
-           WHERE NOT EXISTS (SELECT 1 FROM votes WHERE idea = ? AND hash IN (${any}))
+          `INSERT INTO votes (hash, idea) SELECT ?, ?
+           WHERE ${takes} AND NOT EXISTS (SELECT 1 FROM votes WHERE idea = ? AND hash IN (${any}))
            ON CONFLICT (hash) DO NOTHING`,
         )
-        .bind(hash, id, stamp(at).slice(0, 10), id, ...hashes)
-    : db.prepare(`DELETE FROM votes WHERE idea = ? AND hash IN (${any})`).bind(id, ...hashes);
-  const [, , after] = await db.batch([
+        .bind(hash, id, id, ...VOTABLE, id, ...hashes)
+    : db
+        .prepare(`DELETE FROM votes WHERE idea = ? AND hash IN (${any}) AND ${takes}`)
+        .bind(id, ...hashes, id, ...VOTABLE);
+  const [, after] = await db.batch([
     change,
     db
-      .prepare('UPDATE ideas SET votes = (SELECT COUNT(*) FROM votes WHERE idea = ?) WHERE id = ?')
-      .bind(id, id),
-    db
       .prepare(
-        `SELECT votes, EXISTS (SELECT 1 FROM votes WHERE idea = ? AND hash IN (${any})) AS voted
+        `SELECT status, votes,
+           EXISTS (SELECT 1 FROM votes WHERE idea = ? AND hash IN (${any})) AS voted
          FROM ideas WHERE id = ?`,
       )
       .bind(id, ...hashes, id),
   ]);
-  const row = after?.results[0] as { votes: number; voted: number } | undefined;
-  return { voted: row?.voted === 1, votes: row?.votes ?? 0 };
+  const idea = after?.results[0] as { status: Status; votes: number; voted: number } | undefined;
+  if (!idea || idea.status === 'merged') return 'not-found';
+  if (!VOTABLE.includes(idea.status)) return 'closed';
+  return { voted: idea.voted === 1, votes: idea.votes };
 }
 
 /**
@@ -415,7 +419,7 @@ export async function changeIdea(
   if (status === 'shipped' && !version) {
     return { problem: 'Say which version it shipped in, such as 0.19.0.' };
   }
-  await db
+  const { meta } = await db
     .prepare(
       `UPDATE ideas SET title = ?, words = ?, status = ?, version = ?,
          email = CASE WHEN ? THEN NULL ELSE email END, updated_at = ?
@@ -431,13 +435,15 @@ export async function changeIdea(
       id,
     )
     .run();
-  return 'changed';
+  // Merged meanwhile, from another tab.
+  return meta.changes ? 'changed' : 'not-found';
 }
 
 /**
  * Merges an idea into another that's been approved, which takes its votes and anything merged
  * into it before. The merged idea leaves the page, and whoever suggested it's email is forgotten.
- * A browser that voted for both counts twice: the votes can't tell it's the same one.
+ * A browser that voted for both counts twice: the votes can't tell it's the same one. Each step
+ * checks both ideas again, so two merges at once, such as each into the other, can't both happen.
  */
 export async function mergeIdea(
   db: Db,
@@ -456,38 +462,72 @@ export async function mergeIdea(
   if (!target || target.status === 'merged' || target.status === 'new') {
     return { problem: 'Merge it into an idea you’ve approved.' };
   }
-  await db.batch([
-    db.prepare('UPDATE votes SET idea = ? WHERE idea = ?').bind(into, id),
-    db.prepare('UPDATE ideas SET merged_into = ? WHERE merged_into = ?').bind(into, id),
+  const both = `EXISTS (SELECT 1 FROM ideas WHERE id = ?1 AND status != 'merged')
+    AND EXISTS (SELECT 1 FROM ideas WHERE id = ?2 AND status NOT IN ('new', 'merged'))`;
+  const [, , merged] = await db.batch([
+    db.prepare(`UPDATE votes SET idea = ?2 WHERE idea = ?1 AND ${both}`).bind(id, into),
+    db
+      .prepare(`UPDATE ideas SET merged_into = ?2 WHERE merged_into = ?1 AND ${both}`)
+      .bind(id, into),
     db
       .prepare(
-        `UPDATE ideas SET status = 'merged', merged_into = ?, version = NULL, email = NULL,
-           votes = 0, updated_at = ?
-         WHERE id = ?`,
+        `UPDATE ideas SET status = 'merged', merged_into = ?2, version = NULL, email = NULL,
+           updated_at = ?3
+         WHERE id = ?1 AND ${both}`,
       )
-      .bind(into, stamp(at), id),
+      .bind(id, into, stamp(at)),
     db
       .prepare(
-        `UPDATE ideas SET votes = (SELECT COUNT(*) FROM votes WHERE idea = ?), updated_at = ?
-         WHERE id = ?`,
+        `UPDATE ideas SET updated_at = ?3
+         WHERE id = ?2 AND EXISTS (SELECT 1 FROM ideas WHERE id = ?1 AND merged_into = ?2)`,
       )
-      .bind(into, stamp(at), into),
+      .bind(id, into, stamp(at)),
   ]);
-  return 'merged';
+  return merged?.meta.changes ? 'merged' : 'not-found';
 }
 
-/** Declines a new suggestion: it's deleted, with its email and its suggester's vote. */
-export async function declineIdea(db: Db, id: string): Promise<'declined' | 'not-found'> {
-  const [, deleted] = await db.batch([
-    db
-      .prepare(
-        `DELETE FROM votes WHERE idea = ?
-         AND EXISTS (SELECT 1 FROM ideas WHERE id = ? AND status = 'new')`,
-      )
-      .bind(id, id),
-    db.prepare("DELETE FROM ideas WHERE id = ? AND status = 'new'").bind(id),
+/**
+ * Deletes an idea: a new suggestion Steve declines, or one on the page, as when whoever suggested
+ * it asks. Its votes go with it, its email, and the ideas merged into it, which only held their
+ * votes' place.
+ */
+export async function deleteIdea(db: Db, id: string): Promise<'deleted' | 'not-found'> {
+  const live = "EXISTS (SELECT 1 FROM ideas WHERE id = ?1 AND status != 'merged')";
+  const [, , deleted] = await db.batch([
+    db.prepare(`DELETE FROM votes WHERE idea = ?1 AND ${live}`).bind(id),
+    db.prepare(`DELETE FROM ideas WHERE merged_into = ?1 AND ${live}`).bind(id),
+    db.prepare("DELETE FROM ideas WHERE id = ?1 AND status != 'merged'").bind(id),
   ]);
-  return deleted?.meta.changes ? 'declined' : 'not-found';
+  return deleted?.meta.changes ? 'deleted' : 'not-found';
+}
+
+/** How many ideas one statement names, well within D1's 100 values to a statement. */
+const AT_ONCE = 90;
+
+/**
+ * Declines the new suggestions the admin page shows, all at once, as after a flood of them. Only
+ * those still new go: one approved meanwhile stays. Gives how many were declined.
+ */
+export async function declineNew(db: Db, ids: readonly string[]): Promise<number> {
+  const statements: Statement[] = [];
+  for (let start = 0; start < ids.length; start += AT_ONCE) {
+    const some = ids.slice(start, start + AT_ONCE);
+    const any = some.map(() => '?').join(', ');
+    statements.push(
+      db
+        .prepare(
+          `DELETE FROM votes WHERE idea IN (${any})
+           AND idea IN (SELECT id FROM ideas WHERE status = 'new')`,
+        )
+        .bind(...some),
+      db.prepare(`DELETE FROM ideas WHERE id IN (${any}) AND status = 'new'`).bind(...some),
+    );
+  }
+  if (statements.length === 0) return 0;
+  const results = await db.batch(statements);
+  return results
+    .filter((_, index) => index % 2 === 1)
+    .reduce((sum, each) => sum + each.meta.changes, 0);
 }
 
 /** Forgets the email someone left with an idea, as when they ask. */
