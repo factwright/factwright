@@ -4,10 +4,13 @@ Notable changes to Factwright, newest first. The format follows [Keep a Changelo
 
 ## Unreleased
 
+## 0.18.1 - 2026-10-27
+
 ### Changed
 - An update that's ready shows across the window, under the top bar: "Please update Factwright", with What's new, Remind me tomorrow and Restart now. Remind me tomorrow puts it off for the rest of the day, while the update waits in the sidebar's card, as it did before, and installs the next time you quit. A newer update shows again straight away. While an update downloads, the sidebar's card says how far it's got.
 - Factwright looks for an update every 10 minutes while it's open, and as soon as your computer wakes, but no longer also each time you switch back to it, so each open copy looks about once every 10 minutes. A new version shows within 10 minutes of coming out.
 - downloads.factwright.com counts the update checks and updates installed copies already make, so we can see how many copies are in use: each check by whether it's from a Mac or Windows, and each update picked up by computer and version, with nothing about the copy or you, not your IP address nor anything that could tell one copy from another, kept three months. The app sends nothing new for it. The privacy policy's Updates part says so, from October 27, 2026, and `pnpm --filter @factwright/site stats` shows the copies open now and each day, and the copies that picked up each version.
+- Minor and patch updates to the libraries the app is built on, React and React DOM 19.3.1, docx 9.12 and lucide's icons among them.
 
 ### Fixed
 - Once an update was waiting to be installed, Factwright stopped looking for newer ones, so when another version came out meanwhile, restarting brought the one that was waiting, and a second restart the newest. It goes on looking while an update waits, and a newer one downloads in its place, so one restart brings the latest. This starts with this version: an update that was already waiting in an older one still takes the two restarts.
