@@ -25,6 +25,24 @@
   // Each download, by computer and version only, for the stats command (scripts/stats.ts).
   // Analytics Engine makes the dataset on its first write, and keeps each count for 3 months.
   "analytics_engine_datasets": [{ "binding": "DOWNLOADS", "dataset": "factwright_downloads" }],
+  // The ideas board at /roadmap (worker/board.ts): suggestions, and votes with no account. Make the
+  // database and apply its migrations before the first deploy that has it, as README.md says.
+  "d1_databases": [
+    { "binding": "IDEAS", "database_name": "factwright-feedback", "migrations_dir": "migrations" }
+  ],
+  // How often one address can suggest an idea, and vote, each minute. Cloudflare forgets the
+  // address after that minute, and the Worker keeps none.
+  "ratelimits": [
+    { "name": "SUGGEST_LIMIT", "namespace_id": "190101", "simple": { "limit": 3, "period": 60 } },
+    { "name": "VOTE_LIMIT", "namespace_id": "190102", "simple": { "limit": 30, "period": 60 } }
+  ],
+  // The Cloudflare Access application in front of /roadmap/admin, "Factwright Admin" in the
+  // account's Zero Trust: the team's domain and the application's audience (AUD) tag. Without
+  // both, the admin page lets no one in.
+  "vars": {
+    "ACCESS_TEAM_DOMAIN": "neatifai.cloudflareaccess.com",
+    "ACCESS_AUD": "91b5d37d3a410869c27c41c06b5b4abea289b76b05aeb7d620cda6e801ae5da3"
+  },
   // Logs keep only what the Worker writes itself. Cloudflare's log of every request is off.
   "observability": {
     "enabled": true,

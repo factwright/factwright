@@ -1,0 +1,429 @@
+/*
+ * The ideas board's admin page, for Steve alone: new suggestions, the ideas on the page by where
+ * they stand, and the dialogs that approve, change, merge and decline them. Only its own script
+ * loads this.
+ */
+
+.admin-you {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-left: auto;
+  min-width: 0;
+}
+
+.admin-you-name {
+  overflow: hidden;
+  color: var(--fw-muted);
+  font-size: 14px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.admin-you .button .icon {
+  width: 16px;
+  height: 16px;
+}
+
+@media (max-width: 560px) {
+  .admin-you-name {
+    display: none;
+  }
+}
+
+.admin {
+  max-width: 920px;
+  padding-block: clamp(40px, 6vw, 72px) clamp(72px, 10vw, 120px);
+}
+
+.admin-head h1 {
+  font-family: var(--font-display);
+  font-size: clamp(32px, 4.6vw, 48px);
+  font-weight: 700;
+  line-height: 1.06;
+  letter-spacing: -0.035em;
+}
+
+.admin-head h1:focus {
+  outline: none;
+}
+
+.admin-lede {
+  margin-top: 12px;
+  color: var(--fw-muted);
+  font-size: 17px;
+}
+
+.admin-summary {
+  display: inline-flex;
+  margin-top: 20px;
+  padding: 6px 12px;
+  border-radius: var(--fw-radius-full);
+  background: var(--fw-sunken);
+  color: var(--fw-text);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.admin-summary:empty {
+  display: none;
+}
+
+.admin-problem {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px 20px;
+  margin-top: 32px;
+  padding: 16px 18px;
+  border: 1px solid color-mix(in srgb, var(--fw-bad) 35%, var(--fw-border));
+  border-radius: 14px;
+  background: var(--fw-bad-soft);
+  color: var(--fw-text);
+  font-size: 15.5px;
+}
+
+.admin-problem[hidden],
+.admin-section[hidden] {
+  display: none;
+}
+
+.admin-section {
+  margin-top: clamp(44px, 6vw, 64px);
+}
+
+.admin-section h2 {
+  font-family: var(--font-display);
+  font-size: 24px;
+  font-weight: 680;
+  letter-spacing: -0.02em;
+}
+
+.admin-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.admin-section-note {
+  margin-top: 4px;
+  color: var(--fw-muted);
+  font-size: 15px;
+}
+
+.admin-group {
+  margin-top: 28px;
+}
+
+.admin-group h3 {
+  margin-bottom: 12px;
+  color: var(--fw-muted);
+  font-size: 13px;
+  font-weight: 650;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.admin-list {
+  display: grid;
+  gap: 10px;
+}
+
+.admin-section > .admin-list {
+  margin-top: 16px;
+}
+
+.admin-idea {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 16px 24px;
+  align-items: start;
+  padding: 18px 20px;
+  border: 1px solid var(--fw-border);
+  border-radius: 16px;
+  background: var(--fw-surface);
+}
+
+.admin-idea-text {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.admin-idea-title {
+  margin: 0;
+  font-size: 16.5px;
+  font-weight: 650;
+  line-height: 1.35;
+  letter-spacing: -0.01em;
+  overflow-wrap: anywhere;
+}
+
+.admin-idea-words {
+  color: var(--fw-muted);
+  font-size: 15px;
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+}
+
+.admin-idea-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  margin-top: 4px;
+  color: var(--fw-muted);
+  font-size: 13.5px;
+}
+
+.admin-dot {
+  opacity: 0.6;
+}
+
+.admin-shipped {
+  padding: 1px 8px;
+  border-radius: var(--fw-radius-full);
+  background: var(--fw-ok-soft);
+  color: var(--fw-ok);
+  font-weight: 600;
+}
+
+.admin-email {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.admin-email a,
+.admin-closing a {
+  color: var(--fw-accent-text);
+  font-weight: 550;
+  text-underline-offset: 3px;
+  overflow-wrap: anywhere;
+}
+
+.admin-forget {
+  padding: 2px 8px;
+  border: 1px solid var(--fw-border);
+  border-radius: var(--fw-radius-full);
+  background: none;
+  color: var(--fw-muted);
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 550;
+  cursor: pointer;
+}
+
+.admin-forget:hover,
+.admin-forget.is-asking {
+  border-color: color-mix(in srgb, var(--fw-bad) 45%, var(--fw-border));
+  color: var(--fw-bad);
+}
+
+.admin-idea-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+/* In a list of them, Approve stands out by its color alone. */
+.admin-idea-actions .button-primary {
+  box-shadow: none;
+}
+
+.admin-empty {
+  padding: 16px 18px;
+  border: 1px dashed var(--fw-control-border);
+  border-radius: 14px;
+  color: var(--fw-muted);
+  font-size: 14.5px;
+}
+
+@media (max-width: 680px) {
+  .admin-idea {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .admin-idea-actions {
+    justify-content: flex-start;
+  }
+}
+
+/* A quiet button, for what's not done often, and one for what can't be undone. */
+.button-quiet {
+  border-color: transparent;
+  background: none;
+  color: var(--fw-muted);
+  font-weight: 550;
+}
+
+.button-quiet:hover {
+  background: var(--fw-bad-soft);
+  color: var(--fw-bad);
+}
+
+/* The page's own background for its words, which reads on the red in either theme. */
+.button-danger {
+  border-color: var(--fw-bad);
+  background: var(--fw-bad);
+  color: var(--fw-bg);
+}
+
+.button-danger:hover {
+  border-color: color-mix(in srgb, var(--fw-bad) 85%, #000);
+  background: color-mix(in srgb, var(--fw-bad) 85%, #000);
+}
+
+.button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+/* The dialogs, over the page. */
+.admin-dialog {
+  width: min(560px, calc(100% - 32px));
+  max-height: calc(100% - 48px);
+  padding: 0;
+  border: 1px solid var(--fw-border);
+  border-radius: 20px;
+  background: var(--fw-surface);
+  box-shadow: var(--shadow-window);
+  color: var(--fw-text);
+}
+
+.admin-dialog::backdrop {
+  background: rgb(17 17 16 / 0.42);
+  -webkit-backdrop-filter: blur(3px);
+  backdrop-filter: blur(3px);
+}
+
+.admin-dialog-form {
+  display: grid;
+  gap: 18px;
+  padding: 24px 26px 22px;
+}
+
+.admin-dialog-form h2 {
+  font-size: 20px;
+  font-weight: 680;
+  line-height: 1.3;
+  letter-spacing: -0.015em;
+  overflow-wrap: anywhere;
+}
+
+.admin-dialog-text {
+  margin-top: -8px;
+  color: var(--fw-muted);
+  font-size: 15px;
+}
+
+.admin-field {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.admin-field[hidden] {
+  display: none;
+}
+
+.admin-field-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.admin-field label {
+  font-size: 14px;
+  font-weight: 650;
+}
+
+.admin-field input,
+.admin-field textarea,
+.admin-field select {
+  width: 100%;
+  padding: 9px 12px;
+  border: 1px solid var(--fw-control-border);
+  border-radius: 10px;
+  background: var(--fw-surface);
+  color: var(--fw-text);
+  font: inherit;
+  font-size: 15px;
+  line-height: 1.45;
+}
+
+.admin-field textarea {
+  resize: vertical;
+}
+
+.admin-field input:focus-visible,
+.admin-field textarea:focus-visible,
+.admin-field select:focus-visible {
+  border-color: var(--fw-accent);
+  outline: 2px solid var(--fw-accent);
+  outline-offset: 1px;
+}
+
+.admin-closing {
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: var(--fw-need-soft);
+  color: var(--fw-text);
+  font-size: 14.5px;
+  overflow-wrap: anywhere;
+}
+
+.admin-closing[hidden] {
+  display: none;
+}
+
+.admin-dialog-problem {
+  color: var(--fw-bad);
+  font-size: 14.5px;
+  font-weight: 550;
+}
+
+.admin-dialog-problem:empty {
+  display: none;
+}
+
+.admin-dialog-buttons {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 4px;
+}
+
+.admin-dialog-buttons .button {
+  height: 42px;
+  padding: 0 18px;
+}
+
+/* Deleting sits apart from the dialog's own buttons, at its other end. */
+.admin-dialog-buttons .admin-dialog-delete {
+  margin-right: auto;
+  padding: 0 12px;
+}
+
+.admin-dialog-delete[hidden] {
+  display: none;
+}
+
+.admin-dialog-form[aria-busy="true"] .admin-dialog-buttons .button {
+  opacity: 0.72;
+  cursor: progress;
+}
+
+@media (max-width: 520px) {
+  .admin-field-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .admin-dialog-form {
+    padding: 20px 18px 18px;
+  }
+}

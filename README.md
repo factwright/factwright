@@ -116,6 +116,8 @@ Each folder's README says how its part works and how to run it. A copy you build
 ## Contributing
 Pull requests aren't open yet, but bug reports and ideas are welcome as issues. See [CONTRIBUTING.md](CONTRIBUTING.md). Please report security problems privately, as [SECURITY.md](SECURITY.md) explains.
 
+Not on GitHub? Suggest a feature, or vote for one, on [Factwright's roadmap](https://factwright.com/roadmap), with no account. To report a problem, choose Report a problem in Factwright's sidebar, which drafts an email to steve@factwright.com.
+
 ## License
 [AGPL-3.0](LICENSE). Copyright © 2026 Neatifai LLC.
 

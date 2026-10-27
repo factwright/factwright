@@ -14,8 +14,9 @@ export const HOME = 'factwright.com';
 const PUBLIC_HOSTS = new Set([HOME, `www.${HOME}`]);
 
 /**
- * Every page runs only the site's own scripts and styles, connects nowhere, can't be shown inside
- * another site, and keeps to https.
+ * Every page runs only the site's own scripts and styles, connects only to the site itself, as the
+ * roadmap page does to send suggestions and votes, can't be shown inside another site, and keeps
+ * to https. No form sends itself anywhere: the roadmap's are sent by its script.
  */
 export const SECURITY_HEADERS: Readonly<Record<string, string>> = {
   'Content-Security-Policy': [
@@ -23,6 +24,7 @@ export const SECURITY_HEADERS: Readonly<Record<string, string>> = {
     "script-src 'self'",
     "style-src 'self'",
     "img-src 'self'",
+    "connect-src 'self'",
     "base-uri 'none'",
     "form-action 'none'",
     "frame-ancestors 'none'",
@@ -38,15 +40,23 @@ export const SECURITY_HEADERS: Readonly<Record<string, string>> = {
 export type Releases = (computer: Computer) => Promise<Release | null>;
 
 /**
+ * Answers a request for one of the ideas board's addresses (board.ts), or null to leave it to the
+ * pages.
+ */
+export type Board = (request: Request, assets: Pick<Fetcher, 'fetch'>) => Promise<Response | null>;
+
+/**
  * Answers a request for a page, with the headers above. Built scripts, styles and the template
  * previews skip the Worker (see wrangler.jsonc) and get their headers from public/_headers. The
- * download pages get the newest release filled in, and their links count each download.
+ * download pages get the newest release filled in, and their links count each download. The
+ * ideas board answers its own addresses: the roadmap page, its API and the admin page.
  */
 export async function respond(
   request: Request,
   assets: Pick<Fetcher, 'fetch'>,
   releases: Releases = async () => null,
   count: Count = () => {},
+  board: Board = async () => null,
 ): Promise<Response> {
   const url = new URL(request.url);
   if (PUBLIC_HOSTS.has(url.hostname) && (url.hostname !== HOME || url.protocol !== 'https:')) {
@@ -55,6 +65,8 @@ export async function respond(
     url.port = '';
     return Response.redirect(url.toString(), 301);
   }
+  const answered = await board(request, assets);
+  if (answered) return secured(answered);
   const counted = COUNTED_DOWNLOADS.get(url.pathname);
   if (counted) return download(request, counted, releases, count);
   const found = await assets.fetch(request);

@@ -1,5 +1,7 @@
 User-agent: *
 Disallow: /download/get/
+Disallow: /roadmap/admin
+Disallow: /api/
 Allow: /
 
 Sitemap: https://factwright.com/sitemap.xml
