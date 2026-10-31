@@ -3,8 +3,8 @@ packages:
   - packages/*
 
 catalog:
-  '@biomejs/biome': 2.5.15
-  '@cloudflare/workers-types': 5.20261016.1
+  '@biomejs/biome': 2.6.3
+  '@cloudflare/workers-types': 5.20261024.1
   '@playwright/test': 1.64.1
   '@testing-library/dom': 10.4.2
   '@testing-library/react': 16.3.3
@@ -15,22 +15,22 @@ catalog:
   '@xterm/addon-fit': 0.11.0
   '@xterm/xterm': 6.0.0
   axe-core: 4.14.0
-  better-auth: 1.7.10
+  better-auth: 1.7.12
   electron: 44.9.3
-  electron-builder: 26.17.0
-  electron-updater: 6.8.10
+  electron-builder: 26.18.0
+  electron-updater: 6.8.11
   fflate: 0.8.3
   jsdom: 30.1.3
-  lucide-react: 1.59.0
+  lucide-react: 1.61.0
   node-pty: 1.1.0
   pdfjs-dist: 6.4.299
   react: 19.3.1
   react-dom: 19.3.1
   typescript: 7.0.2
   uqr: 0.1.3
-  vite: 8.3.4
+  vite: 8.3.5
   vitest: 5.0.5
-  wrangler: 4.151.1
+  wrangler: 4.152.0
 
 # Packages allowed to run install scripts. node-pty's pick its prebuilt binary. esbuild's and
 # workerd's only check their platform binary, which comes as an optional dependency anyway.
