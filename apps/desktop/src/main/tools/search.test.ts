@@ -158,7 +158,7 @@ describe('job_board', () => {
         folder: SEARCH,
       }),
     ).toBe(
-      'The Ashby board “acme” has no open jobs right now, so the posting you linked has closed.',
+      'The Ashby board “acme” has no open jobs right now, so the posting you linked has probably closed.',
     );
   });
 
@@ -408,7 +408,7 @@ describe('job_board, on what can go wrong', () => {
       '<style>.list-group-item-heading { margin: 0 }</style><div id="resumator-wrapper">We have no open positions at this time.</div>',
     );
     expect(await run()).toBe(
-      'The JazzHR board “acme” has no open jobs right now, so the posting you linked has closed.',
+      'The JazzHR board “acme” has no open jobs right now, so the posting you linked has probably closed.',
     );
     // Its name alone says nothing, as a page that has moved on could still have it.
     fetch.mockResolvedValue('<div id="resumator"><a href="/jobs/1">A job, in a new look</a></div>');
@@ -812,6 +812,14 @@ describe('job_board, from Workday’s own search', () => {
         'Steve 312-555-0199',
         '3125550199',
         '123 Main Street Chicago 60614',
+        '5 Main Street',
+        '7 Oak Lane',
+        'Apt 4B',
+        'SW1A 1AA',
+        'K1A 0B1',
+        '60614',
+        '10.0.0.1/steal',
+        'http://localhost/steal',
         'nurse\nline break',
       ],
     });
@@ -858,8 +866,22 @@ describe('job_board, from Workday’s own search', () => {
     'Level 3 Court Reporter',
     '911 Dispatcher',
     'Sr. Manager',
+    'Sr.Engineer',
     'R.N.',
     'HVAC/R Technician',
+    '2026 New Grad Software Engineer',
+    'Summer 2026 Intern',
+    'ISO 27001 Auditor',
+    'IEC 62304 Engineer',
+    'AS9100 Quality Engineer',
+    '1099 Registered Nurse',
+    'Windows 2016 Administrator',
+    'Salesforce.com Developer',
+    'Socket.IO Developer',
+    'Registered Nurse – ICU',
+    'Engineer: Platform',
+    'Nurse | ICU',
+    'Dev_Ops Engineer',
   ])('sends a real title with odd marks: %s', async (title) => {
     fetch.mockImplementation(async (url, _json, _limit, _max, _redirect, sending) => {
       if (url === ROBOTS) return ROBOTS_TEXT;
@@ -880,6 +902,18 @@ describe('job_board, from Workday’s own search', () => {
     expect(answer).toContain(
       'Left out of the search, as they don’t read like job titles: “evil.example/steal”.',
     );
+  });
+
+  it('says what it left out and didn’t get to, even when it found nothing', async () => {
+    searches = { 'nurse@0': { total: 0, jobPostings: [] }, 'RN@0': new Error('It answered 429') };
+    const answer = await tool('job_board').run({
+      url: BOARD_URL,
+      folder: SEARCH,
+      titles: ['nurse', 'jane@example.com', 'RN'],
+    });
+    expect(answer).toContain('has nothing for those titles right now');
+    expect(answer).toContain('Left out of the search');
+    expect(answer).toContain('It stopped partway through “RN”.');
   });
 
   it('says why it went to the sitemap, when no title reads like one', async () => {

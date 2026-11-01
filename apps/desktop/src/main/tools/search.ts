@@ -85,18 +85,40 @@ const MAX_WORKABLE_PAGES = 3;
 /** How far back USAJOBS's feed is read, a week at a time, the newest first. */
 const USAJOBS_WEEKS = 4;
 
+/** A street's name, a word at a time, and the words that end one. */
+const STREET_NAME = "[\\p{L}.'’-]+";
+const STREET_ENDS =
+  'street|st|avenue|ave|road|rd|boulevard|blvd|drive|dr|lane|ln|court|ct|way|place|pl';
+
 /**
  * The words a search may send to someone else: a job's title or a place, and nothing that reads like
- * an email address, a link, a line break, a street or a phone number. It can't tell everything, such
- * as a name, so docs/security.md says so.
+ * an email address, a link, a line break, a street, a postal code or a phone number. It can't tell
+ * everything, such as a name, so docs/security.md says so.
  */
-const LISTING_WORDS = /^[\p{L}\p{N} .,'’&/()+#-]{1,100}$/u;
-const WEB_ADDRESS = /[\p{L}\p{N}]\.\p{L}{2}/u;
-/** The few skills in job titles with a dot in them, which otherwise marks a web address. */
-const NAMES_WITH_DOTS = /\b[\p{L}\p{N}]+\.js\b|\b(?:asp|vb|ado)\.net\b/giu;
-/** A long number, as in a phone number or a postal code, or a house number and a street's name. */
-const PERSONAL_NUMBERS =
-  /\d{4,}|\b\d{3}-\d{4}\b|\b\d{2,}\s+(?:[\p{L}.'’-]+\s+){0,3}(?:street|st|avenue|ave|road|rd|boulevard|blvd|drive|dr|lane|ln|court|ct|way|place|pl)\b/iu;
+const LISTING_WORDS = /^[\p{L}\p{N} .,:|_'’&/()+#–—-]{1,100}$/u;
+/** A web address: a dot between a word and two letters, a dot between numbers, or a scheme. */
+const WEB_ADDRESS = /[\p{L}\p{N}]\.\p{L}{2}|\d\.\d+\.\d|:\/\//u;
+/** What job titles have with a dot in them, which otherwise marks a web address. */
+const NAMES_WITH_DOTS =
+  /\b[\p{L}\p{N}]+\.js\b|\b(?:asp|vb|ado)\.net\b|\b(?:salesforce|force)\.com\b|\bsocket\.io\b|\b(?:sr|jr|mgr|asst|assoc|dir)\./giu;
+/**
+ * A number that's more someone's than a job's: a phone number's, a postal code's or a house's. A
+ * year, or a standard, as in "ISO 27001", is a job's.
+ */
+const PERSONAL_NUMBERS = new RegExp(
+  [
+    '\\d{6,}',
+    '(?<!(?:iso|iec|en|nist)\\s)\\b\\d{5}\\b',
+    '\\b\\d{3}-\\d{4}\\b',
+    `\\b\\d{2,}\\s+(?:${STREET_NAME}\\s+){0,3}(?:${STREET_ENDS})\\b`,
+    `\\b\\d+\\s+(?:${STREET_NAME}\\s+){1,3}(?:${STREET_ENDS})\\b`,
+    '\\b(?:apt|apartment|suite)\\.?\\s*#?\\d',
+    '\\bp\\.?\\s?o\\.?\\s?box\\b',
+    '\\b[a-z]\\d[a-z]\\s?\\d[a-z]\\d\\b',
+    '\\b[a-z]{1,2}\\d[a-z\\d]?\\s\\d[a-z]{2}\\b',
+  ].join('|'),
+  'iu',
+);
 const sendableTitle = (title: string) =>
   LISTING_WORDS.test(title) &&
   !WEB_ADDRESS.test(title.replace(NAMES_WITH_DOTS, '')) &&
@@ -515,12 +537,18 @@ export async function jobBoard(
   const wanted = paylocityJob ?? boardPostingId(url);
   if (jobs.length === 0) {
     if (searched && searched.length > 0) {
-      return `Workday’s own search for ${board} has nothing for those titles right now.${wanted ? ' That doesn’t mean the posting you linked has closed: read it with read_page to tell.' : ''}`;
+      return [
+        `Workday’s own search for ${board} has nothing for those titles right now.`,
+        ...(note ? [note] : []),
+        ...(wanted
+          ? ['That doesn’t mean the posting you linked has closed: read it with read_page to tell.']
+          : []),
+      ].join(' ');
     }
     if (boardFromSitemap(source) && !searched) {
       return `${capitalized(board)} lists no jobs in its sitemap. That doesn’t mean it has none, so read its careers page with read_page instead.`;
     }
-    return `${capitalized(board)} has no open jobs right now${wanted ? ', so the posting you linked has closed' : ''}.`;
+    return `${capitalized(board)} has no open jobs right now${wanted ? ', so the posting you linked has probably closed' : ''}.`;
   }
 
   const savedOn = localDate(clock());

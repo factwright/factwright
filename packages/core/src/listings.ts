@@ -142,17 +142,37 @@ const remoteFrom = (place: string) =>
     .replace(/^(fully )?remote\b/i, '')
     .replace(/^[\s,:-]+/, '');
 
-/** The short forms of a place's words, so "St. Louis" and "Saint Louis" are the same place. */
-const SHORT_FORMS: Readonly<Record<string, string>> = { st: 'saint', ft: 'fort', mt: 'mount' };
+/**
+ * The short forms a place can start with, so "St. Louis" and "Saint Louis" are the same place. Only
+ * there, and with more words after it, as "MT" alone, or after a city, is Montana.
+ */
+const SHORT_STARTS: Readonly<Record<string, string>> = {
+  st: 'saint',
+  ft: 'fort',
+  mt: 'mount',
+  e: 'east',
+  w: 'west',
+  n: 'north',
+  s: 'south',
+};
 
-/** A place's words: in small letters, "D.C." as "dc", and short forms spelled out. */
+/** The words a place can have that say nothing of where it is. */
+const NO_PLACE: ReadonlySet<string> = new Set([
+  'area',
+  'metro',
+  'metropolitan',
+  'greater',
+  'region',
+]);
+
+/** A place's words: in small letters, "D.C." as "dc", and a short start spelled out. */
 const placeWords = (text: string) =>
   (
     text
       .toLowerCase()
       .replace(/\b([a-z])\.([a-z])\.?/g, '$1$2')
       .match(/[\p{L}\p{N}]+/gu) ?? []
-  ).map((word) => SHORT_FORMS[word] ?? word);
+  ).map((word, i, words) => (i === 0 && words.length > 1 ? (SHORT_STARTS[word] ?? word) : word));
 
 const STATE_NAMES: ReadonlySet<string> = new Set(
   Object.values(US_STATES).map((name) => placeWords(name).join(' ')),
@@ -166,13 +186,26 @@ function stateIn(words: readonly string[]): string[] | null {
   return STATE_NAMES.has(words.join(' ')) ? [...words] : null;
 }
 
+/** The country's words a place can end with, all of which are the United States here. */
+const THE_COUNTRY = [['united', 'states', 'of', 'america'], ['united', 'states'], ['usa'], ['us']];
+
+/** A place's words, without what says nothing of where it is. */
+function placePart(part: string): string[] {
+  const words = placeWords(part).filter((word) => !NO_PLACE.has(word));
+  const country = THE_COUNTRY.find(
+    (name) =>
+      words.length > name.length && name.every((word, i) => words.at(i - name.length) === word),
+  );
+  return country ? words.slice(0, -country.length) : words;
+}
+
 /**
  * What a place asks for: its city's words, and its state's when it names one, as "Columbus, OH",
- * "Columbus Ohio" and "Columbus, Ohio, United States" all do. Anything after that, such as a country,
- * says no more, and "New York City" is listed as "New York".
+ * "Columbus Ohio" and "Columbus, Ohio, United States" all do. Anything after that, such as another
+ * country, says no more. New York City is listed as New York.
  */
 function placeAsked(place: string): { city: string[]; state: string[] | null } {
-  const parts = place.split(',').map(placeWords);
+  const parts = place.split(',').map(placePart);
   let city = parts[0] ?? [];
   let state =
     parts
@@ -190,7 +223,8 @@ function placeAsked(place: string): { city: string[]; state: string[] | null } {
       }
     }
   }
-  if (city.length > 1 && city.at(-1) === 'city') city = city.slice(0, -1);
+  const name = city.join(' ');
+  if (name === 'new york city' || name === 'nyc') city = ['new', 'york'];
   return { city, state };
 }
 

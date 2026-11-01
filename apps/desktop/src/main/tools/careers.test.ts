@@ -805,6 +805,18 @@ describe('careersSite, against what a site can do', () => {
     expect(await run(['registered nurse'], `${www}/careers`)).toContain('1 open posting');
   });
 
+  it('takes a company’s other site on a short name for its own', async () => {
+    const bmw = 'https://jobs.bmw.de';
+    const job = `${bmw}/jobs/1/registered-nurse`;
+    table = {
+      [`${bmw}/robots.txt`]: 'Sitemap: https://www.bmw.de/jobs.xml',
+      'https://www.bmw.de/jobs.xml': sitemap(job),
+      [job]: posting('Registered Nurse'),
+    };
+    await run(['registered nurse'], `${bmw}/jobs`);
+    expect(asked()).toContain('https://www.bmw.de/jobs.xml');
+  });
+
   it('takes another company on a shared ending for another company', async () => {
     const uk = 'https://careers.acme.co.uk';
     const job = `${uk}/jobs/1/registered-nurse`;

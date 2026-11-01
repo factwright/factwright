@@ -93,13 +93,27 @@ function offLimits(host: string): string | null {
 /** A site without "www.", so the two count as one. */
 const bareHost = (host: string) => plainHost(host).replace(/^www\./, '');
 
+/** What many companies share before a country's two letters, as in acme.co.uk and another.co.uk. */
+const SHARED_ENDINGS: ReadonlySet<string> = new Set([
+  'ac',
+  'co',
+  'com',
+  'edu',
+  'go',
+  'gov',
+  'ne',
+  'net',
+  'or',
+  'org',
+]);
+
 /**
  * A site's name and top level, so a company's sites count as one, as jobs.acme.com and acme.com, and
  * jobs.acme.co.uk and acme.co.uk, but not acme.co.uk and another.co.uk.
  */
 const baseOf = (host: string) => {
   const labels = plainHost(host).split('.');
-  const shared = (labels.at(-1)?.length ?? 0) === 2 && (labels.at(-2)?.length ?? 0) <= 3;
+  const shared = labels.at(-1)?.length === 2 && SHARED_ENDINGS.has(labels.at(-2) ?? '');
   return labels.slice(shared ? -3 : -2).join('.');
 };
 
