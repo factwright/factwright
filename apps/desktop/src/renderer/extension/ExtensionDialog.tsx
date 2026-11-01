@@ -107,108 +107,112 @@ export function ExtensionDialog({
       description="Factwright’s extension for Chrome and Firefox saves the job you’re looking at, with its posting, to your job hunt."
       onClose={onClose}
     >
-      <p className={styles.intro}>
-        Get it on{' '}
-        <a className={styles.link} href={EXTENSION_URL} target="_blank" rel="noreferrer">
-          Factwright’s extension page
-        </a>
-        .
-      </p>
-
-      <section className={styles.section} aria-labelledby="extension-computer">
-        <h3 id="extension-computer" className={styles.heading}>
-          Saving to this computer
-        </h3>
-        {view === null && !failed && <p className={styles.hint}>Looking for your browsers…</p>}
-        {view?.unavailable && <p className={styles.hint}>{UNAVAILABLE[view.unavailable]}</p>}
-        {view && !view.unavailable && (
-          <>
-            <p className={styles.intro}>
-              From version 0.2, the extension can save straight to Factwright here, with no account
-              and no sync.
-              {view.onRequest
-                ? ' Each browser finds Factwright through a small file Factwright adds to that browser’s folder, which macOS keeps to that browser, so you set each one up here. macOS may ask you to allow it: choose Allow. If it blocks it instead, this window shows how to allow it.'
-                : ' Factwright tells each browser where to find it when it starts.'}
-            </p>
-            {view.browsers.length === 0 ? (
-              <p className={styles.hint}>
-                Factwright didn’t find a browser the extension runs in: Chrome, Chromium, Edge,
-                Brave, Arc, Vivaldi or Firefox.
-              </p>
-            ) : (
-              <ul className={styles.browsers} aria-label="Your browsers">
-                {view.browsers.map((browser) => (
-                  <li key={browser.id} className={styles.browser}>
-                    <span className={styles.name}>{browser.name}</span>
-                    <BrowserState browser={browser} />
-                    <span className={styles.action}>
-                      <Button
-                        size="sm"
-                        variant={
-                          browser.state === 'not-set-up'
-                            ? 'primary'
-                            : browser.state === 'ready'
-                              ? 'quiet'
-                              : 'secondary'
-                        }
-                        disabled={busy !== null}
-                        aria-label={
-                          browser.state === 'ready'
-                            ? `Set up ${browser.name} again`
-                            : browser.state === 'blocked'
-                              ? `Try again for ${browser.name}`
-                              : `Set up ${browser.name}`
-                        }
-                        onClick={() => void setUp(browser)}
-                      >
-                        {busy === browser.id
-                          ? 'Setting up…'
-                          : browser.state === 'ready'
-                            ? 'Set up again'
-                            : browser.state === 'blocked'
-                              ? 'Try again'
-                              : 'Set up'}
-                      </Button>
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            )}
-            <p ref={status} className={styles.said} role="status" tabIndex={-1}>
-              {said}
-            </p>
-            {blocked.length > 0 && (
-              <Notice title="To let macOS allow it">
-                <ol className={styles.steps}>
-                  <li>Open System Settings, then Privacy & Security, then Files & Folders.</li>
-                  <li>Under Factwright, turn on {listed(allow)}.</li>
-                  <li>Come back here and choose Try again.</li>
-                </ol>
-                <p className={`${styles.hint} ${styles.open}`}>
-                  <button
-                    type="button"
-                    className={styles.link}
-                    onClick={() => void api.openFilesAndFolders()}
-                  >
-                    Open Files & Folders
-                  </button>
-                </p>
-              </Notice>
-            )}
-          </>
-        )}
-        {failed && (
-          <p className={styles.problem} role="alert">
-            {failed}
+      {(close) => (
+        <>
+          <p className={styles.intro}>
+            Get it on{' '}
+            <a className={styles.link} href={EXTENSION_URL} target="_blank" rel="noreferrer">
+              Factwright’s extension page
+            </a>
+            .
           </p>
-        )}
-      </section>
 
-      <DialogActions>
-        <Button variant="primary" onClick={onClose}>
-          Done
-        </Button>
-      </DialogActions>
+          <section className={styles.section} aria-labelledby="extension-computer">
+            <h3 id="extension-computer" className={styles.heading}>
+              Saving to this computer
+            </h3>
+            {view === null && !failed && <p className={styles.hint}>Looking for your browsers…</p>}
+            {view?.unavailable && <p className={styles.hint}>{UNAVAILABLE[view.unavailable]}</p>}
+            {view && !view.unavailable && (
+              <>
+                <p className={styles.intro}>
+                  From version 0.2, the extension can save straight to Factwright here, with no
+                  account and no sync.
+                  {view.onRequest
+                    ? ' Each browser finds Factwright through a small file Factwright adds to that browser’s folder, which macOS keeps to that browser, so you set each one up here. macOS may ask you to allow it: choose Allow. If it blocks it instead, this window shows how to allow it.'
+                    : ' Factwright tells each browser where to find it when it starts.'}
+                </p>
+                {view.browsers.length === 0 ? (
+                  <p className={styles.hint}>
+                    Factwright didn’t find a browser the extension runs in: Chrome, Chromium, Edge,
+                    Brave, Arc, Vivaldi or Firefox.
+                  </p>
+                ) : (
+                  <ul className={styles.browsers} aria-label="Your browsers">
+                    {view.browsers.map((browser) => (
+                      <li key={browser.id} className={styles.browser}>
+                        <span className={styles.name}>{browser.name}</span>
+                        <BrowserState browser={browser} />
+                        <span className={styles.action}>
+                          <Button
+                            size="sm"
+                            variant={
+                              browser.state === 'not-set-up'
+                                ? 'primary'
+                                : browser.state === 'ready'
+                                  ? 'quiet'
+                                  : 'secondary'
+                            }
+                            disabled={busy !== null}
+                            aria-label={
+                              browser.state === 'ready'
+                                ? `Set up ${browser.name} again`
+                                : browser.state === 'blocked'
+                                  ? `Try again for ${browser.name}`
+                                  : `Set up ${browser.name}`
+                            }
+                            onClick={() => void setUp(browser)}
+                          >
+                            {busy === browser.id
+                              ? 'Setting up…'
+                              : browser.state === 'ready'
+                                ? 'Set up again'
+                                : browser.state === 'blocked'
+                                  ? 'Try again'
+                                  : 'Set up'}
+                          </Button>
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                <p ref={status} className={styles.said} role="status" tabIndex={-1}>
+                  {said}
+                </p>
+                {blocked.length > 0 && (
+                  <Notice title="To let macOS allow it">
+                    <ol className={styles.steps}>
+                      <li>Open System Settings, then Privacy & Security, then Files & Folders.</li>
+                      <li>Under Factwright, turn on {listed(allow)}.</li>
+                      <li>Come back here and choose Try again.</li>
+                    </ol>
+                    <p className={`${styles.hint} ${styles.open}`}>
+                      <button
+                        type="button"
+                        className={styles.link}
+                        onClick={() => void api.openFilesAndFolders()}
+                      >
+                        Open Files & Folders
+                      </button>
+                    </p>
+                  </Notice>
+                )}
+              </>
+            )}
+            {failed && (
+              <p className={styles.problem} role="alert">
+                {failed}
+              </p>
+            )}
+          </section>
+
+          <DialogActions>
+            <Button variant="primary" onClick={close}>
+              Done
+            </Button>
+          </DialogActions>
+        </>
+      )}
     </Dialog>
   );
 }

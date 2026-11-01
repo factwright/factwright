@@ -64,7 +64,7 @@ import { QUIET } from './quiet.ts';
 import { CallReminders } from './reminders.ts';
 import { ElectronResumePrinter } from './resume/printer.ts';
 import { TemplateLibrary } from './resume/templates.ts';
-import { applyDevPolicy, denyPermissions, hardenContents } from './security.ts';
+import { applyDevPolicy, denyPermissions, hardenContents, keepOffTheWeb } from './security.ts';
 import { SyncAccount } from './sync/account.ts';
 import { Claims } from './sync/claims.ts';
 import { NO_KEYCHAIN } from './sync/secrets.ts';
@@ -223,6 +223,7 @@ function start(home: string, profile: ProfileFolder, stopped: ProfileFolder | nu
     if (devUrl) applyDevPolicy(session.defaultSession, policy);
     else serveApp(fileURLToPath(new URL('../renderer', import.meta.url)), policy);
     denyPermissions(session.defaultSession);
+    keepOffTheWeb(session.defaultSession, devUrl);
 
     // Opens a job in the window, such as when the user clicks a call's reminder.
     const opener = new JobOpener();
