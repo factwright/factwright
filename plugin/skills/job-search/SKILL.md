@@ -64,9 +64,10 @@ One web search brings about 10 results, most of them closed, and the same work g
 
 **Read before you search.** Where a tool can read an employer's list, use it rather than searching for that employer. It's all the employer has open today, with no stale results:
 - **An employer on Greenhouse, Lever, Ashby, Gem, Recruitee, Workable, JazzHR, Paylocity, Workday or iCIMS:** call `job_board` with its board's link and `titles`, the plan's titles for this kind.
-  - It lists only the jobs with those titles, and saves the rest in the file. Its titles stay on this computer.
+  - It lists only the jobs with those titles, and saves the rest in the file.
   - Greenhouse, Lever, Ashby, Gem, Recruitee and Workable save each posting in full. JazzHR, Paylocity, Workday and iCIMS list only what names it, so step 3 reads the ones that pass.
-  - Workday and iCIMS list what their sitemaps name, by the words in each link. When it says the list may be partial, as at Workday's big employers, also search that employer's name and the titles with its own host as `allowed_domains`.
+  - Workday's own search gets the first 6 titles, so put the main ones first. Those titles are all it's sent, so never put anything about the user in them. It finds jobs by what they say too, which go in the file but not the list. So if a list comes back short, read the file for jobs with other titles.
+  - iCIMS lists what its sitemap names, by the words in each link, as does Workday when its search doesn't answer. When it says the list may be partial, also search that employer's name and the titles with its own host as `allowed_domains`.
 - **An employer with a careers site of its own:** call `careers_site` with its link and `titles`. It follows the site's robots.txt, and reads up to 12 postings a call. When it says it can't, because the site's robots.txt keeps it out, or its links don't name the job, search that employer instead, and don't try again.
 - **An employer on SmartRecruiters or Oracle:** search it, by its name and the titles, with its own host as `allowed_domains`, such as `acme.fa.us2.oraclecloud.com`. Their terms keep software from reading their whole boards, and no tool does.
 - **Federal work, or an open search across small employers:** call `job_listings` once for each place:

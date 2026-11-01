@@ -150,8 +150,8 @@ export const TEMPLATE_READS = ['list_templates', 'read_template'];
 /**
  * The tools that reach only fixed public job addresses: the applicant systems' postings and
  * boards, Hacker News's and USAJOBS's feeds, and Workable's job search. They send nothing but a
- * board's name, a posting's ID, a month, or to that search a job's title and place, never to a
- * site a link names, so Claude may call them without asking too. save_posting otherwise saves only
+ * board's name, a posting's ID, a month, or to Workday's and Workable's searches a job's title and
+ * place, never to a site a link names, so Claude may call them without asking too. save_posting otherwise saves only
  * what was read already.
  */
 export const PUBLIC_API_TOOLS = [
@@ -686,7 +686,7 @@ export function factwrightTools(deps: ToolDeps): McpTool[] {
     {
       name: 'job_board',
       description:
-        'Reads a company’s board on Greenhouse, Lever, Ashby, Gem, Recruitee, Workable, JazzHR, Paylocity, Workday or iCIMS, and saves what it gives as one file in a job search’s folder. Lists each job with where, pay and when it was posted when the system says, its link, and the line it starts on in the file. Give a link to the board, or to any posting on it: for a posting, it also says whether it’s still open. Give titles to list only the jobs that fit, which a big employer needs: they stay on this computer. Greenhouse, Lever, Ashby, Gem, Recruitee and Workable save each posting word for word. JazzHR, Paylocity, Workday and iCIMS save what lists it, so confirm a job and read its full text with read_page. Workday and iCIMS come from their sitemaps, by the words in each link, and it says when that list may be partial. Use it to see all a company is hiring for, and to check that a job is still open.',
+        'Reads a company’s board on Greenhouse, Lever, Ashby, Gem, Recruitee, Workable, JazzHR, Paylocity, Workday or iCIMS, and saves what it gives as one file in a job search’s folder. Lists each job with where, pay and when it was posted when the system says, its link, and the line it starts on in the file. Give a link to the board, or to any posting on it: for a posting, it also says whether it’s still open. Give titles to list only the jobs that fit, which a big employer needs. They stay on this computer, but for Workday, whose own search gets the first 6, so put the main ones first. Greenhouse, Lever, Ashby, Gem, Recruitee and Workable save each posting word for word. JazzHR, Paylocity, Workday and iCIMS save what lists it, so read a job’s full text with read_page. iCIMS comes from its sitemap, by the words in each link, as Workday does if its search doesn’t answer, and it says when a list may be partial. Use it to see all a company is hiring for, and to check that a job is still open.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -700,7 +700,7 @@ export function factwrightTools(deps: ToolDeps): McpTool[] {
             type: 'array',
             items: { type: 'string' },
             description:
-              'Job titles to narrow the list to, such as ["registered nurse", "RN", "charge nurse"]. A job fits when its title has all the words of one of them, in any order. Without it, every job is listed.',
+              'Job titles to narrow the list to, the main ones first, such as ["registered nurse", "RN", "charge nurse"]. A job fits when its title has all the words of one of them, in any order. Without it, every job is listed. Nothing about the user.',
           },
         },
         required: ['url', 'folder'],

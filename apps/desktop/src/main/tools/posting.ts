@@ -29,7 +29,7 @@ export interface FetchDeps {
   /**
    * Fetches a public page or API within a time limit, in milliseconds, and a size limit, in
    * bytes, when it's given, telling `onRedirect` each address a redirect sends it to before it
-   * goes there. Tests pass their own.
+   * goes there. With `sending`, it's the one POST the app sends. Tests pass their own.
    */
   fetch?: (
     url: string,
@@ -37,22 +37,31 @@ export interface FetchDeps {
     limitMs: number,
     maxBytes?: number,
     onRedirect?: (url: string) => void,
+    sending?: string,
   ) => Promise<unknown>;
   now?: () => Date;
   /** Hears each address a redirect sends a fetch to, before it goes there. */
   onRedirect?: ((url: string) => void) | undefined;
 }
 
-export type Fetch = (url: string, json: boolean, maxBytes?: number) => Promise<unknown>;
+export type Fetch = (
+  url: string,
+  json: boolean,
+  maxBytes?: number,
+  sending?: string,
+) => Promise<unknown>;
 
 /** A fetch that gives up once the tool's time is spent, however many requests it took. */
 export function fetchInTime(deps: FetchDeps): Fetch {
   const clock = deps.now ?? (() => new Date());
   const giveUpAt = clock().getTime() + TIME_LIMIT_MS;
   const fetch = deps.fetch ?? fetchPublic;
-  return async (address, json, maxBytes) => {
+  return async (address, json, maxBytes, sending) => {
     const left = giveUpAt - clock().getTime();
     if (left <= 0) throw new Error('the site took too long to answer');
+    if (sending !== undefined) {
+      return fetch(address, json, left, maxBytes, deps.onRedirect, sending);
+    }
     if (deps.onRedirect) return fetch(address, json, left, maxBytes, deps.onRedirect);
     return maxBytes === undefined
       ? fetch(address, json, left)

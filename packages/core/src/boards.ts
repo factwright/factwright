@@ -86,9 +86,8 @@ const WITH_FULL_TEXT: ReadonlySet<BoardSource['kind']> = new Set([
 export const boardHasText = (source: BoardSource) => WITH_FULL_TEXT.has(source.kind);
 
 /**
- * Whether a board is read from its sitemap, which lists links and little else. Workday's search
- * could list these boards in full, with a POST the app doesn't make, so it's left out for now: it
- * would be one more way to fill in these same jobs.
+ * Whether a board's list can come from its sitemap, which lists links and little else: iCIMS's
+ * always, and Workday's when its own search doesn't answer.
  */
 export const boardFromSitemap = (source: BoardSource) =>
   source.kind === 'workday' || source.kind === 'icims';
@@ -494,6 +493,70 @@ function jazzhrJobs(source: BoardSource, html: unknown): BoardJob[] {
     if (each) found.push(each);
   }
   return found;
+}
+
+/** The most jobs a request to Workday's own search takes. */
+export const WORKDAY_SEARCH_PAGE = 20;
+
+/**
+ * Where a company's Workday site answers its own search for jobs, built from the board's parts, or
+ * null for a board on anything else. It's undocumented, so it may change, and the sitemap is there
+ * for when it does.
+ */
+export function workdaySearchRequest(source: BoardSource): string | null {
+  const tenant = source.site?.split('.')[0];
+  return source.kind === 'workday' && tenant
+    ? `https://${source.site}/wday/cxs/${tenant}/${encodeURIComponent(source.board)}/jobs`
+    : null;
+}
+
+/**
+ * What goes to that search: the words, and which of the answers, and nothing else. Quotes keep a
+ * title's words together, which brings far fewer jobs with the same titles among them, as at
+ * Mastercard, where "program manager" brings 312 and quoted brings 108, with the same 21 so titled.
+ */
+export function workdaySearchBody(words: string, offset: number): string {
+  return JSON.stringify({
+    appliedFacets: {},
+    limit: WORKDAY_SEARCH_PAGE,
+    offset,
+    searchText: words.includes(' ') ? `"${words}"` : words,
+  });
+}
+
+/**
+ * The jobs in an answer from Workday's own search, each with its link built on the board's own site.
+ * The answer says how many there are only on its first page. Null for an answer that isn't one.
+ */
+export function readWorkdaySearch(
+  source: BoardSource,
+  answer: unknown,
+): { jobs: BoardJob[]; rows: number; total: number | null } | null {
+  const rows = field(answer, 'jobPostings');
+  if (!Array.isArray(rows) || !source.site) return null;
+  const jobs = rows.flatMap((each) => {
+    const path = text(field(each, 'externalPath'));
+    if (!path?.startsWith('/job/')) return [];
+    const url = linkOn(source.site ?? '', `https://${source.site}/${source.board}${path}`);
+    const posting = url && workdayPostingPart(segments(url));
+    if (!url || !posting) return [];
+    const words = listLine(text(field(each, 'locationsText')));
+    // It gives "5 Locations" for a job in several, and the link names the first.
+    const others = Number(words?.match(/^(\d{1,4}) Locations$/)?.[1] ?? 0);
+    const first = posting.place && linkWords(posting.place);
+    return (
+      job({
+        id: posting.id,
+        title: listLine(text(field(each, 'title'))),
+        location: others > 1 && first ? `${first}, and ${others - 1} more` : words,
+        workplace: workplace(field(each, 'remoteType')),
+        link: url.href,
+        note: listLine(text(field(each, 'postedOn'))) ?? undefined,
+      }) ?? []
+    );
+  });
+  const total = field(answer, 'total');
+  return { jobs, rows: rows.length, total: typeof total === 'number' ? total : null };
 }
 
 /**

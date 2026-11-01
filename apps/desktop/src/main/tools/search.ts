@@ -36,11 +36,15 @@ import {
   readSitemap,
   readUsajobs,
   readWorkableSearch,
+  readWorkdaySearch,
   robotsAllow,
   titleFilter,
   usajobsRequest,
+  WORKDAY_SEARCH_PAGE,
   WORKSPACE_PATHS,
   workableSearchRequest,
+  workdaySearchBody,
+  workdaySearchRequest,
 } from '@factwright/core';
 import { type Fetch, type FetchDeps, FOLDER_NAME, fetchInTime, reasonOf } from './posting.ts';
 import { readsLikeStreet } from './profile-parts.ts';
@@ -61,6 +65,9 @@ const MONTH = /^\d{4}-(0[1-9]|1[0-2])$/;
 
 /** How long a tool keeps asking for more of a long list, leaving time to save what it has. */
 const PAGING_MS = 35_000;
+/** The most titles, and pages of 20 jobs for each, that Workday's own search is asked in one call. */
+const MAX_WORKDAY_TITLES = 6;
+const MAX_WORKDAY_PAGES = 5;
 /** The most sitemaps of one board a sitemap index can send a read to. */
 const MAX_BOARD_SITEMAPS = 25;
 /** A listing this long is worth narrowing. */
@@ -186,6 +193,10 @@ interface BoardRead {
   jobs: BoardJob[];
   /** Why the list may not be every open job, when it may not be. */
   partial: string | null;
+  /** Whether a posting missing from the list has left the board. */
+  whole: boolean;
+  /** The words Workday's own search was given, when that's where the list came from. */
+  searched?: readonly string[];
 }
 
 /** A link's path and query, as a robots.txt's rules go by them. */
@@ -195,13 +206,17 @@ const pathOf = (link: string) => {
 };
 
 /**
- * A board's jobs from its sitemap, once its robots.txt says it may be read: the postings its links
- * name, which that robots.txt allows too. A sitemap index's sitemaps stay on the board's own site.
+ * A board's jobs from its sitemap: the postings its links name, which its robots.txt allows too. A
+ * sitemap index's sitemaps stay on the board's own site.
  */
-async function sitemapBoard(source: BoardSource, fetch: Fetch): Promise<BoardRead> {
+async function sitemapBoard(
+  source: BoardSource,
+  robots: Robots,
+  fetch: Fetch,
+  before = '',
+): Promise<BoardRead> {
   const request = boardRequest(source);
-  const { origin, hostname } = new URL(request);
-  const robots: Robots = await robotsOf(origin, fetch);
+  const { hostname } = new URL(request);
   if (!robotsAllow(robots, pathOf(request))) {
     throw new FetchRefused(
       `${hostname}’s robots.txt asks software not to read that board, so it wasn’t read.`,
@@ -222,18 +237,130 @@ async function sitemapBoard(source: BoardSource, fetch: Fetch): Promise<BoardRea
     .filter((each) => robotsAllow(robots, pathOf(each.link)));
   return {
     jobs,
-    partial:
+    whole: false,
+    partial: `This may not be every open job: ${before}${
       jobs.length === SITEMAP_STOPS_AT
         ? `its sitemap stops at exactly ${SITEMAP_STOPS_AT} jobs, as ${boardSystem(source)}’s do at big employers, so there are almost certainly more. Search the employer’s name and the titles with ${hostname} as allowed_domains to find them.`
-        : 'a sitemap can leave jobs out, and gives only the words in each link, so confirm one with read_page before listing it.',
+        : 'a sitemap can leave jobs out, and gives only the words in each link, so confirm one with read_page before listing it.'
+    }`,
   };
 }
 
+/**
+ * What Workday's own search has for each title, a page at a time, the first few pages of each, for
+ * as long as there's time. Without titles, it's the newest jobs on the board. Only the search's words
+ * and which page go to it. It throws when nothing came back, or its answers aren't what they should
+ * be, so the sitemap gets a try.
+ */
+async function workdaySearch(
+  source: BoardSource,
+  request: string,
+  words: readonly string[],
+  fetch: Fetch,
+  clock: () => Date,
+): Promise<BoardRead> {
+  const started = clock().getTime();
+  const late = () => clock().getTime() - started > PAGING_MS;
+  const searches = words.length > 0 ? words.slice(0, MAX_WORKDAY_TITLES) : [''];
+  const jobs = new Map<string, BoardJob>();
+  const cut: string[] = [];
+  const stopped: string[] = [];
+  let answered = false;
+  for (const search of searches) {
+    const asked = search ? `“${search}”` : 'its whole board';
+    let read = 0;
+    let total: number | null = null;
+    let more = true;
+    for (let page = 0; more && page < MAX_WORKDAY_PAGES && !late(); page++) {
+      let found: ReturnType<typeof readWorkdaySearch>;
+      try {
+        const body = workdaySearchBody(search, read);
+        found = readWorkdaySearch(source, await fetch(request, true, BOARD_MAX_BYTES, body));
+      } catch (error) {
+        if (error instanceof FetchRefused || !answered) throw error;
+        break;
+      }
+      if (!found) {
+        if (!answered) throw new Error('its search gave an answer it can’t read');
+        break;
+      }
+      answered = true;
+      for (const job of found.jobs) jobs.set(job.link, job);
+      read += found.rows;
+      total ??= found.total;
+      more = found.rows === WORKDAY_SEARCH_PAGE && (total === null || read < total);
+    }
+    if (more && total !== null) cut.push(`${read} of ${total} for ${asked}`);
+    else if (more) stopped.push(asked);
+  }
+  if (!answered) throw new Error('it ran out of time');
+  const notes = [
+    ...(cut.length > 0
+      ? [`Its search has more than this read: ${cut.join(', ')}. A narrower title brings the rest.`]
+      : []),
+    ...(stopped.length > 0 ? [`It stopped partway through ${stopped.join(', ')}.`] : []),
+    ...(words.length > searches.length
+      ? [`It searched the first ${searches.length} titles of those given.`]
+      : []),
+  ];
+  return {
+    jobs: [...jobs.values()],
+    partial: notes.length > 0 ? `This may not be every open job. ${notes.join(' ')}` : null,
+    whole: words.length === 0 && notes.length === 0,
+    searched: words,
+  };
+}
+
+/**
+ * A Workday board, once its robots.txt allows the board and the search: from Workday's own search,
+ * and otherwise, should that not answer, from the sitemap. Titles that don't read like one never go
+ * out, so with no others, the sitemap is what's narrowed here.
+ */
+async function workdayBoard(
+  source: BoardSource,
+  titles: readonly string[],
+  fetch: Fetch,
+  clock: () => Date,
+): Promise<BoardRead> {
+  const { origin, hostname } = new URL(boardRequest(source));
+  const robots = await robotsOf(origin, fetch);
+  if (!robotsAllow(robots, `/${source.board}/`)) {
+    throw new FetchRefused(
+      `${hostname}’s robots.txt asks software not to read that board, so it wasn’t read.`,
+    );
+  }
+  const request = workdaySearchRequest(source);
+  const words = titles.filter((title) => LISTING_WORDS.test(title));
+  let before = '';
+  if (
+    request &&
+    robotsAllow(robots, pathOf(request)) &&
+    (words.length > 0 || titles.length === 0)
+  ) {
+    try {
+      return await workdaySearch(source, request, words, fetch, clock);
+    } catch (error) {
+      if (error instanceof FetchRefused) throw error;
+      before = `Workday’s own search didn’t answer (${reasonOf(error)}), so this comes from its sitemap, and `;
+    }
+  }
+  return sitemapBoard(source, robots, fetch, before);
+}
+
 /** Every open job the board's system gives, by whichever way that system gives them. */
-async function readWholeBoard(source: BoardSource, fetch: Fetch): Promise<BoardRead> {
-  if (boardFromSitemap(source)) return sitemapBoard(source, fetch);
+async function readWholeBoard(
+  source: BoardSource,
+  titles: readonly string[],
+  fetch: Fetch,
+  clock: () => Date,
+): Promise<BoardRead> {
+  if (source.kind === 'workday') return workdayBoard(source, titles, fetch, clock);
+  if (boardFromSitemap(source)) {
+    const robots = await robotsOf(new URL(boardRequest(source)).origin, fetch);
+    return sitemapBoard(source, robots, fetch);
+  }
   const answer = await fetch(boardRequest(source), boardAnswersJson(source), BOARD_MAX_BYTES);
-  return { jobs: readBoard(source, answer), partial: null };
+  return { jobs: readBoard(source, answer), partial: null, whole: true };
 }
 
 const PAYLOCITY_HOST = 'recruiting.paylocity.com';
@@ -259,8 +386,9 @@ const staysOn = (host: string) => (address: string) => {
  * each job's title, place and link, with its full text left for what Claude reads. It lists the jobs
  * for Claude, with `titles` only those that fit, and says whether a posting it was given a link to is
  * still open. Only the board's name goes to the system, at a fixed address on its own site, never
- * the link itself, and the titles stay on this computer. Workday's and iCIMS's boards come from the
- * sitemap their robots.txt names and allows.
+ * the link itself, and the titles stay on this computer, but for Workday. Workday's own search, once
+ * the site's robots.txt allows it, gets the first few titles, and if it doesn't answer, Workday's
+ * board comes from its sitemap, as iCIMS's always does.
  */
 export async function jobBoard(
   url: string,
@@ -291,22 +419,33 @@ export async function jobBoard(
       }
       board = `the Paylocity board “${source.board}”`;
     }
-    read = await readWholeBoard(source, fetch);
+    read = await readWholeBoard(source, titles, fetch, clock);
   } catch (error) {
     if (error instanceof FetchRefused) return `Not read: ${reasonOf(error)}`;
     return `Couldn’t read ${board} (${reasonOf(error)}). The company may have closed or moved it, so read its careers page with read_page instead.`;
   }
-  const { jobs, partial } = read;
+  const { jobs, partial, whole, searched } = read;
   const wanted = paylocityJob ?? boardPostingId(url);
   if (jobs.length === 0) {
-    if (boardFromSitemap(source)) {
+    if (searched && searched.length > 0) {
+      return `${capitalized(board)}’s own search has nothing for those titles right now.${wanted ? ' That doesn’t mean the posting you linked has closed: read it with read_page to tell.' : ''}`;
+    }
+    if (boardFromSitemap(source) && !searched) {
       return `${capitalized(board)} lists no jobs in its sitemap. That doesn’t mean it has none, so read its careers page with read_page instead.`;
     }
     return `${capitalized(board)} has no open jobs right now${wanted ? ', so the posting you linked has closed' : ''}.`;
   }
 
   const savedOn = localDate(clock());
-  const markdown = boardMarkdown(source, jobs, savedOn);
+  const asked = searched?.map((title) => `“${title}”`).join(', ');
+  const markdown = searched
+    ? jobsMarkdown(
+        `${boardSystem(source)} board: ${boardName(source)}`,
+        workdaySearchRequest(source) ?? boardRequest(source),
+        `${savedOn} by Factwright, ${count(jobs.length, 'open job')}, from its own search${asked ? ` for ${asked}` : ''}, as it lists them, without each posting’s full text`,
+        jobs,
+      )
+    : boardMarkdown(source, jobs, savedOn);
   const saved = await saveInSearch(
     deps,
     folder,
@@ -315,23 +454,26 @@ export async function jobBoard(
   );
   const lines = headingLines(markdown);
   const at = wanted ? jobs.findIndex((job) => job.id === wanted) : -1;
-  const how = boardFromSitemap(source)
-    ? 'each under “## <number>. <the words in its link>”'
-    : boardHasText(source)
-      ? 'each word for word under “## <number>. <title>”'
-      : 'each with what its board lists under “## <number>. <title>”. A posting’s full text comes from read_page';
+  const how = searched
+    ? `from its own search${asked ? ` for ${asked}` : ''}, each with what it lists under “## <number>. <title>”. A posting’s full text comes from read_page`
+    : boardFromSitemap(source)
+      ? 'each under “## <number>. <the words in its link>”'
+      : boardHasText(source)
+        ? 'each word for word under “## <number>. <title>”'
+        : 'each with what its board lists under “## <number>. <title>”. A posting’s full text comes from read_page';
   const fits = titleFilter(titles);
   const narrowed = jobs.flatMap((job, i) => (fits(job.title) ? [{ job, i }] : []));
+  const others = jobs.length - narrowed.length;
   return [
     `Saved ${saved}: ${board}, ${count(jobs.length, 'open job')}, ${how}. ${FROM_THE_WEB}`,
-    ...(partial ? [`This may not be every open job: ${partial}`] : []),
+    ...(partial ? [partial] : []),
     ...(wanted
       ? [
           at >= 0
             ? `The posting you linked is still open: number ${at + 1}, ${jobs[at]?.title}, at line ${lines[at]} of the file.`
-            : partial
-              ? 'The posting you linked isn’t among these, which doesn’t mean it has closed. Read it with read_page to tell.'
-              : 'The posting you linked isn’t on the board, so it has probably closed.',
+            : whole
+              ? 'The posting you linked isn’t on the board, so it has probably closed.'
+              : 'The posting you linked isn’t among these, which doesn’t mean it has closed. Read it with read_page to tell.',
         ]
       : []),
     ...(titles.length === 0 ? fileParts(lines, markdown) : []),
@@ -344,6 +486,11 @@ export async function jobBoard(
     ...capped(
       narrowed.map(({ job, i }) => `${i + 1}. ${boardJobLine(job)} · line ${lines[i] ?? '?'}`),
     ),
+    ...(searched && others > 0
+      ? [
+          `The file has ${count(others, 'more job')} whose titles don’t have those words, which its search found by what they say.`,
+        ]
+      : []),
   ].join('\n');
 }
 
