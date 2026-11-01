@@ -608,6 +608,41 @@ async function work(text) {
       show(`${built.split('\n')[0]}\n`);
     }
   }
+  // As Claude would for a part of Profile: read what the user asked through the tool, never from
+  // the prompt, then save it with that part's own tool, without asking. A run tries what isn't its
+  // part's too, as Claude might, which the app turns away.
+  const updating = text.match(/^\/factwright:update-profile (\S+)(?: (\S+))?$/);
+  if (updating) {
+    const asked = await call('requested_changes', {});
+    show(`${asked.split('\n')[0]}\n`);
+    const words = asked
+      .split('\n')
+      .filter((line) => line.startsWith('> '))
+      .map((line) => line.slice(2))
+      .join(' ');
+    const saves = {
+      about: ['save_contact', { name: words }],
+      wants: ['save_what_you_want', { mustHaves: words }],
+      kind: ['save_what_you_want', { roles: [words] }],
+      applications: ['save_for_applications', { howHeard: words }],
+      leaving: ['save_for_applications', { leaving: words }],
+      beyond: ['save_beyond_work', { interests: [words] }],
+      templates: ['save_resume_choices', { format: 'both' }],
+      shared: ['add_to_notes', { text: words }],
+    }[updating[1]];
+    // Told a street, it tries to save it, which the tool refuses, so it can't sync.
+    if (/street/i.test(words) && updating[1] === 'applications') {
+      show(`A street: ${await call('save_for_applications', { street: words })}\n`);
+    } else if (saves) show(`${await callAllowed(...saves)}\n`);
+    // Past its part: another part's tool isn't listed, and the tool every other run saves with
+    // needs an OK, which the app turns away, with no dialog.
+    show(`Another part: ${(await call('save_beyond_work', { cares: words })) || 'no such tool'}\n`);
+    show(`The usual tool: ${await callAllowed('save_about_you', { start: words })}\n`);
+  }
+  // Asked for more in the same run, it tries the tool other runs save with, which still needs an OK.
+  if (text === 'try the usual tool') {
+    show(`Still the usual tool: ${await callAllowed('save_about_you', { start: 'Soon' })}\n`);
+  }
   // As Claude would for a revision: read what the user picked in the X-ray through the tool,
   // never from the prompt, ask about the term the fact bank doesn't back, then change the resume
   // and build it in the old one's place.
@@ -803,7 +838,11 @@ async function work(text) {
   // Its turn ends a moment later, with Stop, before it takes the next prompt, as Claude Code's does.
   await new Promise((resolve) => setTimeout(resolve, 300));
   show('Done.\n> ');
-  await hook('Stop', { last_assistant_message: 'Done.' });
+  // A run on a part of Profile says what it left, which only Claude knows.
+  const said = /^\/factwright:update-profile /.test(text)
+    ? 'Done. I left your pay: that’s What you want’s.'
+    : 'Done.';
+  await hook('Stop', { last_assistant_message: said });
 }
 
 async function begin() {

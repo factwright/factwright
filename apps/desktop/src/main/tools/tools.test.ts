@@ -76,6 +76,11 @@ const about = {
     history = readHistory(saved);
     return history;
   },
+  notes: () => '',
+  addToNotes: () => true,
+  confidential: () => [] as string[],
+  changeConfidential: () => [] as string[],
+  criteriaIsOwn: () => false,
 };
 
 const tool = (name: string) => {
@@ -184,7 +189,20 @@ it('gives revision_findings only to the run started for the revision', async () 
 it('marks the tools that stay on this computer, which Claude may call without asking', () => {
   const local = tools.filter(({ annotations }) => annotations?.openWorldHint === false);
   expect(local.map((each) => each.name).sort()).toEqual(
-    [...LOCAL_TOOLS, ...FACT_TOOLS, ...PROFILE_TOOLS, ...TEMPLATE_TOOLS].sort(),
+    [
+      ...LOCAL_TOOLS,
+      ...FACT_TOOLS,
+      ...PROFILE_TOOLS,
+      ...TEMPLATE_TOOLS,
+      // Each part of Profile's own, which only a run on that part has.
+      'add_to_notes',
+      'keep_names_private',
+      'save_beyond_work',
+      'save_contact',
+      'save_for_applications',
+      'save_resume_choices',
+      'save_what_you_want',
+    ].sort(),
   );
 });
 

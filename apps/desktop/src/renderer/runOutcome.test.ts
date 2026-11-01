@@ -40,6 +40,14 @@ const done = (tool: string, detail: string | null = null): RunStep => ({
 });
 
 describe('runOutcome', () => {
+  it('says nothing of its own for a part of Profile, so what Claude said shows', () => {
+    const task = { skill: 'update-profile', part: 'about', request: '' } as const;
+    // What it changed is on its card, and only Claude says what it left, and where.
+    expect(outcome(task, undefined, [done('mcp__factwright__save_contact')])).toBeNull();
+    expect(outcome(task, undefined, [done('Edit')])).toBeNull();
+    expect(makesSomething(task)).toBe(false);
+  });
+
   it('says a resume, a letter or a Projects page is ready once the job has a new one', () => {
     expect(
       outcome({ skill: 'focused-resume', jobId: acme.id }, (job) => ({

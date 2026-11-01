@@ -69,14 +69,15 @@ describe('the levels Claude runs at', () => {
             'answer-questions': 'opus',
             ask: 'opus',
             'work-history': 'sonnet',
+            'update-profile': 'sonnet',
           },
         },
         { main: 'low', tasks: {} },
         'best',
       ),
     );
-    // Five each on Opus, with tailored resumes, and on Haiku, and four on Sonnet.
+    // Five each on Opus, with tailored resumes, and on Haiku, and five on Sonnet.
     expect(levelName(most)).toBe('Opus · Low');
-    expect(others).toBe('Lighter for 9 tasks');
+    expect(others).toBe('Lighter for 10 tasks');
   });
 });

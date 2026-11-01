@@ -1,5 +1,7 @@
 import { type CallDocKind, FACT_TAGS, localDate, sameCompany } from '@factwright/core';
 import { hasKinds, kindsOf } from '../../shared/kinds.ts';
+import type { ProfilePart } from '../../shared/profile-parts.ts';
+import { partOf, type RunScope } from '../../shared/runs.ts';
 import type { FactBankFiles } from '../about/facts.ts';
 import type { AboutStore } from '../about/store.ts';
 import type { JobsService } from '../jobs/service.ts';
@@ -25,6 +27,21 @@ import { findJob, findJobs, type JobQuery, jobDetails } from './lookup.ts';
 import { huntCall, type McpTool, type ToolCall } from './mcp.ts';
 import { mergeJob } from './merge.ts';
 import { type FetchDeps, ReadCache, readLink, savePosting } from './posting.ts';
+import {
+  APPLICATIONS_SCHEMA,
+  addToNotes,
+  BEYOND_SCHEMA,
+  CHOICES_SCHEMA,
+  CONTACT_SCHEMA,
+  keepNamesPrivate,
+  type PartAbout,
+  saveBeyondWork,
+  saveContact,
+  saveForApplications,
+  saveResumeChoices,
+  saveWhatYouWant,
+  WANTS_SCHEMA,
+} from './profile-parts.ts';
 import { buildProjectsPage } from './projects.ts';
 import { buildResume } from './resume.ts';
 import { revisionFindings } from './revision.ts';
@@ -35,9 +52,9 @@ export interface ToolDeps {
   jobs: JobsService;
   /**
    * What the user told Factwright about themselves, which save_about_you adds to, and the work
-   * history and education save_work_history saves.
+   * history and education save_work_history saves, and what a run on one part of Profile changes.
    */
-  about: Pick<AboutStore, 'answers' | 'saveAnswers' | 'history' | 'saveHistory'>;
+  about: Pick<AboutStore, 'saveHistory'> & PartAbout;
   /** The fact bank's files, which the user's answers in a run add to. */
   facts: Pick<FactBankFiles, 'read' | 'fileClaim' | 'addGap' | 'confirm' | 'correct'>;
   workspace: string;
@@ -99,6 +116,9 @@ export const FACT_TOOLS = ['save_fact', 'save_gap', 'verify_fact', 'correct_fact
  */
 export const PROFILE_TOOLS = ['save_about_you', 'save_work_history'];
 
+/** What a run on any part of Profile reads: the changes the user asked for, and Profile itself. */
+export const PART_READS = ['about_you', 'requested_changes'];
+
 /**
  * The tool that adds to the user's templates. It stays on this computer. A revision reads what an
  * X-ray found in a posting, so it asks before saving one.
@@ -121,6 +141,49 @@ export const PUBLIC_API_TOOLS = ['read_posting', 'save_posting', 'job_board', 'h
  * user's network. The task's card lists each page it read.
  */
 export const WEB_TOOLS = ['read_page'];
+
+/**
+ * What a run started with Update with Claude saves with, for each part: only that part's own tools,
+ * so a run on one part can't save another. Those in PART_ONLY no other run has.
+ */
+export const PART_TOOLS: Readonly<Record<ProfilePart, readonly string[]>> = {
+  about: ['save_contact'],
+  wants: ['save_what_you_want'],
+  kind: ['save_what_you_want'],
+  applications: ['save_for_applications'],
+  leaving: ['save_for_applications'],
+  beyond: ['save_beyond_work', 'keep_names_private'],
+  history: ['save_work_history', 'keep_names_private'],
+  resumes: ['list_templates', 'build_resume', 'keep_names_private'],
+  templates: ['save_resume_choices', ...TEMPLATE_READS, ...TEMPLATE_TOOLS],
+  facts: [...FACT_TOOLS, 'keep_names_private'],
+  shared: ['add_to_notes', 'keep_names_private'],
+};
+
+/** The tools only a run on a part of Profile has, as each is for what the user asked in it. */
+const PART_ONLY = [
+  'save_contact',
+  'save_what_you_want',
+  'save_for_applications',
+  'save_beyond_work',
+  'save_resume_choices',
+  'add_to_notes',
+  'keep_names_private',
+];
+
+/**
+ * Whether a run has a tool, which it sees and can call: a run on a part of Profile has that part's
+ * alone, and no other run has a part's own. A run that reads the web can't change the user's name,
+ * and one changing their email has nothing to do with the rest.
+ */
+export function runHasTool(scope: RunScope, tool: string): boolean {
+  const part = partOf(scope);
+  if (part) return PART_READS.includes(tool) || PART_TOOLS[part].includes(tool);
+  return !PART_ONLY.includes(tool);
+}
+
+/** A tool saving to a part of Profile: it stays on this computer, and the card lists its changes. */
+const SAVES_PART = { readOnlyHint: false, idempotentHint: true, openWorldHint: false };
 
 /** Tools that only read, and don't reach past this computer. */
 const READS = { readOnlyHint: true, openWorldHint: false };
@@ -291,10 +354,10 @@ export function factwrightTools(deps: ToolDeps): McpTool[] {
     {
       name: 'requested_changes',
       description:
-        'What the user asked to change in a job’s resume or cover letter, in their own words, typed in the app for this run, with where the version before is kept. Only a run the user started with Request changes has them.',
+        'What the user asked to change in a job’s resume or cover letter, or in a part of their Profile, in their own words, typed in the app for this run, with where the version before is kept, or what the part holds now. Only a run the user started with Request changes or Update with Claude has them.',
       inputSchema: { type: 'object', properties: {}, additionalProperties: false },
       annotations: READS,
-      run: async (_input, call) => requestedChanges(call?.changes),
+      run: async (_input, call) => requestedChanges(call?.changes, deps.about),
     },
     {
       name: 'read_posting',
@@ -355,15 +418,21 @@ export function factwrightTools(deps: ToolDeps): McpTool[] {
       },
       // It writes only resume files, beside their data, from what's on this computer.
       annotations: { readOnlyHint: false, idempotentHint: true, openWorldHint: false },
-      run: async (input, call) =>
-        buildResume(textInput(input, 'folder', true) ?? '', textInput(input, 'format', false), {
+      run: async (input, call) => {
+        const folder = textInput(input, 'folder', true) ?? '';
+        // A run on the starting resumes builds those, and never a job's.
+        if (call?.scope === 'part:resumes' && !folder.startsWith('base/')) {
+          return `Not built: this run is on the starting resumes in base/, and a job’s resume isn’t one of them.`;
+        }
+        return buildResume(folder, textInput(input, 'format', false), {
           workspace: deps.workspace,
           printer: deps.printer,
           templates: deps.templates,
           jobs: () => deps.jobs.list().jobs,
           ...(deps.now && { now: deps.now }),
           ...(call?.keep && { keep: call.keep }),
-        }),
+        });
+      },
     },
     {
       name: 'build_cover_letter',
@@ -534,7 +603,12 @@ export function factwrightTools(deps: ToolDeps): McpTool[] {
             id: textInput(input, 'id', true) ?? '',
             template: input.template,
             replace: input.replace === true,
-            resume: textInput(input, 'resume', false),
+            // A run on Resume templates reads no job's folder, even for a preview.
+            resume:
+              call?.scope === 'part:templates' &&
+              !textInput(input, 'resume', false)?.startsWith('base/')
+                ? undefined
+                : textInput(input, 'resume', false),
           },
           {
             workspace: deps.workspace,
@@ -1035,7 +1109,7 @@ export function factwrightTools(deps: ToolDeps): McpTool[] {
     {
       name: 'save_work_history',
       description:
-        'Saves the user’s work history and education in Profile, whole, in place of what’s there, for application forms that ask for each job and school one at a time. Give every position they held, newest first, under its company: several positions at one company are each their own, with their own title, dates and summary, under that company, never merged. Give every school, newest first. Dates are YYYY-MM, or YYYY when only the year is known, and an end of present for a position they still hold. Save only what the fact bank and their resumes say, and leave a date blank rather than guess it.',
+        'Saves the user’s work history and education in Profile, whole, in place of what’s there, for application forms that ask for each job and school one at a time. Give every position they held, newest first, under its company: several positions at one company are each their own, with their own title, dates and summary, under that company, never merged. Give every school, newest first. Dates are YYYY-MM, or YYYY when only the year is known, and an end of present for a position they still hold. Save only what the fact bank and their resumes say, or what they asked for in this run’s requested_changes, and leave a date blank rather than guess it.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -1094,6 +1168,84 @@ export function factwrightTools(deps: ToolDeps): McpTool[] {
       // It changes the user's profile on this computer, which the task's card lists, with Undo.
       annotations: { readOnlyHint: false, idempotentHint: true, openWorldHint: false },
       run: async (input, call) => saveHistory(input, deps.about, call?.keep),
+    },
+    {
+      name: 'save_contact',
+      description:
+        'Saves the user’s name and contact details in Profile’s About you, as they asked in this run’s requested_changes: only what they asked to change. A blank clears a detail, but never their name. Only a run on About you has it.',
+      inputSchema: CONTACT_SCHEMA,
+      annotations: SAVES_PART,
+      run: async (input, call) => saveContact(input, deps.about, call),
+    },
+    {
+      name: 'save_what_you_want',
+      description:
+        'Saves what the user wants in Profile, as they asked in this run’s requested_changes: only what they asked to change. Each list is whole, in place of what’s there, so to add one give the ones there too. Titles, kinds of work, levels and pay are each kind of job’s own: when they want more than one kind, give kind. Add, rename and remove kinds of job here too. A run on one kind of job changes only that kind’s own answers and name. Only a run on What you want, or one kind of job, has it.',
+      inputSchema: WANTS_SCHEMA,
+      annotations: SAVES_PART,
+      run: async (input, call) => saveWhatYouWant(input, deps.about, call),
+    },
+    {
+      name: 'save_for_applications',
+      description:
+        'Saves what application forms ask that a resume doesn’t say, in Profile’s For applications, as the user asked in this run’s requested_changes: only what they asked to change. It never takes their street, postal code or equal-opportunity answers, which stay on this computer. A run on why they’re leaving changes that alone. Only a run on For applications, or why they’re leaving, has it.',
+      inputSchema: APPLICATIONS_SCHEMA,
+      annotations: SAVES_PART,
+      run: async (input, call) => saveForApplications(input, deps.about, call),
+    },
+    {
+      name: 'save_beyond_work',
+      description:
+        'Saves Profile’s Beyond work, as the user asked in this run’s requested_changes: only what they asked to change. Add, change and remove projects, each change by the project’s id, with what changed, and set how projects look. Interests, what they’re learning and communities are each whole, in place of what’s there, so to add one give the ones there too. A project’s overview is the user’s own words, not a fact. Only a run on Beyond work has it.',
+      inputSchema: BEYOND_SCHEMA,
+      annotations: SAVES_PART,
+      run: async (input, call) => saveBeyondWork(input, deps.about, call),
+    },
+    {
+      name: 'save_resume_choices',
+      description:
+        'Saves which resume templates the user picked and what each is for, how long resumes run, and which files they come as, as they asked in this run’s requested_changes: only what they asked to change. looks is whole, in place of what’s there. Only a run on Resume templates has it.',
+      inputSchema: CHOICES_SCHEMA,
+      annotations: SAVES_PART,
+      run: async (input, call) => saveResumeChoices(input, deps.about, deps.templates, call),
+    },
+    {
+      name: 'keep_names_private',
+      description:
+        'Adds names to the user’s list of names that must never reach an employer: customers, coworkers, internal project names, codenames and internal tools. Every resume is checked against it. Give each name as they said it. A run on What you’ve shared can take names off too, when they ask.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          add: {
+            type: 'array',
+            items: { type: 'string' },
+            description: 'Names to add, each as they said it.',
+          },
+          remove: {
+            type: 'array',
+            items: { type: 'string' },
+            description: 'Names to take off. Only a run on What you’ve shared can.',
+          },
+        },
+        additionalProperties: false,
+      },
+      annotations: { readOnlyHint: false, idempotentHint: true, openWorldHint: false },
+      run: async (input, call) => keepNamesPrivate(input, deps.about, call),
+    },
+    {
+      name: 'add_to_notes',
+      description:
+        'Adds a paragraph to the user’s notes, which later runs read as their own words, when they asked for that in this run’s requested_changes. Give the words exactly as they typed them for this run, or answered you in it: it takes nothing else. It never changes what’s there. Only a run on What you’ve shared has it.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          text: { type: 'string', description: 'What to add, in the user’s own words.' },
+        },
+        required: ['text'],
+        additionalProperties: false,
+      },
+      annotations: { readOnlyHint: false, openWorldHint: false },
+      run: async (input, call) => addToNotes(input, deps.about, call),
     },
   ];
 }

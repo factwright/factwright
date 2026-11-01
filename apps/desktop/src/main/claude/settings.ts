@@ -1,8 +1,12 @@
-import type { RunScope } from '../../shared/runs.ts';
+import { JOB_EXTRAS, WORKSPACE_PATHS } from '@factwright/core';
+import type { ProfilePart } from '../../shared/profile-parts.ts';
+import { partOf, type RunScope } from '../../shared/runs.ts';
 import { TEMPLATES_FOLDER } from '../resume/templates.ts';
 import {
   FACT_TOOLS,
   LOCAL_TOOLS,
+  PART_READS,
+  PART_TOOLS,
   PROFILE_TOOLS,
   PUBLIC_API_TOOLS,
   TEMPLATE_READS,
@@ -95,10 +99,49 @@ const OFF_THE_WEB = [
   ...[...PUBLIC_API_TOOLS, ...WEB_TOOLS].map((tool) => `mcp__${TOOLS_SERVER}__${tool}`),
 ];
 
+/**
+ * What a run on a part of Profile may edit itself. The rest save through their part's tools alone,
+ * and a starting resume is a file of its own.
+ */
+const PART_EDITS: Readonly<Partial<Record<ProfilePart, readonly string[]>>> = {
+  resumes: ['base/**'],
+};
+
+/**
+ * What a run on a part of Profile never reads: what came from the web, or from someone else, so
+ * nothing it saves can come from a page or a file that could tell it what to write. It works from
+ * the user's words, their facts and their Profile.
+ */
+const FROM_ELSEWHERE = [
+  WORKSPACE_PATHS.jobs,
+  WORKSPACE_PATHS.searches,
+  WORKSPACE_PATHS.outreach,
+  JOB_EXTRAS.saved,
+  JOB_EXTRAS.screenshots,
+  JOB_EXTRAS.asked,
+  JOB_EXTRAS.calls,
+  `${TEMPLATES_FOLDER}/sources`,
+  'linkedin',
+].map((folder) => `${folder}/**`);
+
+/** The files the user shared, which might hold anything: only their work history reads them. */
+const SHARED_FILES = 'about-me/files/**';
+
 /** What Claude may do without asking, from what the run is for. */
 function allowed(scope: RunScope): string[] {
   const skills = `Skill(${PLUGIN} *)`;
   const named = (tools: readonly string[]) => tools.map((tool) => `mcp__${TOOLS_SERVER}__${tool}`);
+  // A run on one part of Profile reads what the user asked and saves that part, with its own tools,
+  // and nothing else without asking. It turns away Claude Code's permission prompts too, so
+  // anything else never runs.
+  const part = partOf(scope);
+  if (part) {
+    return [
+      skills,
+      ...named([...PART_READS, ...PART_TOOLS[part]]),
+      ...(PART_EDITS[part] ?? []).map(edits),
+    ];
+  }
   // A template run copies a resume from anywhere, so it reads and saves templates and nothing
   // else without asking: no files, no resume to build, no answer to save.
   if (scope === 'template') return [skills, ...named([...TEMPLATE_READS, ...TEMPLATE_TOOLS])];
@@ -138,7 +181,9 @@ function allowed(scope: RunScope): string[] {
  *   history never reads the web, nor does a revision, which reads what a resume's X-ray found in
  *   a posting, and otherwise runs as a run on the job hunt does, apart from saving a template,
  *   which asks first. A run started to make a template copies a resume from anywhere, so it may
- *   read and save templates without asking, and nothing else, and never reads the web either.
+ *   read and save templates without asking, and nothing else, and never reads the web either. A
+ *   run started with Update with Claude saves one part of Profile, with that part's own tools, and
+ *   nothing else, and reads neither the web nor what came from it.
  * - never: changing Claude Code's settings or the instructions it loads, the user's own notes,
  *   shared files and Profile other than through Factwright's tools, the job hunt's logs other
  *   than through log_check, and outside getting started and adding facts, the fact bank other
@@ -190,6 +235,11 @@ export function sessionSettings({
         ...LOGS_THE_APP_WRITES.map(edits),
         ...(scope === 'profile' ? [] : [edits(FACTS)]),
         ...(scope === 'hunt' ? [] : OFF_THE_WEB),
+        ...(partOf(scope)
+          ? [...FROM_ELSEWHERE, ...(scope === 'part:history' ? [] : [SHARED_FILES])].map(
+              (path) => `Read(./${path})`,
+            )
+          : []),
         // A revision changes a template only through save_template, which asks.
         ...(scope === 'revise' ? [edits(`${TEMPLATES_FOLDER}/**`)] : []),
       ],

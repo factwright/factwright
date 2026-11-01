@@ -1,4 +1,5 @@
 import type { Job } from '@factwright/core';
+import { partTitle } from '../shared/profile-parts.ts';
 import { REVISE_SKILL } from '../shared/revision.ts';
 import {
   FACTS_SKILL,
@@ -37,7 +38,8 @@ const HUNT_TITLES: Readonly<Record<string, string>> = {
  * as "Job search", or just "Claude" for Claude with no task, waiting for what the user types. A
  * run analyzing several jobs says how many, and how many it has done once it's done any (the
  * ones in `analyzed`): "Analyze · 6 jobs", then "Analyze · 2 of 6 done". One Claude started on
- * its own says they're new: "Analyze · 3 new jobs".
+ * its own says they're new: "Analyze · 3 new jobs". One changing a part of Profile names the part:
+ * "Update · About you".
  */
 export function runTitle(
   task: RunTask | null,
@@ -45,6 +47,7 @@ export function runTitle(
   analyzed: readonly string[] = [],
 ): string {
   if (!task) return 'Claude';
+  if ('part' in task) return `Update · ${partTitle(task.part, task.kind)}`;
   const hunt = HUNT_TITLES[task.skill];
   if (hunt) return hunt;
   if ('jobIds' in task) {

@@ -11,6 +11,8 @@ export interface Answered {
   detail: string | null;
   /** What the user added to their pick in its notes, if anything. */
   notes: string | null;
+  /** Set when they typed it in the app for this run, rather than answering a question Claude asked. */
+  typed?: true;
 }
 
 /** A question answered in a run, with how much it has backed, so each answer backs little. */
@@ -18,10 +20,15 @@ interface Heard extends Answered {
   key: string;
   /** How many facts, rows of what the user doesn't have, and verified facts it has backed. */
   backed: { fact: number; gap: number; verify: number };
+  /** What's the user's own of it: all but the options they picked, which Claude wrote. */
+  own: string;
 }
 
 /** What one answer may back, at most: a fact per option a question can have, one gap, one fact verified. */
 export const MAX_BACKED = { fact: 4, gap: 1, verify: 1 } as const;
+
+/** What typed words may back: a request can say several things, and each is held to its words. */
+const MAX_TYPED_FACTS = 12;
 
 export type Backing = keyof typeof MAX_BACKED;
 
@@ -57,6 +64,22 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
 
 /** A question's key: its words on one line, in one form and case, so spacing can't tell two apart. */
 export const questionKey = (question: string) => oneLine(question).normalize('NFC').toLowerCase();
+
+/** The letters and digits of scripts that put spaces between words. */
+const SPACED = /[\p{Script=Latin}\p{Script=Cyrillic}\p{Script=Greek}\p{N}]/u;
+
+/** Whether some text has these words, whole: "Java" isn't in "JavaScript". */
+function hasWords(text: string, wanted: string): boolean {
+  for (let at = text.indexOf(wanted); at >= 0; at = text.indexOf(wanted, at + 1)) {
+    const before = text[at - 1] ?? '';
+    const after = text[at + wanted.length] ?? '';
+    const cutsIn =
+      (SPACED.test(before) && SPACED.test(wanted[0] ?? '')) ||
+      (SPACED.test(after) && SPACED.test(wanted.at(-1) ?? ''));
+    if (!cutsIn) return true;
+  }
+  return false;
+}
 
 /** A string of a length, trimmed, or null. */
 const text = (value: unknown, max: number): string | null =>
@@ -134,6 +157,39 @@ export class QuestionLog {
     else if (event.hook_event_name === 'PostToolUse') this.answered(id, event);
   }
 
+  /**
+   * What the user typed in the app for this run, on record as their answer to the question the app
+   * asked them there. It comes from the window, like Claude Code's hooks, never from Claude.
+   */
+  told(question: string, answer: string): void {
+    this.heard.push({
+      key: questionKey(question),
+      question: oneLine(question),
+      answer,
+      detail: null,
+      notes: null,
+      typed: true,
+      backed: { fact: 0, gap: 0, verify: 0 },
+      own: answer,
+    });
+  }
+
+  /**
+   * Whether the user said these words in this run, as they said them: in what they typed in the
+   * app for it, what they typed in answer to a question, or a note to their pick. Never in a
+   * question, or an option they picked, which Claude writes. A letter or two says nothing.
+   */
+  said(words: string): boolean {
+    const wanted = questionKey(words);
+    return (
+      wanted.length >= 3 &&
+      this.heard.some(
+        ({ own, notes }) =>
+          hasWords(questionKey(own), wanted) || hasWords(questionKey(notes ?? ''), wanted),
+      )
+    );
+  }
+
   /** A filing call Claude Code is about to make, for the tool to find. */
   private showCall(tool: FilingTool, input: unknown): void {
     const shown = isRecord(input) ? canonical(input) : null;
@@ -208,6 +264,14 @@ export class QuestionLog {
       // A question the user skipped in the app's dialog has no answer to back anything.
       if (!answer || answer === SKIPPED_ANSWER) continue;
       const picked = options.find((option) => option.label.trim() === answer);
+      // Several picks come joined, with what the user typed beside them.
+      const labels = options.map(({ label }) => label.trim()).filter(Boolean);
+      const own = labels.includes(answer)
+        ? ''
+        : answer
+            .split(', ')
+            .filter((each) => !labels.includes(each))
+            .join(', ');
       this.heard.push({
         key: questionKey(raw),
         question: oneLine(raw),
@@ -215,6 +279,7 @@ export class QuestionLog {
         detail: picked?.description ?? null,
         notes: isRecord(note) ? text(note.notes, MAX_ANSWER) : null,
         backed: { fact: 0, gap: 0, verify: 0 },
+        own,
       });
     }
     if (this.heard.length > MAX_HEARD) this.heard.splice(0, this.heard.length - MAX_HEARD);
@@ -229,7 +294,13 @@ export class QuestionLog {
   find(question: string): Answered | null {
     const found = this.newest(question);
     return found
-      ? { question: found.question, answer: found.answer, detail: found.detail, notes: found.notes }
+      ? {
+          question: found.question,
+          answer: found.answer,
+          detail: found.detail,
+          notes: found.notes,
+          ...(found.typed && { typed: true }),
+        }
       : null;
   }
 
@@ -252,7 +323,8 @@ export class QuestionLog {
    */
   reserve(question: string, what: Backing): (() => void) | null {
     const found = this.newest(question);
-    if (!found || found.backed[what] >= MAX_BACKED[what]) return null;
+    const most = found?.typed && what === 'fact' ? MAX_TYPED_FACTS : MAX_BACKED[what];
+    if (!found || found.backed[what] >= most) return null;
     found.backed[what] += 1;
     let given = false;
     return () => {

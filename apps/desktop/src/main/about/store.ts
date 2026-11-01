@@ -280,24 +280,46 @@ export class AboutStore {
     this.write(ABOUT.notes, text);
   }
 
+  /**
+   * Adds a paragraph to the notes, for one of Claude's tasks, whose `keep` hears the file's path
+   * just before it changes. False when the notes would be longer than the app keeps.
+   */
+  addToNotes(text: string, keep?: (path: string) => void): boolean {
+    const notes = this.notes().trimEnd();
+    const next = notes ? `${notes}\n\n${text}\n` : `${text}\n`;
+    if (next.length > ANSWER_LIMITS.notes) return false;
+    this.keepingFor(keep, () => this.write(ABOUT.notes, next));
+    return true;
+  }
+
   confidential(): string[] {
     return termsIn(this.read(ABOUT.terms));
+  }
+
+  /** Whether the search criteria file is one the user or Claude changed by hand, so it stays. */
+  criteriaIsOwn(): boolean {
+    return !untouched(this.read(ABOUT.criteria));
   }
 
   /**
    * Adds and removes confidential names as the user changed them. Names Claude added since the
    * user's list was read stay, and every pattern Claude wrote keeps its exact line.
    */
-  changeConfidential({
-    add,
-    remove,
-  }: {
-    add: readonly string[];
-    remove: readonly string[];
-  }): string[] {
+  changeConfidential(
+    {
+      add,
+      remove,
+    }: {
+      add: readonly string[];
+      remove: readonly string[];
+    },
+    keep?: (path: string) => void,
+  ): string[] {
     const gone = new Set(remove.map((name) => name.trim().toLowerCase()));
     const kept = this.confidential().filter((name) => !gone.has(name.toLowerCase()));
-    this.write(ABOUT.terms, withTerms(this.read(ABOUT.terms), [...kept, ...add]));
+    this.keepingFor(keep, () =>
+      this.write(ABOUT.terms, withTerms(this.read(ABOUT.terms), [...kept, ...add])),
+    );
     return this.confidential();
   }
 

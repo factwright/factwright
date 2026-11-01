@@ -19,6 +19,7 @@
 }
 
 .body {
+  position: relative;
   display: flex;
   flex: 1 0 auto;
   flex-direction: column;
@@ -27,6 +28,13 @@
   max-width: 880px;
   margin: 0 auto;
   padding: var(--fw-space-8) var(--fw-space-6);
+}
+
+/* Update with Claude, across from the step's title. */
+.claude {
+  position: absolute;
+  top: var(--fw-space-8);
+  right: var(--fw-space-6);
 }
 
 /* Each step's heading takes focus when the step opens, without a ring. */
