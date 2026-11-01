@@ -466,9 +466,9 @@ describe('job_board, on what can go wrong', () => {
 
   it('takes a list of only hidden jobs for no jobs', async () => {
     fetch.mockResolvedValue({ jobs: [{ id: '1', title: 'Hidden', isListed: false }] });
-    expect(await tool('job_board').run({ url: 'https://jobs.ashbyhq.com/acme', folder: SEARCH })).toBe(
-      'The Ashby board “acme” has no open jobs right now.',
-    );
+    expect(
+      await tool('job_board').run({ url: 'https://jobs.ashbyhq.com/acme', folder: SEARCH }),
+    ).toBe('The Ashby board “acme” has no open jobs right now.');
     fetch.mockResolvedValue(
       'window.pageData = {"Jobs":[{"JobId":1,"JobTitle":"Inside","IsInternal":true}]};',
     );
@@ -1192,7 +1192,7 @@ describe('job_board, from Workday’s own search', () => {
   it('says when its search has nothing for those titles, or the board has no jobs', async () => {
     searches = { 'nurse@0': { total: 0, jobPostings: [] } };
     expect(await tool('job_board').run({ url: BOARD_URL, folder: SEARCH, titles: ['nurse'] })).toBe(
-      'The Workday board “osu/OSUCareers”’s own search has nothing for those titles right now.',
+      'Workday’s own search for the Workday board “osu/OSUCareers” has nothing for those titles right now.',
     );
     expect(
       await tool('job_board').run({
@@ -1412,7 +1412,9 @@ describe('job_listings', () => {
     expect(fetch.mock.calls.map(([url]) => url)).toEqual([
       'https://jobs.workable.com/api/v1/jobs?query=Node.js%20Developer',
     ]);
-    expect(answer).toContain('Left out of the search, as they don’t read like job titles: “jane@example.com”.');
+    expect(answer).toContain(
+      'Left out of the search, as they don’t read like job titles: “jane@example.com”.',
+    );
   });
 
   it('refuses nothing USAJOBS would never be sent', async () => {

@@ -530,6 +530,12 @@ export async function careersSite(
       : []),
   ];
   const searchInstead = `Search the employer’s name and the titles with ${host} as allowed_domains instead.`;
+  if (pages.links.length === 0 && pages.left === 0) {
+    return [
+      `${host} lists no pages in the sitemaps it may read. ${searchInstead}`,
+      ...unlooked,
+    ].join('\n');
+  }
   if (matches.length === 0) {
     if (barred > 0) {
       return [

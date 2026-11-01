@@ -679,7 +679,12 @@ describe('careersSite, against what a site can do', () => {
       (_, i) => `<sitemap><loc>${SITE}/s${i}-${'a'.repeat(400)}.xml</loc></sitemap>`,
     );
     table = {
-      [`${SITE}/robots.txt`]: [`Sitemap: ${SITE}/index.xml`, 'User-agent: *', 'Disallow: /', ...rules].join('\n'),
+      [`${SITE}/robots.txt`]: [
+        `Sitemap: ${SITE}/index.xml`,
+        'User-agent: *',
+        'Disallow: /',
+        ...rules,
+      ].join('\n'),
       [`${SITE}/index.xml`]: `<sitemapindex>${children.join('')}</sitemapindex>`,
     };
     let longest = 0;

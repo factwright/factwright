@@ -515,7 +515,7 @@ export async function jobBoard(
   const wanted = paylocityJob ?? boardPostingId(url);
   if (jobs.length === 0) {
     if (searched && searched.length > 0) {
-      return `${capitalized(board)}’s own search has nothing for those titles right now.${wanted ? ' That doesn’t mean the posting you linked has closed: read it with read_page to tell.' : ''}`;
+      return `Workday’s own search for ${board} has nothing for those titles right now.${wanted ? ' That doesn’t mean the posting you linked has closed: read it with read_page to tell.' : ''}`;
     }
     if (boardFromSitemap(source) && !searched) {
       return `${capitalized(board)} lists no jobs in its sitemap. That doesn’t mean it has none, so read its careers page with read_page instead.`;
