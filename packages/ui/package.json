@@ -9,6 +9,7 @@
     ".": "./src/index.ts",
     "./brand": "./src/brand.ts",
     "./theme": "./src/theme.ts",
+    "./themes": "./src/themes.ts",
     "./tokens": "./src/tokens.ts"
   },
   "scripts": {
