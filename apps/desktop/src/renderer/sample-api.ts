@@ -1267,6 +1267,10 @@ export function sampleApi(): FactwrightApi {
           : { state: 'none' },
     onUpdateChanged: () => () => {},
     installUpdate: async () => true,
+    // ?whats-new=0.19.0 opens as if just updated to that version, with ?profile=done or any other
+    // that's past Get started, and shows its notes at each reload.
+    whatsNewDue: async () => query.get('whats-new'),
+    whatsNewSeen: async () => {},
     ...sampleSaveHelper(query.get('helper'), query.get('platform') ?? 'darwin'),
     // Which model Claude runs on, kept until the page reloads.
     theme: async () => theme,

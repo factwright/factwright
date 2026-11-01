@@ -746,6 +746,13 @@ export interface FactwrightApi {
   /** Restarts into a downloaded update. Answers whether there was one to install. */
   installUpdate(): Promise<boolean>;
   /**
+   * The version whose short notes are due: the one just installed, until they've been shown or
+   * passed by, or null. A first install or a new profile has none due.
+   */
+  whatsNewDue(): Promise<string | null>;
+  /** Keeps that what's new has been shown or passed by, so it isn't due again. */
+  whatsNewSeen(): Promise<void>;
+  /**
    * Where saving from each browser to Factwright on this computer stands, for the Browser
    * extension window. Looking never touches a browser's folders.
    */

@@ -70,6 +70,7 @@ import { Claims } from './sync/claims.ts';
 import { NO_KEYCHAIN } from './sync/secrets.ts';
 import { factwrightTools } from './tools/index.ts';
 import { UpdateWatcher } from './updates.ts';
+import { WhatsNewDue } from './whats-new.ts';
 import { createMainWindow, DEV_ICON, showTheme, themeChosen } from './window.ts';
 
 /**
@@ -95,6 +96,12 @@ const syncServer = develop('FACTWRIGHT_SERVER_URL') || __SYNC_SERVER__ || null;
  * in its place, so the tests never reach Greenhouse.
  */
 const formFeedFile = develop('FACTWRIGHT_FORM_FEED');
+
+/**
+ * In quiet mode, for the app's tests, the app says nothing about what's new, unless a test names a
+ * version here, which it then says what's new for, as if it were running that version.
+ */
+const whatsNewFor = develop('FACTWRIGHT_WHATS_NEW');
 
 /** The most an update's log keeps before it starts again, as it only helps with the latest problem. */
 const UPDATE_LOG_BYTES = 200_000;
@@ -247,7 +254,18 @@ function start(home: string, profile: ProfileFolder, stopped: ProfileFolder | nu
     registerAppearance({ isAppPage, dataDir, chosen: themeChosen, show: showTheme });
     // The tracker sits beside the workspace, not in it, so Claude's file tools can't reach it.
     // Claude reaches it only through Factwright's tools.
-    const tracker = new Tracker(join(dataDir, 'tracker.db'));
+    const trackerFile = join(dataDir, 'tracker.db');
+    // Before the tracker opens, which makes its file: that it's there says a version ran here.
+    const whatsNew =
+      QUIET && !whatsNewFor
+        ? null
+        : new WhatsNewDue({
+            file: join(dataDir, 'whats-new.json'),
+            version: whatsNewFor ?? app.getVersion(),
+            usedBefore: existsSync(trackerFile),
+          });
+    await whatsNew?.load();
+    const tracker = new Tracker(trackerFile);
     const workspace = workspaceDir(dataDir);
     const profiles = new Profiles({
       home,
@@ -636,6 +654,7 @@ function start(home: string, profile: ProfileFolder, stopped: ProfileFolder | nu
       dataDir,
       runChanges,
       updates,
+      whatsNew,
       profiles,
       reminders,
       opener,
