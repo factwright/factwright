@@ -280,9 +280,9 @@ export async function jobBoard(
     ? `the ${boardSystem(source)} board “${boardName(source)}”`
     : 'the Paylocity board';
   try {
-    // One time limit for it all, as a request's host is the board's, once that's known.
-    let host = source ? new URL(boardRequest(source)).hostname : PAYLOCITY_HOST;
-    const fetch = fetchInTime({ ...deps, onRedirect: (to) => staysOn(host)(to) });
+    // One time limit for it all, however many requests it takes.
+    const host = source ? new URL(boardRequest(source)).hostname : PAYLOCITY_HOST;
+    const fetch = fetchInTime({ ...deps, onRedirect: staysOn(host) });
     if (!source) {
       // A Paylocity posting's link names no company, but its page links to the company's board.
       source = paylocityBoardOf(String(await fetch(paylocityJobPage(paylocityJob ?? ''), false)));
@@ -290,7 +290,6 @@ export async function jobBoard(
         return `The Paylocity posting at ${url} has closed, and its page no longer says which company it was.`;
       }
       board = `the Paylocity board “${source.board}”`;
-      host = PAYLOCITY_HOST;
     }
     read = await readWholeBoard(source, fetch);
   } catch (error) {

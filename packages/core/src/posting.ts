@@ -175,7 +175,10 @@ export function postingSource(address: string): PostingSource {
   if (recruiteeHost && recruitee?.[1]) {
     return { kind: 'recruitee', board: recruiteeHost, id: recruitee[1] };
   }
-  const workable = on(host === 'apply.workable.com', /^\/([\w-]{1,100})\/j\/([A-Za-z0-9]{1,40})/);
+  const workable = on(
+    host === 'apply.workable.com',
+    /^\/([\w-]{1,100})\/j\/([A-Za-z0-9]{1,40})(?:\/|$)/,
+  );
   if (workable?.[1] && workable[2] && workable[1] !== 'j') {
     return { kind: 'workable', board: workable[1], id: workable[2] };
   }
