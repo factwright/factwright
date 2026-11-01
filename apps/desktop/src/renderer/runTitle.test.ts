@@ -15,6 +15,15 @@ describe('a run’s name', () => {
     expect(runTitle(null, jobs)).toBe('Claude');
   });
 
+  it('names the part of Profile a run changes', () => {
+    expect(runTitle({ skill: 'update-profile', part: 'applications' }, jobs)).toBe(
+      'Update · For applications',
+    );
+    expect(runTitle({ skill: 'update-profile', part: 'kind', kind: 'project-manager' }, jobs)).toBe(
+      'Update · Project manager',
+    );
+  });
+
   it('says how many jobs a run analyzes, then how many it’s done', () => {
     const jobIds = ['a--1', 'b--2', 'c--3', 'd--4', 'e--5', 'f--6'];
     expect(runTitle({ skill: 'analyze-job', jobIds }, jobs)).toBe('Analyze · 6 jobs');

@@ -203,7 +203,17 @@
 
 .kinds li {
   display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0 var(--fw-space-2);
+}
+
+.kindSaid {
+  display: flex;
+  flex: 1 1 180px;
   flex-direction: column;
+  min-width: 0;
 }
 
 .kindName {
@@ -265,7 +275,17 @@
 }
 
 /* Why you're leaving, as long as it runs, in two lines on the card. */
+.leavingLine {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0 var(--fw-space-2);
+}
+
 .leaving {
+  flex: 1 1 180px;
+  min-width: 0;
   display: -webkit-box;
   overflow: hidden;
   -webkit-box-orient: vertical;

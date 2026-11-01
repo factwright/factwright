@@ -20,6 +20,7 @@ import type { RoundReply } from '../shared/rounds.ts';
 import { type RunTask, startedOnItsOwn } from '../shared/runs.ts';
 import { TemplatePreviews } from './about/previews.ts';
 import { PrivateAnswers } from './about/private.ts';
+import { ProfileRequests } from './about/profile-requests.ts';
 import { AboutStore } from './about/store.ts';
 import { AnalyzeNew } from './claude/analyze-new.ts';
 import { loadAtOnce } from './claude/at-once.ts';
@@ -375,6 +376,7 @@ function start(home: string, profile: ProfileFolder, stopped: ProfileFolder | nu
       jobs: () => jobs.list().jobs,
       trash: (path) => shell.trashItem(path),
     });
+    const profileRequests = new ProfileRequests();
     // What each of Claude's tasks changes, with a copy of each file from before it, kept beside the
     // workspace rather than in it, so Claude can't reach them, for Undo on the task's card.
     const runChanges = new RunChanges({
@@ -403,7 +405,7 @@ function start(home: string, profile: ProfileFolder, stopped: ProfileFolder | nu
           },
           events,
         ),
-      prepare: taskPreparer({ dataDir, revisions, versions }),
+      prepare: taskPreparer({ dataDir, revisions, versions, profileRequests }),
       atOnce,
       onView: (view) => {
         window.send('claude:runs', view);
@@ -623,6 +625,7 @@ function start(home: string, profile: ProfileFolder, stopped: ProfileFolder | nu
       jobs,
       revisions,
       versions,
+      profileRequests,
       workspace,
       sync,
       dataDir,

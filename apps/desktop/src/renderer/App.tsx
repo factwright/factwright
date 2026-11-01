@@ -745,6 +745,7 @@ export function App({ api }: { api: FactwrightApi }) {
                   startRun({ skill: GET_STARTED_SKILL });
                 }}
                 onMakeTemplate={(source) => startRun({ skill: TEMPLATE_SKILL, source })}
+                run={ready ? runControls : undefined}
                 onSkip={() => {
                   about.update({ skipped: true });
                   setPicked('jobs');
@@ -764,6 +765,7 @@ export function App({ api }: { api: FactwrightApi }) {
                 busy={taken('profile')}
                 ready={ready}
                 onRun={(next) => startRun(next)}
+                run={ready ? runControls : undefined}
                 onOpenFacts={() => setPicked('facts')}
                 {...(profiles.list && {
                   profiles: {

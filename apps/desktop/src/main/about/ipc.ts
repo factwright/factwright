@@ -9,12 +9,15 @@ import {
   parseGapTarget,
   parseNewFact,
 } from '../../shared/facts.ts';
+import { kindsOf } from '../../shared/kinds.ts';
 import { parsePrivateChanges } from '../../shared/private.ts';
 import type { AddFileResult } from '../../shared/profile.ts';
+import { parseProfileChanges } from '../../shared/profile-parts.ts';
 import type { TemplateLibrary } from '../resume/templates.ts';
 import { contactFromResume } from './from-resume.ts';
 import type { TemplatePreviews } from './previews.ts';
 import type { PrivateAnswers } from './private.ts';
+import type { ProfileRequests } from './profile-requests.ts';
 import type { AboutStore } from './store.ts';
 import { checkLinkedIn, checkUpload } from './uploads.ts';
 
@@ -51,6 +54,7 @@ export function registerAboutIpc(
     templates,
     kept,
     workspace,
+    profileRequests,
   }: {
     about: AboutStore;
     previews: TemplatePreviews;
@@ -59,6 +63,8 @@ export function registerAboutIpc(
     kept: PrivateAnswers;
     /** The open profile's workspace, where the resumes Factwright made are. */
     workspace: string;
+    /** What the user asked to change in a part of Profile, waiting for its run. */
+    profileRequests: ProfileRequests;
   },
 ): void {
   answer('about:profile', () => about.profile());
@@ -144,6 +150,17 @@ export function registerAboutIpc(
   answer('facts:remove-gap', (target) => {
     const valid = parseGapTarget(target);
     return valid ? about.facts.removeGap(valid) : REFUSED;
+  });
+
+  // Words typed for Update with Claude, held for its run, which reads them with requested_changes.
+  answer('about:request-changes', (value): EditResult => {
+    const request = parseProfileChanges(value);
+    if (!request) throw new Error('Refused changes that aren’t in the shape the app takes.');
+    if (request.kind && !kindsOf(about.answers()).some((kind) => kind.id === request.kind)) {
+      return { ok: false, message: 'That kind of job isn’t in your Profile anymore.' };
+    }
+    profileRequests.hold(request);
+    return { ok: true };
   });
 
   answer('about:start', () => about.start());

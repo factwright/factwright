@@ -1,6 +1,7 @@
 import { join, normalize, resolve, sep } from 'node:path';
 import { ASK_ID, CALL_ID, FOCUS_ID, type Job, KIND_ID } from '@factwright/core';
 import type { TerminalSize } from '../shared/api.ts';
+import { PROFILE_PARTS, PROFILE_SKILL, type ProfilePart } from '../shared/profile-parts.ts';
 import {
   FINDING_ID,
   MAX_FINDINGS,
@@ -190,6 +191,8 @@ export function parseRunTask(value: unknown): RunTask | null {
   const fields = value as Record<string, unknown>;
   // Analyzing several jobs in one run.
   if (fields.jobIds !== undefined) return parseAnalyzeTask(fields);
+  // Changes to a part of Profile.
+  if (fields.part !== undefined || fields.skill === PROFILE_SKILL) return parseProfileTask(fields);
   // A new version, or the changes the user asked for, on one job.
   if (fields.again !== undefined || fields.changes !== undefined) return parseVersionTask(fields);
   if (fields.skill === REVISE_SKILL) return parseRevision(value);
@@ -287,6 +290,15 @@ function parseAnalyzeTask(fields: Record<string, unknown>): RunTask | null {
   return { skill, jobIds: [...jobIds] as string[], ...(auto && { auto }) };
 }
 
+/** Changes to a part of Profile: the part, by its name, and the kind's id for one kind of job. */
+function parseProfileTask(fields: Record<string, unknown>): RunTask | null {
+  const { skill, part, kind, ...rest } = fields;
+  if (Object.keys(rest).length > 0 || skill !== PROFILE_SKILL) return null;
+  if (!(PROFILE_PARTS as readonly unknown[]).includes(part)) return null;
+  if (part !== 'kind') return kind === undefined ? { skill, part: part as ProfilePart } : null;
+  return typeof kind === 'string' && KIND_ID.test(kind) ? { skill, part, kind } : null;
+}
+
 /**
  * A new version of a job's resume, letter or Projects page, a quick one of its resume, or changes
  * to its resume or letter.
@@ -359,9 +371,14 @@ const MODE_WORDS = {
  * never reaches Claude as if the user had typed it. The exceptions are a company the user typed
  * for a search themselves, checked first, and the id of a kind of job they named. A focus for a
  * search goes by its ID alone, and the search reads what it says with search_focus. A search the
- * user picked no places for starts without any, so Claude asks.
+ * user picked no places for starts without any, so Claude asks. Changes to a part of Profile name
+ * it by the app's own word, and one kind of job by its id, and the run reads what the user asked
+ * with requested_changes.
  */
 export function runPrompt(task: RunTask): string {
+  if ('part' in task) {
+    return `/factwright:${task.skill} ${task.part}${task.kind ? ` ${task.kind}` : ''}`;
+  }
   if ('sources' in task && task.sources) {
     const { sites, month, company, kind, focus } = task.sources;
     const places = [
@@ -428,6 +445,16 @@ export const SEVERAL_ASK_NOTHING =
 export const SEVERAL_PERMITS_NOTHING =
   'Analyzing several jobs asks the user nothing, so this wasn’t asked, and the call didn’t run. Go on without it, with Factwright’s tools and what’s on file, and say in the job’s line what’s missing.';
 
+/** Changes to a part of Profile, as runPrompt types them or the user types them themselves. */
+const UPDATE_PROFILE = /^\/(?:factwright:)?update-profile(?:\s|$)/;
+
+/**
+ * What Claude Code reads in place of the user's OK when it asks for one changing a part of Profile,
+ * for a call that then never runs.
+ */
+export const UPDATE_PERMITS_NOTHING =
+  'A change to one part of Profile uses that part’s own tools and nothing else, so this wasn’t asked, and the call didn’t run. Go on without it, and say in your reply what you left, and where in the app the user changes it.';
+
 /**
  * Why a task asks the user nothing, by its prompt, for Claude to read when it asks anyway: a
  * quick resume's, or analyzing several jobs, which goes on while the user does other things, or
@@ -441,14 +468,16 @@ export function asksNothing(prompt: unknown): string | null {
 }
 
 /**
- * Why a task turns away Claude Code's permission prompts too, by its prompt: analyzing several
- * jobs, which goes on while the user does other things, or which Claude started on its own. Null
- * for any other task, whose prompts the user answers.
+ * Why a task turns away Claude Code's permission prompts, by its prompt: analyzing several jobs,
+ * which goes on while the user does other things, or which Claude started on its own, or changes
+ * to a part of Profile, which stay to that part. Null for any other task, whose prompts the user
+ * answers.
  */
 export function permitsNothing(prompt: unknown): string | null {
-  return typeof prompt === 'string' && ANALYZE_SEVERAL.test(prompt.trim())
-    ? SEVERAL_PERMITS_NOTHING
-    : null;
+  if (typeof prompt !== 'string') return null;
+  const typed = prompt.trim();
+  if (ANALYZE_SEVERAL.test(typed)) return SEVERAL_PERMITS_NOTHING;
+  return UPDATE_PROFILE.test(typed) ? UPDATE_PERMITS_NOTHING : null;
 }
 
 /** Claude Code's word that a task it ran in the background is back, which comes as a prompt. */

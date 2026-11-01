@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
+import { PROFILE_PARTS, type ProfilePart } from '../../shared/profile-parts.ts';
 import { type RunScope, scopeOf } from '../../shared/runs.ts';
-import { factwrightTools } from '../tools/index.ts';
+import { factwrightTools, PART_READS, PART_TOOLS, runHasTool } from '../tools/index.ts';
 import {
   ANSWER_WAIT_SECONDS,
   RUN_TOKEN_VARIABLE,
@@ -12,6 +13,98 @@ import {
 const settings = sessionSettings({ hookUrl: 'http://127.0.0.1:4000/hook', dark: false });
 const scoped = (scope: RunScope) =>
   sessionSettings({ hookUrl: 'http://127.0.0.1:4000/hook', dark: false, scope });
+
+const every = (scopes: readonly string[]) => scopes as readonly RunScope[];
+
+describe('a run on one part of Profile', () => {
+  const tool = (name: string) => `mcp__factwright__${name}`;
+  const parts = PROFILE_PARTS.map((part): RunScope => `part:${part}`);
+
+  it('saves with its own part’s tools alone, and reads what the user asked', () => {
+    const allowed = (part: ProfilePart) => scoped(`part:${part}`).permissions.allow;
+    const saving = {
+      about: 'save_contact',
+      wants: 'save_what_you_want',
+      kind: 'save_what_you_want',
+      applications: 'save_for_applications',
+      leaving: 'save_for_applications',
+      beyond: 'save_beyond_work',
+      history: 'save_work_history',
+      resumes: 'build_resume',
+      templates: 'save_resume_choices',
+      facts: 'save_fact',
+      shared: 'add_to_notes',
+    } as const;
+    const others = ['save_contact', 'save_what_you_want', 'save_for_applications'];
+    for (const part of PROFILE_PARTS) {
+      expect(allowed(part), part).toContain(tool(saving[part]));
+      expect(allowed(part), part).toContain(tool('requested_changes'));
+      expect(allowed(part), part).toContain(tool('about_you'));
+      // Not the tool every other run saves with, nor another part's.
+      expect(allowed(part), part).not.toContain(tool('save_about_you'));
+      for (const other of others.filter((each) => each !== saving[part])) {
+        expect(allowed(part), part).not.toContain(tool(other));
+      }
+    }
+  });
+
+  it('is allowed the tools it has, and no others', () => {
+    for (const part of PROFILE_PARTS) {
+      const allowed = scoped(`part:${part}`).permissions.allow;
+      for (const name of [...PART_READS, ...PART_TOOLS[part]]) {
+        expect(runHasTool(`part:${part}`, name), name).toBe(true);
+        expect(allowed, name).toContain(tool(name));
+      }
+      expect(allowed.filter((rule) => rule.startsWith('mcp__'))).toHaveLength(
+        new Set([...PART_READS, ...PART_TOOLS[part]]).size,
+      );
+    }
+  });
+
+  it('changes no file at will, past the names to keep private and a starting resume', () => {
+    const edits = (part: ProfilePart) =>
+      scoped(`part:${part}`).permissions.allow.filter((rule) => rule.startsWith('Edit('));
+    for (const part of PROFILE_PARTS.filter((each) => each !== 'resumes')) {
+      expect(edits(part), part).toEqual(['Edit(./guide/confidential-terms.txt)']);
+    }
+    expect(edits('resumes')).toEqual([
+      'Edit(./guide/confidential-terms.txt)',
+      'Edit(./base/**)',
+      'Edit(./guide/preferences.md)',
+    ]);
+  });
+
+  it('never edits the fact bank or the user’s own files, even for the part they’re in', () => {
+    for (const scope of every(parts)) {
+      const { deny } = scoped(scope).permissions;
+      expect(deny, scope).toContain('Edit(./facts/**)');
+      expect(deny, scope).toContain('Edit(./about-me/answers.json)');
+      expect(deny, scope).toContain('Edit(./about-me/notes.md)');
+      expect(deny, scope).toContain('Edit(./about-me/beyond-work.json)');
+      expect(deny, scope).toContain('Edit(./about-me/history.json)');
+    }
+  });
+
+  it('never reaches the web, nor reads what came from it', () => {
+    for (const scope of every(parts)) {
+      const { allow, deny } = scoped(scope).permissions;
+      expect(allow, scope).not.toContain('WebSearch');
+      expect(deny, scope).toContain('WebSearch');
+      expect(deny, scope).toContain(tool('read_page'));
+      expect(deny, scope).toContain(tool('read_posting'));
+      expect(deny, scope).toContain('Read(./applications/**)');
+      expect(deny, scope).toContain('Read(./searches/**)');
+      expect(deny, scope).toContain('Read(./templates/sources/**)');
+    }
+    // No other run gives that up.
+    expect(settings.permissions.deny).not.toContain('Read(./applications/**)');
+  });
+
+  it('is the scope of a task on that part, for one kind of job too', () => {
+    expect(scopeOf({ skill: 'update-profile', part: 'about' })).toBe('part:about');
+    expect(scopeOf({ skill: 'update-profile', part: 'kind', kind: 'design' })).toBe('part:kind');
+  });
+});
 
 describe('sessionSettings', () => {
   it("uses Claude Code's ANSI theme that matches the app", () => {
@@ -70,7 +163,7 @@ describe('sessionSettings', () => {
       'mcp__factwright__read_page',
       'Edit(./**)',
     ]);
-    // Every one of Factwright's tools.
+    // Every one of Factwright's tools that a run on the job hunt has.
     const named = factwrightTools({
       jobs: {} as never,
       about: {} as never,
@@ -78,7 +171,9 @@ describe('sessionSettings', () => {
       workspace: '',
       printer: {} as never,
       templates: {} as never,
-    }).map((tool) => `mcp__factwright__${tool.name}`);
+    })
+      .filter((tool) => runHasTool('hunt', tool.name))
+      .map((tool) => `mcp__factwright__${tool.name}`);
     expect(named.filter((tool) => !settings.permissions.allow.includes(tool))).toEqual([]);
   });
 

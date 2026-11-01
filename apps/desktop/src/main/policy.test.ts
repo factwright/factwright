@@ -20,6 +20,7 @@ import {
   SEVERAL_ASK_NOTHING,
   SEVERAL_PERMITS_NOTHING,
   saveableFileName,
+  UPDATE_PERMITS_NOTHING,
 } from './policy.ts';
 
 describe('parseTerminalSize', () => {
@@ -595,6 +596,54 @@ describe('analyzing several jobs', () => {
       SEVERAL_PERMITS_NOTHING,
     );
     expect(asksNothingAfter(SEVERAL_ASK_NOTHING, back)).toBe(SEVERAL_ASK_NOTHING);
+  });
+});
+
+describe('a task on a part of Profile', () => {
+  it('takes a part by its name, and a kind of job by its id for that part alone', () => {
+    expect(parseRunTask({ skill: 'update-profile', part: 'about' })).toEqual({
+      skill: 'update-profile',
+      part: 'about',
+    });
+    expect(parseRunTask({ skill: 'update-profile', part: 'kind', kind: 'design' })).toEqual({
+      skill: 'update-profile',
+      part: 'kind',
+      kind: 'design',
+    });
+  });
+
+  it.each([
+    { skill: 'update-profile' },
+    { skill: 'update-profile', part: 'street' },
+    { skill: 'update-profile', part: 'kind' },
+    { skill: 'update-profile', part: 'kind', kind: 'Not An Id!' },
+    { skill: 'update-profile', part: 'about', kind: 'design' },
+    { skill: 'update-profile', part: 'about', changes: 'Typed into the prompt' },
+    { skill: 'update-profile', part: 'about', jobId: 'acme--staff' },
+    { skill: 'work-history', part: 'about' },
+  ])('refuses %j', (value) => {
+    expect(parseRunTask(value)).toBeNull();
+  });
+
+  it('types only the app’s own word for the part, and a kind of job’s id', () => {
+    expect(runPrompt({ skill: 'update-profile', part: 'applications' })).toBe(
+      '/factwright:update-profile applications',
+    );
+    expect(runPrompt({ skill: 'update-profile', part: 'kind', kind: 'project-manager' })).toBe(
+      '/factwright:update-profile kind project-manager',
+    );
+  });
+
+  it('turns away Claude Code’s permission prompts, so it stays to that part', () => {
+    const typed = runPrompt({ skill: 'update-profile', part: 'about' });
+    expect(permitsNothing(typed)).toBe(UPDATE_PERMITS_NOTHING);
+    expect(permitsNothing('/update-profile about')).toBe(UPDATE_PERMITS_NOTHING);
+    // It asks the user its own questions, which they answer as for any task.
+    expect(asksNothing(typed)).toBeNull();
+    expect(permitsNothing('/factwright:update-profiles about')).toBeNull();
+    // A prompt the user types next is theirs, by the same rule as any task's.
+    const sent = { hook_event_name: 'UserPromptSubmit', prompt: 'Also change my phone' };
+    expect(asksNothingAfter(UPDATE_PERMITS_NOTHING, sent, permitsNothing)).toBeNull();
   });
 });
 

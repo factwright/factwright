@@ -10,6 +10,7 @@ import { type PlanLevels, planLevels } from '../../shared/levels.ts';
 import type { Model } from '../../shared/models.ts';
 import type { RunChanges as RunChangesView } from '../../shared/run-changes.ts';
 import type { RunScope } from '../../shared/runs.ts';
+import type { BoundProfileChanges } from '../about/profile-requests.ts';
 import type { BoundRevision } from '../jobs/revisions.ts';
 import type { BoundChanges } from '../jobs/versions.ts';
 import { workspaceDir } from '../jobs/workspace.ts';
@@ -138,7 +139,7 @@ export interface RunOptions {
   /** The revision it's started for, which its calls to revision_findings read. */
   revision?: BoundRevision | undefined;
   /** The changes the user asked for, which its calls to requested_changes read. */
-  changes?: BoundChanges | undefined;
+  changes?: BoundChanges | BoundProfileChanges | undefined;
   /** The jobs it analyzes, by their IDs, which its tool calls know as its own. */
   jobs?: readonly string[] | undefined;
 }

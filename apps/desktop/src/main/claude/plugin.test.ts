@@ -62,6 +62,7 @@ describe('the plugin’s skills', () => {
       'salary-check',
       'thank-you',
       'unmask-job',
+      'update-profile',
       'who-to-message',
       'work-history',
     ]);

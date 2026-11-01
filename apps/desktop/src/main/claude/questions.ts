@@ -134,6 +134,37 @@ export class QuestionLog {
     else if (event.hook_event_name === 'PostToolUse') this.answered(id, event);
   }
 
+  /**
+   * What the user typed in the app for this run, on record as their answer to the question the app
+   * asked them there. It comes from the window, like Claude Code's hooks, never from Claude.
+   */
+  told(question: string, answer: string): void {
+    this.heard.push({
+      key: questionKey(question),
+      question: oneLine(question),
+      answer,
+      detail: null,
+      notes: null,
+      backed: { fact: 0, gap: 0, verify: 0 },
+    });
+  }
+
+  /**
+   * Whether the user said these words in this run, as they said them: in what they typed in the app
+   * for it, what they typed or picked in answer to a question, or a note to their pick. Never in a
+   * question, nor what an option says under it, which Claude writes.
+   */
+  said(words: string): boolean {
+    const wanted = questionKey(words);
+    return (
+      wanted !== '' &&
+      this.heard.some(
+        ({ answer, notes }) =>
+          questionKey(answer).includes(wanted) || questionKey(notes ?? '').includes(wanted),
+      )
+    );
+  }
+
   /** A filing call Claude Code is about to make, for the tool to find. */
   private showCall(tool: FilingTool, input: unknown): void {
     const shown = isRecord(input) ? canonical(input) : null;

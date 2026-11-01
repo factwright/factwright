@@ -46,6 +46,7 @@ export const START_PROBLEMS: Readonly<Record<StartProblem, string>> = {
   failed: 'Claude Code couldn’t start.',
   revision: 'This revision needs sending again. Send it from the resume’s ATS X-ray.',
   changes: 'These changes need asking for again. Use Request changes again.',
+  'profile-changes': 'These changes need asking for again. Use Update with Claude again.',
 };
 
 /** Whether Claude Code is open for a run, or about to be. */

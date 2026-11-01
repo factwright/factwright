@@ -1,3 +1,4 @@
+import { PROFILE_SKILL, type ProfilePart } from './profile-parts.ts';
 import { REVISE_SKILL, type TemplateChoice } from './revision.ts';
 
 /**
@@ -137,7 +138,8 @@ export const TEMPLATE_SOURCE = /^\d{4}-\d{2}-\d{2}-\d{1,3}\.(?:pdf|png|jpg|webp)
  * a resume the user likes, or a revision of a job's resume for what its ATS X-ray found. A new
  * version of a job's resume, cover letter or Projects page comes once the app has kept the one
  * before, and changes the user asked for in their own words reach the run through a tool. A quick
- * resume asks nothing, as a first resume or a new version.
+ * resume asks nothing, as a first resume or a new version. So do the changes they ask for in one
+ * part of Profile, which the app names by its own word for the part.
  */
 export type RunTask =
   | { skill: RunSkill; jobId: string }
@@ -167,6 +169,8 @@ export type RunTask =
   | { skill: typeof FACTS_SKILL; mode: 'interview' | 'new' }
   | { skill: typeof TEMPLATE_SKILL; source: string }
   | { skill: typeof HISTORY_SKILL }
+  /** Changes to one part of Profile, and for one kind of job, which kind, by its id. */
+  | { skill: typeof PROFILE_SKILL; part: ProfilePart; kind?: string }
   | {
       skill: typeof REVISE_SKILL;
       jobId: string;
@@ -197,6 +201,7 @@ export const HUNT_SKILLS = [
   FACTS_SKILL,
   TEMPLATE_SKILL,
   HISTORY_SKILL,
+  PROFILE_SKILL,
 ] as const;
 
 /**
@@ -207,11 +212,21 @@ export const HUNT_SKILLS = [
  * work history works from their facts and resumes. A revision reads what the X-ray found in a
  * posting, and asks before saving a template. A run started to make a template may read and
  * save templates, and nothing else, and may replace only the ones it saved: the resume it copies
- * came from anywhere. None of the last four reads the web.
+ * came from anywhere. A run started with Update with Claude changes one part of Profile, with that
+ * part's tools alone, and nothing else, so each part is a scope of its own. None of these but a run
+ * on the job hunt reads the web.
  */
-export type RunScope = 'hunt' | 'profile' | 'history' | 'template' | 'revise';
+export type RunScope = 'hunt' | 'profile' | 'history' | 'template' | 'revise' | PartScope;
+
+/** The scope of a run on one part of Profile. */
+export type PartScope = `part:${ProfilePart}`;
+
+/** The part of Profile a run's scope keeps it to, or null for any other scope. */
+export const partOf = (scope: RunScope): ProfilePart | null =>
+  scope.startsWith('part:') ? (scope.slice('part:'.length) as ProfilePart) : null;
 
 export function scopeOf(task: RunTask | null | undefined): RunScope {
+  if (task && 'part' in task) return `part:${task.part}`;
   if (task?.skill === GET_STARTED_SKILL || task?.skill === FACTS_SKILL) return 'profile';
   if (task?.skill === HISTORY_SKILL) return 'history';
   if (task?.skill === REVISE_SKILL) return 'revise';
@@ -245,15 +260,17 @@ export const atOnceFrom = (value: unknown): number | null =>
 
 /**
  * What a task works on, which no two tasks going at once share: its job, by the job's ID; the
- * user's facts and Profile, which getting started, adding facts and filling in their work history
- * all change; the job searches; or the templates. A task on several jobs at once, as analyzing
- * the jobs the user picked, works on each of them. Nothing for Claude with no task, waiting for
- * what the user types.
+ * user's facts and Profile, which getting started, adding facts, filling in their work history
+ * and updating any part of Profile all change; the job searches; or the templates, which updating
+ * Profile's Resume templates changes too. A task on several jobs at once, as analyzing the jobs
+ * the user picked, works on each of them. Nothing for Claude with no task, waiting for what the
+ * user types.
  */
 export function lanesOf(task: RunTask | null): string[] {
   if (!task) return [];
   const jobs = taskJobs(task);
   if (jobs.length > 0) return jobs.map((job) => `job:${job}`);
+  if ('part' in task) return task.part === 'templates' ? ['profile', TEMPLATE_SKILL] : ['profile'];
   const profile = [GET_STARTED_SKILL, FACTS_SKILL, HISTORY_SKILL] as string[];
   return [profile.includes(task.skill) ? 'profile' : task.skill];
 }

@@ -19,7 +19,9 @@ export function ClaudeButton({
   label,
   adds = false,
   primary = false,
+  quiet = false,
   alone = false,
+  ariaLabel,
   onStart,
 }: {
   run: RunControls | undefined;
@@ -29,8 +31,12 @@ export function ClaudeButton({
   adds?: boolean;
   /** The one main thing to do, such as the step up next. */
   primary?: boolean;
+  /** A lighter button, for a line of something that has its own already. */
+  quiet?: boolean;
   /** It changes the job's files before it starts, so it waits for the job's other tasks. */
   alone?: boolean;
+  /** What a screen reader calls it, when the label alone doesn't say what it's for. */
+  ariaLabel?: string;
   /** Starts it another way, such as by asking for the application's questions first. */
   onStart?: () => void;
 }) {
@@ -55,9 +61,10 @@ export function ClaudeButton({
   return (
     <Button
       size="sm"
-      variant={primary ? 'primary' : 'secondary'}
+      variant={primary ? 'primary' : quiet ? 'quiet' : 'secondary'}
       icon={<Icon size={14} aria-hidden="true" />}
       disabled={disabled}
+      {...(ariaLabel && { 'aria-label': ariaLabel })}
       onClick={onStart ?? (() => run?.start(task))}
       {...(primary && FOCUS_NEXT)}
     >

@@ -1,5 +1,7 @@
 import type { FiledFacts } from '../../shared/facts.ts';
+import { CHANGES_QUESTION } from '../../shared/profile-parts.ts';
 import type { RunScope } from '../../shared/runs.ts';
+import type { BoundProfileChanges } from '../about/profile-requests.ts';
 import { QuestionLog } from '../claude/questions.ts';
 import type { BoundRevision } from '../jobs/revisions.ts';
 import type { BoundChanges } from '../jobs/versions.ts';
@@ -23,10 +25,10 @@ export interface ToolCall {
    */
   revision?: BoundRevision | undefined;
   /**
-   * The changes the user asked for, which requested_changes gives this run: their own words, typed
-   * in the app. No other run has them.
+   * The changes the user asked for, in a job's resume or letter, or in a part of Profile, which
+   * requested_changes gives this run: their own words, typed in the app. No other run has them.
    */
-  changes?: BoundChanges | undefined;
+  changes?: BoundChanges | BoundProfileChanges | undefined;
   /**
    * Hears a file's path, in full or in the workspace, just before a tool changes or makes it, so
    * the app can keep a copy of it from before the task, for Undo.
@@ -46,22 +48,30 @@ export interface ToolCall {
   analyzed?: ((jobId: string) => void) | undefined;
 }
 
-/** A run's tool calls, before it has saved or been told anything. */
-export const newCall = (
+/**
+ * A run's tool calls, before it has saved or been told anything. What the user typed for a part of
+ * Profile is on record as their answer, which the app holds, so the fact tools go by it as they go
+ * by any answer of theirs: what it backs is saved as they said it, unverified.
+ */
+export function newCall(
   scope: RunScope,
   onFiled?: (filed: FiledFacts) => void,
   revision?: BoundRevision,
-  changes?: BoundChanges,
-): ToolCall => ({
-  scope,
-  templates: new Set(),
-  questions: new QuestionLog(),
-  filed: { facts: [], gaps: 0 },
-  saves: 0,
-  onFiled,
-  revision,
-  changes,
-});
+  changes?: BoundChanges | BoundProfileChanges,
+): ToolCall {
+  const questions = new QuestionLog();
+  if (changes && 'part' in changes) questions.told(CHANGES_QUESTION, changes.changes);
+  return {
+    scope,
+    templates: new Set(),
+    questions,
+    filed: { facts: [], gaps: 0 },
+    saves: 0,
+    onFiled,
+    revision,
+    changes,
+  };
+}
 
 /** A call from no run in particular, such as a test's: a run on the job hunt. */
 export const huntCall = (): ToolCall => newCall('hunt');
