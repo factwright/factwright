@@ -48,16 +48,13 @@ test.afterAll(async () => {
   rmSync(dataDir, { recursive: true, force: true });
 });
 
-test('has Update with Claude on every part, even with nothing in it', async () => {
+test('has Update with Claude on the parts it helps with, even with nothing in them', async () => {
   for (const part of [
     'Your fact bank',
     'Starting resumes',
     'What you want',
     'Resume templates',
-    'What you’ve shared',
-    'About you',
     'Beyond work',
-    'For applications',
     'Work history and education',
   ]) {
     await expect(
@@ -69,18 +66,24 @@ test('has Update with Claude on every part, even with nothing in it', async () =
       name: 'Update with Claude: Why you’re leaving',
     }),
   ).toBeVisible();
+  // A few details, and the user's own files and words, stay theirs to change.
+  for (const part of ['About you', 'For applications', 'What you’ve shared']) {
+    await expect(
+      card(part).getByRole('button', { name: `Update with Claude: ${part}` }),
+    ).toHaveCount(0);
+  }
 });
 
-test('changes a part that had no way before, from the user’s words, with Undo', async () => {
+test('changes a part from the user’s words, with Undo', async () => {
   const { window } = opened;
-  const words = 'I heard about it from a friend';
-  await ask('For applications', words);
+  const words = 'A four-day week';
+  await ask('What you want', words);
   const typed = await terminalText(window);
   // Only the app's own word for the part is typed: the user's words reach the run through a tool.
-  expect(typed).toContain('/factwright:update-profile applications');
+  expect(typed).toContain('/factwright:update-profile wants');
   expect(typed).not.toContain(`> ${words}`);
-  expect(typed).toContain('# Changes to For applications in the user’s Profile');
-  expect(answers().applications.howHeard).toBe(words);
+  expect(typed).toContain('# Changes to What you want in the user’s Profile');
+  expect(answers().mustHaves).toBe(words);
 
   // The part stays to itself: another part's tool isn't there, the tool other runs save with is
   // turned away, with no dialog for the user to answer, and neither saved a thing.
@@ -89,14 +92,14 @@ test('changes a part that had no way before, from the user’s words, with Undo'
   await expect(window.getByRole('dialog')).toHaveCount(0);
   expect(answers().start ?? '').toBe('');
   // What it left, which only Claude knows, shows without opening the terminal.
-  await expect(claudePanel()).toContainText('I left your pay: that’s What you want’s.');
+  await expect(claudePanel()).toContainText('I left your name: that’s in About you’s Change.');
 
   // Its card lists the file it changed, and Undo puts it back as it was before the task.
   const changed = claudePanel().getByRole('list', { name: 'Files Claude changed' });
   await expect(changed).toContainText('answers.json');
   await claudePanel().getByRole('button', { name: 'Undo about-me/answers.json' }).click();
   await expect(changed).toContainText('Undone');
-  await expect.poll(() => answers().applications?.howHeard ?? '').toBe('');
+  await expect.poll(() => answers().mustHaves ?? '').toBe('');
 
   // Asked for more in the same run, it still stays to its part, with no dialog either.
   const reply = claudePanel().getByRole('textbox', { name: 'Reply to Claude' });
@@ -112,18 +115,12 @@ test('changes a part that had no way before, from the user’s words, with Undo'
 
 test('says what stays out of Claude’s reach, and turns it away if it comes anyway', async () => {
   const { window } = opened;
-  await card('For applications')
-    .getByRole('button', { name: 'Update with Claude: For applications' })
-    .click();
-  const dialog = window.getByRole('dialog', { name: 'Update with Claude: For applications' });
-  await expect(dialog).toContainText(
+  await expect(card('For applications')).toContainText(
     'Your street, postal code and equal-opportunity answers stay on this computer',
   );
-  await dialog.getByRole('button', { name: 'Cancel' }).click();
-
-  await ask('For applications', 'My street is 12 Elm');
+  await ask('Why you’re leaving', 'My street is 12 Elm', card('For applications'));
   const typed = await terminalText(window);
-  expect(typed).toContain('A street: Not saved: street, postal code and equal-opportunity answers');
+  expect(typed).toContain('A street: street isn’t part of why they’re leaving');
   // It never reaches a file that syncs.
   expect(readFileSync(workspace('about-me/answers.json'), 'utf8')).not.toContain('12 Elm');
   await closeRun();
@@ -136,25 +133,6 @@ test('changes why they’re leaving from its own line, and only that', async () 
   await expect(card('For applications')).toContainText(
     'Why you’re leaving: I want to work at a bigger scale.',
   );
-  await closeRun();
-});
-
-test('changes what the user wants, which nothing could save before', async () => {
-  await ask('What you want', 'A four-day week');
-  expect(answers().mustHaves).toBe('A four-day week');
-  await closeRun();
-});
-
-test('changes the name, which no run could, and only About you’s run has that tool', async () => {
-  await ask('About you', 'Sam Rivera');
-  expect(answers().you.name).toBe('Sam Rivera');
-  await expect(card('About you')).toContainText('Sam Rivera');
-  await closeRun();
-});
-
-test('adds to the notes only in the user’s own words', async () => {
-  await ask('What you’ve shared', 'I mentor two juniors.');
-  expect(readFileSync(workspace('about-me/notes.md'), 'utf8')).toBe('I mentor two juniors.\n');
   await closeRun();
 });
 
@@ -181,7 +159,7 @@ test('refuses a run on a part with nothing asked, saying so in a tab of its own'
   await opened.window.evaluate(() =>
     (globalThis as unknown as Api).factwright.startClaude({
       skill: 'update-profile',
-      part: 'about',
+      part: 'wants',
       request: '0000000000000000',
     }),
   );

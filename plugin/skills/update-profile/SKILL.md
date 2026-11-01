@@ -1,14 +1,14 @@
 ---
 name: update-profile
 description: Change one part of the user's Profile, as they asked in their own words in the app. The app starts it from a part's Update with Claude, and the run reads what they asked with requested_changes. It changes that part and nothing else, with that part's own tools.
-argument-hint: "[about, wants, kind <id>, applications, leaving, beyond, history, resumes, templates, facts or shared]"
+argument-hint: "[wants, kind <id>, leaving, beyond, history, resumes, templates or facts]"
 ---
 
 # Update one part of Profile
 
 The user typed what to change in one part of their Profile. Change that, and leave the rest as it is.
 
-Input: the part, such as `about`, or `kind project-manager` for one kind of job.
+Input: the part, such as `wants`, or `kind project-manager` for one kind of job.
 
 ## Steps
 1. Call `requested_changes`. It gives what they asked, in their own words, and what the part holds now. If it says this run wasn't started with Update with Claude, say in one line that changes start from a part's Update with Claude in the app, and stop.
@@ -17,21 +17,17 @@ Input: the part, such as `about`, or `kind project-manager` for one kind of job.
 4. Save with the part's tool, only what they asked to change. Save what they said as they said it, never more: no number, title or claim they didn't give, and no rewording of their own words unless they ask you to reword them.
 5. Reply in a few lines: what changed, and anything you left, with where in the app they change it. The app lists each change on this task's card, with Undo, so don't repeat the whole of it.
 
-A run on one part can't save another, and it has no other tools, such as `save_about_you`. If they asked for something in another part, say so, and name the part whose Update with Claude does it.
+A run on one part can't save another, and it has no other tools, such as `save_about_you`. If they asked for something in another part, say so, and name the part whose Update with Claude does it. Their name and contact details, the rest of For applications, and their files and notes have no Update with Claude: they change those themselves, in About you's and For applications' Change and in What you've shared.
 
 If what they typed has their street, postal code, gender, race, ethnicity, disability or veteran status in it, save none of that anywhere, and don't repeat it. Say in one line that it isn't saved, and that those stay on this computer, in For applications' Change.
 
 ## The parts
 
-**About you (`about`).** Their name and contact details, with `save_contact`. Where they live is a city and state. What the top of their resumes shows comes from here. Resumes already built keep what they say.
-
 **What you want (`wants`).** With `save_what_you_want`: the kinds of job and each one's titles, kinds of work, levels and pay; where they'd work; kinds of company and industries; employment, work authorization and when they can start; must-haves and deal-breakers; and whether their search is quiet. Lists are whole, so give what's there too when you add to one. Titles are as they say them.
 
 **One kind of job (`kind <id>`).** The same tool, for that kind's own titles, kinds of work, levels, pay and name. What holds for every kind, such as where they'd work, isn't this run's: that's What you want's.
 
-**For applications (`applications`).** With `save_for_applications`: what forms ask that a resume doesn't say. Their street, postal code and equal-opportunity answers aren't here and never will be: they stay on this computer, and you never see or save them.
-
-**Why they're leaving (`leaving`).** With `save_for_applications`, with `leaving` alone, up to 1,000 characters. When they ask you to reword it, keep to what they said, in their voice, with nothing added about a past employer.
+**Why they're leaving (`leaving`).** With `save_why_leaving`, up to 1,000 characters. When they ask you to reword it, keep to what they said, in their voice, with nothing added about a past employer.
 
 **Beyond work (`beyond`).** With `save_beyond_work`: projects added, changed or removed, how projects look on resumes and a Projects page, and who they are outside work. A project's overview is their own words, not a fact: what goes out comes only from `facts/projects.md`, so a new or changed project shows **Add to your fact bank** on Profile for them to carry on with. Keep a project's `showing` unless they ask to change it.
 
@@ -47,6 +43,4 @@ If what they typed has their street, postal code, gender, race, ethnicity, disab
 - **A fact that waits to be verified:** `save_fact` with `replaces`, once you've asked about it, naming it by its title in quotes.
 - **A verified fact:** ask first, naming it by its title in quotes, with options that carry what's new, then `correct_fact` from that answer alone, as the standing rules say. What they typed can't change one.
 - **Removing a fact, or a row under Doesn't have:** that stays with them. Tell them it's in the Fact bank.
-- Names to keep private go in with `keep_names_private`, never in a fact.
-
-**What you've shared (`shared`).** Their own words and the names to keep private. `add_to_notes` adds to their notes, in their words exactly, and never changes what's there. `keep_names_private` adds names, and takes one off when they ask. Adding or removing a file stays with them, in What you've shared, and so do their LinkedIn connections, which come from LinkedIn's file. Once something's added, **Add what's new** on Profile turns it into facts.
+- Names to keep private go in with `keep_names_private`, never in a fact. Taking one off stays with them, in What you've shared.

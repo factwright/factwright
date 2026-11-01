@@ -23,19 +23,16 @@ describe('a run on one part of Profile', () => {
   it('saves with its own part’s tools alone, and reads what the user asked', () => {
     const allowed = (part: ProfilePart) => scoped(`part:${part}`).permissions.allow;
     const saving = {
-      about: 'save_contact',
       wants: 'save_what_you_want',
       kind: 'save_what_you_want',
-      applications: 'save_for_applications',
-      leaving: 'save_for_applications',
+      leaving: 'save_why_leaving',
       beyond: 'save_beyond_work',
       history: 'save_work_history',
       resumes: 'build_resume',
       templates: 'save_resume_choices',
       facts: 'save_fact',
-      shared: 'add_to_notes',
     } as const;
-    const others = ['save_contact', 'save_what_you_want', 'save_for_applications', 'past_answers'];
+    const others = ['save_what_you_want', 'save_why_leaving', 'past_answers'];
     for (const part of PROFILE_PARTS) {
       expect(allowed(part), part).toContain(tool(saving[part]));
       expect(allowed(part), part).toContain(tool('requested_changes'));
@@ -117,7 +114,7 @@ describe('a run on one part of Profile', () => {
   });
 
   it('is the scope of a task on that part, for one kind of job too', () => {
-    expect(scopeOf({ skill: 'update-profile', part: 'about', request: '' })).toBe('part:about');
+    expect(scopeOf({ skill: 'update-profile', part: 'wants', request: '' })).toBe('part:wants');
     expect(scopeOf({ skill: 'update-profile', part: 'kind', kind: 'design', request: '' })).toBe(
       'part:kind',
     );

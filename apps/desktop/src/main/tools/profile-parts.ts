@@ -5,17 +5,14 @@ import {
   type AnswerChanges,
   applyChanges,
   COMPANY_KINDS,
-  type Contact,
   EMPLOYMENT,
   FIELDS,
   LEVELS,
   labelOf,
   mergeChanges,
-  OVER_18,
   parseAnswerChanges,
   RELOCATE,
   RESUME_FILES,
-  SPONSORSHIP,
   WORKPLACES,
 } from '../../shared/about.ts';
 import {
@@ -57,14 +54,7 @@ import type { ToolCall } from './mcp.ts';
 /** What these tools need of the user's Profile. */
 export type PartAbout = Pick<
   AboutStore,
-  | 'answers'
-  | 'saveAnswers'
-  | 'notes'
-  | 'addToNotes'
-  | 'confidential'
-  | 'changeConfidential'
-  | 'criteriaIsOwn'
-  | 'history'
+  'answers' | 'saveAnswers' | 'changeConfidential' | 'criteriaIsOwn' | 'history'
 >;
 
 /** A list's values, a blank one included, which says it's not told. */
@@ -118,15 +108,6 @@ function checked(raw: Record<string, unknown>, what: string): AnswerChanges {
   return changes;
 }
 
-const CONTACT_LABELS: Readonly<Record<keyof Contact, string>> = {
-  name: 'Name',
-  email: 'Email',
-  phone: 'Phone',
-  location: 'Where they live',
-  linkedin: 'LinkedIn',
-  website: 'Website',
-};
-
 /** Words for a street, after its number. */
 const STREET_WORDS =
   'st|street|ave|avenue|rd|road|blvd|boulevard|dr|drive|ln|lane|ct|court|way|pl|place|ter|terrace|hwy|highway|pkwy|parkway|cir|circle|sq|square';
@@ -136,7 +117,7 @@ const STREET_WORDS =
  * in a language that puts its number after; a street, an apartment or a post box; or a postal
  * code's shape. Where the user lives is kept to a city and state, and these are kept on this
  * computer alone, so a run saves none it can tell, where it would sync. It can't tell them all, so
- * the dialog and the skill say so too.
+ * the skill says so too.
  */
 const STREET_OR_POSTAL = new RegExp(
   [
@@ -170,28 +151,6 @@ function noStreet(input: Record<string, unknown>, keys: readonly string[]) {
       }
     }
   }
-}
-
-/** About you: the user's name and contact details, a field at a time. Blank clears one. */
-export function saveContact(
-  input: Record<string, unknown>,
-  about: Pick<PartAbout, 'answers' | 'saveAnswers'>,
-  call: ToolCall | undefined,
-): string {
-  givenOnly(input, Object.keys(CONTACT_LABELS), 'About you');
-  if (Object.values(input).some((value) => typeof value !== 'string')) {
-    throw new Error('Not saved: give each detail as text.');
-  }
-  const given = Object.fromEntries(
-    Object.entries(input).map(([key, value]) => [key, (value as string).trim()]),
-  );
-  if (given.name === '') throw new Error('Not saved: their name can’t be blank.');
-  noStreet(given, ['location']);
-  const { you } = about.answers();
-  about.saveAnswers(checked({ you: { ...you, ...given } }, 'About you'), call?.keep);
-  return saved(
-    Object.entries(given).map(([key, value]) => [CONTACT_LABELS[key as keyof Contact], value]),
-  );
 }
 
 /** The labels of What you want's answers, for a save's reply. */
@@ -331,56 +290,24 @@ const asList = (value: unknown, name: string): unknown[] => {
   return value;
 };
 
-const APPLICATION_LABELS: Readonly<Record<string, string>> = {
-  preferredName: 'Preferred first name',
-  pronouns: 'Pronouns',
-  city: 'City',
-  region: 'State or region',
-  country: 'Country',
-  github: 'GitHub',
-  howHeard: 'How they heard about a job',
-  leaving: 'Why they’re leaving',
-  countries: 'Countries they can work in without a visa',
-  sponsorship: 'Visa sponsorship',
-  over18: '18 or older',
-};
-
-/** What stays on this computer, by any name Claude might give it. */
-const KEPT_APART =
-  /^(?:street|address|postal|zip|equal|eeo|gender|hispanic|latino|race|ethnicity|veteran|disability)/i;
-
 /**
- * For applications: what forms ask that a resume doesn't say, a field at a time, over what's there.
- * A run on why the user's leaving changes that alone. Their street, postal code and
- * equal-opportunity answers aren't here: they're kept on this computer alone, so this turns them
- * away, by name, rather than save them where they'd sync.
+ * Why the user's leaving, the one thing For applications holds that a run changes: that answer alone,
+ * over what's there. The rest is the user's to type, in that card's Change, and their street, postal
+ * code and equal-opportunity answers aren't there at all: they're kept on this computer alone, so
+ * this takes no field but its own.
  */
-export function saveForApplications(
+export function saveWhyLeaving(
   input: Record<string, unknown>,
   about: Pick<PartAbout, 'answers' | 'saveAnswers'>,
   call: ToolCall | undefined,
 ): string {
-  const apart = Object.keys(input).find((key) => KEPT_APART.test(key));
-  if (apart) {
-    throw new Error(
-      'Not saved: street, postal code and equal-opportunity answers stay on this computer, and Claude never sees or saves them. Tell the user they change those themselves, in For applications’ Change.',
-    );
-  }
-  const leavingOnly = call?.scope === 'part:leaving';
-  const allowed = leavingOnly ? ['leaving'] : Object.keys(APPLICATION_LABELS);
-  givenOnly(input, allowed, leavingOnly ? 'why they’re leaving' : 'For applications');
-  noStreet(input, ['city', 'region', 'country']);
-  const { applications } = about.answers();
-  const read = readForApplications({ ...applications, ...input });
+  givenOnly(input, ['leaving'], 'why they’re leaving');
+  const read = readForApplications({ ...about.answers().applications, leaving: input.leaving });
   if (!read) {
-    throw new Error(
-      `Not saved: keep each line under ${ANSWER_LIMITS.line} characters and why they’re leaving under 1,000, give countries as a list, sponsorship as ${list(SPONSORSHIP).join(', ')} or blank, and over18 as ${list(OVER_18).join(', ')} or blank.`,
-    );
+    throw new Error('Not saved: give why they’re leaving as text, up to 1,000 characters.');
   }
-  about.saveAnswers(checked({ applications: read }, 'For applications'), call?.keep);
-  return saved(
-    Object.entries(input).map(([key, value]) => [APPLICATION_LABELS[key] ?? key, value]),
-  );
+  about.saveAnswers(checked({ applications: read }, 'why they’re leaving'), call?.keep);
+  return saved([['Why they’re leaving', read.leaving]]);
 }
 
 const BEYOND_LABELS: Readonly<Record<string, string>> = {
@@ -498,60 +425,27 @@ export function saveResumeChoices(
 }
 
 /**
- * Adds to the user's notes, which later runs read as their own words, so what goes in is words they
- * typed for this run, or answered in it, and nothing Claude wrote or read. It adds and never
- * changes what's there.
- */
-export function addToNotes(
-  input: Record<string, unknown>,
-  about: Pick<PartAbout, 'addToNotes'>,
-  call: ToolCall | undefined,
-): string {
-  const { text } = input;
-  if (typeof text !== 'string' || !text.trim()) throw new Error('Give the text to add.');
-  if (!call?.questions.said(text)) {
-    throw new Error(
-      'Not saved: notes hold the user’s own words, so give the words as they typed them for this run, or answered you in it, without rewording them.',
-    );
-  }
-  const added = about.addToNotes(text.trim(), call.keep);
-  if (!added) throw new Error('Not saved: their notes are as long as Factwright keeps.');
-  return `Added to the user’s notes: “${text.trim()}”.`;
-}
-
-/**
  * Adds to the names to keep off what the user sends, which only makes the resume check stricter, and
- * so any part's run that hears one may. Taking one off makes it less strict, so only a run on What
- * you've shared may, when the user asks.
+ * so any part's run that hears one may. Taking one off makes it less strict, so that stays with the
+ * user, in What you've shared.
  */
 export function keepNamesPrivate(
   input: Record<string, unknown>,
   about: Pick<PartAbout, 'changeConfidential'>,
   call: ToolCall | undefined,
 ): string {
-  givenOnly(input, ['add', 'remove'], 'the names to keep private');
-  const names = (value: unknown): string[] =>
-    asList(value, 'the names').map((name) => {
-      if (typeof name !== 'string' || !name.trim() || name.length > ANSWER_LIMITS.entry) {
-        throw new Error(
-          `Not saved: give each name as text, of ${ANSWER_LIMITS.entry} characters or fewer.`,
-        );
-      }
-      // A line that starts with # is a comment in that file, which nothing would check against.
-      return name.replace(/^[#\s]+/, '').trim();
-    });
-  const add = names(input.add);
-  const remove = names(input.remove);
-  if (remove.length > 0 && call?.scope !== 'part:shared') {
-    throw new Error('Not saved: only a run on What you’ve shared takes a name off the list.');
-  }
-  about.changeConfidential({ add, remove }, call?.keep);
-  return saved([
-    ...(add.length > 0 ? ([['Names kept private, added', add]] as [string, unknown][]) : []),
-    ...(remove.length > 0
-      ? ([['Names kept private, taken off', remove]] as [string, unknown][])
-      : []),
-  ]);
+  givenOnly(input, ['add'], 'the names to keep private');
+  const add = asList(input.add, 'the names').map((name) => {
+    if (typeof name !== 'string' || !name.trim() || name.length > ANSWER_LIMITS.entry) {
+      throw new Error(
+        `Not saved: give each name as text, of ${ANSWER_LIMITS.entry} characters or fewer.`,
+      );
+    }
+    // A line that starts with # is a comment in that file, which nothing would check against.
+    return name.replace(/^[#\s]+/, '').trim();
+  });
+  about.changeConfidential({ add, remove: [] }, call?.keep);
+  return saved(add.length > 0 ? [['Names kept private, added', add]] : []);
 }
 
 /** What a part holds now, as Claude reads it to change it, with each id and value exact. */
@@ -560,8 +454,6 @@ function partNow(part: ProfilePart, kind: string | undefined, about: PartAbout):
   const pick = <K extends keyof AboutYou>(keys: readonly K[]) =>
     Object.fromEntries(keys.map((key) => [key, answers[key]]));
   switch (part) {
-    case 'about':
-      return answers.you;
     case 'wants':
       return {
         kinds: kindsOf(answers),
@@ -583,8 +475,6 @@ function partNow(part: ProfilePart, kind: string | undefined, about: PartAbout):
       };
     case 'kind':
       return kindsOf(answers).find((each) => each.id === kind) ?? null;
-    case 'applications':
-      return answers.applications;
     case 'leaving':
       return { leaving: answers.applications.leaving };
     case 'beyond':
@@ -601,12 +491,6 @@ function partNow(part: ProfilePart, kind: string | undefined, about: PartAbout):
       return about.history();
     case 'templates':
       return pick(['looks', 'pages', 'format', 'companies']);
-    case 'shared':
-      return {
-        files: answers.files.map(({ name, kind: what }) => ({ name, kind: what })),
-        namesKeptPrivate: about.confidential(),
-        notes: 'about-me/notes.md, which you read but never edit',
-      };
     default:
       return null;
   }
@@ -614,11 +498,9 @@ function partNow(part: ProfilePart, kind: string | undefined, about: PartAbout):
 
 /** What each part's run makes the changes with, in a line. */
 const HOW: Readonly<Record<ProfilePart, string>> = {
-  about: 'Make them with save_contact.',
   wants: 'Make them with save_what_you_want.',
   kind: 'Make them with save_what_you_want, for this kind alone.',
-  applications: 'Make them with save_for_applications.',
-  leaving: 'Make them with save_for_applications, with leaving alone.',
+  leaving: 'Make them with save_why_leaving.',
   beyond: 'Make them with save_beyond_work.',
   history:
     'Make them with save_work_history, which takes everything, whole, in place of what’s there. What they typed goes in as they said it, even where the facts don’t have it.',
@@ -626,8 +508,6 @@ const HOW: Readonly<Record<ProfilePart, string>> = {
     'Make them in the starting resumes in base/, from verified facts, and build each one again.',
   templates: 'Make them with save_resume_choices, and save_template for a template’s own look.',
   facts: `File them with the fact tools. To save what they typed, give “${CHANGES_QUESTION}” as the question, word for word, and word the fact in their words.`,
-  shared:
-    'Add to their notes with add_to_notes, and change the names kept private with keep_names_private.',
 };
 
 /**
@@ -696,19 +576,6 @@ const PROJECT_FIELDS = {
   },
 };
 
-export const CONTACT_SCHEMA = {
-  type: 'object',
-  properties: {
-    name: text('Their name, as the top of their resumes should read.'),
-    email: short,
-    phone: short,
-    location: text('Where they live, such as “Denver, CO”.'),
-    linkedin: text('Their LinkedIn profile’s link.'),
-    website: short,
-  },
-  additionalProperties: false,
-};
-
 export const WANTS_SCHEMA = {
   type: 'object',
   properties: {
@@ -748,25 +615,10 @@ export const WANTS_SCHEMA = {
   additionalProperties: false,
 };
 
-export const APPLICATIONS_SCHEMA = {
+export const LEAVING_SCHEMA = {
   type: 'object',
-  properties: {
-    preferredName: text('The first name they go by, if it isn’t the one on their resume.'),
-    pronouns: text('Such as “she/her”.'),
-    city: short,
-    region: text('Their state or region, such as “CO”.'),
-    country: short,
-    github: text('Such as github.com/their-name.'),
-    howHeard: text('What to say to “How did you hear about us?” when it’s not known.'),
-    leaving: text('Why they’re leaving, or left, up to 1,000 characters.'),
-    countries: lines('Countries they can work in without a visa, whole.'),
-    sponsorship: {
-      type: 'string',
-      enum: values(SPONSORSHIP),
-      description: 'Blank leaves it for them.',
-    },
-    over18: { type: 'string', enum: values(OVER_18), description: 'Blank leaves it for them.' },
-  },
+  properties: { leaving: text('Why they’re leaving, or left, up to 1,000 characters.') },
+  required: ['leaving'],
   additionalProperties: false,
 };
 

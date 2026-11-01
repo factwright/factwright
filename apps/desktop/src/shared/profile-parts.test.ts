@@ -6,9 +6,9 @@ import { MAX_CHANGES } from './versions.ts';
 describe('parseProfileChanges', () => {
   it('takes a part and the user’s words, trimmed', () => {
     for (const part of PROFILE_PARTS.filter((each) => each !== 'kind')) {
-      expect(parseProfileChanges({ part, changes: '  Use my new email\n' })).toEqual({
+      expect(parseProfileChanges({ part, changes: '  Add staff roles\n' })).toEqual({
         part,
-        changes: 'Use my new email',
+        changes: 'Add staff roles',
       });
     }
   });
@@ -29,11 +29,14 @@ describe('parseProfileChanges', () => {
     'about',
     [],
     {},
-    { part: 'about' },
-    { part: 'about', changes: '   ' },
-    { part: 'about', changes: 'x'.repeat(MAX_CHANGES + 1) },
+    { part: 'wants' },
+    { part: 'wants', changes: '   ' },
+    { part: 'wants', changes: 'x'.repeat(MAX_CHANGES + 1) },
     { part: 'street', changes: 'Add it' },
-    { part: 'about', changes: 'Add it', extra: true },
+    { part: 'about', changes: 'Add it' },
+    { part: 'applications', changes: 'Add it' },
+    { part: 'shared', changes: 'Add it' },
+    { part: 'wants', changes: 'Add it', extra: true },
   ])('refuses %j', (value) => {
     expect(parseProfileChanges(value)).toBeNull();
   });
@@ -41,10 +44,10 @@ describe('parseProfileChanges', () => {
 
 describe('a task on a part of Profile', () => {
   const REQUEST = '0123456789abcdef';
-  const task = { skill: 'update-profile', part: 'about', request: REQUEST } as const;
+  const task = { skill: 'update-profile', part: 'wants', request: REQUEST } as const;
 
   it('has that part’s scope, and any other scope has no part', () => {
-    expect(partOf(scopeOf(task))).toBe('about');
+    expect(partOf(scopeOf(task))).toBe('wants');
     for (const scope of ['hunt', 'profile', 'history', 'template', 'revise'] as const) {
       expect(partOf(scope)).toBeNull();
     }
@@ -54,7 +57,7 @@ describe('a task on a part of Profile', () => {
     expect(lanesOf(task)).toEqual(['profile']);
     expect(sharesLane(task, { skill: 'add-facts', mode: 'interview' })).toBe(true);
     expect(sharesLane(task, { skill: 'work-history' })).toBe(true);
-    expect(sharesLane(task, { skill: 'update-profile', part: 'wants', request: REQUEST })).toBe(
+    expect(sharesLane(task, { skill: 'update-profile', part: 'beyond', request: REQUEST })).toBe(
       true,
     );
     expect(sharesLane(task, { skill: 'job-search' })).toBe(false);

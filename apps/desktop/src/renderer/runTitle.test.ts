@@ -16,8 +16,8 @@ describe('a run’s name', () => {
   });
 
   it('names the part of Profile a run changes', () => {
-    expect(runTitle({ skill: 'update-profile', part: 'applications', request: '' }, jobs)).toBe(
-      'Update · For applications',
+    expect(runTitle({ skill: 'update-profile', part: 'leaving', request: '' }, jobs)).toBe(
+      'Update · Why you’re leaving',
     );
     expect(
       runTitle(

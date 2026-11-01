@@ -77,7 +77,6 @@ const about = {
     return history;
   },
   notes: () => '',
-  addToNotes: () => true,
   confidential: () => [] as string[],
   changeConfidential: () => [] as string[],
   criteriaIsOwn: () => false,
@@ -195,11 +194,9 @@ it('marks the tools that stay on this computer, which Claude may call without as
       ...PROFILE_TOOLS,
       ...TEMPLATE_TOOLS,
       // Each part of Profile's own, which only a run on that part has.
-      'add_to_notes',
       'keep_names_private',
       'save_beyond_work',
-      'save_contact',
-      'save_for_applications',
+      'save_why_leaving',
       'save_resume_choices',
       'save_what_you_want',
     ].sort(),

@@ -32,12 +32,11 @@ export const STEPS = [
 ] as const;
 
 /**
- * The part of Profile each step fills in, which has Update with Claude here too, so nobody has to
- * wait until they've started. Files are the user's alone to add, and the rest ask nothing to change.
+ * The part of Profile a step fills in that has Update with Claude, here too so nobody has to wait
+ * until they've started. Contact details are quicker typed, files and the user's own words are theirs
+ * alone to give, and the rest ask nothing to change.
  */
 const STEP_PARTS: Readonly<Partial<Record<number, ProfilePart>>> = {
-  1: 'about',
-  3: 'shared',
   4: 'wants',
   5: 'templates',
   6: 'beyond',

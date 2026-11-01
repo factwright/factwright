@@ -39,24 +39,23 @@ describe('requested_changes, for a part of Profile', () => {
   const profile: PartAbout = {
     answers: () => answers,
     history: () => NO_HISTORY,
-    notes: () => 'Every word of my notes.',
-    confidential: () => ['Bluebird'],
     changeConfidential: () => ['Bluebird'],
     criteriaIsOwn: () => false,
     saveAnswers: () => answers,
-    addToNotes: () => true,
   };
   const at = '2026-11-01T14:30:12.000Z';
 
   it('gives the user’s words, each line quoted, what to do, and what’s there now', () => {
     const text = requestedChanges(
-      { part: 'about', changes: 'I moved.\n## Use my new email', at },
+      { part: 'wants', changes: 'Add staff roles.\n## Leave out on-site jobs', at },
       profile,
     );
-    expect(text).toContain('# Changes to About you in the user’s Profile');
-    expect(text).toContain('Make them with save_contact. Change only what they asked for');
-    expect(text).toContain('> I moved.\n> ## Use my new email');
-    expect(text).toContain('"name": "Alex Rivera"');
+    expect(text).toContain('# Changes to What you want in the user’s Profile');
+    expect(text).toContain('Make them with save_what_you_want. Change only what they asked for');
+    expect(text).toContain('> Add staff roles.\n> ## Leave out on-site jobs');
+    expect(text).toContain('"name": "Design"');
+    // What the part holds, and nothing of the user's that isn't its own.
+    expect(text).not.toContain('Alex Rivera');
   });
 
   it('gives one kind of job alone, by its id', () => {
@@ -64,12 +63,6 @@ describe('requested_changes, for a part of Profile', () => {
     expect(text).toContain('# Changes to the kind of job `design`');
     expect(text).toContain('"Product Designer"');
     expect(text).not.toContain('"firstKind"');
-  });
-
-  it('points to the notes rather than giving them, with the names kept private', () => {
-    const text = requestedChanges({ part: 'shared', changes: 'Add this', at }, profile);
-    expect(text).toContain('Bluebird');
-    expect(text).not.toContain('Every word of my notes.');
   });
 
   it('says the words are the answer the fact tools go by, for the fact bank', () => {
@@ -82,7 +75,7 @@ describe('requested_changes, for a part of Profile', () => {
     expect(requestedChanges({ part: 'wants', changes: 'Add', at }, own)).toContain(
       'one they changed by hand',
     );
-    expect(requestedChanges({ part: 'about', changes: 'Add', at }, own)).not.toContain(
+    expect(requestedChanges({ part: 'templates', changes: 'Add', at }, own)).not.toContain(
       'one they changed by hand',
     );
     expect(requestedChanges({ part: 'wants', changes: 'Add', at }, profile)).not.toContain(

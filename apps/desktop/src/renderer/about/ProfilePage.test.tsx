@@ -165,15 +165,13 @@ const SAVED = { timeout: 4000 };
 
 const REQUEST = '0123456789abcdef';
 
+/** The cards with an Update with Claude of their own, named for the card. */
 const CARDS = [
   'Your fact bank',
   'Starting resumes',
   'What you want',
   'Resume templates',
-  'What you’ve shared',
-  'About you',
   'Beyond work',
-  'For applications',
   'Work history and education',
 ] as const;
 
@@ -193,7 +191,7 @@ describe('Update with Claude', () => {
     starting: [],
   };
 
-  const expectOnEveryCard = async () => {
+  const expectOnEachCard = async () => {
     for (const name of CARDS) {
       const card = await screen.findByRole('region', { name });
       expect(
@@ -203,9 +201,9 @@ describe('Update with Claude', () => {
     }
   };
 
-  it('is on every part with nothing in it', async () => {
+  it('is on its parts with nothing in them', async () => {
     render(<Harness api={profileApi(NOTHING, EMPTY)} run={freeRuns()} />);
-    await expectOnEveryCard();
+    await expectOnEachCard();
     const card = await screen.findByRole('region', { name: 'For applications' });
     expect(card.textContent).toContain('Why you’re leaving: not said yet.');
     expect(
@@ -213,7 +211,18 @@ describe('Update with Claude', () => {
     ).toBeTruthy();
   });
 
-  it('is on every part with something in it', async () => {
+  it.each(['About you', 'For applications', 'What you’ve shared'])(
+    'isn’t on %s, which stays the user’s to change',
+    async (name) => {
+      render(<Harness api={profileApi(NOTHING, EMPTY)} run={freeRuns()} />);
+      const card = await screen.findByRole('region', { name });
+      expect(
+        within(card).queryByRole('button', { name: `Update with Claude: ${name}` }),
+      ).toBeNull();
+    },
+  );
+
+  it('is on its parts with something in them', async () => {
     const history: WorkHistory = {
       jobs: [
         {
@@ -225,16 +234,16 @@ describe('Update with Claude', () => {
       schools: [],
     };
     render(<Harness api={profileApi({}, ANSWERS, null, history)} run={freeRuns()} />);
-    await expectOnEveryCard();
+    await expectOnEachCard();
   });
 
-  it('stays on every part while Claude is busy on Profile, to go in line', async () => {
+  it('stays on its parts while Claude is busy on Profile, to go in line', async () => {
     const run = freeRuns();
     render(<Harness api={profileApi(NOTHING, EMPTY)} busy run={run} />);
-    const card = await screen.findByRole('region', { name: 'About you' });
-    const button = within(card).getByRole('button', { name: 'Update with Claude: About you' });
+    const card = await screen.findByRole('region', { name: 'What you want' });
+    const button = within(card).getByRole('button', { name: 'Update with Claude: What you want' });
     expect((button as HTMLButtonElement).disabled).toBe(false);
-    await expectOnEveryCard();
+    await expectOnEachCard();
   });
 
   it('gives each kind of job a button of its own', async () => {
@@ -274,10 +283,11 @@ describe('Update with Claude', () => {
     const change = await screen.findByRole('dialog', { name: 'About you' });
     await userEvent.type(within(change).getByRole('textbox', { name: 'Phone' }), '555');
     await userEvent.click(within(change).getByRole('button', { name: 'Done' }));
+    const wants = screen.getByRole('region', { name: 'What you want' });
     await userEvent.click(
-      within(about).getByRole('button', { name: 'Update with Claude: About you' }),
+      within(wants).getByRole('button', { name: 'Update with Claude: What you want' }),
     );
-    const dialog = await screen.findByRole('dialog', { name: 'Update with Claude: About you' });
+    const dialog = await screen.findByRole('dialog', { name: 'Update with Claude: What you want' });
     await userEvent.type(within(dialog).getByRole('textbox'), 'Change it');
     await userEvent.click(within(dialog).getByRole('button', { name: 'Make the changes' }));
     await waitFor(() => expect(api.requestProfileChanges).toHaveBeenCalled());

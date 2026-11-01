@@ -238,7 +238,7 @@ const asJobFile = (path: string, format: 'pdf' | 'docx'): JobFile => ({
 /**
  * Everything Factwright knows about the user, and how far it's come: their fact bank, their
  * starting resumes, what they want, their templates, and what they've shared. Each part can be
- * changed here, and each has Update with Claude, whether it's empty or full, for the user to say
+ * changed here, and most have Update with Claude, whether they're empty or full, for the user to say
  * what to change in their own words. Claude can be sent to carry on too.
  */
 export function ProfilePage({
@@ -531,7 +531,6 @@ export function ProfilePage({
           title="What you’ve shared"
           actions={
             <>
-              {update('shared')}
               <Button size="sm" onClick={() => setEditing('files')}>
                 Add files
               </Button>
@@ -555,7 +554,6 @@ export function ProfilePage({
           title="About you"
           actions={
             <>
-              {update('about')}
               {resumeFills && (
                 <Button
                   size="sm"
@@ -651,12 +649,9 @@ export function ProfilePage({
         <Card
           title="For applications"
           actions={
-            <>
-              {update('applications')}
-              <Button size="sm" onClick={() => setEditing('applications')}>
-                Change
-              </Button>
-            </>
+            <Button size="sm" onClick={() => setEditing('applications')}>
+              Change
+            </Button>
           }
         >
           {applicationsSummary(answers.applications) && (

@@ -621,18 +621,15 @@ async function work(text) {
       .map((line) => line.slice(2))
       .join(' ');
     const saves = {
-      about: ['save_contact', { name: words }],
       wants: ['save_what_you_want', { mustHaves: words }],
       kind: ['save_what_you_want', { roles: [words] }],
-      applications: ['save_for_applications', { howHeard: words }],
-      leaving: ['save_for_applications', { leaving: words }],
+      leaving: ['save_why_leaving', { leaving: words }],
       beyond: ['save_beyond_work', { interests: [words] }],
       templates: ['save_resume_choices', { format: 'both' }],
-      shared: ['add_to_notes', { text: words }],
     }[updating[1]];
     // Told a street, it tries to save it, which the tool refuses, so it can't sync.
-    if (/street/i.test(words) && updating[1] === 'applications') {
-      show(`A street: ${await call('save_for_applications', { street: words })}\n`);
+    if (/street/i.test(words) && updating[1] === 'leaving') {
+      show(`A street: ${await call('save_why_leaving', { street: words })}\n`);
     } else if (saves) show(`${await callAllowed(...saves)}\n`);
     // Past its part: another part's tool isn't listed, and the tool every other run saves with
     // needs an OK, which the app turns away, with no dialog.
@@ -840,7 +837,7 @@ async function work(text) {
   show('Done.\n> ');
   // A run on a part of Profile says what it left, which only Claude knows.
   const said = /^\/factwright:update-profile /.test(text)
-    ? 'Done. I left your pay: that’s What you want’s.'
+    ? 'Done. I left your name: that’s in About you’s Change.'
     : 'Done.';
   await hook('Stop', { last_assistant_message: said });
 }

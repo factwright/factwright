@@ -161,8 +161,6 @@ describe('Update with Claude, before getting started', () => {
   };
 
   it.each([
-    [1, 'About you'],
-    [3, 'What you’ve shared'],
     [4, 'What you want'],
     [5, 'Resume templates'],
     [6, 'Beyond work'],
@@ -172,15 +170,15 @@ describe('Update with Claude, before getting started', () => {
     expect((button as HTMLButtonElement).disabled).toBe(false);
   });
 
-  it.each([0, 2, 7])('isn’t on step %i, which has nothing of its own to change', async (step) => {
+  it.each([0, 1, 2, 3, 7])('isn’t on step %i, which has none of its own', async (step) => {
     render(<Harness api={profileApi({ step, reached: step })} run={free} />);
     await screen.findByRole('navigation', { name: 'Getting started' });
     expect(screen.queryByRole('button', { name: /^Update with Claude/ })).toBeNull();
   });
 
   it('waits for Claude Code to be ready', async () => {
-    render(<Harness api={profileApi({ step: 1, reached: 1 })} />);
-    const button = await screen.findByRole('button', { name: 'Update with Claude: About you' });
+    render(<Harness api={profileApi({ step: 4, reached: 4 })} />);
+    const button = await screen.findByRole('button', { name: 'Update with Claude: What you want' });
     expect((button as HTMLButtonElement).disabled).toBe(true);
   });
 });

@@ -16,12 +16,6 @@ import styles from './UpdateWithClaude.module.css';
 /** What each part's run changes, as the end of "Your Claude changes…", and an example to start from. */
 const PARTS: Readonly<Record<ProfilePart, { changes: string; example: string; leftOut?: string }>> =
   {
-    about: {
-      changes: 'your name, email, phone, where you live, LinkedIn and website',
-      example: 'Such as: I moved to Austin, and use sam@example.com from now on',
-      leftOut:
-        'Your street and postal code stay on this computer, and your Claude never sees them. Leave them out of what you type here. For applications’ Change has them.',
-    },
     wants: {
       changes:
         'what you want: each kind of job with its titles, work, levels and pay, where you’d work, companies, terms, must-haves and deal-breakers',
@@ -32,13 +26,6 @@ const PARTS: Readonly<Record<ProfilePart, { changes: string; example: string; le
       changes: 'this kind of job’s name, titles, kinds of work, levels and pay',
       example: 'Such as: add program director roles, and aim for $170,000',
       leftOut: 'What every kind shares, such as where you’d work, is in What you want.',
-    },
-    applications: {
-      changes:
-        'what forms ask that your resume doesn’t say: your preferred name, pronouns, city, GitHub, how you heard about a job, why you’re leaving, where you can work, and sponsorship',
-      example: 'Such as: I go by Sam now, I live in Austin, and I won’t need a visa sponsored',
-      leftOut:
-        'Your street, postal code and equal-opportunity answers stay on this computer, and your Claude never sees them. Leave them out of what you type here, and use Change for those.',
     },
     leaving: {
       changes: 'what forms get when they ask why you’re leaving',
@@ -70,12 +57,6 @@ const PARTS: Readonly<Record<ProfilePart, { changes: string; example: string; le
       example: 'Such as: the billing rewrite went live in March, and it cut costs about 20%',
       leftOut:
         'Your Claude asks before it changes a verified fact. Removing a fact stays with you, in the Fact bank.',
-    },
-    shared: {
-      changes: 'your own words, and the names to keep private',
-      example:
-        'Such as: add to my notes that I mentor two juniors, and keep Bluebird off my resumes',
-      leftOut: 'Adding or removing a file stays with you.',
     },
   };
 
