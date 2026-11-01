@@ -366,6 +366,7 @@ body.panel {
 
 .field .answer {
   margin-top: 2px;
+  white-space: pre-line;
   overflow-wrap: anywhere;
   display: -webkit-box;
   -webkit-line-clamp: 3;

@@ -10,6 +10,7 @@ Notable changes to Factwright, newest first. The format follows [Keep a Changelo
 - Appearance, in the sidebar: choose how Factwright looks, rather than only following your computer's light or dark setting. Besides System, Light and Dark, there's Tokyo Night, Nord, Catppuccin, Rosé Pine, Solarized Light and Rosé Pine Dawn. A theme shows straight away, in the window and in Claude's panel, and Factwright keeps it.
 - The edge between the job list and a job's details drags, so the details can be any width, not only beside the list or the whole window. The arrow keys move it too, Factwright keeps the width you leave it at, the list always keeps its room, a wide panel shows its areas in two columns, and a double-click puts it back.
 - Suggest a feature, in the sidebar beside Report a problem, opens Factwright's roadmap at factwright.com/roadmap in your browser, to suggest a feature or vote for the ideas there, with no account. The app sends nothing itself.
+- The box on an application form that asks what you did in a job now fits the job you're applying to. It fills with the bullets for that position from the job's own resume, as plain lines, then from the starting resume of its kind of job, then with what your work history in Profile says. Where more than one has words, the field's menu offers the others. For a job not under a kind of job yet, the menu offers each kind's words, and Fill never picks one for you. Bullets written for another job never fill it. Where the box takes fewer characters than the words run to, it takes the whole lines that fit, and says it cut them. It fills the same through sync, without the app.
 
 ### Security
 - Each run of Claude Code has only the built-in tools Factwright's tasks use, and what Claude Code adds itself, so far a tool on some models for ending a conversation. The rest of its built-in tools are off, in helpers too, and a new one in a later version stays off until Factwright names it.
@@ -22,6 +23,9 @@ Notable changes to Factwright, newest first. The format follows [Keep a Changelo
 - The privacy policy has a part on ideas and the roadmap: what a suggestion keeps, that an email left with one is deleted once the idea is closed, that a vote is kept only as a one-way hash, and that your IP address only limits how often one address can suggest or vote, and isn't kept. It takes effect October 27, 2026.
 
 ### Fixed
+- Filling through sync takes a job's kind of job from the job search that found it, as the app does, so a form's pay box fills with that kind's target pay.
+- A form's hint such as "Minimum 200 characters" no longer reads as the most the box takes.
+- A box of rich text on a form keeps an answer's lines on their own lines.
 - When your Claude Code is too old and Homebrew or WinGet installed it, Factwright gives the command that updates it, `brew upgrade claude-code` or `winget upgrade Anthropic.ClaudeCode`, with a button to copy it. On those installs, `claude update`, which it gave before, only names that command.
 
 ## 0.18.1 - 2026-10-27

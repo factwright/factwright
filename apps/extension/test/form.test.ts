@@ -31,6 +31,81 @@ async function read(doc: Document): Promise<PageForm> {
 const asked = (form: PageForm) =>
   form.fields.map((field) => `${fieldKind(field)}: ${field.question}`);
 
+describe('how many characters a field takes', () => {
+  const limitOf = async (hint: string) => {
+    const doc = new DOMParser().parseFromString(
+      `<form><label for="a">About you</label><textarea id="a" aria-describedby="h"></textarea><p id="h">${hint}</p></form>`,
+      'text/html',
+    );
+    return (await read(doc)).fields[0]?.limit;
+  };
+
+  it('by what its words say is the most', async () => {
+    expect(await limitOf('Up to 500 characters')).toBe(500);
+    expect(await limitOf('Maximum of 1,000 characters')).toBe(1000);
+    expect(await limitOf('Minimum 200 characters, maximum 2,000 characters')).toBe(2000);
+    expect(await limitOf('200 characters minimum, 800 characters at most')).toBe(800);
+  });
+
+  it('and never by the least', async () => {
+    expect(await limitOf('Minimum 200 characters')).toBeNull();
+    expect(await limitOf('Min. 200 characters')).toBeNull();
+    expect(await limitOf('At least 200 characters')).toBeNull();
+    expect(await limitOf('200 characters minimum')).toBeNull();
+    expect(await limitOf('Minimum length: 200 characters')).toBeNull();
+    expect(await limitOf('200 characters or more')).toBeNull();
+  });
+});
+
+describe('a box of rich text', () => {
+  it('gets each line on its own, and reads back as the same words', async () => {
+    const doc = new DOMParser().parseFromString(
+      '<form><label id="l">Description</label><div id="box" role="textbox" contenteditable="true" aria-labelledby="l"></div></form>',
+      'text/html',
+    );
+    const box = doc.getElementById('box') as HTMLElement;
+    Object.defineProperty(box, 'isContentEditable', { value: true });
+    const form = await read(doc);
+    const [field] = form.fields;
+    if (!field) throw new Error('It didn’t read the box.');
+    expect(field.control).toBe('long');
+    const answer = await run(
+      {
+        do: 'fill',
+        url: HERE,
+        answers: [{ ref: field.ref, key: field.key, text: 'Led the PMO.\nRan planning.' }],
+      },
+      doc,
+    );
+    if (answer.did !== 'fill') throw new Error('It didn’t fill the form.');
+    expect(answer.filled[0]).toMatchObject({ ok: true });
+    expect(box.querySelectorAll('br')).toHaveLength(1);
+    expect(box.textContent).toBe('Led the PMO.\nRan planning.');
+  });
+
+  it('adds no breaks to one that keeps its lines, as most editors do', async () => {
+    document.body.innerHTML =
+      '<form><label id="l">Description</label><div id="box" role="textbox" contenteditable="true" aria-labelledby="l" style="white-space: pre-wrap"></div></form>';
+    const box = document.getElementById('box') as HTMLElement;
+    Object.defineProperty(box, 'isContentEditable', { value: true });
+    const [field] = (await read(document)).fields;
+    if (!field) throw new Error('It didn’t read the box.');
+    const answer = await run(
+      {
+        do: 'fill',
+        url: HERE,
+        answers: [{ ref: field.ref, key: field.key, text: 'Led the PMO.\nRan planning.' }],
+      },
+      document,
+    );
+    document.body.innerHTML = '';
+    if (answer.did !== 'fill') throw new Error('It didn’t fill the form.');
+    expect(answer.filled[0]).toMatchObject({ ok: true });
+    expect(box.querySelectorAll('br')).toHaveLength(0);
+    expect(box.textContent).toBe('Led the PMO.\nRan planning.');
+  });
+});
+
 describe('reading an application form', () => {
   it('reads a Greenhouse form, with its question for each field and its own boxes that pick', async () => {
     const form = await read(fixture('greenhouse-application'));

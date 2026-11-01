@@ -356,6 +356,23 @@ describe('where an answer came from', () => {
       }),
     ).toBe('Your Claude’s suggestion for this job');
     expect(answerSource({ kind: 'pay', text: '$170,000', source: 'profile' })).toBe('From Profile');
+    // What you did in a position says which words on file it is, and when they were cut to fit.
+    expect(
+      answerSource({
+        kind: 'job-summary',
+        text: 'Runs product.',
+        source: 'profile',
+        from: 'From your work history, cut to fit 500 characters',
+      }),
+    ).toBe('From your work history, cut to fit 500 characters');
+    expect(
+      answerSource({
+        kind: 'job-summary',
+        text: 'Set the strategy.',
+        source: 'resume',
+        from: 'From your Strategy starting resume',
+      }),
+    ).toBe('From your Strategy starting resume');
     expect(
       answerSource({
         kind: 'cover-letter-text',
