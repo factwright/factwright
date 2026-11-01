@@ -47,10 +47,19 @@ const PAGES_MS = 38_000;
 const MAX_MATCHES = 1_000;
 const MAX_CHECKS = 2_000;
 const MAX_CANDIDATES = 20_000;
-/** A link's path this long is no posting's. Leaving it out keeps robots.txt's rules quick to check. */
+/** A link this long, past its site, is no posting's. Leaving it out keeps robots.txt quick to check. */
 const MAX_LINK_PATH = 500;
-/** How many links to look at before letting the rest of the app run, as tools run in its main process. */
+/** The most of an index's sitemaps looked at, and checked against robots.txt. */
+const MAX_INDEX_LINKS = 2_000;
+const MAX_INDEX_CHECKS = 200;
+/** The most redirects while reading sitemaps, each a line on the task's card. */
+const MAX_SITEMAP_REDIRECTS = 50;
+/**
+ * How many links to look at, and how many to check against robots.txt, before letting the rest of the
+ * app run, as tools run in its main process. A long robots.txt makes a check take far longer.
+ */
 const LINKS_PER_TURN = 200;
+const CHECKS_PER_TURN = 20;
 /** How much of an answer lists links that weren't read, as Claude Code moves long answers away. */
 const MAX_UNREAD_TEXT = 6_000;
 
@@ -84,8 +93,15 @@ function offLimits(host: string): string | null {
 /** A site without "www.", so the two count as one. */
 const bareHost = (host: string) => plainHost(host).replace(/^www\./, '');
 
-/** A site's name and top level, so a company's sites count as one, as jobs.acme.com and acme.com. */
-const baseOf = (host: string) => plainHost(host).split('.').slice(-2).join('.');
+/**
+ * A site's name and top level, so a company's sites count as one, as jobs.acme.com and acme.com, and
+ * jobs.acme.co.uk and acme.co.uk, but not acme.co.uk and another.co.uk.
+ */
+const baseOf = (host: string) => {
+  const labels = plainHost(host).split('.');
+  const shared = (labels.at(-1)?.length ?? 0) === 2 && (labels.at(-2)?.length ?? 0) <= 3;
+  return labels.slice(shared ? -3 : -2).join('.');
+};
 
 /** A sitemap's address, always https, or null for one that can't be read. */
 function sitemapAddress(address: string): string | null {
@@ -106,9 +122,15 @@ const isGzipped = (address: string) => new URL(address).pathname.endsWith('.gz')
 const namesJobs = (address: string) =>
   /job|career|posting|position|opening|vacanc/i.test(new URL(address).pathname);
 
+/** Whether a link is too long, past its site, to be any posting's. */
+const tooLong = (url: URL) => url.pathname.length + url.search.length > MAX_LINK_PATH;
+
 /** What a link's path says about whether it's to one posting. */
 const looksLikePosting = (path: string) =>
   /\/(jobs?|positions?|openings?|vacanc(y|ies)|requisitions?|postings?|careers?)\/./i.test(path);
+
+/** A redirect into where a site's robots.txt keeps software from. */
+class RobotsKeepsOut extends Error {}
 
 /** The pages a site's sitemaps list. */
 interface SitePages {
@@ -119,9 +141,15 @@ interface SitePages {
   left: number;
   /** What went wrong with the first it couldn't read. */
   failure: unknown;
-  /** Whether a sitemap was left out for being gzipped. */
-  gzipped: boolean;
+  /** How many were left out for being gzipped. */
+  gzipped: number;
 }
+
+/** Lets the rest of the app run, as a long loop here would stop its window and every other run. */
+const nextTurn = () =>
+  new Promise<void>((resolve) => {
+    setImmediate(resolve);
+  });
 
 /**
  * Every page a site's sitemaps list, the sitemaps that name jobs first, within the time given. An
@@ -136,15 +164,20 @@ async function pagesOf(
   note: (url: string) => void,
   mayRead: (url: URL) => boolean,
 ): Promise<SitePages> {
-  const jobsFirst = (a: string, b: string) => Number(namesJobs(b)) - Number(namesJobs(a));
-  let gzipped = false;
+  const jobsFirst = <T extends { jobs: boolean }>(a: T, b: T) => Number(b.jobs) - Number(a.jobs);
+  const gzippedOnes = new Set<string>();
   const usable = (address: string | null): address is string => {
     if (address === null || offLimits(new URL(address).hostname)) return false;
     if (!isGzipped(address)) return true;
-    gzipped = true;
+    gzippedOnes.add(address);
     return false;
   };
-  const queue = starts.map(sitemapAddress).filter(usable).sort(jobsFirst);
+  const queue = starts
+    .map(sitemapAddress)
+    .filter(usable)
+    .map((address) => ({ address, jobs: namesJobs(address) }))
+    .sort(jobsFirst)
+    .map(({ address }) => address);
   const seen = new Set<string>();
   const links: SitePages['links'] = [];
   let asked = 0;
@@ -174,22 +207,36 @@ async function pagesOf(
     text += answer.length;
     const sitemap = readSitemap(answer);
     if (sitemap.index) {
-      const host = new URL(next).hostname;
-      const others = sitemap.links
+      const host = bareHost(new URL(next).hostname);
+      const children = sitemap.links
+        .slice(0, MAX_INDEX_LINKS)
         .map(({ link }) => sitemapAddress(link))
         .filter(usable)
-        .filter((child) => {
-          const url = new URL(child);
-          return url.hostname === host && mayRead(url);
-        })
+        .map((address) => ({ address, url: new URL(address), jobs: namesJobs(address) }))
+        .filter(({ url }) => bareHost(url.hostname) === host && !tooLong(url))
         .sort(jobsFirst)
-        .slice(0, MAX_SITEMAPS);
-      queue.push(...others);
+        .slice(0, MAX_INDEX_CHECKS);
+      let kept = 0;
+      for (const [i, { address, url }] of children.entries()) {
+        if (kept >= MAX_SITEMAPS) break;
+        if ((i + 1) % CHECKS_PER_TURN === 0) await nextTurn();
+        if (mayRead(url)) {
+          queue.push(address);
+          kept++;
+        }
+      }
     } else {
       for (const link of sitemap.links) links.push(link);
     }
   }
-  return { links, asked, read, left: new Set(queue).size, failure, gzipped };
+  return {
+    links,
+    asked,
+    read,
+    left: new Set(queue).size,
+    failure,
+    gzipped: gzippedOnes.size,
+  };
 }
 
 /** The links on the site with the titles' words, the likeliest to be open postings first. */
@@ -199,13 +246,9 @@ interface Matches {
   /** How many links have the words, and of those checked, how many robots.txt keeps it from. */
   withWords: number;
   barred: number;
+  /** How many of the links it looked at, when time ran out before it looked at them all. */
+  lookedAt: number | null;
 }
-
-/** Lets the rest of the app run, as a long loop here would stop its window and every other run. */
-const nextTurn = () =>
-  new Promise<void>((resolve) => {
-    setImmediate(resolve);
-  });
 
 /**
  * The links on a site with the titles' words. Thousands of links, or a robots.txt built to take long,
@@ -222,10 +265,14 @@ async function matchesIn(
   const candidates = new Map<string, { url: URL; changed: string | null; posting: boolean }>();
   let withWords = 0;
   let seen = 0;
+  let lookedAt: number | null = null;
   for (const { link, changed } of links) {
     if (++seen % LINKS_PER_TURN === 0) {
       await nextTurn();
-      if (stop()) break;
+      if (stop()) {
+        lookedAt = seen;
+        break;
+      }
     }
     let url: URL;
     try {
@@ -234,7 +281,8 @@ async function matchesIn(
       continue;
     }
     if (url.protocol !== 'https:' && url.protocol !== 'http:') continue;
-    if (!home.has(bareHost(url.hostname)) || url.pathname.length > MAX_LINK_PATH) continue;
+    if (url.username || url.password) continue;
+    if (!home.has(bareHost(url.hostname)) || tooLong(url)) continue;
     url.protocol = 'https:';
     let words = url.pathname;
     try {
@@ -261,14 +309,17 @@ async function matchesIn(
   let checked = 0;
   for (const { url, changed } of ordered) {
     if (kept.length >= MAX_MATCHES || checked >= MAX_CHECKS) break;
-    if (++checked % LINKS_PER_TURN === 0) {
+    if (++checked % CHECKS_PER_TURN === 0) {
       await nextTurn();
-      if (stop()) break;
+      if (stop()) {
+        lookedAt ??= links.length;
+        break;
+      }
     }
     if (robotsAllow(robots, url.pathname + url.search)) kept.push({ link: url.href, changed });
     else barred++;
   }
-  return { links: kept, withWords, barred };
+  return { links: kept, withWords, barred, lookedAt };
 }
 
 /** One posting read for its job data: a job to list, or why not. */
@@ -276,6 +327,7 @@ type PageRead =
   | { kind: 'job'; job: BoardJob }
   | { kind: 'closed' }
   | { kind: 'not a posting' }
+  | { kind: 'kept out' }
   | { kind: 'unread' };
 
 async function readJobPage(link: string, fetch: Fetch, today: string): Promise<PageRead> {
@@ -286,6 +338,7 @@ async function readJobPage(link: string, fetch: Fetch, today: string): Promise<P
     if (error instanceof FetchAnswered && (error.status === 404 || error.status === 410)) {
       return { kind: 'closed' };
     }
+    if (error instanceof RobotsKeepsOut) return { kind: 'kept out' };
     // It didn't load, or would have sent the request off the site. The next may do better.
     return { kind: 'unread' };
   }
@@ -383,6 +436,7 @@ export async function careersSite(
   let origin = site.origin;
   let host = bareHost(site.hostname);
   let robots: Robots = NO_ROBOTS;
+  let sitemapRedirects = 0;
   const home = new Set([host]);
   const fetch = fetchInTime({
     ...deps,
@@ -395,8 +449,13 @@ export async function careersSite(
           throw new Error(`it sent the request on to ${next.hostname}`);
         }
         if (!robotsAllow(robots, next.pathname + next.search)) {
-          throw new Error('it sent the request somewhere its robots.txt keeps software from');
+          throw new RobotsKeepsOut(
+            'it sent the request somewhere its robots.txt keeps software from',
+          );
         }
+      }
+      if (stage === 'sitemaps' && ++sitemapRedirects > MAX_SITEMAP_REDIRECTS) {
+        throw new Error('its sitemaps sent the request on too many times');
       }
       // A site that's moved takes its robots.txt along, which speaks for where it is now. Any other
       // answer says nothing about that other site, whose own robots.txt hasn't been read.
@@ -423,6 +482,7 @@ export async function careersSite(
     const url = sitemapAddress(link);
     return url !== null && baseOf(new URL(url).hostname) === baseOf(host);
   });
+  // "Disallow: /" with no sitemap to go by is a site asking to be left alone.
   const starts =
     named.length > 0 ? named : robotsAllow(robots, '/sitemap.xml') ? [`${origin}/sitemap.xml`] : [];
   if (starts.length === 0) {
@@ -437,29 +497,53 @@ export async function careersSite(
   );
   if (pages.read === 0) {
     if (pages.failure instanceof FetchRefused) return `Not read: ${reasonOf(pages.failure)}`;
-    const why = pages.gzipped
-      ? ' its sitemaps are gzipped, which the app doesn’t read'
-      : pages.failure
-        ? ` ${reasonOf(pages.failure)}`
-        : '';
-    return `${host} has no sitemap to read${why ? ` (${why.trim()})` : ''}. Read its careers page with read_page, or search it with allowed_domains.`;
+    const why =
+      pages.gzipped > 0
+        ? 'its sitemaps are gzipped, which the app doesn’t read'
+        : pages.failure
+          ? reasonOf(pages.failure)
+          : '';
+    return `${host} has no sitemap to read${why ? ` (${why})` : ''}. Read its careers page with read_page, or search it with allowed_domains.`;
   }
 
   const {
     links: matches,
     withWords,
     barred,
+    lookedAt,
   } = await matchesIn(pages.links, titles, home, robots, () => spent() > PAGES_MS);
   const listed = `${host}’s sitemap lists ${count(pages.links.length, 'page')}${
     pages.left > 0
       ? `, from the first ${count(pages.asked, 'sitemap')}, with ${pages.left} not read`
       : ''
   }`;
+  // What it didn't get to, so a list that's short isn't taken for all there is.
+  const unlooked = [
+    ...(pages.asked > pages.read
+      ? [`${count(pages.asked - pages.read, 'sitemap')} couldn’t be read.`]
+      : []),
+    ...(pages.gzipped > 0
+      ? [`${count(pages.gzipped, 'sitemap')} left out for being gzipped.`]
+      : []),
+    ...(lookedAt !== null
+      ? [`It ran out of time, having looked at ${lookedAt} of those pages.`]
+      : []),
+  ];
+  const searchInstead = `Search the employer’s name and the titles with ${host} as allowed_domains instead.`;
   if (matches.length === 0) {
     if (barred > 0) {
-      return `${listed}, and ${count(barred, 'link')} with those words, but its robots.txt keeps software from them. Search the employer’s name and the titles with ${host} as allowed_domains instead.`;
+      return [
+        `${listed}, and ${count(barred, 'link')} with those words, but its robots.txt keeps software from them. ${searchInstead}`,
+        ...unlooked,
+      ].join('\n');
     }
-    return `${listed}, and none has those words in its link. Its links may not name the job, as “…/jobs/3043382” doesn’t, or it may not have that job. Search the employer’s name and the titles with ${host} as allowed_domains instead.`;
+    if (unlooked.length > 0 || pages.left > 0) {
+      return [
+        `${listed}, and none it looked at has those words in its link, which doesn’t mean it has no such job. ${searchInstead}`,
+        ...unlooked,
+      ].join('\n');
+    }
+    return `${listed}, and none has those words in its link. Its links may not name the job, as “…/jobs/3043382” doesn’t, or it may not have that job. ${searchInstead}`;
   }
 
   const today = localDate(clock());
@@ -469,6 +553,7 @@ export async function careersSite(
   const unread: string[] = [];
   let closed = 0;
   let notPostings = 0;
+  let keptOut = barred;
   let readingStopped = false;
   stage = 'pages';
   for (const [i, { link }] of matches.entries()) {
@@ -483,6 +568,7 @@ export async function careersSite(
     if (read.kind === 'job') jobs.push(read.job);
     else if (read.kind === 'closed') closed++;
     else if (read.kind === 'not a posting') notPostings++;
+    else if (read.kind === 'kept out') keptOut++;
     else unread.push(link);
   }
 
@@ -495,9 +581,10 @@ export async function careersSite(
           `${count(notPostings, 'page')} left out: no job data, so not a posting, or it needs a browser.`,
         ]
       : []),
-    ...(barred > 0
-      ? [`${count(barred, 'link')} left out, as its robots.txt keeps software from them.`]
+    ...(keptOut > 0
+      ? [`${count(keptOut, 'link')} left out, as its robots.txt keeps software from them.`]
       : []),
+    ...unlooked,
     ...(delayMs > 0 ? [`Its robots.txt asks for ${delayMs / 1000} seconds between pages.`] : []),
     'A sitemap can leave jobs out, so this may not be everything the site has.',
   ];

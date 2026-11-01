@@ -322,26 +322,32 @@ export function workablePostingId(address: string): string | null {
  * way, or a redesign. Only that says a board has no jobs, or that a posting has closed.
  */
 export function boardAnswerEmpty(source: BoardSource, answer: unknown): boolean {
-  const none = (rows: unknown) => Array.isArray(rows) && rows.length === 0;
+  const none = (rows: unknown, skip?: string) =>
+    Array.isArray(rows) && rows.every((row) => skip !== undefined && field(row, skip) === true);
   switch (source.kind) {
     case 'greenhouse':
-    case 'ashby':
     case 'workable':
       return none(field(answer, 'jobs'));
+    case 'ashby': {
+      // Jobs it doesn't list are as good as none.
+      const rows = field(answer, 'jobs');
+      return Array.isArray(rows) && rows.every((row) => field(row, 'isListed') === false);
+    }
     case 'lever':
     case 'gem':
       return none(answer);
     case 'recruitee':
       return none(field(answer, 'offers'));
     case 'jazzhr':
-      // Its pages name their parts for Resumator, its old name, empty boards' too.
+      // Its pages name their parts for Resumator, its old name, and an empty one says so.
       return (
         typeof answer === 'string' &&
         answer.includes('resumator') &&
-        !answer.includes('list-group-item-heading')
+        /\bno open positions\b/i.test(answer)
       );
     case 'paylocity':
-      return typeof answer === 'string' && none(field(pageData(answer), 'Jobs'));
+      // Jobs only for those who work there are as good as none.
+      return typeof answer === 'string' && none(field(pageData(answer), 'Jobs'), 'IsInternal');
     case 'workday':
     case 'icims':
       return false;
@@ -457,12 +463,15 @@ export function job(
   };
 }
 
-/** A link as https, or null for anything else a feed could put there. */
+/** A link as https, with an http one made so, or null for anything else a feed could put there. */
 function httpsLink(address: string | null): string | null {
   if (!address) return null;
   try {
     const url = new URL(address);
-    return url.protocol === 'https:' && !url.username && !url.password ? url.href : null;
+    if ((url.protocol !== 'https:' && url.protocol !== 'http:') || url.username || url.password) {
+      return null;
+    }
+    return url.protocol === 'https:' ? url.href : `https://${url.href.slice('http://'.length)}`;
   } catch {
     return null;
   }

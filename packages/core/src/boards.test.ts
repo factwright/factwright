@@ -932,6 +932,16 @@ describe('boardAnswerEmpty', () => {
     [{ kind: 'lever', board: 'a' }, []],
     [{ kind: 'recruitee', board: 'a' }, { offers: [] }],
     [{ kind: 'jazzhr', board: 'a' }, '<div id="resumator-content">no open positions</div>'],
+    [
+      { kind: 'jazzhr', board: 'a' },
+      '<style>.list-group-item-heading{}</style><div id="resumator">No open positions at this time.</div>',
+    ],
+    [{ kind: 'ashby', board: 'a' }, { jobs: [{ id: '1', isListed: false }] }],
+    [{ kind: 'ashby', board: 'a' }, { jobs: [] }],
+    [
+      { kind: 'paylocity', board: 'a' },
+      'window.pageData = {"Jobs":[{"JobId":1,"IsInternal":true}]};',
+    ],
     [{ kind: 'paylocity', board: 'a' }, 'window.pageData = {"Jobs":[]};'],
   ] as const)('takes an empty list on $0.kind for one', (source, answer) => {
     expect(boardAnswerEmpty(source, answer)).toBe(true);
@@ -942,6 +952,8 @@ describe('boardAnswerEmpty', () => {
     [{ kind: 'greenhouse', board: 'a' }, { jobs: [{}] }],
     [{ kind: 'lever', board: 'a' }, { ok: false }],
     [{ kind: 'jazzhr', board: 'a' }, '<html>A wall</html>'],
+    [{ kind: 'jazzhr', board: 'a' }, 'We have no open positions, say we, on another site.'],
+    [{ kind: 'ashby', board: 'a' }, { jobs: [{ id: '1' }] }],
     [
       { kind: 'jazzhr', board: 'a' },
       '<div id="resumator"><h3 class="list-group-item-heading"></h3>',

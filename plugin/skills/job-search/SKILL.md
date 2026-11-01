@@ -62,7 +62,7 @@ One web search brings about 10 results, most of them closed, and the same work g
 | Healthcare | The employers' systems above, where most hospitals post, and each hospital's own jobs site |
 | Nonprofits | `idealist.org` |
 
-**Read before you search.** Where a tool can read an employer's list, use it rather than searching for that employer. It's what the employer has open today, with no stale results. Call it once for each employer in a search, as calling again reads the same things:
+**Read before you search.** Where a tool can read an employer's list, use it rather than searching for that employer. It's what the employer has open today, with no stale results. Call it once for each employer, for each kind of job, as calling again with the same titles reads the same things:
 - **An employer on Greenhouse, Lever, Ashby, Gem, Recruitee, Workable, JazzHR, Paylocity, Workday or iCIMS:** call `job_board` with its board's link and `titles`, the plan's titles for this kind, the main ones first.
   - It lists only the jobs with those titles, and saves the rest in the file.
   - Greenhouse, Lever, Ashby, Gem, Recruitee and Workable save each posting in full. JazzHR, Paylocity, Workday and iCIMS list only what names it, so step 3 reads the ones that pass.
@@ -128,7 +128,7 @@ For each listing that passed:
   - A job it lists only among the user's other jobs at the company is another job, unless you can tell it's the same posting, such as by its link or a title written another way. Then give its id too.
 - Confirm it's still open, and get the fine print on where it's worked, pay, schedule, and what kind of employer it is:
   - **A job a board already listed:** its listing says it's open today. For its fine print, read what `job_board` saved, where it saved the posting in full. Otherwise read the job's link with `read_page`. Note related roles as "also: <role>".
-  - **A posting from a search, on any system `job_board` reads:** where this search has read that employer's board, look for it there. Otherwise call `job_board` with the posting's link and `titles`, the plan's or criteria.md's roles, and don't call it again for that employer. It says whether the posting is still open, and lists what else the employer has with those titles. Where it can't tell, it says so: read the posting.
+  - **A posting from a search, on any system `job_board` reads:** where this search has read that employer's board, look for it there. On Greenhouse, Lever, Ashby, Gem, Recruitee, Workable, JazzHR or Paylocity, one that isn't there has closed. On Workday or iCIMS, a list can leave jobs out, so read the posting. Otherwise call `job_board` with the posting's link and `titles`, the plan's or criteria.md's roles, and don't call it again for that employer. It says whether the posting is still open, and lists what else the employer has with those titles. Where it can't tell, it says so: read the posting.
   - **Anywhere else:** a web search often finds the posting on an applicant system. Otherwise, read the posting with `read_page`. It gives `Posted:` and `Closes:` lines when the page has them, and says when a Workday posting has closed.
     - **Closed:** the tool says it has closed, it answered 404 or 410, the page says it's closed or filled, or its closing date has passed. Leave it out, and count it as closed in `skipped` and the funnel.
     - **Old:** posted more than 60 days ago with no closing date. It may still be open, as some employers keep hiring for the same job, so say how old it is in its flags.

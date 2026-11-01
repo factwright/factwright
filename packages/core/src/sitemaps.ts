@@ -65,7 +65,7 @@ function comparablePath(path: string): string {
       const char = String.fromCharCode(Number.parseInt(hex, 16));
       return /[A-Za-z0-9._~-]/.test(char) ? char : `%${hex.toUpperCase()}`;
     })
-    .replace(/[^\x21-\x7e]+/gu, (chars) => {
+    .replace(/[^\x21-\x7e]+|["<>`{}^|\\]/gu, (chars) => {
       try {
         return encodeURIComponent(chars);
       } catch {

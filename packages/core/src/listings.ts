@@ -142,25 +142,70 @@ const remoteFrom = (place: string) =>
     .replace(/^(fully )?remote\b/i, '')
     .replace(/^[\s,:-]+/, '');
 
-const placeWords = (text: string) => text.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? [];
+/** The short forms of a place's words, so "St. Louis" and "Saint Louis" are the same place. */
+const SHORT_FORMS: Readonly<Record<string, string>> = { st: 'saint', ft: 'fort', mt: 'mount' };
+
+/** A place's words: in small letters, "D.C." as "dc", and short forms spelled out. */
+const placeWords = (text: string) =>
+  (
+    text
+      .toLowerCase()
+      .replace(/\b([a-z])\.([a-z])\.?/g, '$1$2')
+      .match(/[\p{L}\p{N}]+/gu) ?? []
+  ).map((word) => SHORT_FORMS[word] ?? word);
+
+const STATE_NAMES: ReadonlySet<string> = new Set(
+  Object.values(US_STATES).map((name) => placeWords(name).join(' ')),
+);
+
+/** A state's words, when these words are one by its letters or its name. */
+function stateIn(words: readonly string[]): string[] | null {
+  const [only] = words;
+  const named = only && words.length === 1 && only.length === 2 && US_STATES[only.toUpperCase()];
+  if (named) return placeWords(named);
+  return STATE_NAMES.has(words.join(' ')) ? [...words] : null;
+}
+
+/**
+ * What a place asks for: its city's words, and its state's when it names one, as "Columbus, OH",
+ * "Columbus Ohio" and "Columbus, Ohio, United States" all do. Anything after that, such as a country,
+ * says no more, and "New York City" is listed as "New York".
+ */
+function placeAsked(place: string): { city: string[]; state: string[] | null } {
+  const parts = place.split(',').map(placeWords);
+  let city = parts[0] ?? [];
+  let state =
+    parts
+      .slice(1)
+      .map(stateIn)
+      .find((found) => found !== null) ?? null;
+  if (!state) {
+    for (const length of [2, 1]) {
+      const end = city.slice(-length);
+      const found = end.length === length ? stateIn(end) : null;
+      if (found) {
+        state = found;
+        city = city.slice(0, -length);
+        break;
+      }
+    }
+  }
+  if (city.length > 1 && city.at(-1) === 'city') city = city.slice(0, -1);
+  return { city, state };
+}
 
 /**
  * Whether a listing's places, between ";" marks, fit the place asked for: remote, or one place with
- * all its words, whole, so "OH" isn't in "Kaneohe", and a state's letters stand for its name, so
- * "Columbus, OH" and "Columbus Ohio" fit "Columbus, Ohio", and "Columbus, Georgia" doesn't.
+ * its city's words, whole, so "OH" isn't in "Kaneohe", and its state, so "Columbus, Georgia" isn't
+ * "Columbus, Ohio". A state's letters stand for its name, so "Columbus, OH" fits "Columbus, Ohio".
  */
 export function placeFits(place: string, places: string): boolean {
   if (!place.trim()) return true;
   if (isRemotePlace(place)) return /\bremote\b/i.test(places);
-  const wanted = placeWords(place).map((word) => {
-    const state = word.length === 2 ? US_STATES[word.toUpperCase()] : undefined;
-    return { word, state: state ? placeWords(state) : null };
-  });
+  const { city, state } = placeAsked(place);
   return places.split(';').some((each) => {
     const have = new Set(placeWords(each));
-    return wanted.every(
-      ({ word, state }) => have.has(word) || state?.every((part) => have.has(part)),
-    );
+    return [...city, ...(state ?? [])].every((word) => have.has(word));
   });
 }
 

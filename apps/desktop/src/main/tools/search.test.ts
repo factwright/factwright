@@ -403,11 +403,16 @@ describe('job_board, on what can go wrong', () => {
       expect(said, answer).toContain('Couldn’t read the JazzHR board');
       expect(said, answer).not.toContain('posting you linked');
     }
-    // JazzHR's own page with nothing on it does say so.
-    fetch.mockResolvedValue('<div id="resumator-wrapper">We have no open positions.</div>');
+    // JazzHR's own page with nothing on it does say so, with its styles for a list still there.
+    fetch.mockResolvedValue(
+      '<style>.list-group-item-heading { margin: 0 }</style><div id="resumator-wrapper">We have no open positions at this time.</div>',
+    );
     expect(await run()).toBe(
       'The JazzHR board “acme” has no open jobs right now, so the posting you linked has closed.',
     );
+    // Its name alone says nothing, as a page that has moved on could still have it.
+    fetch.mockResolvedValue('<div id="resumator"><a href="/jobs/1">A job, in a new look</a></div>');
+    expect(await run()).toContain('Couldn’t read the JazzHR board');
     // Its own list, without that posting, says it has probably closed.
     fetch.mockResolvedValue(
       `<div id="resumator"><h3 class='list-group-item-heading'><a href="https://acme.applytojob.com/apply/Other99/Clerk">Clerk</a></h3></div>`,
@@ -459,6 +464,22 @@ describe('job_board, on what can go wrong', () => {
     expect(unknown).not.toContain('closed');
   });
 
+  it('takes a list of only hidden jobs for no jobs', async () => {
+    fetch.mockResolvedValue({ jobs: [{ id: '1', title: 'Hidden', isListed: false }] });
+    expect(await tool('job_board').run({ url: 'https://jobs.ashbyhq.com/acme', folder: SEARCH })).toBe(
+      'The Ashby board “acme” has no open jobs right now.',
+    );
+    fetch.mockResolvedValue(
+      'window.pageData = {"Jobs":[{"JobId":1,"JobTitle":"Inside","IsInternal":true}]};',
+    );
+    expect(
+      await tool('job_board').run({
+        url: 'https://recruiting.paylocity.com/recruiting/jobs/All/506e6226-6bb0-442a-b293-df00b62c70e5',
+        folder: SEARCH,
+      }),
+    ).toContain('has no open jobs right now');
+  });
+
   it('compares a posting’s ID whatever its case', async () => {
     fetch.mockResolvedValue({ jobs: [{ title: 'Nurse', shortcode: 'ABC123' }] });
     expect(
@@ -495,7 +516,7 @@ describe('job_board, on what can go wrong', () => {
     expect(file[line - 1]).toBe('## 2. Second');
   });
 
-  it('drops a link that isn’t https, from any system’s feed', async () => {
+  it('makes every link https, or drops it, from any system’s feed', async () => {
     fetch.mockResolvedValue({
       jobs: [
         { title: 'Phish', absolute_url: 'file:///etc/passwd' },
@@ -508,8 +529,9 @@ describe('job_board, on what can go wrong', () => {
       url: 'https://boards.greenhouse.io/acme',
       folder: SEARCH,
     });
-    expect(answer).toContain('1 open job');
-    expect(answer).not.toMatch(/passwd|evil|alert/);
+    expect(answer).toContain('2 open jobs');
+    expect(answer).toContain('https://evil.example/a');
+    expect(answer).not.toMatch(/passwd|alert|http:/);
   });
 
   it('puts what it asks on the task’s card, for a board on a site a link picks', async () => {
@@ -663,6 +685,29 @@ describe('job_board, from a sitemap', () => {
     expect(fetch.mock.calls.map(([url]) => url)).not.toContain('https://evil.example/two.xml');
   });
 
+  it('keeps apart two employers whose names run together', async () => {
+    const answers2: Record<string, unknown> = {
+      'https://mercy-health.wd1.myworkdayjobs.com/robots.txt': '',
+      'https://mercy-health.wd1.myworkdayjobs.com/Careers/siteMap.xml': sitemap(
+        'https://mercy-health.wd1.myworkdayjobs.com/Careers/job/Nurse_R1',
+      ),
+      'https://mercy.wd1.myworkdayjobs.com/robots.txt': '',
+      'https://mercy.wd1.myworkdayjobs.com/Health_Careers/siteMap.xml': sitemap(
+        'https://mercy.wd1.myworkdayjobs.com/Health_Careers/job/Nurse_R2',
+      ),
+    };
+    answers(answers2);
+    await tool('job_board').run({
+      url: 'https://mercy-health.wd1.myworkdayjobs.com/Careers',
+      folder: SEARCH,
+    });
+    await tool('job_board').run({
+      url: 'https://mercy.wd1.myworkdayjobs.com/Health_Careers',
+      folder: SEARCH,
+    });
+    expect(readdirSync(join(root, 'searches', SEARCH))).toHaveLength(2);
+  });
+
   it('keeps two employers’ boards with the same name apart', async () => {
     const other = 'https://acme.wd5.myworkdayjobs.com';
     answers({
@@ -800,6 +845,54 @@ describe('job_board, from Workday’s own search', () => {
     await tool('job_board').run({ url: BOARD_URL, folder: SEARCH, titles: [' NURSE '] });
     searches['NURSE@0'] = searches['nurse@0'];
     expect(readdirSync(join(root, 'searches', SEARCH)).length).toBeLessThanOrEqual(3);
+  });
+
+  it.each([
+    'Node.js Developer',
+    'ASP.NET Developer',
+    'Vue.js Engineer',
+    'Street Outreach Worker',
+    'Street Medicine Nurse',
+    'Wall Street Analyst',
+    'Unit 5 Nurse',
+    'Level 3 Court Reporter',
+    '911 Dispatcher',
+    'Sr. Manager',
+    'R.N.',
+    'HVAC/R Technician',
+  ])('sends a real title with odd marks: %s', async (title) => {
+    fetch.mockImplementation(async (url, _json, _limit, _max, _redirect, sending) => {
+      if (url === ROBOTS) return ROBOTS_TEXT;
+      if (sending !== undefined) return { total: 0, jobPostings: [] };
+      throw new FetchAnswered('osu.wd1.myworkdayjobs.com', 404);
+    });
+    await tool('job_board').run({ url: BOARD_URL, folder: SEARCH, titles: [title] });
+    expect(asked()).toHaveLength(1);
+  });
+
+  it('says which titles it left out of the search', async () => {
+    searches = { 'nurse@0': { total: 1, jobPostings: [hit('Nurse', 'R1')] } };
+    const answer = await tool('job_board').run({
+      url: BOARD_URL,
+      folder: SEARCH,
+      titles: ['nurse', 'evil.example/steal'],
+    });
+    expect(answer).toContain(
+      'Left out of the search, as they don’t read like job titles: “evil.example/steal”.',
+    );
+  });
+
+  it('says why it went to the sitemap, when no title reads like one', async () => {
+    fetch.mockImplementation(async (url) => {
+      if (url === ROBOTS) return ROBOTS_TEXT;
+      return `<urlset><url><loc>${SITE}/OSUCareers/job/East/Nurse_R1</loc></url></urlset>`;
+    });
+    const answer = await tool('job_board').run({
+      url: BOARD_URL,
+      folder: SEARCH,
+      titles: ['jane@example.com'],
+    });
+    expect(answer).toContain('None of those titles reads like one, so nothing went');
   });
 
   it('counts one job found by two titles once', async () => {
@@ -1301,11 +1394,39 @@ describe('job_listings', () => {
     [{ titles: ['evil.example/steal'] }, 'isn’t a job title or a place'],
     [{ titles: ['Steve 312-555-0199'] }, 'isn’t a job title or a place'],
     [{ titles: ['123 Main Street Chicago'] }, 'isn’t a job title or a place'],
+    [{ titles: ['nurse'], place: 'evil.example' }, 'isn’t a job title or a place'],
     [{ titles: [] }, 'Give at least one job title'],
   ])('sends nothing for %j', async (input, says) => {
     const run = tool('job_listings').run({ source: 'workable', folder: SEARCH, ...input });
     await expect(run.catch((error: Error) => error.message)).resolves.toContain(says);
     expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it('sends Workable the titles that read like one, and says which it left out', async () => {
+    fetch.mockResolvedValue({ jobs: [LISTED] });
+    const answer = await tool('job_listings').run({
+      source: 'workable',
+      titles: ['Node.js Developer', 'jane@example.com'],
+      folder: SEARCH,
+    });
+    expect(fetch.mock.calls.map(([url]) => url)).toEqual([
+      'https://jobs.workable.com/api/v1/jobs?query=Node.js%20Developer',
+    ]);
+    expect(answer).toContain('Left out of the search, as they don’t read like job titles: “jane@example.com”.');
+  });
+
+  it('refuses nothing USAJOBS would never be sent', async () => {
+    fetch.mockResolvedValue({
+      data: [{ ...FEDERAL, positionTitle: 'Node.js Developer' }],
+    });
+    const answer = await tool('job_listings').run({
+      source: 'usajobs',
+      titles: ['Node.js Developer'],
+      place: 'Columbus, Ohio',
+      folder: SEARCH,
+    });
+    expect(answer).toContain('1 job with those words in the title');
+    for (const [url] of fetch.mock.calls) expect(url).not.toMatch(/node|columbus/i);
   });
 
   it('turns away another source or folder', async () => {

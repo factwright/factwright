@@ -174,7 +174,7 @@ describe('careersSite', () => {
     expect(asked()).toEqual([`${SITE}/robots.txt`, `${SITE}/feeds/s.xml`]);
   });
 
-  it('reads nothing when robots.txt can’t be read, by RFC 9309', async () => {
+  it('reads nothing when robots.txt can’t be read', async () => {
     for (const failure of [
       new FetchAnswered('careers.acme.example', 503),
       new FetchAnswered('careers.acme.example', 403),
@@ -559,7 +559,9 @@ describe('careersSite, against what a site can do', () => {
       [other]: posting('Registered Nurse'),
     };
     const answer = await run();
-    expect(answer).toContain(`- ${nurse}`);
+    // read_page would follow that redirect, so it isn't offered either.
+    expect(answer).not.toContain(`- ${nurse}`);
+    expect(answer).toContain('1 link left out, as its robots.txt keeps software from them.');
     expect(read).not.toContain(`${SITE}/private/1`);
   });
 
@@ -644,12 +646,6 @@ describe('careersSite, against what a site can do', () => {
     ['a date that’s an object', { datePosted: { toString: 1 }, validThrough: { valueOf: 1 } }],
     ['places that aren’t', { jobLocation: [1, 'x', null, { address: { toString: 1 } }] }],
     ['a title that’s an array', { title: ['Registered', 'Nurse'] }],
-    [
-      'nesting too deep',
-      {
-        baseSalary: { value: { minValue: JSON.parse(`${'['.repeat(5_000)}${']'.repeat(5_000)}`) } },
-      },
-    ],
   ])('keeps what it read when a posting has %s', async (_name, more) => {
     const fine = `${SITE}/jobs/2/registered-nurse`;
     table = {
@@ -663,8 +659,47 @@ describe('careersSite, against what a site can do', () => {
     expect(savedFile()).toContain('Fine Nurse');
   });
 
+  it('keeps what it read when job data nests too deep for anything but a parser', async () => {
+    const fine = `${SITE}/jobs/2/registered-nurse`;
+    const deep = `${'['.repeat(200_000)}${']'.repeat(200_000)}`;
+    table = {
+      [`${SITE}/robots.txt`]: `Sitemap: ${SITE}/s.xml`,
+      [`${SITE}/s.xml`]: sitemap(fine, nurse),
+      [fine]: posting('Fine Nurse'),
+      [nurse]: `<script type="application/ld+json">{"@type":"JobPosting","title":"Deep Nurse","description":"Care.","baseSalary":{"value":{"minValue":${deep}}}}</script>`,
+    };
+    expect(await run()).toContain('Fine Nurse');
+    expect(savedFile()).toContain('Fine Nurse');
+  });
+
+  it('doesn’t stop the app for a sitemap index and robots.txt built to take long', async () => {
+    const rules = Array.from({ length: 999 }, () => 'Disallow: /*ab');
+    const children = Array.from(
+      { length: 24_000 },
+      (_, i) => `<sitemap><loc>${SITE}/s${i}-${'a'.repeat(400)}.xml</loc></sitemap>`,
+    );
+    table = {
+      [`${SITE}/robots.txt`]: [`Sitemap: ${SITE}/index.xml`, 'User-agent: *', 'Disallow: /', ...rules].join('\n'),
+      [`${SITE}/index.xml`]: `<sitemapindex>${children.join('')}</sitemapindex>`,
+    };
+    let longest = 0;
+    let last = performance.now();
+    const timer = setInterval(() => {
+      const now = performance.now();
+      longest = Math.max(longest, now - last);
+      last = now;
+    }, 5);
+    const started = performance.now();
+    await run();
+    clearInterval(timer);
+    expect(performance.now() - started).toBeLessThan(10_000);
+    expect(longest).toBeLessThan(1_000);
+    // None of those is allowed, so nothing past the index was asked for.
+    expect(asked()).toEqual([`${SITE}/robots.txt`, `${SITE}/index.xml`]);
+  }, 30_000);
+
   it('doesn’t stop the app for a sitemap and robots.txt built to take long', async () => {
-    const rules = Array.from({ length: 299 }, () => 'Disallow: /*ab');
+    const rules = Array.from({ length: 999 }, () => 'Disallow: /*ab');
     const links = Array.from(
       { length: 12_000 },
       (_, i) => `${SITE}/jobs/registered-nurse-${i}-${'a'.repeat(400)}`,
@@ -712,6 +747,95 @@ describe('careersSite, against what a site can do', () => {
     expect(asked().filter((url) => url.includes('/jobs/')).length).toBeLessThan(12);
     expect(answer).toContain('from the first 5 sitemaps, with 5 not read');
     expect(answer).toContain('Not read, ');
+  });
+
+  it('says when time ran out looking at links, rather than that it found nothing', async () => {
+    let now = NOW().getTime();
+    const links = Array.from({ length: 500 }, (_, i) => `${SITE}/jobs/${i}/clerk`);
+    fetch.mockImplementation(async (url) => {
+      if (url.endsWith('/robots.txt')) return `Sitemap: ${SITE}/s.xml`;
+      // A slow sitemap takes up the time for looking through it.
+      now += 39_000;
+      return sitemap(...links, nurse);
+    });
+    const answer = await run(['registered nurse'], `${SITE}/jobs`, () => new Date(now));
+    expect(answer).toContain('none it looked at has those words');
+    expect(answer).toContain('It ran out of time, having looked at 200 of those pages.');
+    expect(answer).not.toContain('it may not have that job');
+  });
+
+  it('says when a sitemap couldn’t be read, rather than that the site has no such job', async () => {
+    table = {
+      [`${SITE}/robots.txt`]: `Sitemap: ${SITE}/jobs.xml\nSitemap: ${SITE}/pages.xml\nSitemap: ${SITE}/more.xml.gz`,
+      [`${SITE}/jobs.xml`]: new FetchRefused('That page is too big.'),
+      [`${SITE}/pages.xml`]: sitemap(`${SITE}/about`),
+    };
+    const answer = await run();
+    expect(answer).toContain('none it looked at has those words');
+    expect(answer).toContain('1 sitemap couldn’t be read.');
+    expect(answer).toContain('1 sitemap left out for being gzipped.');
+  });
+
+  it('says so when a sitemap couldn’t be read, among postings it could', async () => {
+    table = {
+      [`${SITE}/robots.txt`]: `Sitemap: ${SITE}/jobs.xml\nSitemap: ${SITE}/more-jobs.xml`,
+      [`${SITE}/jobs.xml`]: sitemap(nurse),
+      [`${SITE}/more-jobs.xml`]: new Error('the site took too long to answer'),
+      [nurse]: posting('Registered Nurse'),
+    };
+    const answer = await run();
+    expect(answer).toContain('1 open posting');
+    expect(answer).toContain('1 sitemap couldn’t be read.');
+  });
+
+  it('follows an index across www on the same site', async () => {
+    const www = 'https://www.acme.example';
+    const job = `${www}/jobs/1/registered-nurse`;
+    table = {
+      [`${www}/robots.txt`]: 'Sitemap: https://acme.example/index.xml',
+      'https://acme.example/index.xml': `<sitemapindex><sitemap><loc>${www}/jobs.xml</loc></sitemap></sitemapindex>`,
+      [`${www}/jobs.xml`]: sitemap(job),
+      [job]: posting('Registered Nurse'),
+    };
+    expect(await run(['registered nurse'], `${www}/careers`)).toContain('1 open posting');
+  });
+
+  it('takes another company on a shared ending for another company', async () => {
+    const uk = 'https://careers.acme.co.uk';
+    const job = `${uk}/jobs/1/registered-nurse`;
+    table = {
+      [`${uk}/robots.txt`]: `Sitemap: https://evil.co.uk/x?id=1\nSitemap: https://acme.co.uk/jobs.xml`,
+      'https://acme.co.uk/jobs.xml': sitemap(job),
+      [job]: posting('Registered Nurse'),
+    };
+    await run(['registered nurse'], `${uk}/jobs`);
+    expect(asked()).not.toContain('https://evil.co.uk/x?id=1');
+    expect(asked()).toContain('https://acme.co.uk/jobs.xml');
+  });
+
+  it('never lists a link with a sign-in in it', async () => {
+    const signedIn = new URL(nurse);
+    signedIn.username = 'someone';
+    signedIn.password = 'made-up';
+    table = {
+      [`${SITE}/robots.txt`]: `Sitemap: ${SITE}/s.xml`,
+      [`${SITE}/s.xml`]: sitemap(signedIn.href),
+    };
+    expect(await run()).toContain('and none has those words in its link');
+    expect(asked()).toEqual([`${SITE}/robots.txt`, `${SITE}/s.xml`]);
+  });
+
+  it('stops at so many redirects from sitemaps, each a line on the task’s card', async () => {
+    fetch.mockImplementation(async (url, _json, _limit, _max, onRedirect) => {
+      if (url.endsWith('/robots.txt')) return `Sitemap: ${SITE}/index.xml`;
+      if (url.endsWith('/index.xml')) {
+        return `<sitemapindex>${Array.from({ length: 49 }, (_, i) => `<sitemap><loc>${SITE}/s${i}.xml</loc></sitemap>`).join('')}</sitemapindex>`;
+      }
+      for (let hop = 0; hop < 5; hop++) onRedirect?.(`${SITE}/hop${hop}`);
+      return '';
+    });
+    await run();
+    expect(read.length).toBeLessThanOrEqual(1 + 50 + 50 + 1);
   });
 
   it('keeps each set of titles’ file, as a second call doesn’t replace the first', async () => {

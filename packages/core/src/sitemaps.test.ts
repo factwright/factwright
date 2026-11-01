@@ -145,6 +145,9 @@ describe('robotsAllow', () => {
       true,
     ],
     ['Disallow: /stellen/münchen/', '/stellen/m%C3%BCnchen/1', true],
+    ['Disallow: /a{b}', '/a%7Bb%7D', true],
+    ['Disallow: /a"b', '/a%22b', true],
+    ['Disallow: /a<b', '/a%3Cb', true],
   ])('%s, for %s', (rule, path, barred) => {
     expect(robotsAllow(rules(rule), path)).toBe(!barred);
   });
