@@ -1,6 +1,15 @@
 import { ROADMAP_URL } from '@factwright/core';
 import { NavItem } from '@factwright/ui';
-import { BookCheck, Briefcase, Flag, Heart, Lightbulb, Puzzle, UserRound } from 'lucide-react';
+import {
+  BookCheck,
+  Briefcase,
+  Flag,
+  Heart,
+  Lightbulb,
+  Palette,
+  Puzzle,
+  UserRound,
+} from 'lucide-react';
 import type { EditResult, SetupCheck } from '../shared/api.ts';
 import type { ProfileEntry } from '../shared/profiles.ts';
 import type { AskingView, RequestView, SyncStatus } from '../shared/sync.ts';
@@ -38,8 +47,8 @@ export function reportUrl(version: string): string {
 /**
  * The sidebar: the open profile when there's more than one, the app's places, then an update on its
  * way, or one that's ready once the user puts off the strip across the window, sync, the user's
- * Claude and the levels it runs at, the browser extension, a way to support Factwright, ways to
- * suggest a feature and report a problem, and Factwright's version, so an update shows it landed.
+ * Claude and the levels it runs at, the browser extension, how the app looks, a way to support
+ * Factwright, ways to suggest a feature and report a problem, and Factwright's version, so an update shows it landed.
  */
 export function Sidebar({
   profiles,
@@ -59,6 +68,7 @@ export function Sidebar({
   onOpenClaude,
   onOpenClaudeSettings,
   onOpenExtension,
+  onOpenAppearance,
   levels,
   jobCount,
   factCount,
@@ -103,6 +113,8 @@ export function Sidebar({
    * to Factwright on this computer, which works whatever sync is doing.
    */
   onOpenExtension: () => void;
+  /** Opens how the app looks, to choose a theme. */
+  onOpenAppearance: () => void;
   /** The user's choices of model and effort, once they've loaded. */
   levels: LevelChoices | null;
   /** How many jobs there are, once they've loaded. */
@@ -200,6 +212,10 @@ export function Sidebar({
           <button type="button" className={styles.link} onClick={onOpenExtension}>
             <Puzzle size={14} aria-hidden="true" />
             Browser extension
+          </button>
+          <button type="button" className={styles.link} onClick={onOpenAppearance}>
+            <Palette size={14} aria-hidden="true" />
+            Appearance
           </button>
           <a
             className={`${styles.link} ${styles.support}`}

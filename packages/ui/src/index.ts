@@ -44,8 +44,20 @@ export {
 } from './components/Tooltip.tsx';
 export { VisuallyHidden } from './components/VisuallyHidden.tsx';
 export { CONTROL_CONTRAST, contrastRatio, TEXT_CONTRAST } from './contrast.ts';
-export { ThemeStyle } from './ThemeStyle.tsx';
-export { themeCss } from './theme.ts';
+export { NamedThemesStyle, ThemeStyle } from './ThemeStyle.tsx';
+export { namedThemesCss, themeCss } from './theme.ts';
+export {
+  DARK_THEME,
+  isThemeChoice,
+  LIGHT_THEME,
+  SYSTEM_THEME,
+  THEMES,
+  type Theme,
+  type ThemeChoice,
+  type ThemeMode,
+  themeById,
+  themeShown,
+} from './themes.ts';
 export {
   DARK,
   FONTS,

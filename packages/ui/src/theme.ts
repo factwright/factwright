@@ -1,34 +1,35 @@
-import {
-  DARK,
-  FONTS,
-  LIGHT,
-  type Palette,
-  RADII,
-  SPACE,
-  TEXT_SIZES,
-  TONE_COLORS,
-  TONES,
-} from './tokens.ts';
+import { DARK_THEME, LIGHT_THEME, THEMES, type Theme } from './themes.ts';
+import { FONTS, RADII, SPACE, TEXT_SIZES, TONES } from './tokens.ts';
 
 /**
- * The CSS behind every component: the colors as variables for both themes, plus type, spacing,
- * radii and a few base styles. The page follows the system theme unless an element sets
+ * The CSS behind every component: the colors as variables for light and dark, plus type, spacing,
+ * radii and a few base styles. The page follows the system's setting unless an element sets
  * data-theme="light" or "dark", which applies to everything inside it.
  */
 export function themeCss(): string {
   return [
-    `:root, [data-theme="light"] { ${colorVariables(LIGHT, 'light')} }`,
-    `@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { ${colorVariables(DARK, 'dark')} } }`,
-    `[data-theme="dark"] { ${colorVariables(DARK, 'dark')} }`,
+    `:root, [data-theme="light"] { ${colorVariables(LIGHT_THEME)} }`,
+    `@media (prefers-color-scheme: dark) { :root:not([data-theme]) { ${colorVariables(DARK_THEME)} } }`,
+    `[data-theme="dark"] { ${colorVariables(DARK_THEME)} }`,
     `:root { ${scaleVariables()} }`,
     BASE_CSS,
   ].join('\n');
 }
 
-function colorVariables(palette: Palette, mode: 'light' | 'dark'): string {
+/**
+ * The colors of the themes beyond light and dark, each under its own data-theme, for a page that
+ * offers them. Later on the page than themeCss, which they override on the root.
+ */
+export function namedThemesCss(): string {
+  return THEMES.filter((theme) => theme !== LIGHT_THEME && theme !== DARK_THEME)
+    .map((theme) => `[data-theme="${theme.id}"] { ${colorVariables(theme)} }`)
+    .join('\n');
+}
+
+function colorVariables({ colors: palette, tones: tints, mode }: Theme): string {
   const colors = Object.entries(palette).map(([name, value]) => `--fw-${kebab(name)}: ${value};`);
   const tones = TONES.flatMap((tone) => {
-    const { fg, bg } = TONE_COLORS[tone][mode];
+    const { fg, bg } = tints[tone];
     return [`--fw-tone-${tone}-fg: ${fg};`, `--fw-tone-${tone}-bg: ${bg};`];
   });
   return [`color-scheme: ${mode};`, ...colors, ...tones].join(' ');
