@@ -12,12 +12,14 @@ Notable changes to Factwright, newest first. The format follows [Keep a Changelo
 - The edge between the job list and a job's details drags, so the details can be any width, not only beside the list or the whole window. The arrow keys move it too, Factwright keeps the width you leave it at, the list always keeps its room, a wide panel shows its areas in two columns, and a double-click puts it back.
 - Suggest a feature, in the sidebar beside Report a problem, opens Factwright's roadmap at factwright.com/roadmap in your browser, to suggest a feature or vote for the ideas there, with no account. The app sends nothing itself.
 - The box on an application form that asks what you did in a job now fits the job you're applying to. It fills with the bullets for that position from the job's own resume, as plain lines, then from the starting resume of its kind of job, then with what your work history in Profile says. Where more than one has words, the field's menu offers the others. For a job not under a kind of job yet, such as one you just saved from your browser, it goes by the job's title: where that fits the job titles you want in one kind alone, whatever the level, it fills with that kind's starting resume and says so, as "From your Strategy starting resume, by the job's title". That's only a guess, so the menu still offers the other kinds' words, and the job's kind doesn't change. Where two kinds fit, or none does, the menu offers each kind's words, and Fill picks none. Bullets written for another job never fill it. Where the box takes fewer characters than the words run to, it takes the whole lines that fit, and says it cut them. It fills the same through sync, without the app.
+- **Look on LinkedIn and Indeed yourself,** in Find jobs, under those two places. A web search sees only some of their listings, and Factwright's tools never read them, but you can, in your own browser. It has a ready-made LinkedIn and Indeed search for each kind of job's first few titles in each place you'd work, posted in the past week and remote where you want remote, and a GovernmentJobs search too if you want government, nonprofit or school work. Each opens only when you click it, and the browser extension saves a job from those pages with a click. The app hands your browser the address and sends nothing itself.
 
 ### Security
 - Each run of Claude Code has only the built-in tools Factwright's tasks use, and what Claude Code adds itself, so far a tool on some models for ending a conversation. The rest of its built-in tools are off, in helpers too, and a new one in a later version stays off until Factwright names it.
 - Prompt suggestions and auto mode are off in a run, and helpers work only in your workspace.
 - The terminal in Claude's panel drops a `!` that would start Claude Code's shell mode, as far as it can tell from the keys. To run a command of your own, use your own terminal.
 - Factwright now needs Claude Code 2.1.295 or newer, since Claude Code's changelog says that version fixed `--tools` and `--restricted` not applying to built-in tools that register after launch. With an older one, Factwright says it needs an update, and what to run.
+- A page in the app's window can't reach the web, whatever it does. A click on a link with Option or Alt held used to have the window download it itself. Now it opens in your browser, like any other link.
 
 ### Changed
 - **Find jobs reads what employers have open today, on far more systems.** A search hit is often closed, but it names an employer who hires for that work, so your Claude now reads that employer's own list.
@@ -46,6 +48,7 @@ Notable changes to Factwright, newest first. The format follows [Keep a Changelo
 - A form's panel and field menus say which kind of job's target pay they filled in, where they said only "From Profile".
 
 ### Fixed
+- A city in What you want can hold a comma, so "Chicago, IL" stays one city, where it used to become Chicago and IL. Press Enter to add it. "Chicago, Denver" still adds two.
 - Filling through sync takes a job's kind of job from the job search that found it, as the app does, so a form's pay box fills with that kind's target pay.
 - A form's hint such as "Minimum 200 characters" no longer reads as the most the box takes.
 - A box of rich text on a form keeps an answer's lines on their own lines.

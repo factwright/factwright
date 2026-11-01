@@ -614,6 +614,23 @@ describe('ProfilePage', () => {
     expect(within(card).queryByText('Nothing yet.')).toBeNull();
   });
 
+  it('keeps a city and its state together, and adds two cities typed together', async () => {
+    const api = profileApi();
+    render(<Harness api={api} />);
+    const wants = await screen.findByRole('region', { name: 'What you want' });
+    await userEvent.click(within(wants).getByRole('button', { name: 'Change' }));
+    const dialog = await screen.findByRole('dialog', { name: 'What you want' });
+    const cities = within(dialog).getByLabelText(/^Cities/);
+    await userEvent.type(cities, 'Chicago, IL{Enter}');
+    await userEvent.type(cities, 'Denver, Tulsa{Enter}');
+    for (const city of ['Chicago, IL', 'Denver', 'Tulsa']) {
+      expect(within(dialog).getByRole('button', { name: `Remove ${city}` })).toBeTruthy();
+    }
+    await userEvent.type(cities, 'Columbus, Ohio');
+    await userEvent.tab();
+    expect(within(dialog).getByRole('button', { name: 'Remove Columbus, Ohio' })).toBeTruthy();
+  });
+
   it('adds another kind of job, with its own titles and pay, and names the first', async () => {
     const api = profileApi();
     render(<Harness api={api} />);

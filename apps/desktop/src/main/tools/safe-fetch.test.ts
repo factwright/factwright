@@ -2,6 +2,8 @@ import type { IncomingMessage } from 'node:http';
 import { Readable } from 'node:stream';
 import { brotliCompressSync, deflateSync, gzipSync } from 'node:zlib';
 import { describe, expect, it } from 'vitest';
+import { readAnswers } from '../../shared/about.ts';
+import { browserSearches } from '../../shared/browser-searches.ts';
 import {
   decoded,
   FetchRefused,
@@ -128,6 +130,31 @@ describe('sites the tools don’t read', () => {
   ])('refuses %s, saying where to look instead', (link, name) => {
     expect(linkProblem(new URL(link))).toContain(`Factwright doesn’t read ${name}`);
     expect(linkProblem(new URL(link))).toContain('the employer’s own site');
+  });
+
+  it('refuses every ready-made search in Find jobs, which only the user’s browser opens', () => {
+    const [kind] = browserSearches(
+      readAnswers({
+        roles: ['Nurse'],
+        workplaces: ['remote'],
+        places: ['Tulsa, OK'],
+        companies: ['public'],
+      }),
+    );
+    const links = kind?.searches.flatMap((search) => search.links) ?? [];
+    expect(links.map((link) => link.site)).toEqual([
+      'LinkedIn',
+      'Indeed',
+      'GovernmentJobs',
+      'LinkedIn',
+      'Indeed',
+      'GovernmentJobs',
+    ]);
+    for (const { site, url } of links) {
+      expect(linkProblem(new URL(url))).toMatch(
+        new RegExp(`Factwright (never reads|doesn’t read) ${site}`),
+      );
+    }
   });
 
   it.each([
