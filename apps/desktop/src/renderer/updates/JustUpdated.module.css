@@ -1,0 +1,10 @@
+/* On the left, away from the button that closes the dialog. */
+.link {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  margin-right: auto;
+  color: var(--fw-accent-text);
+  font-size: var(--fw-text-sm);
+  font-weight: 550;
+}

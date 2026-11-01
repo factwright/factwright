@@ -17,7 +17,7 @@ It:
 | [`src/shared`](src/shared) | The types both sides of the bridge agree on |
 | [`scripts`](scripts) | The development runner, the app icons' drawing, the README's screenshots, a fix node-pty needs after every install, the helper's build, and a release's check and publishing, with a test that runs the publishing against stand-ins for R2 |
 | [`build`](build) | The app icons, drawn from Factwright's mark (`pnpm --filter @factwright/desktop icon`), and what the Mac's hardened runtime allows. The installers build them in, and the app shows the icon in the Dock while you develop |
-| [`release-notes`](release-notes) | What's new in each version, which installed copies show as they update |
+| [`release-notes`](release-notes) | What's new in each version, which installed copies show as they update (`<version>.md`), and the few plain lines the app shows on its first open after one (`<version>.short.md`) |
 
 The window is locked down:
 - It runs sandboxed, with no Node and no access to files.
@@ -37,6 +37,25 @@ installs on restart, or the next time the user quits. Restart now waits while Cl
 or waits on you, and quits a Claude Code that's done first. A copy being developed, or built anywhere
 else, never updates itself, unless it's built with a download site of its own, as
 [Sync](#sync) says.
+
+The first time a profile opens on a newer version, a small dialog says what's new in it, in the few
+plain lines of `release-notes/<version>.short.md`, with a link to that version's release on GitHub
+([`src/main/whats-new.ts`](src/main/whats-new.ts),
+[`src/renderer/updates/useJustUpdated.ts`](src/renderer/updates/useJustUpdated.ts)):
+- **Once for each update:** the newest version seen is kept in `whats-new.json` in the profile's
+  folder, just before the dialog shows. It's outside the workspace, so it never syncs. It never goes
+  down, so going back to an older version says nothing, and neither does coming forward again.
+- **For each person:** each profile keeps its own, as each is someone's own job hunt, so it hears
+  for itself the next time it opens.
+- **Only after an update:** a first install and a new profile have no tracker yet, so they start from
+  the version they're on. A tracker with no version kept means a version from before this ran there,
+  so it counts as an update. An update that skipped versions shows the newest one's lines.
+- **Never in the way:** it looks once, as the window has what it opens on, and never comes up later.
+  Someone on Get started has no older version to compare with, so that version is passed by. With a
+  run of the user's going, or another dialog up, it waits for the next open.
+- **In tests:** quiet mode says nothing, and leaves what's kept as it is. `FACTWRIGHT_WHATS_NEW=0.19.0`
+  asks for it, as if the app were running that version. In the screens preview,
+  `?profile=done&whats-new=0.19.0` shows it.
 
 ## Claude's panel
 Claude's panel runs your own Claude Code in a real terminal (node-pty and xterm.js), in the workspace folder inside the app's data folder. Each run is locked down too:
