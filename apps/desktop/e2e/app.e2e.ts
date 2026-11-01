@@ -1290,8 +1290,8 @@ test('drags a job’s details to any width beside the list, and keeps it', async
   const { window } = opened;
   await window.getByRole('button', { name: 'Add job' }).click();
   const add = window.getByRole('dialog', { name: 'Add a job' });
-  await add.getByRole('textbox', { name: 'Company' }).fill('Harbor & Pine Outfitters');
-  await add.getByRole('textbox', { name: 'Role' }).fill('Account Executive');
+  await add.getByRole('textbox', { name: 'Company' }).fill('Driftwood Supply');
+  await add.getByRole('textbox', { name: 'Role' }).fill('Store Manager');
   await add.getByRole('button', { name: 'Add job' }).click();
   const details = jobPanel();
   await expect(details).toBeVisible();
@@ -1320,7 +1320,7 @@ test('drags a job’s details to any width beside the list, and keeps it', async
   await details.getByRole('button', { name: 'Show beside the list' }).click();
   await expect.poll(widthOf).toBeCloseTo(dragged, 0);
   await window.reload();
-  await window.getByRole('button', { name: /^Harbor & Pine Outfitters/ }).click();
+  await window.getByRole('button', { name: /^Driftwood Supply/ }).click();
   await expect.poll(widthOf).toBeCloseTo(dragged, 0);
 
   // The list keeps its room, however far it's dragged, and still shows if the details go over it.
