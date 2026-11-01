@@ -1,4 +1,5 @@
 import type { PlanLevels } from './levels.ts';
+import type { ProfilePart } from './profile-parts.ts';
 import { REVISE_SKILL } from './revision.ts';
 import { EARLIER_SKILLS, HUNT_SKILLS, RUN_SKILLS, type RunTask, THANKS_SKILL } from './runs.ts';
 
@@ -131,13 +132,24 @@ export const modelFor = (
   return (levelled && choices.tasks[levelled]) || modelWithout(choices, levelled, levels);
 };
 
+/** The parts of Profile whose changes are the same work as another task, whose levels they take. */
+const PART_LEVELS: Readonly<Partial<Record<ProfilePart, ModelTask>>> = {
+  resumes: 'get-started',
+  templates: 'make-template',
+  history: 'work-history',
+  facts: 'add-facts',
+};
+
 /**
  * The task whose levels a run takes: its own, but for a revision of a resume, which is writing,
- * at a tailored resume's, and for thank-you notes after a call, at interview prep's.
+ * at a tailored resume's, for thank-you notes after a call, at interview prep's, and for some
+ * parts of Profile, at the task that does that work.
  */
 export const levelsTask = (task: RunTask): ModelTask =>
-  task.skill === REVISE_SKILL
-    ? 'focused-resume'
-    : task.skill === THANKS_SKILL
-      ? 'interview-prep'
-      : task.skill;
+  'part' in task
+    ? (PART_LEVELS[task.part] ?? task.skill)
+    : task.skill === REVISE_SKILL
+      ? 'focused-resume'
+      : task.skill === THANKS_SKILL
+        ? 'interview-prep'
+        : task.skill;

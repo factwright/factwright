@@ -1,3 +1,4 @@
+import { JOB_EXTRAS, WORKSPACE_PATHS } from '@factwright/core';
 import type { ProfilePart } from '../../shared/profile-parts.ts';
 import { partOf, type RunScope } from '../../shared/runs.ts';
 import { TEMPLATES_FOLDER } from '../resume/templates.ts';
@@ -112,12 +113,16 @@ const PART_EDITS: Readonly<Partial<Record<ProfilePart, readonly string[]>>> = {
  * the user's words, their facts and their Profile.
  */
 const FROM_ELSEWHERE = [
-  'applications/**',
-  'searches/**',
-  'outreach/**',
-  'templates/sources/**',
-  'linkedin/**',
-];
+  WORKSPACE_PATHS.jobs,
+  WORKSPACE_PATHS.searches,
+  WORKSPACE_PATHS.outreach,
+  JOB_EXTRAS.saved,
+  JOB_EXTRAS.screenshots,
+  JOB_EXTRAS.asked,
+  JOB_EXTRAS.calls,
+  `${TEMPLATES_FOLDER}/sources`,
+  'linkedin',
+].map((folder) => `${folder}/**`);
 
 /** The files the user shared, which might hold anything: only their work history reads them. */
 const SHARED_FILES = 'about-me/files/**';

@@ -82,7 +82,7 @@ export function saveHistory(
   const given = (input ?? {}) as Record<string, unknown>;
   if (!Array.isArray(given.jobs) || !Array.isArray(given.schools)) {
     throw new Error(
-      'Not saved: give both jobs and schools, whole, even if one is empty: this replaces what’s there.',
+      'Not saved: give both jobs and schools, every one there is: this replaces what’s there.',
     );
   }
   const kept = about.saveHistory(readHistory(input ?? NO_HISTORY), keep);

@@ -11,6 +11,7 @@ import {
   parseModels,
   RECOMMENDED_MODELS,
 } from '../../shared/models.ts';
+import type { ProfilePart } from '../../shared/profile-parts.ts';
 import { loadModels, saveModels } from './models.ts';
 
 let dataDir: string;
@@ -59,6 +60,18 @@ describe('which model Claude runs on', () => {
       'job-search',
       'update-profile',
     ]);
+  });
+
+  it('runs a part of Profile at the levels of the task that does that work', () => {
+    const pro = planLevels('pro');
+    const part = (name: ProfilePart) =>
+      modelFor(DEFAULT_MODELS, { skill: 'update-profile', part: name, request: '' }, pro);
+    expect(part('resumes')).toBe('opus');
+    expect(part('templates')).toBe('opus');
+    expect(part('history')).toBe('opus');
+    expect(part('facts')).toBe('opus');
+    expect(part('about')).toBe('sonnet');
+    expect(part('leaving')).toBe('sonnet');
   });
 
   it('keeps what the user chose, for everything and for each task, on any plan', async () => {

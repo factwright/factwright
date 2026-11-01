@@ -107,6 +107,10 @@ describe('a run on one part of Profile', () => {
       expect(deny, scope).toContain('Read(./searches/**)');
       expect(deny, scope).toContain('Read(./templates/sources/**)');
       expect(deny, scope).toContain('Read(./linkedin/**)');
+      // Postings the extension saved, forms' questions, and Claude's research for a job.
+      for (const folder of ['saved', 'screenshots', 'asked', 'calls', 'outreach']) {
+        expect(deny, scope).toContain(`Read(./${folder}/**)`);
+      }
     }
     // No other run gives that up.
     expect(settings.permissions.deny).not.toContain('Read(./applications/**)');

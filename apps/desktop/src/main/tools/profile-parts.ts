@@ -128,20 +128,24 @@ const CONTACT_LABELS: Readonly<Record<keyof Contact, string>> = {
 };
 
 /**
- * A number and a word, as a street starts, or a postal code. Where they live is kept to a city and
- * state, and these are kept on this computer alone, so a run never saves one where it would sync.
+ * What reads like a street or a postal code: a number and a word to start, a word and a number to
+ * end, a word for a street, or a postal code's shape. Where the user lives is kept to a city and
+ * state, and these are kept on this computer alone, so a run saves none it can tell, where it would
+ * sync. It can't tell them all, so the dialog and the skill say so too.
  */
 const STREET_OR_POSTAL =
-  /(?:^|[\s,])\d{1,6}\s+\p{L}|\b\d{5}(?:-\d{4})?\b|\b\p{Lu}\d\p{Lu}\s?\d\p{Lu}\d\b|\b\p{Lu}{1,2}\d[\p{Lu}\d]?\s\d\p{Lu}{2}\b/u;
+  /^\s*\d+[a-z]?(?:-\d+)?\s+\p{L}|\p{L}\s+\d{1,5}[a-z]?\s*(?:,|$)|\d{4,}|\b\d{3}-\d{4}\b|\b[a-z]\d[a-z]\s?\d[a-z]\d\b|\b[a-z]{1,2}\d[a-z\d]?\s\d[a-z]{2}\b|\b(?:street|avenue|ave|boulevard|blvd|road|rd|lane|apt|apartment|suite|p\.?o\.? box|calle|rue)\b|stra(?:ß|ss)e\b/iu;
 
 /** Throws when an answer about where the user lives looks like a street or a postal code. */
 function noStreet(input: Record<string, unknown>, keys: readonly string[]) {
   for (const key of keys) {
-    const value = input[key];
-    if (typeof value === 'string' && STREET_OR_POSTAL.test(value)) {
-      throw new Error(
-        `Not saved: ${key} looks like it has a street or a postal code, which stay on this computer, and Claude never saves them. Give the city and state alone, and tell the user they change those themselves, in For applications’ Change.`,
-      );
+    const given = input[key];
+    for (const value of Array.isArray(given) ? given : [given]) {
+      if (typeof value === 'string' && STREET_OR_POSTAL.test(value)) {
+        throw new Error(
+          `Not saved: ${key} looks like it has a street or a postal code, which stay on this computer, and Claude never saves them. Give the city and state alone, and tell the user they change those themselves, in For applications’ Change.`,
+        );
+      }
     }
   }
 }
@@ -212,6 +216,7 @@ export function saveWhatYouWant(
     ? [...KIND_FIELDS, 'kind', 'name']
     : [...KIND_FIELDS, ...SHARED_WANTS, 'kind', 'name', 'addKinds', 'firstKindName', 'removeKinds'];
   givenOnly(input, allowed, bound ? 'this kind of job' : 'What you want');
+  noStreet(input, ['remoteFrom', 'places']);
   const current = about.answers();
   const named = typeof input.kind === 'string' ? input.kind : (bound ?? null);
   if (bound && named !== bound) {
@@ -342,7 +347,7 @@ export function saveForApplications(
   const leavingOnly = call?.scope === 'part:leaving';
   const allowed = leavingOnly ? ['leaving'] : Object.keys(APPLICATION_LABELS);
   givenOnly(input, allowed, leavingOnly ? 'why they’re leaving' : 'For applications');
-  noStreet(input, ['city', 'region', 'country']);
+  noStreet(input, ['city', 'region', 'country', 'preferredName', 'howHeard']);
   const { applications } = about.answers();
   const read = readForApplications({ ...applications, ...input });
   if (!read) {
@@ -510,7 +515,8 @@ export function keepNamesPrivate(
           `Not saved: give each name as text, of ${ANSWER_LIMITS.entry} characters or fewer.`,
         );
       }
-      return name.trim();
+      // A line that starts with # is a comment in that file, which nothing would check against.
+      return name.replace(/^[#\s]+/, '').trim();
     });
   const add = names(input.add);
   const remove = names(input.remove);

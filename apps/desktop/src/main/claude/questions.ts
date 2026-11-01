@@ -159,14 +159,14 @@ export class QuestionLog {
   }
 
   /**
-   * Whether the user said these words in this run, as they said them, at least two of them: in what
-   * they typed in the app for it, what they typed in answer to a question, or a note to their pick.
-   * Never in a question, or an option they picked, which Claude writes.
+   * Whether the user said these words in this run, as they said them: in what they typed in the
+   * app for it, what they typed in answer to a question, or a note to their pick. Never in a
+   * question, or an option they picked, which Claude writes. A letter or two says nothing.
    */
   said(words: string): boolean {
     const wanted = questionKey(words);
     return (
-      wanted.split(' ').length >= 2 &&
+      wanted.length >= 3 &&
       this.heard.some(
         ({ answer, notes, picked }) =>
           (!picked && questionKey(answer).includes(wanted)) ||
@@ -249,10 +249,14 @@ export class QuestionLog {
       // A question the user skipped in the app's dialog has no answer to back anything.
       if (!answer || answer === SKIPPED_ANSWER) continue;
       const picked = options.find((option) => option.label.trim() === answer);
-      // Several picks come joined, so any option's label in it means Claude wrote some of it.
-      const wrote = options.some(
-        ({ label }) => label.trim() !== '' && answer.includes(label.trim()),
-      );
+      // Several picks come joined, so it's Claude's words only if its options account for it all.
+      const wrote =
+        options
+          .map(({ label }) => label.trim())
+          .filter(Boolean)
+          .sort((a, b) => b.length - a.length)
+          .reduce((left, label) => left.replaceAll(label, ''), answer)
+          .replace(/[\s,]/g, '') === '';
       this.heard.push({
         key: questionKey(raw),
         question: oneLine(raw),

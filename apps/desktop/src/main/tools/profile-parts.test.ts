@@ -467,6 +467,11 @@ describe('save_resume_choices', () => {
 });
 
 describe('keep_names_private', () => {
+  it('takes a # off a name, which would make its line a comment nothing checks', async () => {
+    await run('keep_names_private', { add: ['# Secret Co'] }, callFor('shared'));
+    expect(about.confidential()).toEqual(['Secret Co']);
+  });
+
   it('adds a name from any run that has it, escaped, and keeps the file for Undo', async () => {
     const text = await run('keep_names_private', { add: ['Blue.bird'] }, callFor('facts'));
     expect(text).toBe('Saved to the user’s Profile: Names kept private, added: Blue.bird.');
@@ -497,9 +502,21 @@ describe('keep_names_private', () => {
 describe('a street or a postal code', () => {
   it.each([
     ['12 Elm St, Austin, TX'],
+    ['12B Elm St'],
+    ['12-14 Elm St'],
+    ['Elm Street'],
+    ['PO Box 123'],
+    ['Apt 5'],
     ['Austin, TX 78701'],
     ['Toronto, ON M5V 2T6'],
+    ['toronto m5v 2t6'],
     ['London SW1A 1AA'],
+    ['london sw1a 1aa'],
+    ['Sydney NSW 2000'],
+    ['Bangalore 560001'],
+    ['Tokyo 150-0002'],
+    ['Hauptstraße 12, Berlin'],
+    ['Calle Mayor 5, Madrid'],
   ])('isn’t saved as where they live: %s', async (location) => {
     await expect(run('save_contact', { location }, callFor('about'))).rejects.toThrow(
       'stay on this computer',
@@ -511,13 +528,28 @@ describe('a street or a postal code', () => {
     expect(about.answers().applications.city).toBe('');
   });
 
-  it.each(['Austin, TX', 'Remote', 'St. Louis, MO', 'Washington, D.C.'])(
-    'leaves a place alone: %s',
-    async (location) => {
-      await run('save_contact', { location }, callFor('about'));
-      expect(about.answers().you.location).toBe(location);
-    },
-  );
+  it('isn’t saved as a remote place, or a city they’d work in', async () => {
+    await expect(
+      run('save_what_you_want', { places: ['Austin', '12 Elm St'] }, callFor('wants')),
+    ).rejects.toThrow('stay on this computer');
+    await expect(
+      run('save_what_you_want', { remoteFrom: 'Austin, TX 78701' }, callFor('wants')),
+    ).rejects.toThrow('stay on this computer');
+    expect(about.answers().places).toEqual([]);
+  });
+
+  it.each([
+    'Austin, TX',
+    'Remote',
+    'St. Louis, MO',
+    'Washington, D.C.',
+    'Remote, 3 days a month in Denver',
+    'Rio de Janeiro',
+    'Bay Area',
+  ])('leaves a place alone: %s', async (location) => {
+    await run('save_contact', { location }, callFor('about'));
+    expect(about.answers().you.location).toBe(location);
+  });
 });
 
 describe('add_to_notes', () => {
@@ -657,6 +689,42 @@ describe('the fact tools, from what the user typed', () => {
     expect(call.filed.facts).toHaveLength(5);
   });
 
+  it.each([
+    ['I never shipped Kafka at Acme', 'Shipped Kafka at Acme'],
+    ['No, I have not used GraphQL', 'Used GraphQL'],
+  ])('refuses to say they did what they typed they didn’t: %s', async (said, wording) => {
+    await expect(
+      saveFact(
+        { ...FACT, title: wording, wording, keywords: wording.split(' ').at(-1) as string },
+        callFor('facts', said),
+      ),
+    ).rejects.toThrow('with a “not” or a “never” before it');
+  });
+
+  it('takes what they typed they didn’t do, said that way', async () => {
+    mkdirSync(join(root, 'facts'), { recursive: true });
+    writeFileSync(join(root, 'facts', 'projects.md'), '# Projects\n');
+    const said = 'I never shipped Kafka at Acme';
+    const fact = { ...FACT, title: 'Never shipped Kafka', wording: said, keywords: 'Kafka' };
+    expect(await saveFact(fact, callFor('facts', said))).toContain('Saved');
+  });
+
+  it('won’t call it high confidence when they typed they aren’t sure', async () => {
+    mkdirSync(join(root, 'facts'), { recursive: true });
+    writeFileSync(join(root, 'facts', 'projects.md'), '# Projects\n');
+    const said = 'Not sure, maybe I shipped Kafka';
+    const fact = {
+      ...FACT,
+      title: 'Shipped Kafka',
+      wording: 'I shipped Kafka',
+      keywords: 'Kafka',
+    };
+    await expect(saveFact(fact, callFor('facts', said))).rejects.toThrow('aren’t sure');
+    expect(await saveFact({ ...fact, confidence: 'low' }, callFor('facts', said))).toContain(
+      'Saved',
+    );
+  });
+
   it('starts a file for a job the user named, and for no other', async () => {
     mkdirSync(join(root, 'facts'), { recursive: true });
     writeFileSync(join(root, 'facts', 'projects.md'), '# Projects\n');
@@ -675,6 +743,63 @@ describe('the fact tools, from what the user typed', () => {
     await expect(
       saveFact({ ...fact, file: 'facts/initech.md' }, callFor('facts', said)),
     ).rejects.toThrow('there’s no facts/initech.md');
+  });
+
+  it('names a new job’s file as the user wrote it, and takes no name that isn’t a job', async () => {
+    mkdirSync(join(root, 'facts'), { recursive: true });
+    const said =
+      'I ran support at AT&T and I ran support at Müller GmbH, and the profile was mine.';
+    const fact = { ...FACT, title: 'Ran support', wording: 'I ran support', keywords: 'support' };
+    await saveFact({ ...fact, file: 'facts/at-t.md' }, callFor('facts', said));
+    expect(readFileSync(join(root, 'facts', 'at-t.md'), 'utf8')).toMatch(/^# AT&T\n/);
+    await saveFact({ ...fact, file: 'facts/muller-gmbh.md' }, callFor('facts', said));
+    expect(readFileSync(join(root, 'facts', 'muller-gmbh.md'), 'utf8')).toMatch(/^# Müller GmbH\n/);
+    for (const file of ['facts/profile.md', 'facts/the.md', 'facts/support-gmbh.md']) {
+      await expect(saveFact({ ...fact, file }, callFor('facts', said)), file).rejects.toThrow(
+        'there’s no',
+      );
+    }
+  });
+
+  it('keeps the rest of what they typed off a correction too', async () => {
+    mkdirSync(join(root, 'facts'), { recursive: true });
+    writeFileSync(
+      join(root, 'facts', 'acme.md'),
+      '# Acme\n\n### Deploys\n`live` `solo` `high`\n> Cut deploy time about 40%.\n- **Source:** Alex 2026-10-01\n',
+    );
+    const call = callFor('facts', 'Deploys was 35%. My street is 12 Elm St.');
+    const asked = 'Your fact “Deploys” says about 40%. What should it say?';
+    const id = 'toolu_deploys';
+    const questions = [{ question: asked, options: [] }];
+    call.questions.hear({
+      hook_event_name: 'PreToolUse',
+      tool_name: 'AskUserQuestion',
+      tool_use_id: id,
+      tool_input: { questions },
+    });
+    const replied = { [asked]: 'About 35%' };
+    call.questions.hear({
+      hook_event_name: 'PostToolUse',
+      tool_name: 'AskUserQuestion',
+      tool_use_id: id,
+      tool_input: { questions, answers: replied },
+      tool_response: { questions, answers: replied },
+    });
+    const input = {
+      file: 'facts/acme.md',
+      title: 'Deploys',
+      wording: 'Cut deploy time about 35%.',
+      questions: [asked, CHANGES_QUESTION],
+    };
+    call.questions.hear({
+      hook_event_name: 'PreToolUse',
+      tool_name: 'mcp__factwright__correct_fact',
+      tool_input: input,
+    });
+    await run('correct_fact', input, call);
+    const file = readFileSync(join(root, 'facts', 'acme.md'), 'utf8');
+    expect(file).toContain('about 35%');
+    expect(file).not.toContain('Elm');
   });
 
   it('never lets their typed words verify a fact or correct a verified one', async () => {

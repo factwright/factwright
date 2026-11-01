@@ -54,15 +54,6 @@ const GONE = 'That file isn’t in your fact bank anymore.';
 /** Where the fact bank keeps work outside a job, which a fact from an answer can start. */
 const PROJECTS = 'facts/projects.md';
 
-/** A new job's heading, from its file's name: "Acme Health" for facts/acme-health.md. */
-const jobHeading = (path: string) =>
-  path
-    .replace(/^facts\//, '')
-    .replace(/\.md$/, '')
-    .split('-')
-    .map((word) => `${word.charAt(0).toUpperCase()}${word.slice(1)}`)
-    .join(' ');
-
 /** What a file's confirmed claims say, with how many times each is there. */
 function confirmedIn(file: string): Map<string, number> {
   const counts = new Map<string, number>();
@@ -164,20 +155,20 @@ export class FactBankFiles {
    * Files a claim from the user's answers in a run: after a file's last claim, or the last in a
    * section, such as a role's, or in place of one that still waits to be verified. A confirmed
    * claim is never changed or deleted. A file of projects is started when there's none, with the
-   * claim in it, and so is a new job's, when it's asked to start one, named for the file.
+   * claim in it, and so is a new job's, when it's asked to start one, by the job's name.
    */
   fileClaim(
     path: string,
     text: string,
     replacing: FactTarget | null = null,
     section: string | null = null,
-    startsJob = false,
+    newJob: string | null = null,
   ): FactResult {
     if (path === PROJECTS && !replacing && this.file(path) === null && !this.exists(path)) {
       return this.create(path, addClaim('# Projects\n', text, section));
     }
-    if (startsJob && !replacing && this.file(path) === null && !this.exists(path)) {
-      return this.create(path, addClaim(`# ${jobHeading(path)}\n`, text, section));
+    if (newJob && !replacing && this.file(path) === null && !this.exists(path)) {
+      return this.create(path, addClaim(`# ${newJob}\n`, text, section));
     }
     return this.edit(
       path,
