@@ -1049,19 +1049,70 @@ describe('what you did in a position, through sync', () => {
       expect(words((await both(desktop, keys, client))[0])).toEqual(BY_TITLE);
     });
 
-    it('keeps the job’s kind on file and its pay as they were, as the app does', async () => {
-      const { desktop, keys, client, engine } = await holding(
-        ['Program Manager'],
-        ['Product Manager'],
-        ['$150,000', '$210,000'],
-      );
-      await engine.syncOnce();
-      const form = { ...ASK, fields: [...ASK.fields, asked('What are your salary expectations?')] };
-      const replies = await both(desktop, keys, client, form);
-      expect(words(replies[0])).toEqual(BY_TITLE);
-      // Pay still goes by the first kind's target, and nothing was put under Strategy.
-      expect(replies[2]?.text).toBe('$150,000');
-      expect(desktop.tracker.rows().find((row) => row.id === JOB)?.kind ?? null).toBeNull();
+    describe('its pay box', () => {
+      const FORM = {
+        ...ASK,
+        fields: [...ASK.fields, asked('What are your salary expectations?')],
+      };
+      const PAY = ['$150,000', '$210,000'];
+
+      it('takes that kind’s target and says why, and the job’s kind stays, as the app does', async () => {
+        const { desktop, keys, client, engine } = await holding(
+          ['Program Manager'],
+          ['Product Manager'],
+          PAY,
+        );
+        await engine.syncOnce();
+        const replies = await both(desktop, keys, client, FORM);
+        expect(words(replies[0])).toEqual(BY_TITLE);
+        expect(words(replies[2])).toEqual([
+          '$210,000',
+          'Your target for Strategy jobs, by the job’s title',
+        ]);
+        // Nothing was put under Strategy.
+        expect(desktop.tracker.rows().find((row) => row.id === JOB)?.kind ?? null).toBeNull();
+      });
+
+      it('takes your first kind’s where both fit, or none does, as the app does', async () => {
+        const first = ['$150,000', 'Your target for PMO jobs'];
+        for (const titles of [
+          [['Product Manager'], ['Product Manager, Data']],
+          [['Program Manager'], ['Strategist']],
+        ] as const) {
+          const { desktop, keys, client, engine } = await holding(
+            [...titles[0]],
+            [...titles[1]],
+            PAY,
+          );
+          await engine.syncOnce();
+          expect(words((await both(desktop, keys, client, FORM))[2])).toEqual(first);
+        }
+      });
+
+      it('gives way to the kind you put it under, as the app does', async () => {
+        const { desktop, keys, client, engine } = await holding(
+          ['Program Manager'],
+          ['Product Manager'],
+          PAY,
+        );
+        desktop.tracker.updateJob(JOB, { kind: 'pmo' }, AT);
+        await engine.syncOnce();
+        expect(words((await both(desktop, keys, client, FORM))[2])).toEqual([
+          '$150,000',
+          'Your target for PMO jobs',
+        ]);
+      });
+
+      it('is left for you where that kind has no target, as the app does', async () => {
+        const { desktop, keys, client, engine } = await holding(
+          ['Program Manager'],
+          ['Product Manager'],
+          ['$150,000', ''],
+        );
+        await engine.syncOnce();
+        const replies = await both(desktop, keys, client, FORM);
+        expect(replies[2]).toMatchObject({ kind: 'pay', source: 'you', left: 'unset' });
+      });
     });
   });
 

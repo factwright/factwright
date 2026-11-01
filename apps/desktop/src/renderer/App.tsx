@@ -153,10 +153,15 @@ export function App({ api }: { api: FactwrightApi }) {
       : [],
   );
   const kinds = useMemo<KindName[]>(() => JSON.parse(kindKey), [kindKey]);
-  // Each kind's target pay, for the pay to ask for at a job, which changes as a target does.
+  // Each kind's titles and target pay, for the pay to ask for at a job, which changes with them.
   const targetKey = JSON.stringify(
     profile
-      ? kindsOf(profile.answers).map(({ id, name, targetPay }) => ({ id, name, targetPay }))
+      ? kindsOf(profile.answers).map(({ id, name, roles, targetPay }) => ({
+          id,
+          name,
+          roles,
+          targetPay,
+        }))
       : [],
   );
   const targets = useMemo<KindTarget[]>(() => JSON.parse(targetKey), [targetKey]);

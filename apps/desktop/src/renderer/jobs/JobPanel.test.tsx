@@ -251,7 +251,7 @@ describe('sorting a job before applying', () => {
 });
 
 describe('the pay to ask for', () => {
-  const TARGETS = [{ id: '', name: '', targetPay: '$180,000' }];
+  const TARGETS = [{ id: '', name: '', roles: [], targetPay: '$180,000' }];
   /** A job with no pay to ask for of its own yet. */
   const northwind = (): Job => ({
     ...byCompany('Northwind Labs'),
@@ -314,11 +314,39 @@ describe('the pay to ask for', () => {
 
   it('takes the target of the kind of job it’s under', () => {
     const targets = [
-      { id: 'developer', name: 'Developer', targetPay: '$180,000' },
-      { id: 'project-manager', name: 'Project manager', targetPay: '$150,000' },
+      { id: 'developer', name: 'Developer', roles: [], targetPay: '$180,000' },
+      { id: 'project-manager', name: 'Project manager', roles: [], targetPay: '$150,000' },
     ];
     panel({ ...northwind(), kind: 'project-manager' }, {}, { targets });
     expect(line()).toBe('Pay to ask for: $150,000, your target for Project manager jobs');
+  });
+
+  it('goes by the one kind the job’s title fits, while nothing else says, and says so', async () => {
+    const targets = [
+      { id: 'developer', name: 'Developer', roles: ['Developer'], targetPay: '$180,000' },
+      {
+        id: 'project-manager',
+        name: 'Project manager',
+        roles: ['Project Manager'],
+        targetPay: '$150,000',
+      },
+    ];
+    const job = { ...northwind(), kind: null, kindFound: null, role: 'Senior Project Manager' };
+    panel(job, {}, { targets });
+    const byTitle = 'your target for Project manager jobs, by the job’s title';
+    expect(line()).toBe(`Pay to ask for: $150,000, ${byTitle}`);
+    cleanup();
+    // Going back to it from the user's own says the same.
+    panel({ ...job, payAsk: '$200,000' }, {}, { targets });
+    await userEvent.click(screen.getByRole('button', { name: /^Change: the pay to ask for/ }));
+    expect(screen.getByRole('button', { name: `Use ${byTitle}, $150,000` })).toBeTruthy();
+    cleanup();
+    // The kind it's under wins, and no fit goes by the first kind, as before.
+    panel({ ...job, kind: 'developer' }, {}, { targets });
+    expect(line()).toBe('Pay to ask for: $180,000, your target for Developer jobs');
+    cleanup();
+    panel({ ...job, role: 'Account Executive' }, {}, { targets });
+    expect(line()).toBe('Pay to ask for: $180,000, your target for Developer jobs');
   });
 
   it('says when there’s none, and Escape closes its box, never the panel', async () => {

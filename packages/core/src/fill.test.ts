@@ -319,6 +319,10 @@ describe('answering a form from what’s on file', () => {
       source: 'profile',
       from: 'Your target for Project manager jobs',
     });
+    // Going by that kind only because the job's title fits it, it says so.
+    expect(
+      asked({ text: '$160,000', from: 'target', kind: 'Project manager', byTitle: true })?.from,
+    ).toBe('Your target for Project manager jobs, by the job’s title');
     expect(asked({ text: '$165,000', from: 'target', kind: null })).toEqual({
       kind: 'pay',
       text: '$165,000',

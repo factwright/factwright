@@ -161,6 +161,7 @@ describe('the pay to ask for at a job', () => {
     suggestedAsk: null,
     kind: null,
     kindFound: null,
+    role: 'Account Executive',
     ...more,
   });
 
@@ -266,17 +267,56 @@ describe('the pay to ask for at a job', () => {
     expect(payAskFor(job(), kindTargetsIn({}, null))).toBeNull();
   });
 
-  it('goes by your first kind still, for a job only its title fits another kind', () => {
-    const kinds = kindTargetsIn({ targetPay: '$180,000' }, KINDS);
-    const title = { ...job(), role: 'PM' };
-    expect(startingFolders(title, kinds)[1]).toMatchObject({
-      kind: 'Project manager',
-      ofJob: true,
+  describe('for a job nothing has said the kind of', () => {
+    const kinds = kindTargetsIn({ targetPay: '$180,000', roles: ['Developer'] }, KINDS);
+
+    it('goes by the one kind its title fits, and says so', () => {
+      const asked = { text: '$150,000', from: 'target', kind: 'Project manager', byTitle: true };
+      expect(payAskFor(job({ role: 'PM' }), kinds)).toEqual(asked);
+      expect(payAskFor(job({ role: 'Senior PM, Data' }), kinds)).toEqual(asked);
+      // The same kind as its starting resumes.
+      expect(startingFolders(job({ role: 'PM' }), kinds)[1]).toMatchObject({
+        kind: 'Project manager',
+        ofJob: true,
+        byTitle: true,
+      });
     });
-    expect(payAskFor(title, kinds)).toEqual({
-      text: '$180,000',
-      from: 'target',
-      kind: 'Developer',
+
+    it('goes by your first kind where none fits, or two do', () => {
+      const first = { text: '$180,000', from: 'target', kind: 'Developer' };
+      expect(payAskFor(job(), kinds)).toEqual(first);
+      const both = kindTargetsIn({ targetPay: '$180,000', roles: ['PM'] }, KINDS);
+      expect(payAskFor(job({ role: 'PM' }), both)).toEqual(first);
+    });
+
+    it('never wins over the kind you put it under, the one found for it, or your own', () => {
+      const developer = { text: '$180,000', from: 'target', kind: 'Developer' };
+      expect(payAskFor(job({ role: 'PM', kind: 'developer' }), kinds)).toEqual(developer);
+      expect(payAskFor(job({ role: 'PM', kindFound: 'Developer' }), kinds)).toEqual(developer);
+      expect(payAskFor(job({ role: 'PM', payAsk: '$190,000' }), kinds)?.from).toBe('you');
+      expect(payAskFor(job({ role: 'PM', suggestedAsk: '$185,000' }), kinds)?.from).toBe('claude');
+    });
+
+    it('has none where the kind it fits has no target, rather than another kind’s', () => {
+      const tutor = kindTargetsIn(
+        { targetPay: '$180,000' },
+        { first: KINDS.first, others: [{ id: 'teacher', name: 'Teacher', roles: ['Tutor'] }] },
+      );
+      expect(payAskFor(job({ role: 'Tutor' }), tutor)).toBeNull();
+    });
+
+    it('has nothing to tell apart with one kind of job, or with no job saved', () => {
+      const one = kindTargetsIn({ targetPay: '$180,000', roles: ['PM'] }, null);
+      expect(payAskFor(job({ role: 'PM' }), one)).toEqual({
+        text: '$180,000',
+        from: 'target',
+        kind: null,
+      });
+      expect(payAskFor(null, kinds)).toEqual({
+        text: '$180,000',
+        from: 'target',
+        kind: 'Developer',
+      });
     });
   });
 });
