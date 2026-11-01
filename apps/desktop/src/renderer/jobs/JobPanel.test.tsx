@@ -810,6 +810,12 @@ describe('JobPanel', () => {
     fireEvent.doubleClick(again);
     expect(again.parentElement?.style.getPropertyValue('--panel-width')).toBe('');
     expect(localStorage.getItem('factwright.panel.width')).toBe('null');
+    // Enter does the same, for the keyboard.
+    fireEvent.keyDown(again, { key: 'ArrowLeft' });
+    expect(again.parentElement?.style.getPropertyValue('--panel-width')).not.toBe('');
+    fireEvent.keyDown(again, { key: 'Enter' });
+    expect(again.parentElement?.style.getPropertyValue('--panel-width')).toBe('');
+    expect(localStorage.getItem('factwright.panel.width')).toBe('null');
     room.mockRestore();
     box.mockRestore();
   });

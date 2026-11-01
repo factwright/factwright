@@ -1308,6 +1308,9 @@ test('drags a job’s details to any width beside the list, and keeps it', async
   };
 
   const started = await widthOf();
+  // A click alone leaves it free to follow the window's size.
+  await edge.click();
+  expect(await window.evaluate("localStorage.getItem('factwright.panel.width')")).toBeNull();
   await dragBy(-150);
   await expect.poll(widthOf).toBeCloseTo(started + 150, -1);
   const dragged = await widthOf();
@@ -1329,6 +1332,16 @@ test('drags a job’s details to any width beside the list, and keeps it', async
   const box = await details.boundingBox();
   const room = (box?.x ?? 0) + (box?.width ?? 0) - (list?.x ?? 0);
   await expect.poll(widthOf).toBeCloseTo(room - (room <= 980 ? 48 : 360), -1);
+
+  // With the list that narrow, Filters still opens in full, inside the list.
+  const page = window.getByRole('main');
+  const filterButton = page.getByRole('button', { name: 'Filters', exact: true });
+  await filterButton.click();
+  const filters = page.getByRole('region', { name: 'Filters' });
+  await expect(filters).toBeVisible();
+  const shown = await filters.boundingBox();
+  expect(shown?.x ?? 0).toBeGreaterThanOrEqual((await page.boundingBox())?.x ?? 0);
+  await filterButton.click();
 
   // A double-click puts it back, and it never goes narrower than its areas are laid out for.
   await dragBy(3000);

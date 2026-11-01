@@ -32,7 +32,7 @@ function widest(frame: HTMLElement): number {
 /**
  * The edge between the list and a job's details, which drags to make the details any width, from
  * their narrowest to all but the list's own room. Its arrow keys do the same, Home and End go to
- * either end, and a double-click puts it back. It moves the frame's --panel-width itself while
+ * either end, and a double-click or Enter puts it back. It moves the frame's --panel-width itself while
  * it's dragged, so the app isn't drawn again at each step, and hears where it ended up after.
  */
 export function PanelResizer({
@@ -51,6 +51,8 @@ export function PanelResizer({
   const [dragging, setDragging] = useState(false);
   // How far in from the details' left edge the drag took hold, so the edge doesn't jump to it.
   const grip = useRef(0);
+  // Whether the pointer moved while it held the edge, as a click alone leaves the width as it was.
+  const moved = useRef(false);
 
   const measure = useCallback(() => {
     const element = frame.current;
@@ -88,20 +90,30 @@ export function PanelResizer({
     event.currentTarget.focus();
     event.currentTarget.setPointerCapture(event.pointerId);
     grip.current = event.clientX - element.getBoundingClientRect().left;
+    moved.current = false;
     setDragging(true);
   };
   const onPointerMove = (event: PointerEvent<HTMLDivElement>) => {
     const element = frame.current;
     if (!dragging || !element) return;
+    moved.current = true;
     setWidth(element.getBoundingClientRect().right - event.clientX + grip.current);
   };
   const stop = () => {
     const element = frame.current;
     if (!dragging || !element) return;
     setDragging(false);
-    onWidth(Math.round(element.getBoundingClientRect().width));
+    if (moved.current) onWidth(Math.round(element.getBoundingClientRect().width));
+  };
+  const putBack = () => {
+    frame.current?.style.removeProperty('--panel-width');
+    onWidth(null);
   };
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (event.key === 'Enter') {
+      putBack();
+      return;
+    }
     const moves: Record<string, number> = {
       ArrowLeft: size.now + KEY_STEP,
       ArrowRight: size.now - KEY_STEP,
@@ -134,10 +146,7 @@ export function PanelResizer({
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onLostPointerCapture={stop}
-      onDoubleClick={() => {
-        frame.current?.style.removeProperty('--panel-width');
-        onWidth(null);
-      }}
+      onDoubleClick={putBack}
       onKeyDown={onKeyDown}
     />
   );
