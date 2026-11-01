@@ -133,6 +133,8 @@ describe('stepKind', () => {
       'save_template',
       'save_posting',
       'job_board',
+      'careers_site',
+      'job_listings',
       'hn_jobs',
       'about_you',
       'past_answers',

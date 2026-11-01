@@ -11,6 +11,9 @@ import { isJobLink, normalizeUrl } from './links.ts';
 /** An ID as Lever and Ashby give a posting, and as Indeed gives a listing. */
 const OPAQUE_ID = /^[\w-]{1,100}$/;
 
+/** The boards whose posting IDs make a key as they are. Workable, Workday and iCIMS have their own below. */
+const BOARDS_BY_ID: ReadonlySet<string> = new Set(['greenhouse', 'lever', 'ashby', 'gem']);
+
 /**
  * A key for the one posting a link is to, the same however the link is written: the applicant
  * system's own ID for it, such as "greenhouse:4567890" for boards.greenhouse.io and
@@ -33,7 +36,7 @@ export function postingKey(address: string): string | null {
   const ashby = url.searchParams.get('ashby_jid');
   if (ashby && OPAQUE_ID.test(ashby)) return `ashby:${ashby.toLowerCase()}`;
   const board = boardSource(address);
-  if (board) {
+  if (board && BOARDS_BY_ID.has(board.kind)) {
     const id = boardPostingId(address);
     if (!id || !OPAQUE_ID.test(id)) return null;
     // Greenhouse's, Lever's and Ashby's IDs are their own across every board. Gem's go by board.
@@ -128,7 +131,7 @@ function taleoPosting(host: string, url: URL): string | null {
 }
 
 /** The sites SuccessFactors' career pages are on, by their data centers' names. */
-const SUCCESSFACTORS = /(^|\.)(successfactors\.(com|eu)|sapsf\.(com|eu|cn)|hr\.cloud\.sap)$/;
+export const SUCCESSFACTORS = /(^|\.)(successfactors\.(com|eu)|sapsf\.(com|eu|cn)|hr\.cloud\.sap)$/;
 
 /**
  * A SuccessFactors posting's key, by the company's ID and the requisition's, which its posting

@@ -178,7 +178,9 @@ describe('sessionSettings', () => {
       'mcp__factwright__save_posting',
       'mcp__factwright__job_board',
       'mcp__factwright__hn_jobs',
+      'mcp__factwright__job_listings',
       'mcp__factwright__read_page',
+      'mcp__factwright__careers_site',
       'Edit(./**)',
     ]);
     // Every one of Factwright's tools that a run on the job hunt has.
@@ -243,7 +245,9 @@ describe('sessionSettings', () => {
       'mcp__factwright__save_posting',
       'mcp__factwright__job_board',
       'mcp__factwright__hn_jobs',
+      'mcp__factwright__job_listings',
       'mcp__factwright__read_page',
+      'mcp__factwright__careers_site',
     ];
     for (const scope of ['profile', 'history', 'revise', 'template'] as const) {
       const { allow, deny } = scoped(scope).permissions;
