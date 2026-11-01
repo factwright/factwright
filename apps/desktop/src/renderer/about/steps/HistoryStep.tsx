@@ -186,7 +186,7 @@ export function HistoryStep({
                 />
                 <Field
                   label="What you did"
-                  hint="A sentence or two, for a form’s box that asks, where the job’s resume doesn’t say."
+                  hint="A sentence or two. A form’s box takes it where the job’s resume doesn’t say."
                 >
                   {(control) => (
                     <TextArea

@@ -1200,8 +1200,8 @@ try {
   check(
     (await describedIn('Work-Experience-2-panel')) === 'Ran discovery for' &&
       (await describedIn('Work-Experience-3-panel')) === 'Shipped the first forecasting product.' &&
-      (await typedIn('workExperience-225--roleDescription')) === STARTING_LINES.join('\n'),
-    'a box with a limit takes the words that fit, the panel says it cut them, and Fill again leaves what’s in the others',
+      (await typedIn('workExperience-225--roleDescription')) === DIRECTOR_LINES.join('\n'),
+    'a box with a limit takes the words that fit, and the panel says it cut them, as Fill again fills each part anew',
   );
   if (SHOTS) {
     const filled = workdayPanel.locator('details.group summary').first();
