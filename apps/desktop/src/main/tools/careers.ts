@@ -45,7 +45,7 @@ const SITEMAPS_MS = 22_000;
 const PAGES_MS = 38_000;
 /** The most links with the titles' words kept, of those checked against robots.txt, and in all. */
 const MAX_MATCHES = 1_000;
-const MAX_CHECKS = 5_000;
+const MAX_CHECKS = 2_000;
 const MAX_CANDIDATES = 20_000;
 /** A link's path this long is no posting's. Leaving it out keeps robots.txt's rules quick to check. */
 const MAX_LINK_PATH = 500;
