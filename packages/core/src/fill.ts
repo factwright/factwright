@@ -171,9 +171,12 @@ export interface StartingOnFile {
   kind: string;
   /**
    * Whether the job the form is for is under this kind. With more than one kind, a job nobody has
-   * put under one yet takes none of them, and a field's menu offers each.
+   * put under one yet takes the one kind its title fits, or else none of them, and a field's menu
+   * offers each.
    */
   ofJob: boolean;
+  /** Whether it's taken as the job's kind only because the job's title fits it. */
+  byTitle?: boolean;
   positions: { company: string; title: string; start: string; lines: string[] }[];
 }
 
@@ -491,10 +494,10 @@ interface Listed {
 }
 
 /** Whether words hold letters matching can't read: it keeps only the Latin of "Java 开发经理". */
-const unreadable = (text: string) => /[^ -~]/.test(plain(text));
+export const unreadable = (text: string) => /[^ -~]/.test(plain(text));
 
 /** Whether two sets of words say the same, however they're written, as matching can't read them. */
-const sameWords = (a: string, b: string) => plain(a) !== '' && plain(a) === plain(b);
+export const sameWords = (a: string, b: string) => plain(a) !== '' && plain(a) === plain(b);
 
 /**
  * How a resume's position goes with one you held, by its company and title, however each is
@@ -1019,7 +1022,8 @@ const NO_KIND_YET =
  * by the position's company and title. Never your newest resume's, which were written for another
  * job. A field too small for any of it takes the first one with whole lines or sentences that fit,
  * and says what it cut. The rest go beside it, for the field menus to offer, with each kind's
- * starting resume, for a job nobody has put under one yet, which Fill never picks for you.
+ * starting resume, for a job nobody has put under one yet. Fill only picks one of those for you
+ * where the job's title fits that kind alone, and says so.
  */
 function descriptionReply(field: FormField, onFile: OnFile, at: number): FieldReply {
   const kind = 'job-summary';
@@ -1034,10 +1038,10 @@ function descriptionReply(field: FormField, onFile: OnFile, at: number): FieldRe
   const positions = at < known.length ? known : [...known, held];
   const place = Math.min(at, positions.length - 1);
   const own = resume?.from === 'job' ? listedAs(resume.positions, positions, place) : null;
-  const ofKind = ({ kind: name, ofJob, positions: listed }: StartingOnFile) => ({
+  const ofKind = ({ kind: name, ofJob, byTitle, positions: listed }: StartingOnFile) => ({
     lines: listedAs(listed, positions, place)?.lines ?? [],
     source: 'resume' as const,
-    from: `From your ${name ? `${name} ` : ''}starting resume`,
+    from: `From your ${name ? `${name} ` : ''}starting resume${byTitle ? ', by the job’s title' : ''}`,
     ofJob,
   });
   const described: {

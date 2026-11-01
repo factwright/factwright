@@ -378,6 +378,8 @@ function assemble(row: TrackedRow, found: CollectedJob | undefined, kept: Kept):
       firstSeen,
       search,
       stage: asked ? 'review' : job.stage,
+      // Its files may name no role, as a job.md's heading may not, or only a message to the company.
+      role: job.role || row.role,
       pay: job.pay ?? typedPay(row),
       source: row.manual ? ADDED_BY_HAND : job.source,
       docKinds: Object.keys(docs) as JobDocKind[],

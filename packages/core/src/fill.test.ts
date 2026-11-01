@@ -1985,4 +1985,57 @@ describe('what you did in a position, in a box on a form', () => {
       expect(said({ ...NONE, starting: many })?.others).toHaveLength(KIND_LIMITS.kinds);
     });
   });
+
+  describe('for a job its title fits one kind of job, with nothing else saying', () => {
+    const PMO = {
+      kind: 'PMO',
+      ofJob: false,
+      positions: [{ ...TIDEWATER, start: '2021', lines: ['Ran the PMO.'] }],
+    };
+    const GUESS = { ...OF_KIND, byTitle: true };
+    const BY_TITLE = 'From your Strategy starting resume, by the job’s title';
+
+    it('fills that kind’s, and says why, with Profile’s and the other kinds’ in the menu', () => {
+      expect(said({ ...NONE, starting: [PMO, GUESS] })).toEqual({
+        kind: 'job-summary',
+        text: STRATEGY_LINES.join('\n'),
+        source: 'resume',
+        from: BY_TITLE,
+        others: [
+          {
+            text: 'Runs product for the whole company.',
+            source: 'profile',
+            from: 'From your work history',
+          },
+          { text: 'Ran the PMO.', source: 'resume', from: 'From your PMO starting resume' },
+        ],
+      });
+    });
+
+    it('gives way to the job’s own resume, and goes in the menu with why', () => {
+      const reply = said({ ...NONE, resume: JOB_RESUME, starting: [PMO, GUESS] });
+      expect(reply).toMatchObject({ text: JOB_LINES.join('\n'), from: 'From the job’s resume' });
+      expect(reply?.others?.map(({ from }) => from)).toEqual([
+        BY_TITLE,
+        'From your work history',
+        'From your PMO starting resume',
+      ]);
+    });
+
+    it('fills Profile’s where that kind’s starting resume says nothing of the position', () => {
+      const silent = { ...GUESS, positions: [] };
+      const reply = said({ ...NONE, starting: [PMO, silent] });
+      expect(reply).toMatchObject({
+        text: 'Runs product for the whole company.',
+        from: 'From your work history',
+      });
+      expect(reply?.others?.map(({ from }) => from)).toEqual(['From your PMO starting resume']);
+    });
+
+    it('says it cut them, as well as why', () => {
+      expect(said({ ...NONE, starting: [PMO, GUESS] }, { limit: 30 })?.from).toBe(
+        `${BY_TITLE}, cut to fit 30 characters`,
+      );
+    });
+  });
 });
