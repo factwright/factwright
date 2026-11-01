@@ -1,7 +1,10 @@
 import { firstDate } from './dates.ts';
 import { type ListItem, markdownItems, markdownSections } from './markdown.ts';
 
-/** The four parts of a fit score: the work itself, the role's shape, the tech stack, and the must-haves. */
+/**
+ * The four parts of a fit score: the work itself, the role's shape, the skills, and the must-haves.
+ * The skills are `stack` here and in every saved score, as they were first named.
+ */
 export const SCORE_PARTS = ['work', 'role', 'stack', 'reqs'] as const;
 
 export type ScorePartKey = (typeof SCORE_PARTS)[number];
@@ -58,6 +61,8 @@ const PART_NAMES: Readonly<Record<string, ScorePartKey>> = {
   work: 'work',
   role: 'role',
   stack: 'stack',
+  skill: 'stack',
+  skills: 'stack',
   req: 'reqs',
   reqs: 'reqs',
   requirements: 'reqs',
@@ -67,7 +72,7 @@ const PART_NAMES: Readonly<Record<string, ScorePartKey>> = {
  * A part as fit checks write it: "work 33/40", "Role shape: 15/25" or "reqs 15 / 15". The spaces
  * around a ":" are read one way only, so a long run of them isn't read again for each way.
  */
-const PART = String.raw`(work|role|stack|reqs?|requirements)(?:\s+(?:match|shape))?\s*(?::\s*)?(\d{1,3})\s*\/\s*(\d{1,3})`;
+const PART = String.raw`(work|role|stack|skills?|reqs?|requirements)(?:\s+(?:match|shape))?\s*(?::\s*)?(\d{1,3})\s*\/\s*(\d{1,3})`;
 
 const MOODS: Readonly<Record<string, Mood>> = {
   loved: 'loved',

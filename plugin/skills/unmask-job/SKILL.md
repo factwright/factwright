@@ -13,7 +13,7 @@ Research only. Never contact anyone, never apply, never sign in anywhere.
 ## 1. Fingerprint the post
 If `find_job` finds the job and `job_details` names a posting saved from the user's browser, read it from there. If it's a link, read it with `read_posting` on Greenhouse, Lever, Ashby or Gem, or `read_page` anywhere else (or ask for the text if it needs a sign-in). Pull out whatever identifies the employer:
 - 3–6 distinctive sentences or phrases. Odd wording survives reposting; boilerplate doesn't.
-- the exact title, stack combination, pay band, location and remote rules, benefits, team size
+- the exact title, mix of tools and skills, pay band, location and remote rules, benefits, team size
 - company descriptors: industry, stage, funding, size, founding year, HQ region, product, customers
 - the posting date and any req or job ID
 

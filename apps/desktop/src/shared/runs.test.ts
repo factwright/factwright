@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   AT_ONCE,
   atOnceFrom,
+  defaultSearchSites,
   lanesOf,
   sharesLane,
   startedOnItsOwn,
@@ -78,5 +79,20 @@ describe('how many runs go at once', () => {
     expect(AT_ONCE.usual).toBe(3);
     expect([1, 3, 5].map(atOnceFrom)).toEqual([1, 3, 5]);
     expect([0, 6, 2.5, '3', null].map(atOnceFrom)).toEqual([null, null, null, null, null]);
+  });
+});
+
+describe('defaultSearchSites', () => {
+  it('starts everyone on company job boards, which reach every field', () => {
+    expect(defaultSearchSites([])).toEqual(['boards']);
+    expect(defaultSearchSites(['healthcare', 'education'])).toEqual(['boards']);
+    expect(defaultSearchSites(['other'])).toEqual(['boards']);
+  });
+
+  it('adds Hacker News for the fields its thread has jobs for', () => {
+    for (const field of ['software', 'data', 'product'] as const) {
+      expect(defaultSearchSites([field])).toEqual(['hn', 'boards']);
+    }
+    expect(defaultSearchSites(['finance', 'software'])).toEqual(['hn', 'boards']);
   });
 });

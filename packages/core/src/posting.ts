@@ -202,8 +202,23 @@ export function postingRequests(source: PostingSource): PostingRequest[] {
         },
       ];
     case 'page':
-      return [{ url: source.url, json: false }];
+      return [{ url: pageAddress(source.url), json: false }];
   }
+}
+
+/**
+ * Where to read a page. An iCIMS posting's page is little more than a frame that loads the posting
+ * later, so reading it gets next to nothing. Asked for the frame's own view, it gives the posting
+ * in full, with its JobPosting data.
+ */
+function pageAddress(address: string): string {
+  const url = new URL(address);
+  if (!/(^|\.)icims\.com$/i.test(url.hostname) || !url.pathname.startsWith('/jobs/')) {
+    return address;
+  }
+  if (/[?&]in_iframe=/.test(url.search)) return address;
+  const base = url.hash ? url.href.slice(0, -url.hash.length) : url.href;
+  return `${base}${url.search ? '&' : '?'}in_iframe=1${url.hash}`;
 }
 
 type Json = Record<string, unknown>;
@@ -222,7 +237,17 @@ const lines = (...parts: (string | null | undefined)[]) =>
 export interface Posting {
   text: string;
   via: string;
+  /** The page itself says the posting has closed, so it has no text. */
+  closed?: true;
 }
+
+/**
+ * A Workday posting's page holds only its job data and a script that says whether it's open. Once
+ * it has closed, the page still answers as usual, with this in place of the job data.
+ */
+const WORKDAY_CLOSED = /\bpostingAvailable\s*:\s*false\b/;
+
+const onWorkday = (address: string) => /(^|\.)myworkdayjobs\.com$/i.test(new URL(address).hostname);
 
 /**
  * Reads a posting from what its source answered: the API's JSON, or the page's HTML. A page
@@ -305,6 +330,9 @@ export function readPosting(source: PostingSource, answer: unknown): Posting | n
     }
     case 'page': {
       if (typeof answer !== 'string') return null;
+      if (onWorkday(source.url) && WORKDAY_CLOSED.test(answer)) {
+        return { text: '', via: 'Workday', closed: true };
+      }
       const data = jobPostingData(answer);
       if (data) return { text: data, via: 'the page’s JobPosting data' };
       const main =
@@ -362,6 +390,13 @@ function jsonLdScripts(html: string): string[] {
   return found;
 }
 
+/** A date in a page's job data, without its time: "2026-07-01T04:00:00Z" reads as 2026-07-01. */
+function day(value: unknown): string | null {
+  const date = text(value)?.trim();
+  if (!date) return null;
+  return /^\d{4}-\d{2}-\d{2}/.test(date) ? date.slice(0, 10) : date.slice(0, 40);
+}
+
 /** Most job pages embed schema.org JobPosting data, which reads cleaner than the page. */
 export function jobPostingData(html: string): string | null {
   for (const raw of jsonLdScripts(html)) {
@@ -403,11 +438,15 @@ export function jobPostingData(html: string): string | null {
           .trim()
       : null;
     const remote = field(job, 'jobLocationType') === 'TELECOMMUTE';
+    const posted = day(field(job, 'datePosted'));
+    const closes = day(field(job, 'validThrough'));
     return lines(
       text(field(job, 'title')),
       text(field(field(job, 'hiringOrganization'), 'name')),
       remote ? 'Remote' : places || null,
       pay,
+      posted ? `Posted: ${posted}` : null,
+      closes ? `Closes: ${closes}` : null,
       '',
       htmlToText(decodeEntities(description)),
     );

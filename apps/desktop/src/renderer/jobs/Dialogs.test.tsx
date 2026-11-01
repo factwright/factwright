@@ -4,7 +4,7 @@ import { cleanup, fireEvent, render, screen, within } from '@testing-library/rea
 import userEvent from '@testing-library/user-event';
 import axe from 'axe-core';
 import { useState } from 'react';
-import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { FactwrightApi, SaveFocusResult } from '../../shared/api.ts';
 import { AddJobDialog } from './AddJobDialog.tsx';
 import { FiltersPanel } from './FiltersPanel.tsx';
@@ -469,7 +469,51 @@ const focusApi = (saved: SaveFocusResult = { ok: true, id: '2026-10-12-a3f9' }) 
   ({ saveSearchFocus: vi.fn(async () => saved) }) satisfies Pick<FactwrightApi, 'saveSearchFocus'>;
 
 describe('FindJobsDialog', () => {
-  it('starts on HN, and searches every place picked, with the month and a company', async () => {
+  // Most of these start from someone who last searched HN. Where a first search starts is below.
+  beforeEach(() => {
+    localStorage.setItem('factwright.search.sites', '["hn"]');
+  });
+
+  it('starts a first search on company job boards alone for a field HN has few jobs for', () => {
+    localStorage.removeItem('factwright.search.sites');
+    render(
+      <FindJobsDialog
+        api={focusApi()}
+        fields={['healthcare']}
+        today="2026-10-12"
+        onStart={() => {}}
+        onClose={() => {}}
+      />,
+    );
+    const picked = (name: RegExp) =>
+      screen.getByRole<HTMLInputElement>('checkbox', { name }).checked;
+    expect(picked(/^Company job boards/)).toBe(true);
+    expect(picked(/^Hacker News/)).toBe(false);
+    expect(screen.getByRole('button', { name: 'Search' })).toBeTruthy();
+    // It offers them first, since they reach every field, and says what HN is mostly for.
+    expect(screen.getAllByRole('checkbox')[0]).toBe(
+      screen.getByRole('checkbox', { name: /^Company job boards/ }),
+    );
+    expect(
+      screen.getByRole('checkbox', { name: /^Hacker News/ }).closest('label')?.textContent,
+    ).toContain('mostly for software jobs');
+  });
+
+  it('adds HN to a first search for software, data and product', () => {
+    localStorage.removeItem('factwright.search.sites');
+    render(
+      <FindJobsDialog
+        api={focusApi()}
+        fields={['software']}
+        today="2026-10-12"
+        onStart={() => {}}
+        onClose={() => {}}
+      />,
+    );
+    expect(screen.getByRole('button', { name: 'Search 2 places' })).toBeTruthy();
+  });
+
+  it('searches every place picked, with the month and a company', async () => {
     const onStart = vi.fn();
     const { container } = render(
       <FindJobsDialog api={focusApi()} today="2026-10-12" onStart={onStart} onClose={() => {}} />,
@@ -625,7 +669,7 @@ describe('FindJobsDialog', () => {
     await userEvent.type(screen.getByRole('textbox', { name: 'Pay a year, from' }), '200k');
     await userEvent.type(screen.getByRole('textbox', { name: 'to' }), '150k');
     expect(screen.getByRole('alert').textContent).toBe(
-      'Type pay as a yearly amount, such as 150,000 or 150k, with the lower one first.',
+      'Type pay as a yearly amount, such as 150,000 or 150k, or by the hour, such as $40 an hour, with the lower one first.',
     );
     expect(screen.getByRole<HTMLButtonElement>('button', { name: 'Search' }).disabled).toBe(true);
     await userEvent.clear(screen.getByRole('textbox', { name: 'to' }));

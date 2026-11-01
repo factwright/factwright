@@ -406,6 +406,22 @@ export class AboutStore {
     }
   }
 
+  /**
+   * Brings a criteria file the app wrote up to how this version writes it, as what earns a job's
+   * score can change. One that someone changed stays as it is. A file that can't be written now
+   * is tried again the next time the app opens.
+   */
+  refreshCriteria(): void {
+    try {
+      const now = this.read(ABOUT.criteria);
+      if (now === null || !untouched(now)) return;
+      const next = criteriaMarkdown(this.answers());
+      if (next !== now) this.write(ABOUT.criteria, next);
+    } catch {
+      // Searches read the file as it is, and still score by it.
+    }
+  }
+
   /** Replaces a criteria file the user or Claude wrote with one from the answers, keeping theirs. */
   useAnswersForCriteria(): void {
     const own = this.read(ABOUT.criteria);

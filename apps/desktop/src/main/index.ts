@@ -339,6 +339,7 @@ function start(home: string, profile: ProfileFolder, stopped: ProfileFolder | nu
       trash: (path) => shell.trashItem(path),
       templates: () => templates.list(),
     });
+    about.refreshCriteria();
     // Profile's street, postal code and equal-opportunity answers for applications, kept beside
     // the tracker, never in the workspace, so they never sync and Claude's tools never reach them.
     const kept = new PrivateAnswers(join(dataDir, PRIVATE_FILE));
