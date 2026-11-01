@@ -144,8 +144,7 @@ export const WEB_TOOLS = ['read_page'];
 
 /**
  * What a run started with Update with Claude saves with, for each part: only that part's own tools,
- * so a run on one part can't save another. A part with a tool of its own has it alone, and no other
- * run has that tool.
+ * so a run on one part can't save another. Those in PART_ONLY no other run has.
  */
 export const PART_TOOLS: Readonly<Record<ProfilePart, readonly string[]>> = {
   about: ['save_contact'],

@@ -75,7 +75,7 @@ const PARTS: Readonly<Record<ProfilePart, { changes: string; example: string; le
       changes: 'your own words, and the names to keep private',
       example:
         'Such as: add to my notes that I mentor two juniors, and keep Bluebird off my resumes',
-      leftOut: 'Adding or removing a file stays with you: use Add files.',
+      leftOut: 'Adding or removing a file stays with you.',
     },
   };
 
