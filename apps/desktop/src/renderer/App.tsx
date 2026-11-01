@@ -10,6 +10,7 @@ import {
 import { Button, Dialog, DialogActions } from '@factwright/ui';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { FactwrightApi, RunView } from '../shared/api.ts';
+import { browserSearches } from '../shared/browser-searches.ts';
 import { signInCommand } from '../shared/claude-commands.ts';
 import type { FiledFacts } from '../shared/facts.ts';
 import { hasKinds, kindsOf } from '../shared/kinds.ts';
@@ -205,6 +206,8 @@ export function App({ api }: { api: FactwrightApi }) {
     | 'merge'
     | null
   >(null);
+  // The Browser extension window over Find jobs, which is as it was when this one closes.
+  const [extensionOver, setExtensionOver] = useState(false);
   // The job Claude noted might be the one open, when Merge with… opens from its note.
   const [mergeWith, setMergeWith] = useState<string | null>(null);
   // Once the user accepts an offer, the company and the other jobs still in play, to withdraw from.
@@ -900,6 +903,9 @@ export function App({ api }: { api: FactwrightApi }) {
           today={today}
           kinds={kinds}
           fields={profile ? kindsOf(profile.answers).flatMap((kind) => kind.fields) : []}
+          searches={profile ? browserSearches(profile.answers) : []}
+          onOpenExtension={() => setExtensionOver(true)}
+          onOpenProfile={() => setPicked('profile')}
           onStart={(sources) => startRun({ skill: SEARCH_SKILL, sources })}
           onClose={() => setDialog(null)}
         />
@@ -935,6 +941,7 @@ export function App({ api }: { api: FactwrightApi }) {
         />
       )}
       {dialog === 'extension' && <ExtensionDialog api={api} onClose={() => setDialog(null)} />}
+      {extensionOver && <ExtensionDialog api={api} onClose={() => setExtensionOver(false)} />}
       {dialog === 'appearance' && <AppearanceDialog api={api} onClose={() => setDialog(null)} />}
       {dialog === 'claude-settings' && (
         <ClaudeSettingsDialog

@@ -1,8 +1,9 @@
 import { isFocused, type KindName, NO_FOCUS, type SearchFocus } from '@factwright/core';
 import { Button, Dialog, DialogActions, Input, SegmentedControl, Select } from '@factwright/ui';
-import { type FormEvent, useId, useState } from 'react';
+import { type FormEvent, Fragment, useId, useState } from 'react';
 import type { Field } from '../../shared/about.ts';
 import type { FactwrightApi } from '../../shared/api.ts';
+import type { KindSearches } from '../../shared/browser-searches.ts';
 import {
   COMMAND_LINE_MARKS,
   defaultSearchSites,
@@ -12,6 +13,7 @@ import {
   searchCompany,
 } from '../../shared/runs.ts';
 import { usePref } from '../prefs.ts';
+import { BrowserSearches } from './BrowserSearches.tsx';
 import styles from './FindJobsDialog.module.css';
 import { FocusSection } from './SearchFocus.tsx';
 
@@ -97,12 +99,16 @@ const isText = (value: unknown): value is string => typeof value === 'string';
  * together later. With more than one kind of job, it looks for one kind or every kind. The
  * places and the kind picked are kept for next time. A focus is for this search alone, so it
  * starts empty each time: the app keeps it for the search to read, and the search names it.
+ * Under LinkedIn and Indeed, ready-made searches for the user to open in their own browser.
  */
 export function FindJobsDialog({
   api,
   today,
   kinds = [],
   fields = [],
+  searches = [],
+  onOpenExtension,
+  onOpenProfile,
   onStart,
   onClose,
 }: {
@@ -112,6 +118,12 @@ export function FindJobsDialog({
   kinds?: readonly KindName[];
   /** The kinds of work the user wants, which pick where to look until they've chosen. */
   fields?: readonly Field[];
+  /** Each kind of job's ready-made searches, to open in the user's own browser. */
+  searches?: readonly KindSearches[];
+  /** Shows the Browser extension window over this one. */
+  onOpenExtension: () => void;
+  /** Goes to Profile, once this has closed. */
+  onOpenProfile: () => void;
   onStart: (sources: SearchSources) => void;
   onClose: () => void;
 }) {
@@ -195,34 +207,46 @@ export function FindJobsDialog({
               const picked = sites.includes(site);
               const { name, about } = PLACES[site];
               return (
-                <div key={site} className={`${styles.place} ${picked ? styles.picked : ''}`}>
-                  <label className={styles.pick}>
-                    <input
-                      type="checkbox"
-                      checked={picked}
-                      onChange={(event) => toggle(site, event.target.checked)}
+                <Fragment key={site}>
+                  <div className={`${styles.place} ${picked ? styles.picked : ''}`}>
+                    <label className={styles.pick}>
+                      <input
+                        type="checkbox"
+                        checked={picked}
+                        onChange={(event) => toggle(site, event.target.checked)}
+                      />
+                      <span className={styles.text}>
+                        <span className={styles.name}>{name}</span>
+                        <span className={styles.about}>{about}</span>
+                      </span>
+                    </label>
+                    {site === 'hn' && picked && (
+                      <Select
+                        className={styles.month}
+                        aria-label="Which month’s thread"
+                        value={month}
+                        onChange={(event) => setMonth(event.target.value)}
+                      >
+                        <option value="">The newest thread</option>
+                        {recentMonths(today).map(({ value, label }) => (
+                          <option key={value} value={value}>
+                            {label}
+                          </option>
+                        ))}
+                      </Select>
+                    )}
+                  </div>
+                  {site === 'indeed' && (
+                    <BrowserSearches
+                      kinds={searches.filter((each) => !kind || each.id === kind)}
+                      onOpenExtension={onOpenExtension}
+                      onOpenProfile={() => {
+                        close();
+                        onOpenProfile();
+                      }}
                     />
-                    <span className={styles.text}>
-                      <span className={styles.name}>{name}</span>
-                      <span className={styles.about}>{about}</span>
-                    </span>
-                  </label>
-                  {site === 'hn' && picked && (
-                    <Select
-                      className={styles.month}
-                      aria-label="Which month’s thread"
-                      value={month}
-                      onChange={(event) => setMonth(event.target.value)}
-                    >
-                      <option value="">The newest thread</option>
-                      {recentMonths(today).map(({ value, label }) => (
-                        <option key={value} value={value}>
-                          {label}
-                        </option>
-                      ))}
-                    </Select>
                   )}
-                </div>
+                </Fragment>
               );
             })}
             <div className={`${styles.place} ${naming ? styles.picked : ''}`}>
