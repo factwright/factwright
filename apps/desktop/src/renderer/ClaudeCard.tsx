@@ -46,7 +46,7 @@ interface CardView {
 /**
  * How each status reads, in plain words, with the fix when there is one. A command that starts
  * Claude Code by its whole path, as one for a terminal that doesn't find `claude` by name, is
- * long to type, so the card offers to copy it.
+ * long to type, so the card offers to copy it. So is a package manager's own update command.
  */
 function describe(
   status: ClaudeStatusView,
@@ -121,18 +121,21 @@ function describe(
         ),
         recheck: 'status',
       };
-    case 'too-old':
+    case 'too-old': {
+      const update = status.update ?? `${claude} update`;
       return {
         tone: 'need',
         line: 'Needs an update',
         help: (
           <>
             Version {status.version} is older than Factwright needs. In {terminal}, run{' '}
-            <code>{claude} update</code>.{copyLong(`${claude} update`)}
+            <code>{update}</code>.
+            {(byPath || status.update) && <CopyCommand key={update} command={update} copy={copy} />}
           </>
         ),
         recheck: 'status',
       };
+    }
     case 'missing':
       return {
         tone: 'need',

@@ -244,6 +244,29 @@ describe('GetStarted', () => {
     },
   );
 
+  it.each([
+    ['darwin', 'brew upgrade claude-code', undefined],
+    ['darwin', "'/opt/homebrew/bin/brew' upgrade claude-code", "'/opt/homebrew/bin/claude'"],
+    ['win32', 'winget upgrade Anthropic.ClaudeCode', undefined],
+  ] as const)(
+    'updates with a package manager’s own command, on %s: %s',
+    async (platform, update, claude) => {
+      const api = { ...profileApi(), platform };
+      const status = { state: 'too-old', version: '2.0.12', minimum: '2.1.295', update } as const;
+      const { container } = render(
+        <Harness api={api} claude={claude ? { ...status, claude } : status} />,
+      );
+      expect(await screen.findByRole('heading', { name: 'Update Claude Code' })).toBeTruthy();
+      expect(screen.getByText(update)).toBeTruthy();
+      expect(container.textContent).not.toContain('claude update');
+      await userEvent.click(screen.getByRole('button', { name: 'Copy the update command' }));
+      expect(api.copyText).toHaveBeenCalledWith(update);
+      // It doesn't start Claude Code, so the note on starting it by its path has no place here.
+      expect(screen.queryByRole('link', { name: 'add it to your PATH' })).toBeNull();
+      expect((await axe.run(container)).violations).toEqual([]);
+    },
+  );
+
   it('saves the user’s answers as they type, and comes back to the step they were on', async () => {
     const api = profileApi();
     const { unmount } = render(<Harness api={api} />);

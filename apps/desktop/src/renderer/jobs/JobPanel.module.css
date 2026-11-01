@@ -1,9 +1,64 @@
-/* Beside the list when there's room for both. It holds what's placed inside it, such as labels
-   only screen readers see, so they scroll with it rather than stretch the window. */
+/* Beside the list when there's room for both, at the width the user dragged it to, or else one that
+   suits the window. The list always keeps some room. */
+.frame {
+  position: relative;
+  display: flex;
+  flex: 0 0 var(--panel-width, clamp(340px, 32%, 420px));
+  min-width: 340px;
+  max-width: calc(100% - 360px);
+}
+
+.frame.alone {
+  flex: 1 1 auto;
+  max-width: none;
+}
+
+/* The edge between the list and the details. It's wider than the line it shows, so it's easy to
+   take hold of, and the line shows only once the pointer stays a moment, not as it passes by. */
+.resizer {
+  position: absolute;
+  inset: 0 auto 0 -4px;
+  z-index: 3;
+  width: 9px;
+  cursor: col-resize;
+  touch-action: none;
+}
+
+.resizer::after {
+  position: absolute;
+  inset: 0 auto 0 3px;
+  width: 3px;
+  background: var(--fw-accent);
+  content: "";
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.resizer:hover::after {
+  opacity: 1;
+  transition-delay: 0.15s;
+}
+
+.resizer[data-dragging]::after {
+  opacity: 1;
+  transition-delay: 0s;
+}
+
+.resizer:focus-visible {
+  outline: none;
+}
+
+.resizer:focus-visible::after {
+  opacity: 1;
+  transition-delay: 0s;
+}
+
+/* It holds what's placed inside it, such as labels only screen readers see, so they scroll with it
+   rather than stretch the window. */
 .panel {
   --panel-pad: var(--fw-space-6);
   position: relative;
-  flex: 0 0 clamp(340px, 32%, 420px);
+  flex: 1 1 auto;
   min-width: 0;
   overflow: auto;
   border-left: 1px solid var(--fw-border);
@@ -23,7 +78,6 @@
 /* The job alone, in place of the list: wider, in two columns, and centered past a point. */
 .expanded {
   --panel-pad: var(--fw-space-8);
-  flex: 1 1 auto;
   border-left: 0;
 }
 
@@ -32,17 +86,18 @@
   margin: 0 auto;
 }
 
-/* Over the list when the window is narrow. */
+/* Over the list when the window is narrow, which still shows at its edge. */
 @container work (max-width: 980px) {
-  .panel {
+  .frame {
     position: absolute;
     inset: 0 0 0 auto;
     z-index: 2;
-    width: min(440px, 100%);
+    width: min(var(--panel-width, 440px), calc(100% - 48px));
+    max-width: none;
     box-shadow: -12px 0 32px rgb(0 0 0 / 0.14);
   }
 
-  .panel.expanded {
+  .frame.alone {
     width: 100%;
     box-shadow: none;
   }
@@ -220,17 +275,11 @@
   overflow-wrap: anywhere;
 }
 
-/* One column beside the list: what came from Claude, then the user's progress. Expanded, the
-   two side by side. */
+/* One column: what came from Claude, then the user's progress. With the room, whether dragged wide
+   or with the window to itself, the two side by side. */
 .columns {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-}
-
-.expanded .columns {
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  gap: 0 48px;
-  align-items: start;
 }
 
 /* Expanded, sections reach the edges of their column, not the window's. */
@@ -238,9 +287,15 @@
   --panel-pad: 0px;
 }
 
-@container panel (max-width: 760px) {
-  .expanded .columns {
-    grid-template-columns: minmax(0, 1fr);
+@container panel (min-width: 761px) {
+  .columns {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 0 48px;
+    align-items: start;
+  }
+
+  .column {
+    --panel-pad: 0px;
   }
 }
 
@@ -258,13 +313,9 @@
   margin-top: var(--fw-space-6);
 }
 
-.expanded .column + .column .columnHeading {
-  margin-top: 0;
-}
-
-@container panel (max-width: 760px) {
-  .expanded .column + .column .columnHeading {
-    margin-top: var(--fw-space-6);
+@container panel (min-width: 761px) {
+  .column + .column .columnHeading {
+    margin-top: 0;
   }
 }
 

@@ -7,6 +7,7 @@ Notable changes to Factwright, newest first. The format follows [Keep a Changelo
 ### Added
 - Factwright's roadmap, at factwright.com/roadmap: what's planned, what's in progress, and what's shipped, with the release each came in. Below it, the ideas to vote on, most votes first, and Suggest a feature, with a title, a few lines and an email to hear back, if you like. Steve reads each suggestion before it shows. Voting needs no account and sets no cookie: your browser keeps a random ID, and a vote sends only a one-way hash of it and the idea, so nobody can tell how you voted. Clicking again takes your vote back.
 - Appearance, in the sidebar: choose how Factwright looks, rather than only following your computer's light or dark setting. Besides System, Light and Dark, there's Tokyo Night, Nord, Catppuccin, Rosé Pine, Solarized Light and Rosé Pine Dawn. A theme shows straight away, in the window and in Claude's panel, and Factwright keeps it.
+- The edge between the job list and a job's details drags, so the details can be any width, not only beside the list or the whole window. The arrow keys move it too, Factwright keeps the width you leave it at, the list always keeps its room, a wide panel shows its areas in two columns, and a double-click puts it back.
 - Suggest a feature, in the sidebar beside Report a problem, opens Factwright's roadmap at factwright.com/roadmap in your browser, to suggest a feature or vote for the ideas there, with no account. The app sends nothing itself.
 
 ### Security
@@ -18,6 +19,9 @@ Notable changes to Factwright, newest first. The format follows [Keep a Changelo
 ### Changed
 - A run uses fewer requests of your plan: no prompt suggestions, and no session title.
 - The privacy policy has a part on ideas and the roadmap: what a suggestion keeps, that an email left with one is deleted once the idea is closed, that a vote is kept only as a one-way hash, and that your IP address only limits how often one address can suggest or vote, and isn't kept. It takes effect October 27, 2026.
+
+### Fixed
+- When your Claude Code is too old and Homebrew or WinGet installed it, Factwright gives the command that updates it, `brew upgrade claude-code` or `winget upgrade Anthropic.ClaudeCode`, with a button to copy it. On those installs, `claude update`, which it gave before, only names that command.
 
 ## 0.18.1 - 2026-10-27
 

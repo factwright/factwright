@@ -75,6 +75,24 @@ describe('ClaudeCard', () => {
     }
   });
 
+  it('updates with a package manager’s own command, and offers to copy it', async () => {
+    const update = 'winget upgrade Anthropic.ClaudeCode';
+    const copy = vi.fn(async () => ({ ok: true as const }));
+    const { container } = render(
+      <ClaudeCard
+        status={{ state: 'too-old', version: '2.0.12', minimum: '2.1.295', update }}
+        onRecheck={vi.fn()}
+        copy={copy}
+        terminal="PowerShell"
+      />,
+    );
+    expect(container.textContent).toContain(`In PowerShell, run ${update}.`);
+    expect(container.textContent).not.toContain('claude update');
+    screen.getByRole('button', { name: 'Copy the command' }).click();
+    await waitFor(() => expect(copy).toHaveBeenCalledWith(update));
+    expect((await axe.run(container)).violations).toEqual([]);
+  });
+
   it('offers no copy for plain claude, which is short to type', () => {
     render(
       <ClaudeCard
