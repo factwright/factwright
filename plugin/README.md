@@ -42,13 +42,15 @@ The app passes the rest with each run:
   - `requested_changes`: what you asked to change in a job's resume or letter, or a part of your Profile, in your own words, typed in the app for that run
   - `save_contact`, `save_what_you_want`, `save_for_applications`, `save_beyond_work`, `save_resume_choices`, `keep_names_private` and `add_to_notes`: one part of your Profile each, which only a run started with that part's Update with Claude has
   - `save_fact`, `save_gap`, `verify_fact` and `correct_fact`: what you answer Claude's questions while it works, saved to your fact bank: a yes as a fact to verify, with the question and your answer as the app recorded them; a no under Doesn't have; a fact verified when you pick "Use and verify"; and a new number or a correction for a verified fact, which stays verified. They save only answers you gave in that run
-  - `read_posting`: a posting on Greenhouse, Lever, Ashby or Gem, read from the applicant system's public feed
+  - `read_posting`: a posting on Greenhouse, Lever, Ashby, Gem, Recruitee or Workable, read from the applicant system's public feed
   - `read_page`: any other web page as plain text, never LinkedIn's
   - `save_posting`: a posting saved word for word in the job's folder, from what was read
   - `build_resume`: a job's resume, or a starting resume, built as a PDF or Word file, with how it fits the pages
   - `build_cover_letter`: a job's cover letter, built as a PDF or Word file in its resume's template, with how it fits one page
   - `build_projects_page`: a job's Projects page, built as a PDF or Word file in its resume's template, with how it fits one page
-  - `job_board`: every open job on a company's Greenhouse, Lever, Ashby or Gem board, saved word for word, and whether a posting is still open
+  - `job_board`: the open jobs on a company's board on Greenhouse, Lever, Ashby, Gem, Recruitee, Workable, JazzHR, Paylocity, Workday or iCIMS, narrowed by job title, and whether a posting is still open
+  - `careers_site`: a company's own careers site, through its sitemap and the job data on its pages, once its robots.txt allows it
+  - `job_listings`: public listings across employers, from USAJOBS's feed and Workable's job search, for job titles and a place
   - `hn_jobs`: every post in Hacker News's "Who is hiring?" thread, saved word for word
 - **Hooks:** they tell the app when Claude finishes or needs you, and what you answered its questions, which is what lets the tools above save an answer.
 - **Settings:** they keep the run locked down. Without asking, Claude searches the web, reads web pages, runs these skills, uses the tools above and changes files in your workspace. Once a task is done, Claude's panel lists each file it changed, with Undo, and each page it read. Your facts change only through the tools above, which save only your answers. A run started for getting started or for more facts changes your facts itself, as you confirm them, and can't reach the web. A run started with Update with Claude has only its part's tools, and reads neither the web nor what came from it. Claude never changes Claude Code's settings or the instructions Claude Code loads.

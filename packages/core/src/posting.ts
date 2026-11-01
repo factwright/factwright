@@ -4,6 +4,8 @@ export type PostingSource =
   | { kind: 'lever'; company: string; id: string }
   | { kind: 'gem'; board: string; id: string }
   | { kind: 'ashby'; board: string; id: string }
+  | { kind: 'recruitee'; board: string; id: string }
+  | { kind: 'workable'; board: string; id: string }
   | { kind: 'page'; url: string };
 
 /** A request for one source: the address, and whether it answers in JSON. */
@@ -168,6 +170,18 @@ export function postingSource(address: string): PostingSource {
   if (gem?.[1] && gem[2]) return { kind: 'gem', board: gem[1], id: gem[2] };
   const ashby = on(host === 'jobs.ashbyhq.com', /^\/([^/]+)\/([0-9a-f-]{36})/i);
   if (ashby?.[1] && ashby[2]) return { kind: 'ashby', board: ashby[1], id: ashby[2] };
+  const recruiteeHost = /^([a-z0-9-]{1,63})\.recruitee\.com$/.exec(host)?.[1];
+  const recruitee = on(Boolean(recruiteeHost), /^\/o\/([\w-]{1,200})(?:[/?#]|$)/);
+  if (recruiteeHost && recruitee?.[1]) {
+    return { kind: 'recruitee', board: recruiteeHost, id: recruitee[1] };
+  }
+  const workable = on(
+    host === 'apply.workable.com',
+    /^\/([\w-]{1,100})\/j\/([A-Za-z0-9]{1,40})(?:\/|$)/,
+  );
+  if (workable?.[1] && workable[2] && workable[1] !== 'j') {
+    return { kind: 'workable', board: workable[1], id: workable[2] };
+  }
   return { kind: 'page', url: url.href };
 }
 
@@ -198,6 +212,20 @@ export function postingRequests(source: PostingSource): PostingRequest[] {
       return [
         {
           url: `https://api.ashbyhq.com/posting-api/job-board/${part(source.board)}?includeCompensation=true`,
+          json: true,
+        },
+      ];
+    case 'recruitee':
+      return [
+        {
+          url: `https://${part(source.board)}.recruitee.com/api/offers/${part(source.id)}`,
+          json: true,
+        },
+      ];
+    case 'workable':
+      return [
+        {
+          url: `https://apply.workable.com/api/v2/accounts/${part(source.board)}/jobs/${part(source.id)}`,
           json: true,
         },
       ];
@@ -264,6 +292,9 @@ const WORKDAY_CLOSED = /\bpostingAvailable\s*:\s*false\b/;
 
 const onWorkday = (address: string) =>
   /(^|\.)myworkday(jobs|site)\.com$/i.test(new URL(address).hostname);
+
+/** Job data shorter than this, in characters, may be a teaser for what's on the page. */
+const FULL_JOB_DATA = 1500;
 
 /**
  * Reads a posting from what its source answered: the API's JSON, or the page's HTML. A page
@@ -344,19 +375,63 @@ export function readPosting(source: PostingSource, answer: unknown): Posting | n
         via: 'Ashby API',
       };
     }
+    case 'recruitee': {
+      const offer = field(answer, 'offer');
+      const description = text(field(offer, 'description'));
+      if (!description) return null;
+      return {
+        text: lines(
+          text(field(offer, 'title')),
+          text(field(offer, 'location')),
+          '',
+          htmlToText(description),
+          '',
+          htmlToText(text(field(offer, 'requirements')) ?? ''),
+        ),
+        via: 'Recruitee API',
+      };
+    }
+    case 'workable': {
+      const description = text(field(answer, 'description'));
+      if (!description) return null;
+      const place = field(answer, 'location');
+      return {
+        text: lines(
+          text(field(answer, 'title')),
+          [text(field(place, 'city')), text(field(place, 'region')), text(field(place, 'country'))]
+            .filter(Boolean)
+            .join(', ') || null,
+          field(answer, 'remote') === true ? 'Remote' : null,
+          '',
+          htmlToText(description),
+          '',
+          htmlToText(text(field(answer, 'requirements')) ?? ''),
+          '',
+          htmlToText(text(field(answer, 'benefits')) ?? ''),
+        ),
+        via: 'Workable API',
+      };
+    }
     case 'page': {
       if (typeof answer !== 'string') return null;
       if (onWorkday(source.url) && WORKDAY_CLOSED.test(answer)) {
         return { text: '', via: 'Workday', closed: true };
       }
       const data = jobPostingData(answer);
-      if (data) return { text: data, via: 'the page’s JobPosting data' };
-      const main =
+      if (data && data.length >= FULL_JOB_DATA) {
+        return { text: data, via: 'the page’s JobPosting data' };
+      }
+      const main = htmlToText(
         element(answer, 'main') ??
-        element(answer, 'article') ??
-        element(answer, 'body', true) ??
-        answer;
-      return { text: htmlToText(main), via: 'the web page' };
+          element(answer, 'article') ??
+          element(answer, 'body', true) ??
+          answer,
+      );
+      if (!data) return { text: main, via: 'the web page' };
+      // Some job data holds only a teaser, as USAJOBS's does, with the posting on the page itself.
+      return main.length > data.length
+        ? { text: lines(data, '', main), via: 'the page’s JobPosting data and its text' }
+        : { text: data, via: 'the page’s JobPosting data' };
     }
   }
 }
@@ -413,8 +488,39 @@ function day(value: unknown): string | null {
   return /^\d{4}-\d{2}-\d{2}/.test(date) ? date.slice(0, 10) : date.slice(0, 40);
 }
 
+/** What a page's schema.org JobPosting data says. */
+export interface JobPostingFields {
+  title: string | null;
+  company: string | null;
+  /** "Remote", or the places it names. */
+  where: string | null;
+  pay: string | null;
+  posted: string | null;
+  closes: string | null;
+  /** The posting, as plain text. */
+  text: string;
+}
+
 /** Most job pages embed schema.org JobPosting data, which reads cleaner than the page. */
 export function jobPostingData(html: string): string | null {
+  const job = jobPostingFields(html);
+  return (
+    job &&
+    lines(
+      job.title,
+      job.company,
+      job.where,
+      job.pay ? `Pay: ${job.pay}` : null,
+      job.posted ? `Posted: ${job.posted}` : null,
+      job.closes ? `Closes: ${job.closes}` : null,
+      '',
+      job.text,
+    )
+  );
+}
+
+/** What a page's JobPosting data says, for the first with a description. Null for a page with none. */
+export function jobPostingFields(html: string): JobPostingFields | null {
   for (const raw of jsonLdScripts(html)) {
     let data: unknown;
     try {
@@ -449,23 +555,23 @@ export function jobPostingData(html: string): string | null {
       .filter((value) => value !== undefined && value !== null)
       .join('–');
     const pay = salary
-      ? `Pay: ${amount || String(field(salary, 'value') ?? '')} ${text(field(field(job, 'baseSalary'), 'currency')) ?? ''} ${text(field(salary, 'unitText')) ?? ''}`
+      ? `${amount || String(field(salary, 'value') ?? '')} ${text(field(field(job, 'baseSalary'), 'currency')) ?? ''} ${text(field(salary, 'unitText')) ?? ''}`
           .replace(/\s+/g, ' ')
           .trim()
       : null;
     const remote = field(job, 'jobLocationType') === 'TELECOMMUTE';
-    const posted = day(field(job, 'datePosted'));
-    const closes = day(field(job, 'validThrough'));
-    return lines(
-      text(field(job, 'title')),
-      text(field(field(job, 'hiringOrganization'), 'name')),
-      remote ? 'Remote' : places || null,
+    const title = text(field(job, 'title'));
+    const company = text(field(field(job, 'hiringOrganization'), 'name'));
+    return {
+      // Some sites escape these twice, so "Sales &amp; Service" would show as it's written.
+      title: title && decodeEntities(title),
+      company: company && decodeEntities(company),
+      where: remote ? 'Remote' : places || null,
       pay,
-      posted ? `Posted: ${posted}` : null,
-      closes ? `Closes: ${closes}` : null,
-      '',
-      htmlToText(decodeEntities(description)),
-    );
+      posted: day(field(job, 'datePosted')),
+      closes: day(field(job, 'validThrough')),
+      text: htmlToText(decodeEntities(description)),
+    };
   }
   return null;
 }

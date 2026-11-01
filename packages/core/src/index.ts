@@ -23,14 +23,28 @@ export { type ApplySteps, readApplySteps } from './apply-steps.ts';
 export {
   type BoardJob,
   type BoardSource,
+  boardAnswersJson,
+  boardFromSitemap,
+  boardHasText,
   boardJobLine,
   boardMarkdown,
+  boardName,
   boardPostingId,
   boardRequest,
   boardSource,
   boardSystem,
+  jobsMarkdown,
+  listLine,
+  paylocityBoardOf,
+  paylocityJobId,
+  paylocityJobPage,
   readBoard,
+  readWorkdaySearch,
+  titleFilter,
+  WORKDAY_SEARCH_PAGE,
   workablePostingId,
+  workdaySearchBody,
+  workdaySearchRequest,
 } from './boards.ts';
 export { callInvite, callInviteName, callStart, callTitle, isClockTime } from './calendar.ts';
 export { US_STATES } from './countries.ts';
@@ -288,6 +302,15 @@ export {
 } from './letter.ts';
 export { hostOf, isJobLink, isLinkedIn, type Link, linksFrom, normalizeUrl } from './links.ts';
 export {
+  isRemotePlace,
+  type ListingPage,
+  type ListingSource,
+  readUsajobs,
+  readWorkableSearch,
+  usajobsRequest,
+  workableSearchRequest,
+} from './listings.ts';
+export {
   type ListItem,
   markdownItems,
   markdownSections,
@@ -309,6 +332,7 @@ export {
   postingSite,
   readTitle,
   type SavedHow,
+  SUCCESSFACTORS,
   sameJob,
   savedJobFor,
   type TitleFit,
@@ -363,7 +387,9 @@ export { type PayRange, parsePay, payBand } from './pay.ts';
 export {
   decodeEntities,
   htmlToText,
+  type JobPostingFields,
   jobPostingData,
+  jobPostingFields,
   type Posting,
   type PostingRequest,
   type PostingSource,
@@ -431,6 +457,15 @@ export {
   SYNC_PRICE,
   SYNC_PRICE_WORDS,
 } from './site.ts';
+export {
+  NO_ROBOTS,
+  type Robots,
+  readRobots,
+  readSitemap,
+  robotsAllow,
+  type Sitemap,
+  type SitemapLink,
+} from './sitemaps.ts';
 export {
   byJob,
   callOrder,
