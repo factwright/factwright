@@ -116,7 +116,8 @@ export function FocusSection({
           </div>
           {badPay && (
             <p className={styles.problem} role="alert">
-              Type pay as a yearly amount, such as 150,000 or 150k, with the lower one first.
+              Type pay as a yearly amount, such as 150,000 or 150k, or by the hour, such as $40 an
+              hour, with the lower one first.
             </p>
           )}
           <ChipGroup

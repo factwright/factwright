@@ -892,6 +892,7 @@ export function App({ api }: { api: FactwrightApi }) {
           api={api}
           today={today}
           kinds={kinds}
+          fields={profile ? kindsOf(profile.answers).flatMap((kind) => kind.fields) : []}
           onStart={(sources) => startRun({ skill: SEARCH_SKILL, sources })}
           onClose={() => setDialog(null)}
         />

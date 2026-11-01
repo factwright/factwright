@@ -171,11 +171,11 @@ export function criteriaMarkdown(answers: AboutYou): string {
     '',
     '| Part | Points | What earns it |',
     '|---|---|---|',
-    '| Work | 40 | The job’s core work is work the fact bank proves, domain included |',
+    '| Work | 40 | The job’s core work is work the fact bank proves. Its industry counts only when the posting asks for it |',
     kinds
       ? '| Role | 25 | The level and shape fit what the user wants for the job’s kind |'
       : `| Role | 25 | The level and shape fit what the user wants${shape ? `: ${shape}` : ''} |`,
-    '| Stack | 20 | Overlap with the tools, methods and skills the fact bank proves |',
+    '| Skills | 20 | Overlap with the tools, methods, licenses and skills the fact bank proves |',
     '| Reqs | 15 | Full marks unless a hard requirement isn’t met: years, degree, license or certification |',
     '',
     '**Tiers:** Strong ≥ 75 · Good 62–74 · Worth a look 50–61. Below 50 goes to long shots.',

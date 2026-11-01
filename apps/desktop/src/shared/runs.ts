@@ -1,3 +1,4 @@
+import type { Field } from './about.ts';
 import { REVISE_SKILL, type TemplateChoice } from './revision.ts';
 
 /**
@@ -57,9 +58,23 @@ export const SEARCH_SKILL = 'job-search';
  * Claude finds LinkedIn's and Indeed's through web search and reads each job on the employer's
  * own site. It never opens LinkedIn.
  */
-export const SEARCH_SITES = ['hn', 'linkedin', 'indeed', 'boards'] as const;
+export const SEARCH_SITES = ['boards', 'linkedin', 'indeed', 'hn'] as const;
 
 export type SearchSite = (typeof SEARCH_SITES)[number];
+
+/** The fields Hacker News's thread has many jobs for. It's mostly software and startups. */
+const FIELDS_ON_HN: readonly Field[] = ['software', 'data', 'product'];
+
+/**
+ * Where a search looks until the user picks: company job boards, which reach every field, and
+ * Hacker News's thread too for someone in a field it has jobs for.
+ */
+export function defaultSearchSites(fields: readonly Field[]): SearchSite[] {
+  return SEARCH_SITES.filter(
+    (site) =>
+      site === 'boards' || (site === 'hn' && fields.some((field) => FIELDS_ON_HN.includes(field))),
+  );
+}
 
 /**
  * Where a job search looks, and for what: the places picked, a company the user has in mind,

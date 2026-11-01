@@ -747,11 +747,15 @@ test('finds jobs where the user picks, and keeps each search’s jobs together',
   const { window } = opened;
   await window.getByRole('button', { name: 'Find jobs' }).click();
   const dialog = window.getByRole('dialog', { name: 'Find jobs' });
+  // A first search starts on company job boards.
+  await expect(dialog.getByRole('checkbox', { name: /^Company job boards/ })).toBeChecked();
+  await dialog.getByRole('checkbox', { name: /^Company job boards/ }).uncheck();
+  await dialog.getByRole('checkbox', { name: /^Hacker News/ }).check();
   await dialog.getByRole('checkbox', { name: /^LinkedIn/ }).check();
   await dialog.getByRole('button', { name: 'Search 2 places' }).click();
   await expect(claudePanel().getByRole('status')).toHaveText('Done');
   // The app types the places picked, in its own words.
-  expect(await terminalText(window)).toContain('/factwright:job-search HN · LinkedIn');
+  expect(await terminalText(window)).toContain('/factwright:job-search LinkedIn · HN');
   // A search reads a lot and weighs it lightly, so it thinks at high.
   expect(await terminalText(window)).toContain('opus · high effort');
   await closeRun();

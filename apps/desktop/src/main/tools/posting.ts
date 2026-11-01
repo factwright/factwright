@@ -166,6 +166,7 @@ export async function readLink(
       ? `Not read: ${reasonOf(error)}`
       : `Couldn’t read ${parsed.href} (${reasonOf(error)}).`;
   }
+  if (page?.closed) return `${parsed.href} has closed: ${page.via} says it’s no longer available.`;
   if (!page?.text.trim()) {
     return deps.feedsOnly
       ? `The applicant system has no posting at ${parsed.href}. It may have closed: check with job_board, or read the link with read_page.`
