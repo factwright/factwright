@@ -78,7 +78,8 @@ describe('the plugin’s skills', () => {
 
   it.each(skills)('$folder only names tools, resume fields and skills that exist', ({ text }) => {
     for (const [, name] of text.matchAll(/`([a-z]+(?:_[a-z]+)+)`/g)) {
-      expect([...toolNames, ...RESUME_FIELDS]).toContain(name);
+      // allowed_domains is the setting on Claude Code's own WebSearch that the skills name.
+      expect([...toolNames, ...RESUME_FIELDS, 'allowed_domains']).toContain(name);
     }
     for (const [, name] of text.matchAll(/\/factwright:([a-z-]+)/g)) {
       expect(skills.map((skill) => skill.folder)).toContain(name);
@@ -117,6 +118,7 @@ describe('the plugin’s skills', () => {
       'focused-resume',
       'job-search',
       'salary-check',
+      'who-to-message',
     ]);
     for (const { folder } of searching) {
       expect(scopeOf({ skill: folder } as RunTask), folder).toBe('hunt');

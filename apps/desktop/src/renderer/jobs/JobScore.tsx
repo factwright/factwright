@@ -14,7 +14,7 @@ import styles from './JobPanel.module.css';
 const PART_LABELS: Readonly<Record<ScorePartKey, string>> = {
   work: 'Work',
   role: 'Role',
-  stack: 'Stack',
+  stack: 'Skills',
   reqs: 'Requirements',
 };
 

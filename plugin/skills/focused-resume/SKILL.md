@@ -50,8 +50,8 @@ When the command ends with `quick`, the user asked for a resume they don't have 
   - `## The user's notes`, verbatim
 
 ## 2. Research the company (brief)
-- Read the company's site with `read_page`: the link the user gave, plus its about or careers page if it's useful. Run 1–2 web searches at most, for stage and funding, size, product, customers, and tech stack.
-- Append `## Company notes` to job.md: what they do, stage and size, domain, stack, and the words they use about themselves.
+- Read the company's site with `read_page`: the link the user gave, plus its about or careers page if it's useful. Run 1–2 web searches at most, for stage and funding, size, what it makes or does, who it serves, and the tools it uses.
+- Append `## Company notes` to job.md: what they do, stage and size, field, tools, and the words they use about themselves.
 - Pick the **style** with `guide/styles/README.md`, then read that style's file.
 - Pick the **track** from the role title and scope.
 

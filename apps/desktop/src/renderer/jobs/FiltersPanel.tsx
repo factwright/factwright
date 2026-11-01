@@ -104,7 +104,10 @@ export function FiltersPanel({
               ))}
             </div>
           </fieldset>
-          <Field label="Pays at least" hint="In thousands a year, such as 150 for $150k.">
+          <Field
+            label="Pays at least"
+            hint="In thousands a year, such as 150 for $150k. $40 an hour is about 83."
+          >
             {(control) => (
               <Input
                 {...control}

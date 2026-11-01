@@ -355,7 +355,7 @@ describe('parseRunTask', () => {
     ).toEqual({
       skill: 'job-search',
       // In the order a search goes through them.
-      sources: { sites: ['hn', 'indeed'], month: '2026-10', company: 'Acme Robotics' },
+      sources: { sites: ['indeed', 'hn'], month: '2026-10', company: 'Acme Robotics' },
     });
     expect(
       parseRunTask({

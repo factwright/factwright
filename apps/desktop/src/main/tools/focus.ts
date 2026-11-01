@@ -46,7 +46,8 @@ export function searchFocusText(workspace: string, id: string): string {
   const rules = [
     focus.stages.length > 0 &&
       `- **Kind of company:** ${focus.stages.map((each) => stage.get(each)).join(', or ')}. Tell by the company's stage and size, from the posting, its site or news of its funding. When you can't tell, keep the job and say so in its flags.`,
-    pay && `- **Pay:** ${pay} Keep a job that lists no pay, and say so in its flags.`,
+    pay &&
+      `- **Pay:** ${pay} An hourly wage counts as 2,080 hours a year. Keep a job that lists no pay, and say so in its flags.`,
     focus.workplaces.length > 0 &&
       `- **Where:** ${focus.workplaces.map((each) => workplace.get(each)).join(' or ')}, as the posting says.`,
     focus.industries.length > 0 && `- **Only these industries:** ${focus.industries.join(', ')}.`,

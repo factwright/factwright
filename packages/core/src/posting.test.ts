@@ -61,6 +61,26 @@ describe('postingSource', () => {
       { url: 'https://boards-api.greenhouse.io/v1/boards/acme/jobs/42', json: true },
       { url: 'https://boards-api.greenhouse.io/v1/boards/acme%20co/jobs/42', json: true },
     ]);
+    // An iCIMS posting's page is a frame that loads later, so its frame's own view is read.
+    expect(
+      postingRequests({ kind: 'page', url: 'https://careers-acme.icims.com/jobs/17/nurse/job' }),
+    ).toEqual([
+      { url: 'https://careers-acme.icims.com/jobs/17/nurse/job?in_iframe=1', json: false },
+    ]);
+    expect(
+      postingRequests({
+        kind: 'page',
+        url: 'https://careers-acme.icims.com/jobs/17/nurse/job?mode=job&in_iframe=1',
+      }),
+    ).toEqual([
+      { url: 'https://careers-acme.icims.com/jobs/17/nurse/job?mode=job&in_iframe=1', json: false },
+    ]);
+    expect(postingRequests({ kind: 'page', url: 'https://www.icims.com/jobs/' })).toEqual([
+      { url: 'https://www.icims.com/jobs/?in_iframe=1', json: false },
+    ]);
+    expect(postingRequests({ kind: 'page', url: 'https://notreallyicims.com/jobs/1' })).toEqual([
+      { url: 'https://notreallyicims.com/jobs/1', json: false },
+    ]);
     expect(postingRequests({ kind: 'page', url: 'https://acme.example/jobs' })).toEqual([
       { url: 'https://acme.example/jobs', json: false },
     ]);
@@ -146,7 +166,82 @@ describe('readPosting', () => {
   });
 });
 
+describe('a Workday posting’s page', () => {
+  const source = {
+    kind: 'page',
+    url: 'https://acme.wd1.myworkdayjobs.com/en-US/Careers/job/Nurse_R1',
+  } as const;
+  const script = (available: string) =>
+    `<script>window.workday = { siteId: "Careers", postingAvailable: ${available}, }</script>`;
+
+  it('reads the posting’s own page rather than its page for applying, which can say it’s closed', () => {
+    const address = (url: string) => postingRequests({ kind: 'page', url })[0]?.url;
+    const posting = 'https://acme.wd1.myworkdayjobs.com/Careers/job/Nurse_R1';
+    expect(address(`${posting}/apply`)).toBe(posting);
+    expect(address(`${posting}/apply/applyManually?source=x`)).toBe(`${posting}?source=x`);
+    expect(address(posting)).toBe(posting);
+    expect(
+      address('https://wd5.myworkdaysite.com/recruiting/acme/Careers/job/Nurse_R1/apply'),
+    ).toBe('https://wd5.myworkdaysite.com/recruiting/acme/Careers/job/Nurse_R1');
+    expect(address('https://acme.example/jobs/1/apply')).toBe('https://acme.example/jobs/1/apply');
+    // A title that only starts with the word stays, and a long link takes as long as it is long.
+    expect(address(`${posting}/Apply-Today_R2`)).toBe(`${posting}/Apply-Today_R2`);
+    const start = Date.now();
+    expect(address(`${posting}${'/apply'.repeat(200_000)}`)).toBe(posting);
+    expect(Date.now() - start).toBeLessThan(1000);
+  });
+
+  it('says the posting has closed when the page says so', () => {
+    expect(readPosting(source, script('false'))).toEqual({
+      text: '',
+      via: 'Workday',
+      closed: true,
+    });
+  });
+
+  it('reads an open one’s job data as any other page’s', () => {
+    const data = `<script type="application/ld+json">${JSON.stringify({
+      '@type': 'JobPosting',
+      title: 'Registered Nurse',
+      description: 'Care for patients.',
+    })}</script>`;
+    const read = readPosting(source, `${script('true')}${data}`);
+    expect(read?.closed).toBeUndefined();
+    expect(read?.text).toContain('Registered Nurse');
+  });
+
+  it('takes no such word from a page on any other site', () => {
+    const elsewhere = { kind: 'page', url: 'https://acme.example/jobs/1' } as const;
+    expect(
+      readPosting(elsewhere, `<main>${script('false')}Still hiring</main>`)?.closed,
+    ).toBeUndefined();
+  });
+});
+
 describe('jobPostingData', () => {
+  it('says when a posting went up and when it closes, without their times', () => {
+    const html = `<script type="application/ld+json">${JSON.stringify({
+      '@type': 'JobPosting',
+      title: 'Registered Nurse',
+      datePosted: '2026-07-24T04:00:00Z',
+      validThrough: '2027-07-24',
+      description: '<p>Care for patients.</p>',
+    })}</script>`;
+    expect(jobPostingData(html)).toBe(
+      'Registered Nurse\nPosted: 2026-07-24\nCloses: 2027-07-24\n\nCare for patients.',
+    );
+  });
+
+  it('keeps a date as the page writes it when it isn’t in the usual form', () => {
+    const html = `<script type="application/ld+json">${JSON.stringify({
+      '@type': 'JobPosting',
+      title: 'Store Manager',
+      datePosted: 'October 3, 2026',
+      description: 'Run the store.',
+    })}</script>`;
+    expect(jobPostingData(html)).toBe('Store Manager\nPosted: October 3, 2026\n\nRun the store.');
+  });
+
   it('finds a JobPosting inside a graph, and skips broken data', () => {
     const html = `<script type="application/ld+json">{ broken</script>
       <script type="application/ld&#x2B;json">${JSON.stringify({
