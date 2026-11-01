@@ -32,6 +32,20 @@
   left: 0;
 }
 
+/* Beside a job's details dragged wide, the list is too narrow for the button to stay at its right,
+   so it opens under the whole toolbar, which holds it, rather than off the list's left. */
+@container toolbar (max-width: 480px) {
+  .box {
+    position: static;
+  }
+
+  .panel {
+    right: auto;
+    left: 0;
+    width: min(340px, 100cqw);
+  }
+}
+
 /* The list's other choices, where the page has no room for them. */
 .extra {
   display: flex;
