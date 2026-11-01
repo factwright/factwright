@@ -55,7 +55,7 @@ describe('claudeStatus', () => {
     const status = await claudeStatus(
       deps(CLAUDE, { '--version': '2.0.12 (Claude Code)', 'auth status --json': SIGNED_IN }),
     );
-    expect(status).toEqual({ state: 'too-old', version: '2.0.12', minimum: '2.1.270' });
+    expect(status).toEqual({ state: 'too-old', version: '2.0.12', minimum: '2.1.295' });
   });
 
   it('says when claude is signed out', async () => {
@@ -81,7 +81,7 @@ describe('claudeStatus', () => {
     expect(await claudeStatus(offPath({ '--version': '2.0.12 (Claude Code)' }))).toEqual({
       state: 'too-old',
       version: '2.0.12',
-      minimum: '2.1.270',
+      minimum: '2.1.295',
       claude: NATIVE,
     });
     expect(await claudeStatus(offPath({ '--version': 'oops' }))).toEqual({

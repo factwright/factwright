@@ -1,6 +1,7 @@
 import { timingSafeEqual } from 'node:crypto';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import type { AddressInfo } from 'node:net';
+import { HELPER_TOOLS } from '../../shared/activity.ts';
 import type { FiledFacts } from '../../shared/facts.ts';
 import type { PermissionAnswer, PermissionAsk } from '../../shared/permission-asks.ts';
 import type { QuestionRound, RoundReply } from '../../shared/rounds.ts';
@@ -170,6 +171,36 @@ const isPermissionRequest = (event: unknown) =>
   event !== null &&
   (event as Record<string, unknown>).hook_event_name === 'PermissionRequest';
 
+/**
+ * Whether a hook is Claude about to start a helper anywhere but the workspace, which is where the
+ * user's job hunt is, and what the run's rules are written for.
+ */
+const startsHelperElsewhere = (event: unknown) => {
+  if (typeof event !== 'object' || event === null) return false;
+  const {
+    hook_event_name: name,
+    tool_name: tool,
+    tool_input: input,
+  } = event as Record<string, unknown>;
+  return (
+    name === 'PreToolUse' &&
+    typeof tool === 'string' &&
+    HELPER_TOOLS.includes(tool) &&
+    typeof input === 'object' &&
+    input !== null &&
+    ((input as Record<string, unknown>).isolation ?? null) !== null
+  );
+};
+
+/** The hook's answer to a helper started anywhere but the workspace: it doesn't start. */
+const HELPER_STAYS = {
+  hookSpecificOutput: {
+    hookEventName: 'PreToolUse',
+    permissionDecision: 'deny',
+    permissionDecisionReason: 'Helpers work in the workspace: start this one without isolation.',
+  },
+};
+
 /** Why the run's task asks nothing, if it doesn't. One the app can't tell lets the question be. */
 function noQuestionsFor(listener: RunListeners): string | null {
   return quietBy(listener.noQuestions);
@@ -299,6 +330,13 @@ export class RunServer {
       // A call starting waits only for what's kept before it runs, such as a file it changes.
       if (request.url === '/activity') {
         const event = parseJson(body);
+        // A call that never starts is nothing to follow, so the window hears nothing of it.
+        if (startsHelperElsewhere(event)) {
+          response
+            .writeHead(200, { 'Content-Type': 'application/json' })
+            .end(JSON.stringify(HELPER_STAYS));
+          return;
+        }
         let reply: unknown = null;
         try {
           reply = listener.before?.(event) ?? null;

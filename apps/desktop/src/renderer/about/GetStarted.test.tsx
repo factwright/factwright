@@ -221,7 +221,7 @@ describe('GetStarted', () => {
       'Copy the sign-in command',
     ],
     [
-      { state: 'too-old', version: '2.0.12', minimum: '2.1.270' },
+      { state: 'too-old', version: '2.0.12', minimum: '2.1.295' },
       'Update Claude Code',
       'update',
       'Copy the update command',

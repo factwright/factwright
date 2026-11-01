@@ -3,12 +3,12 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { RESUME_FIELDS } from '@factwright/engine';
 import { describe, expect, it } from 'vitest';
-import { HUNT_SKILLS, RUN_SKILLS, SEARCH_SKILL } from '../../shared/runs.ts';
+import { HUNT_SKILLS, RUN_SKILLS, type RunTask, SEARCH_SKILL, scopeOf } from '../../shared/runs.ts';
 import { TERMS_HEADER } from '../about/terms.ts';
 import { runPrompt } from '../policy.ts';
 import { type FactTask, UNVERIFIED_CHOICES } from '../tools/facts.ts';
 import { factwrightTools } from '../tools/index.ts';
-import { buildLaunchArgs, STANDING_RULES } from './launch.ts';
+import { buildLaunchArgs, RUN_TOOLS, STANDING_RULES } from './launch.ts';
 import { sessionSettings } from './settings.ts';
 
 const pluginDir = fileURLToPath(new URL('../../../../../plugin/', import.meta.url));
@@ -81,6 +81,44 @@ describe('the plugin’s skills', () => {
     }
     for (const [, name] of text.matchAll(/\/factwright:([a-z-]+)/g)) {
       expect(skills.map((skill) => skill.folder)).toContain(name);
+    }
+  });
+
+  it.each(skills)('$folder names none of these built-in tools a run doesn’t have', ({ text }) => {
+    for (const tool of [
+      'Bash',
+      'PowerShell',
+      'WebFetch',
+      'NotebookEdit',
+      'SendMessage',
+      'ListAgents',
+      'ScheduleWakeup',
+      'CronCreate',
+      'Artifact',
+      'DesignSync',
+      'EnterWorktree',
+      'EnterPlanMode',
+      'ExitPlanMode',
+      'ToolSearch',
+      'Monitor',
+      'Workflow',
+    ]) {
+      expect(RUN_TOOLS).not.toContain(tool);
+      expect(text).not.toMatch(new RegExp(`\\b${tool}\\b`));
+    }
+  });
+
+  it('search the web only in runs on the job hunt', () => {
+    const searching = skills.filter(({ text }) => /\bWebSearch\b|\bweb search/i.test(text));
+    expect(searching.map(({ folder }) => folder).sort()).toEqual([
+      'analyze-job',
+      'ask',
+      'focused-resume',
+      'job-search',
+      'salary-check',
+    ]);
+    for (const { folder } of searching) {
+      expect(scopeOf({ skill: folder } as RunTask), folder).toBe('hunt');
     }
   });
 

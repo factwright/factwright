@@ -324,7 +324,7 @@ export function ClaudePanel({
           <div className={styles.note}>
             <Notice title="Claude Code asks once whether to trust your workspace">
               Use the arrow keys to pick “Yes, I trust this folder”, then press Enter. Its note
-              about running files doesn’t apply here: in Factwright, Claude Code has no shell, so it
+              about running files doesn’t apply here: in Factwright, Claude has no shell, so it
               can’t run programs. It only reads and writes files in your workspace, and once a task
               is done, it lists each file it changed, with Undo.
             </Notice>

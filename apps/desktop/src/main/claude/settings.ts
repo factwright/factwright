@@ -44,7 +44,8 @@ const edits = (path: string) => `Edit(./${path})`;
 /**
  * Files Claude never changes: Claude Code's own settings and the instructions it loads, which a
  * job post could otherwise use to steer later runs. Where there's no CLAUDE.md, as in the
- * workspace, Claude Code loads AGENTS.md files in their place.
+ * workspace, Claude Code loads AGENTS.md files in their place. Nor the files that set up a git
+ * repository, which no run has any use for.
  */
 const NEVER_CHANGED = [
   '.claude/**',
@@ -54,6 +55,10 @@ const NEVER_CHANGED = [
   '**/CLAUDE.local.md',
   'AGENTS.md',
   '**/AGENTS.md',
+  'HEAD',
+  '**/HEAD',
+  '.git',
+  '**/.git',
 ];
 
 /**
@@ -123,6 +128,9 @@ function allowed(scope: RunScope): string[] {
  * The settings Factwright passes with `--settings` for one run:
  * - Claude Code's ANSI theme, so the panel's own colors are the only ones it shows
  * - no claude.ai connectors (such as the user's mail or drive), since job posts are untrusted
+ * - no prompt suggestions, which cost a request of the user's plan each turn
+ * - no reply from Claude to a shell command the user runs themselves in the terminal
+ * - no auto mode, which would answer permission prompts in the user's place
  * - without asking: web searches, reading web pages, Factwright's skills and tools, and changing
  *   any file in the workspace. Each task's card lists what it changed, with Undo, and the pages
  *   it read. Factwright's tools refuse LinkedIn's pages, and anything on this computer or the
@@ -171,6 +179,9 @@ export function sessionSettings({
   return {
     theme: dark ? 'dark-ansi' : 'light-ansi',
     disableClaudeAiConnectors: true,
+    promptSuggestionEnabled: false,
+    respondToBashCommands: false,
+    disableAutoMode: 'disable',
     permissions: {
       allow: allowed(scope),
       deny: [

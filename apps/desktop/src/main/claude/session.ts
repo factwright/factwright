@@ -22,6 +22,7 @@ import { keepBefore, type TaskChanges } from './run-changes.ts';
 import type { PermissionAsker, QuestionAsker, RunServer } from './run-server.ts';
 import { FIRST_RUN_SCREENS, ScreenWatch, TRUST_QUESTION } from './screen.ts';
 import { RUN_TOKEN_VARIABLE, sessionSettings, toolsConfig } from './settings.ts';
+import { ShellGuard } from './shell-guard.ts';
 import { RunSignals } from './signals.ts';
 import { claudeStatus, nodeStatusDeps } from './status.ts';
 
@@ -321,6 +322,7 @@ export async function openRun(
 
   let stopping = false;
   let closed = false;
+  const shell = new ShellGuard();
   let exited = () => {};
   const done = new Promise<void>((resolve) => {
     exited = resolve;
@@ -345,7 +347,8 @@ export async function openRun(
   return {
     write: (data) => {
       if (closed) return;
-      terminal.write(data);
+      const kept = shell.pass(data);
+      if (kept) terminal.write(kept);
       // Enter answers a screen of Claude Code's own, which may bring the next.
       if (data.includes('\r') && !heard) {
         firstRun.answered();
@@ -354,13 +357,17 @@ export async function openRun(
     },
     send: (text) => {
       if (closed) return;
+      const kept = shell.pass(text);
+      if (!kept.trim()) return;
       // A prompt the user sends starts another task, which asks nothing only if it's a quick
       // resume's, as its hook says too.
       signals.prompted();
-      terminal.write(text);
+      terminal.write(kept);
       // Typed together, Claude Code could read the Enter as part of a paste rather than a send.
       setTimeout(() => {
-        if (!closed) terminal.write('\r');
+        if (closed) return;
+        shell.pass('\r');
+        terminal.write('\r');
       }, 150);
     },
     resize: (next) => {
