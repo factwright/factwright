@@ -1,4 +1,12 @@
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -97,6 +105,22 @@ describe('whether what’s new is due', () => {
     writeFileSync(file, text);
     expect((await open('0.19.0', { usedBefore: false })).current()).toBeNull();
     expect(kept()).toBe('0.19.0');
+  });
+
+  it('says nothing when the file is there but won’t open, and leaves it as it is', async () => {
+    // A folder in its place stands in for a file locked or kept from the app, on every system.
+    mkdirSync(file);
+    expect((await open('0.19.0')).current()).toBeNull();
+    expect((await open('0.19.0', { usedBefore: false })).current()).toBeNull();
+    expect(statSync(file).isDirectory()).toBe(true);
+  });
+
+  it('says nothing again once a prerelease has been seen', async () => {
+    keep('0.19.0');
+    const due = await open('1.0.0-rc.1');
+    expect(due.current()).toBe('1.0.0-rc.1');
+    await due.seen();
+    expect((await open('1.0.0-rc.1')).current()).toBeNull();
   });
 
   it('opens all the same when a new profile’s version can’t be kept', async () => {

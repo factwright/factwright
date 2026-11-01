@@ -29,6 +29,8 @@ describe('JustUpdated', () => {
       'Find jobs reaches further.',
       'Choose a theme.',
     ]);
+    // It starts on Got it, so this is how a screen reader comes to say the lines.
+    expect(screen.getByRole('dialog', { description: /Find jobs reaches further/ })).toBeTruthy();
     expect((await axe.run(container)).violations).toEqual([]);
   });
 

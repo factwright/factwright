@@ -10,14 +10,17 @@ export const MOST_SHORT_LINES = 6;
 /** The most characters in a line of them, so each reads at a glance. */
 export const MOST_SHORT_LINE_LENGTH = 140;
 
-/** Whether a value is a version as releases number them, such as 0.19.0. */
+/** Whether a value is a version as releases number them, such as 0.19.0 or 1.0.0-rc.1. */
 export const isVersion = (value: unknown): value is string =>
-  typeof value === 'string' && /^\d+\.\d+\.\d+$/.test(value);
+  typeof value === 'string' && /^\d+\.\d+\.\d+(-[\w.]+)?$/.test(value);
+
+/** A version's parts as numbers. A prerelease counts as the version it leads to. */
+const partsOf = (version: string) => (version.split('-', 1)[0] ?? '').split('.').map(Number);
 
 /** Whether a version is newer than another. Each part counts as a number: 0.10.0 beats 0.9.3. */
 export function isNewerVersion(version: string, than: string): boolean {
-  const others = than.split('.').map(Number);
-  for (const [index, part] of version.split('.').map(Number).entries()) {
+  const others = partsOf(than);
+  for (const [index, part] of partsOf(version).entries()) {
     const other = others[index] ?? 0;
     if (part !== other) return part > other;
   }

@@ -31,7 +31,14 @@ export class WhatsNewDue {
 
   async load(): Promise<void> {
     const { version, usedBefore } = this.deps;
-    const seen = await this.readSeen();
+    let seen: string | null;
+    try {
+      seen = await this.readSeen();
+    } catch {
+      // It's there but won't open, as when something has it locked, so it's unknown what was seen:
+      // it says nothing, and looks again at the next open.
+      return;
+    }
     if (seen === null && !usedBefore) {
       // The next open needs this to tell it from an update, but the app opens without it.
       await this.keep(version).catch(() => {});
@@ -57,11 +64,18 @@ export class WhatsNewDue {
     return saveJson(this.deps.file, { seen: version });
   }
 
-  /** The newest version seen, or null with none kept, or a file that won't read. */
+  /**
+   * The newest version seen, or null with no file, or none in it that reads. It throws for a file
+   * that's there but won't open.
+   */
   private async readSeen(): Promise<string | null> {
+    const text = await readFile(this.deps.file, 'utf8').catch((error: NodeJS.ErrnoException) => {
+      if (error.code === 'ENOENT') return null;
+      throw error;
+    });
+    if (text === null) return null;
     try {
-      const saved: unknown = JSON.parse(await readFile(this.deps.file, 'utf8'));
-      const seen = (saved as { seen?: unknown } | null)?.seen;
+      const seen = (JSON.parse(text) as { seen?: unknown } | null)?.seen;
       return isVersion(seen) ? seen : null;
     } catch {
       return null;

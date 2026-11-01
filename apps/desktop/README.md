@@ -42,7 +42,7 @@ plain lines of `release-notes/<version>.short.md`, with a link to that version's
 ([`src/main/whats-new.ts`](src/main/whats-new.ts),
 [`src/renderer/updates/useJustUpdated.ts`](src/renderer/updates/useJustUpdated.ts)):
 - **Once for each update:** the newest version seen is kept in `whats-new.json` in the profile's
-  folder, as soon as the dialog shows. It's outside the workspace, so it never syncs. It never goes
+  folder, just before the dialog shows. It's outside the workspace, so it never syncs. It never goes
   down, so going back to an older version says nothing, and neither does coming forward again.
 - **For each person:** each profile keeps its own, as each is someone's own job hunt, so it hears
   for itself the next time it opens.

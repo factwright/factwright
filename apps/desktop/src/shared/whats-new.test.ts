@@ -11,8 +11,9 @@ describe('isVersion', () => {
   it('takes a version as releases number them, and nothing else', () => {
     expect(isVersion('0.19.0')).toBe(true);
     expect(isVersion('10.0.12')).toBe(true);
+    expect(isVersion('1.0.0-rc.1')).toBe(true);
     expect(isVersion('0.19')).toBe(false);
-    expect(isVersion('0.19.0-beta.1')).toBe(false);
+    expect(isVersion('soon')).toBe(false);
     expect(isVersion('')).toBe(false);
     expect(isVersion(19)).toBe(false);
     expect(isVersion(null)).toBe(false);
@@ -34,6 +35,14 @@ describe('isNewerVersion', () => {
 
   it('counts a version as no newer than itself', () => {
     expect(isNewerVersion('0.19.0', '0.19.0')).toBe(false);
+    expect(isNewerVersion('1.0.0-rc.1', '1.0.0-rc.1')).toBe(false);
+  });
+
+  it('counts a prerelease as the version it leads to', () => {
+    expect(isNewerVersion('1.0.0-rc.1', '0.19.0')).toBe(true);
+    expect(isNewerVersion('1.0.0-rc.2', '1.0.0-rc.1')).toBe(false);
+    expect(isNewerVersion('1.0.0', '1.0.0-rc.1')).toBe(false);
+    expect(isNewerVersion('1.0.1', '1.0.0-rc.1')).toBe(true);
   });
 });
 

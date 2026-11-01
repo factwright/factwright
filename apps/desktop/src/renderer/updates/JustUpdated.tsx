@@ -1,5 +1,6 @@
 import { Button, Dialog, DialogActions, Markdown } from '@factwright/ui';
 import { ArrowUpRight } from 'lucide-react';
+import { useId } from 'react';
 import styles from './JustUpdated.module.css';
 
 /** A version's full notes: its release on GitHub, from release-notes/<version>.md. */
@@ -16,11 +17,15 @@ export function JustUpdated({
   notes: string;
   onClose: () => void;
 }) {
+  const notesId = useId();
   return (
-    <Dialog title={`What’s new in ${version}`} onClose={onClose}>
+    // It starts on Got it, so the dialog's description is what has a screen reader say the lines.
+    <Dialog title={`What’s new in ${version}`} describedBy={notesId} onClose={onClose}>
       {(close) => (
         <>
-          <Markdown text={notes} />
+          <div id={notesId}>
+            <Markdown text={notes} />
+          </div>
           <DialogActions>
             <a className={styles.link} href={fullNotes(version)} target="_blank" rel="noreferrer">
               Read the full notes
