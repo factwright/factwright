@@ -1029,13 +1029,13 @@ export async function formPage(
       /(\d[\d,]*)\s*(?:characters|chars)\b|max(?:imum)?\.?(?: of)?\s*(\d[\d,]*)\s*char/gi,
     );
     for (const said of counts) {
-      // "Minimum 200 characters" and "200 characters minimum" are the least it takes.
+      // "Minimum length: 200 characters" and "200 characters or more" are the least it takes.
       const end = said.index + said[0].length;
       if (
-        /\b(?:min(?:imum)?\.?(?: of)?|at least)\s*$/i.test(
-          asked.slice(Math.max(0, said.index - 16), said.index),
+        /\b(?:min(?:imum)?\.?(?: length| of)?:?|at least)\s*$/i.test(
+          asked.slice(Math.max(0, said.index - 20), said.index),
         ) ||
-        /^\s*min(?:imum)?\b/i.test(asked.slice(end, end + 10))
+        /^\s*(?:min(?:imum)?\b|or more\b)/i.test(asked.slice(end, end + 10))
       ) {
         continue;
       }
@@ -2202,12 +2202,17 @@ export async function formPage(
     const text = answer.text ?? picks[0] ?? '';
     if (control.isContentEditable) {
       control.focus({ preventScroll: true });
-      // Each line on its own, as a box of rich text runs them together otherwise.
-      control.replaceChildren(
-        ...text
-          .split('\n')
-          .flatMap((line, at) => (at === 0 ? [line] : ['\n', doc.createElement('br'), line])),
-      );
+      control.textContent = text;
+      // A box of rich text that runs lines together gets a break for each, where one that keeps
+      // them shows them as they are, as most editors do.
+      const whiteSpace = doc.defaultView?.getComputedStyle(control).whiteSpace ?? '';
+      if (text.includes('\n') && !/^(pre|break-spaces)/.test(whiteSpace)) {
+        control.replaceChildren(
+          ...text
+            .split('\n')
+            .flatMap((line, at) => (at === 0 ? [line] : ['\n', doc.createElement('br'), line])),
+        );
+      }
       control.dispatchEvent(new Event('input', TYPED));
       control.blur();
       return done(squash(control.textContent ?? '') === squash(text));

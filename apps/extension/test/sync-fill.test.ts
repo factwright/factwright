@@ -37,6 +37,8 @@ import type { Account } from '../src/account.ts';
 import { signInWatch } from '../src/fill-way.ts';
 import { KEEP_FOR_MS, type SyncAnswer, SyncFill, type SyncFillDeps } from '../src/sync-fill.ts';
 import {
+  kindFoundIn,
+  nothingSynced,
   readJobNotes,
   readSynced,
   type Synced,
@@ -1021,6 +1023,58 @@ describe('what you did in a position, through sync', () => {
       'From your PMO starting resume',
       'From your Strategy starting resume',
     ]);
+  });
+});
+
+describe('the kind of job a job search found a job as', () => {
+  const row = (id: string, company: string, more: Record<string, string> = {}) => ({
+    id,
+    company,
+    company_key: company.toLowerCase(),
+    role: 'Analyst',
+    links: '[]',
+    ...more,
+  });
+  /** What sync holds with these rows, and a job search that found the job at a company. */
+  function holding(rows: ReturnType<typeof row>[], found: string) {
+    const synced = nothingSynced();
+    for (const each of rows) synced.rows.jobs.set(each.id, each);
+    const path = 'searches/2026-10-21-greenhouse/jobs.json';
+    synced.files.set(path, { id: 'file', size: 1, modified: '2026-10-21T00:00:00.000Z' });
+    const search = {
+      meta: { checked: '2026-10-21', source: 'Greenhouse' },
+      jobs: [{ company: found, role: 'Analyst', tier: 'good', score: 74, kind: 'strategy' }],
+    };
+    return { synced, texts: new Map([[path, JSON.stringify(search)]]) };
+  }
+
+  it('by the job itself, and not by another at another company', () => {
+    const { synced, texts } = holding(
+      [row('acme--analyst', 'Acme'), row('beta--analyst', 'Beta')],
+      'Beta',
+    );
+    expect(kindFoundIn(synced, { id: 'beta--analyst' }, texts)).toBe('strategy');
+    expect(kindFoundIn(synced, { id: 'acme--analyst' }, texts)).toBeNull();
+  });
+
+  it('by a job merged into it, however far back', () => {
+    const { synced, texts } = holding(
+      [
+        row('acme--analyst', 'Acme'),
+        row('beta--analyst', 'Beta', { merged_into: 'acme--analyst' }),
+        row('gamma--analyst', 'Gamma', { merged_into: 'beta--analyst' }),
+      ],
+      'Gamma',
+    );
+    expect(kindFoundIn(synced, { id: 'acme--analyst' }, texts)).toBe('strategy');
+  });
+
+  it('by what you call it', () => {
+    const { synced, texts } = holding(
+      [row('delta--analyst', 'Delta', { own_company: 'Epsilon' })],
+      'Epsilon',
+    );
+    expect(kindFoundIn(synced, { id: 'delta--analyst' }, texts)).toBe('strategy');
   });
 });
 

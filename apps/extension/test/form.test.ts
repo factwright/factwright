@@ -52,6 +52,8 @@ describe('how many characters a field takes', () => {
     expect(await limitOf('Min. 200 characters')).toBeNull();
     expect(await limitOf('At least 200 characters')).toBeNull();
     expect(await limitOf('200 characters minimum')).toBeNull();
+    expect(await limitOf('Minimum length: 200 characters')).toBeNull();
+    expect(await limitOf('200 characters or more')).toBeNull();
   });
 });
 
@@ -78,6 +80,28 @@ describe('a box of rich text', () => {
     if (answer.did !== 'fill') throw new Error('It didn’t fill the form.');
     expect(answer.filled[0]).toMatchObject({ ok: true });
     expect(box.querySelectorAll('br')).toHaveLength(1);
+    expect(box.textContent).toBe('Led the PMO.\nRan planning.');
+  });
+
+  it('adds no breaks to one that keeps its lines, as most editors do', async () => {
+    document.body.innerHTML =
+      '<form><label id="l">Description</label><div id="box" role="textbox" contenteditable="true" aria-labelledby="l" style="white-space: pre-wrap"></div></form>';
+    const box = document.getElementById('box') as HTMLElement;
+    Object.defineProperty(box, 'isContentEditable', { value: true });
+    const [field] = (await read(document)).fields;
+    if (!field) throw new Error('It didn’t read the box.');
+    const answer = await run(
+      {
+        do: 'fill',
+        url: HERE,
+        answers: [{ ref: field.ref, key: field.key, text: 'Led the PMO.\nRan planning.' }],
+      },
+      document,
+    );
+    document.body.innerHTML = '';
+    if (answer.did !== 'fill') throw new Error('It didn’t fill the form.');
+    expect(answer.filled[0]).toMatchObject({ ok: true });
+    expect(box.querySelectorAll('br')).toHaveLength(0);
     expect(box.textContent).toBe('Led the PMO.\nRan planning.');
   });
 });

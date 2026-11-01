@@ -393,7 +393,7 @@ export const searchPaths = (synced: Synced): string[] =>
  * The kind of job the app knows a job as, from its fit check or the job search that found it, by
  * the app's own matching, from the job.md files and job searches' files read, in `texts`. Only what
  * could be the job goes through matching, as a whole job hunt's searches take it seconds: the job
- * and any merged into it, and whatever's at their companies or has the same posting.
+ * and those merged into it, and whatever's at their companies or has the same posting.
  */
 export function kindFoundIn(
   synced: Synced,
@@ -401,7 +401,21 @@ export function kindFoundIn(
   texts: ReadonlyMap<string, string>,
 ): string | null {
   const rows = jobRows(synced);
-  const named = rows.filter((row) => row.id === job.id || row.mergedInto === job.id);
+  // The job, and every job merged into it, however far back, by what you call each too.
+  const merged = new Set([job.id]);
+  for (let size = 0; size < merged.size; ) {
+    size = merged.size;
+    for (const row of rows) if (row.mergedInto && merged.has(row.mergedInto)) merged.add(row.id);
+  }
+  const named = rows
+    .filter((row) => merged.has(row.id))
+    .flatMap((row) => {
+      const company = row.own.company ?? row.company;
+      return [
+        row,
+        { ...row, company, companyKey: companyKey(company), role: row.own.role ?? row.role },
+      ];
+    });
   const could = (each: { company: string; role: string; links: Link[] }) => {
     const known = { ...each, companyKey: companyKey(each.company) };
     return named.some((row) => jobLikeness(row, known) !== null);

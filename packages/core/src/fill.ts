@@ -25,7 +25,7 @@ import {
   type WorkHistory,
   yearOf,
 } from './history.ts';
-import { companyKey } from './keys.ts';
+import { companyKey, withoutParentheticals } from './keys.ts';
 import { companyMatch, isTitled, readTitle, titleFit } from './matching.ts';
 import { parsePay, payBand } from './pay.ts';
 
@@ -501,14 +501,16 @@ const sameWords = (a: string, b: string) => plain(a) !== '' && plain(a) === plai
  * written: the same, or close, where one says more of it, as "Acme Robotics" and "Acme" do. Another
  * level, as "Senior Analyst" is from "Analyst", is another position.
  */
-function positionFit(held: HeldPosition, listed: Listed): 'same' | 'close' | null {
+function positionFit(held: Listed, listed: Listed): 'same' | 'close' | null {
   const named = (company: string) => ({ company, companyKey: companyKey(company) });
-  const company =
-    unreadable(held.company) || unreadable(listed.company)
-      ? sameWords(held.company, listed.company)
-        ? 'same'
-        : 'different'
-      : companyMatch(named(held.company), named(listed.company));
+  // A company's name in other letters in parentheses, as "Tencent (腾讯)", says nothing more.
+  const company = [held.company, listed.company].some((name) =>
+    unreadable(withoutParentheticals(name)),
+  )
+    ? sameWords(held.company, listed.company)
+      ? 'same'
+      : 'different'
+    : companyMatch(named(held.company), named(listed.company));
   if (company === 'different') return null;
   const ours = readTitle(held.title);
   const theirs = readTitle(listed.title);
@@ -528,33 +530,44 @@ const startYear = (date: string) => yearOf(datedAs(date));
 /**
  * The position at a place among those on file, among those a resume lists: the one with its company
  * and title, or else one close to them that it can't be mistaken for, and that no other position on
- * file could be either. The same position twice, as a job you came back to, each takes its own, by
- * the year it started, or else in turn, and never the other's.
+ * file could be either. Each time you held the same position, as a job you came back to, takes its
+ * own: the one from the year it started, or else, in turn, those no other time is from.
  */
 function listedAs<T extends Listed>(
   positions: readonly T[],
-  onFile: readonly HeldPosition[],
-  at: number,
+  onFile: readonly Listed[],
+  place: number,
 ): T | null {
-  const held = onFile[at];
+  const held = onFile[place];
   if (!held) return null;
   const same = positions.filter((each) => positionFit(held, each) === 'same');
-  if (same.length > 0) {
-    const year = startYear(held.start);
-    const times = onFile.flatMap((each, place) =>
-      positionFit(held, each) === 'same' ? [{ place, year: startYear(each.start) }] : [],
-    );
-    const takenYears = times.filter((each) => each.year && each.year !== year).map((e) => e.year);
-    const free = same.filter((each) => !takenYears.includes(startYear(each.start)));
-    const inTurn = times.findIndex(({ place }) => place === at);
-    return free.find((each) => year && startYear(each.start) === year) ?? free[inTurn] ?? null;
-  }
   const close = positions.filter((each) => positionFit(held, each) === 'close');
-  const [one] = close;
   const name = ({ company, title }: Listed) => plain(`${company} ${title}`);
-  if (!one || close.some((each) => name(each) !== name(one))) return null;
-  const another = onFile.some((each, place) => place !== at && positionFit(each, one) !== null);
-  return another ? null : one;
+  const others = onFile.filter((each) => positionFit(held, each) !== 'same');
+  const [one] = close;
+  const clear =
+    one &&
+    close.every((each) => name(each) === name(one)) &&
+    !others.some((each) => positionFit(each, one) !== null);
+  // The same year twice is one time, as each of a kind's starting resumes may list it.
+  const years = new Set<string>();
+  const listed = (same.length > 0 ? same : clear ? close : []).filter((each) => {
+    const year = startYear(each.start);
+    if (year && years.has(year)) return false;
+    years.add(year);
+    return true;
+  });
+  const year = startYear(held.start);
+  const own = listed.find((each) => year && startYear(each.start) === year);
+  if (own) return own;
+  const times = onFile.flatMap((each, at) =>
+    positionFit(held, each) === 'same' ? [{ at, year: startYear(each.start) }] : [],
+  );
+  const isFrom = (time: { year: string }, each: Listed) =>
+    time.year !== '' && time.year === startYear(each.start);
+  const open = listed.filter((each) => !times.some((time) => isFrom(time, each)));
+  const waiting = times.filter((time) => !listed.some((each) => isFrom(time, each)));
+  return open[waiting.findIndex(({ at }) => at === place)] ?? null;
 }
 
 /** The school a form asks for, the nth time it asks: from Profile, or else the resume. */
@@ -960,8 +973,10 @@ const inOneLine = (lines: readonly string[]) =>
 /**
  * Where a sentence ends inside a line, by a word's end and the next's capital or number, so "U.S."
  * and "Dr." don't end one, or by a mark that takes no space after it, as Japanese and Chinese have.
+ * Some abbreviations pass for one, as "Inc." does: what that cuts still says it was cut.
  */
-const SENTENCE_ENDS = /(?<=[\p{Ll}\p{N}]{2}[.!?])(?= [\p{Lu}\p{N}])|(?<=[。！？])(?=.)/gu;
+const SENTENCE_ENDS =
+  /(?<=(?:\p{L}{3}|[\p{Ll}\p{N}]{2})[.!?])(?= [\p{Lu}\p{N}])|(?<=[。！？])(?=.)/gu;
 
 /**
  * What a position's description comes to in a field: all of it, or else, where it's longer than the
@@ -1008,16 +1023,19 @@ const NO_KIND_YET =
  */
 function descriptionReply(field: FormField, onFile: OnFile, at: number): FieldReply {
   const kind = 'job-summary';
-  const positions = Array.from({ length: blocksOnFile(onFile).jobs }, (_, place) =>
-    positionAt(onFile, place),
-  ).filter((each) => each !== null);
-  const held = positions[at];
+  const held = positionAt(onFile, at);
   if (!held) return left(kind, 'unset');
   if (choosing(field)) return left(kind, 'pick');
   const { resume, starting } = onFile;
-  const own = resume?.from === 'job' ? listedAs(resume.positions, positions, at) : null;
+  // The positions you held: Profile's, or else a resume's. A part past those takes the resume's
+  // next, which is one more.
+  const history = positionsOf(onFile.history);
+  const known: readonly Listed[] = history.length > 0 ? history : (resume?.positions ?? []);
+  const positions = at < known.length ? known : [...known, held];
+  const place = Math.min(at, positions.length - 1);
+  const own = resume?.from === 'job' ? listedAs(resume.positions, positions, place) : null;
   const ofKind = ({ kind: name, ofJob, positions: listed }: StartingOnFile) => ({
-    lines: listedAs(listed, positions, at)?.lines ?? [],
+    lines: listedAs(listed, positions, place)?.lines ?? [],
     source: 'resume' as const,
     from: `From your ${name ? `${name} ` : ''}starting resume`,
     ofJob,

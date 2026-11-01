@@ -1624,6 +1624,85 @@ describe('what you did in a position, in a box on a form', () => {
         'Since returning.',
         undefined,
       ]);
+      // No year on either side is still the same position.
+      expect(words(times(''), listed(['Early on', 'Their words.']))[0]).toBe('Their words.');
+      // One starting resume lists one time, and the next lists both: one time, however many list it.
+      const twoFiles = listed(
+        ['2023', 'A’s words.'],
+        ['2023', 'B’s words.'],
+        ['2015', 'Back then.'],
+      );
+      expect(words(times('', ''), twoFiles)).toEqual(['A’s words.', 'Back then.']);
+      expect(words(times('2024', '2016'), twoFiles)).toEqual(['A’s words.', 'Back then.']);
+      // A year that's off, for one time, leaves it the one no other time is from.
+      expect(
+        words(times('2023', '2016'), listed(['2023', 'Since returning.'], ['2015', 'Back then.'])),
+      ).toEqual(['Since returning.', 'Back then.']);
+      // A resume's title saying more of it, each time.
+      const said = (start: string, line: string) => ({
+        company,
+        title: 'Analyst, Data',
+        start,
+        lines: [line],
+      });
+      expect(
+        words(times('2023', '2015'), [
+          {
+            ...OF_KIND,
+            positions: [said('2023', 'Since returning.'), said('2015', 'Back then.')],
+          },
+        ]),
+      ).toEqual(['Since returning.', 'Back then.']);
+    });
+
+    it('never counting the tail of a resume as a position you also held', () => {
+      const history = {
+        jobs: [
+          {
+            company: 'Beta',
+            location: '',
+            positions: [{ title: 'Analyst', start: '2020', end: 'present', summary: '' }],
+          },
+        ],
+        schools: [],
+      };
+      const resume = {
+        ...JOB_RESUME,
+        positions: [
+          { company: 'Acme', title: 'PM', location: '', start: '2022', end: 'Present', lines: [] },
+          {
+            company: 'Beta',
+            title: 'Analyst, Data',
+            location: '',
+            start: '2020',
+            end: '2022',
+            lines: ['Modeled demand.'],
+          },
+        ],
+      };
+      expect(said({ ...NONE, history, resume })?.text).toBe('Modeled demand.');
+    });
+
+    it('with a company’s name in other letters in parentheses saying nothing more', () => {
+      const history = {
+        jobs: [
+          {
+            company: 'Tencent (腾讯)',
+            location: '',
+            positions: [{ title: 'Analyst', start: '2020', end: 'present', summary: '' }],
+          },
+        ],
+        schools: [],
+      };
+      const starting = [
+        {
+          ...OF_KIND,
+          positions: [
+            { company: 'Tencent', title: 'Analyst', start: '2020', lines: ['Their words.'] },
+          ],
+        },
+      ];
+      expect(said({ ...NONE, history, starting })?.text).toBe('Their words.');
     });
 
     it('with a resume on file for the positions past what Profile lists', () => {
@@ -1793,6 +1872,10 @@ describe('what you did in a position, in a box on a form', () => {
     });
 
     it('never takes an abbreviation’s period for a sentence’s end', () => {
+      // A word in capitals can end one, though.
+      expect(
+        said(summarized('Reported to the CEO. Ran planning for six teams.'), { limit: 25 })?.text,
+      ).toBe('Reported to the CEO.');
       const army = 'Served in the U.S. Army for six years, then Dr. Lee’s lab.';
       expect(said(summarized(army), { limit: 30 })?.text).toBe('Served in the U.S. Army for');
     });
