@@ -3,12 +3,12 @@ import { join } from 'node:path';
 import {
   isStartingResume,
   type Job,
-  type KindName,
   type ResumeOnFile,
   resumeDetails,
   type StartingOnFile,
   startingFolders,
   startingOnFile,
+  type TitledKind,
 } from '@factwright/core';
 import { type Resume, readResume } from '@factwright/engine';
 import type { Contact } from '../../shared/about.ts';
@@ -94,8 +94,8 @@ export async function resumeOnFile(
  */
 export const startingOnDisk = (
   workspace: string,
-  job: Pick<Job, 'kind' | 'kindFound'> | null,
-  kinds: readonly KindName[],
+  job: Pick<Job, 'kind' | 'kindFound' | 'role'> | null,
+  kinds: readonly TitledKind[],
 ): Promise<StartingOnFile[]> =>
   Promise.all(
     startingFolders(job, kinds).map(async (starting) => {

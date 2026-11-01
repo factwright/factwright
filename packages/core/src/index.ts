@@ -272,6 +272,7 @@ export {
   kindOfJob,
   readKindName,
   sameKind,
+  type TitledKind,
   unnamedFirstKind,
 } from './kinds.ts';
 export { PRIVACY_URL, TERMS_URL } from './legal.ts';

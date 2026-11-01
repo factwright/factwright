@@ -120,7 +120,7 @@ interface Read {
   /** The jobs the app lists only from job searches' files, which a fill doesn't read. */
   others: Job[];
   profile: ProfileForForms;
-  /** Each kind of job you want, with your target pay for it. */
+  /** Each kind of job you want, with the titles you want in it and your target pay for it. */
   targets: KindTarget[];
   history: WorkHistory;
   /** Files' contents fetched, by their IDs, each once, or null for one the store hasn't. */

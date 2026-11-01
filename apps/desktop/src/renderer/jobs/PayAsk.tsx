@@ -9,7 +9,8 @@ import styles from './PayAsk.module.css';
 function whose(ask: PayAsk): string {
   if (ask.from === 'you') return 'your own';
   if (ask.from === 'claude') return 'your Claude’s suggestion';
-  return ask.kind ? `your target for ${ask.kind} jobs` : 'your target';
+  if (!ask.kind) return 'your target';
+  return `your target for ${ask.kind} jobs${ask.byTitle ? ', by the job’s title' : ''}`;
 }
 
 /**

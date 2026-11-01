@@ -356,6 +356,15 @@ describe('where an answer came from', () => {
       }),
     ).toBe('Your Claude’s suggestion for this job');
     expect(answerSource({ kind: 'pay', text: '$170,000', source: 'profile' })).toBe('From Profile');
+    // Your target for one of your kinds of job says which, and why, where it's only a guess.
+    expect(
+      answerSource({
+        kind: 'pay',
+        text: '$170,000',
+        source: 'profile',
+        from: 'Your target for Strategy jobs, by the job’s title',
+      }),
+    ).toBe('Your target for Strategy jobs, by the job’s title');
     // What you did in a position says which words on file it is, and when they were cut to fit.
     expect(
       answerSource({

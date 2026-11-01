@@ -161,22 +161,69 @@ describe('the pay to ask for at a job', () => {
     suggestedAsk: null,
     kind: null,
     kindFound: null,
+    role: 'Account Executive',
     ...more,
   });
 
-  it('reads each kind of job’s target, the first kind’s from answers.json', () => {
-    expect(kindTargetsIn({ targetPay: '$180,000' }, KINDS)).toEqual([
-      { id: 'developer', name: 'Developer', targetPay: '$180,000' },
-      { id: 'project-manager', name: 'Project manager', targetPay: '$150,000' },
-      { id: 'teacher', name: 'Teacher', targetPay: '' },
+  it('reads each kind of job’s target and titles, the first kind’s from answers.json', () => {
+    expect(kindTargetsIn({ targetPay: '$180,000', roles: ['Developer'] }, KINDS)).toEqual([
+      { id: 'developer', name: 'Developer', targetPay: '$180,000', roles: ['Developer'] },
+      { id: 'project-manager', name: 'Project manager', targetPay: '$150,000', roles: ['PM'] },
+      { id: 'teacher', name: 'Teacher', targetPay: '', roles: [] },
     ]);
     // With one kind of job, that one, unnamed.
-    expect(kindTargetsIn({ targetPay: '$180,000' }, null)).toEqual([
-      { id: '', name: '', targetPay: '$180,000' },
+    expect(kindTargetsIn({ targetPay: '$180,000', roles: ['Developer'] }, null)).toEqual([
+      { id: '', name: '', targetPay: '$180,000', roles: ['Developer'] },
     ]);
     expect(kindTargetsIn(null, { first: KINDS.first, others: [] })).toEqual([
-      { id: '', name: '', targetPay: '' },
+      { id: '', name: '', targetPay: '', roles: [] },
     ]);
+  });
+
+  it('reads a kind’s titles as the app reads them', () => {
+    const rolesOf = (roles: unknown) =>
+      kindTargetsIn(
+        { roles },
+        { first: KINDS.first, others: [{ id: 'teacher', name: 'Teacher', roles }] },
+      ).map((kind) => kind.roles);
+    // Trimmed, without blanks or repeats.
+    expect(rolesOf([' Dev ', '', 'dev', 'PM'])).toEqual([
+      ['Dev', 'PM'],
+      ['Dev', 'PM'],
+    ]);
+    // A list that doesn't hold up is nothing told.
+    const none = [[], []];
+    expect(rolesOf('Dev')).toEqual(none);
+    expect(rolesOf(['Dev', 7])).toEqual(none);
+    expect(rolesOf(['x'.repeat(121)])).toEqual(none);
+    expect(rolesOf(Array.from({ length: 31 }, (_, at) => `Title ${at}`))).toEqual(none);
+    // Of two by one id, those of the one the app keeps: not one that doesn't read as a kind.
+    expect(
+      kindTargetsIn(
+        {},
+        {
+          first: KINDS.first,
+          others: [
+            { id: 'teacher', name: '', roles: ['Left out'], targetPay: '$1' },
+            { id: 'teacher', name: 'Teacher', roles: ['Kept'], targetPay: '$2' },
+          ],
+        },
+      )[1],
+    ).toEqual({ id: 'teacher', name: 'Teacher', roles: ['Kept'], targetPay: '$2' });
+    // Nor one left out for another's name.
+    expect(
+      kindTargetsIn(
+        {},
+        {
+          first: KINDS.first,
+          others: [
+            { id: 'alpha', name: 'Alpha' },
+            { id: 'teacher', name: 'alpha', roles: ['Left out'], targetPay: '$1' },
+            { id: 'teacher', name: 'Teacher', roles: ['Kept'], targetPay: '$2' },
+          ],
+        },
+      )[2],
+    ).toEqual({ id: 'teacher', name: 'Teacher', roles: ['Kept'], targetPay: '$2' });
   });
 
   it('is yours for the job, or else your Claude’s suggestion, or else your target', () => {
@@ -218,6 +265,59 @@ describe('the pay to ask for at a job', () => {
       kind: null,
     });
     expect(payAskFor(job(), kindTargetsIn({}, null))).toBeNull();
+  });
+
+  describe('for a job nothing has said the kind of', () => {
+    const kinds = kindTargetsIn({ targetPay: '$180,000', roles: ['Developer'] }, KINDS);
+
+    it('goes by the one kind its title fits, and says so', () => {
+      const asked = { text: '$150,000', from: 'target', kind: 'Project manager', byTitle: true };
+      expect(payAskFor(job({ role: 'PM' }), kinds)).toEqual(asked);
+      expect(payAskFor(job({ role: 'Senior PM, Data' }), kinds)).toEqual(asked);
+      // The same kind as its starting resumes.
+      expect(startingFolders(job({ role: 'PM' }), kinds)[1]).toMatchObject({
+        kind: 'Project manager',
+        ofJob: true,
+        byTitle: true,
+      });
+    });
+
+    it('goes by your first kind where none fits, or two do', () => {
+      const first = { text: '$180,000', from: 'target', kind: 'Developer' };
+      expect(payAskFor(job(), kinds)).toEqual(first);
+      const both = kindTargetsIn({ targetPay: '$180,000', roles: ['PM'] }, KINDS);
+      expect(payAskFor(job({ role: 'PM' }), both)).toEqual(first);
+    });
+
+    it('never wins over the kind you put it under, the one found for it, or your own', () => {
+      const developer = { text: '$180,000', from: 'target', kind: 'Developer' };
+      expect(payAskFor(job({ role: 'PM', kind: 'developer' }), kinds)).toEqual(developer);
+      expect(payAskFor(job({ role: 'PM', kindFound: 'Developer' }), kinds)).toEqual(developer);
+      expect(payAskFor(job({ role: 'PM', payAsk: '$190,000' }), kinds)?.from).toBe('you');
+      expect(payAskFor(job({ role: 'PM', suggestedAsk: '$185,000' }), kinds)?.from).toBe('claude');
+    });
+
+    it('has none where the kind it fits has no target, rather than another kind’s', () => {
+      const tutor = kindTargetsIn(
+        { targetPay: '$180,000' },
+        { first: KINDS.first, others: [{ id: 'teacher', name: 'Teacher', roles: ['Tutor'] }] },
+      );
+      expect(payAskFor(job({ role: 'Tutor' }), tutor)).toBeNull();
+    });
+
+    it('has nothing to tell apart with one kind of job, or with no job saved', () => {
+      const one = kindTargetsIn({ targetPay: '$180,000', roles: ['PM'] }, null);
+      expect(payAskFor(job({ role: 'PM' }), one)).toEqual({
+        text: '$180,000',
+        from: 'target',
+        kind: null,
+      });
+      expect(payAskFor(null, kinds)).toEqual({
+        text: '$180,000',
+        from: 'target',
+        kind: 'Developer',
+      });
+    });
   });
 });
 
@@ -383,27 +483,35 @@ describe('what a resume says you did in a position', () => {
 
 describe('a form’s job’s starting resumes', () => {
   const KINDS = [
-    { id: 'pmo', name: 'PMO' },
-    { id: 'strategy', name: 'Strategy' },
+    { id: 'pmo', name: 'PMO', roles: ['Program Manager', 'PMO Manager'] },
+    { id: 'strategy', name: 'Strategy', roles: ['Strategy Manager'] },
   ];
-  const NOT_SET = { kind: null, kindFound: null };
+  const NOT_SET = { kind: null, kindFound: null, role: 'Account Executive' };
+  const titled = (role: string) => ({ kind: null, kindFound: null, role });
 
   it('with one kind of job, are at the top of base, for any job or none', () => {
     const one = [{ folder: 'base', kind: '', ofJob: true }];
     expect(startingFolders(NOT_SET, [])).toEqual(one);
-    expect(startingFolders(null, [{ id: '', name: '' }])).toEqual(one);
-    expect(startingFolders({ kind: 'gone', kindFound: 'gone' }, [KINDS[0] as never])).toEqual(one);
+    expect(startingFolders(null, [{ id: '', name: '', roles: [] }])).toEqual(one);
+    expect(
+      startingFolders({ ...NOT_SET, kind: 'gone', kindFound: 'gone' }, [KINDS[0] as never]),
+    ).toEqual(one);
+    // A title that fits has nothing to tell apart.
+    expect(startingFolders(titled('Program Manager'), [KINDS[0] as never])).toEqual(one);
   });
 
   it('are those of the kind you put the job under, or else the one found for it', () => {
     const pmo = [{ folder: 'base', kind: 'PMO', ofJob: true }];
     const strategy = [{ folder: 'base/strategy', kind: 'Strategy', ofJob: true }];
-    expect(startingFolders({ kind: 'pmo', kindFound: 'strategy' }, KINDS)).toEqual(pmo);
-    expect(startingFolders({ kind: null, kindFound: 'strategy' }, KINDS)).toEqual(strategy);
-    expect(startingFolders({ kind: null, kindFound: 'Strategy (`strategy`)' }, KINDS)).toEqual(
-      strategy,
-    );
-    expect(startingFolders({ kind: 'gone', kindFound: 'pmo' }, KINDS)).toEqual(pmo);
+    const job = (kind: string | null, kindFound: string | null) => ({
+      ...NOT_SET,
+      kind,
+      kindFound,
+    });
+    expect(startingFolders(job('pmo', 'strategy'), KINDS)).toEqual(pmo);
+    expect(startingFolders(job(null, 'strategy'), KINDS)).toEqual(strategy);
+    expect(startingFolders(job(null, 'Strategy (`strategy`)'), KINDS)).toEqual(strategy);
+    expect(startingFolders(job('gone', 'pmo'), KINDS)).toEqual(pmo);
   });
 
   it('are each kind’s, none of them the job’s, while nothing says which, or with no job saved', () => {
@@ -412,8 +520,142 @@ describe('a form’s job’s starting resumes', () => {
       { folder: 'base/strategy', kind: 'Strategy', ofJob: false },
     ];
     expect(startingFolders(NOT_SET, KINDS)).toEqual(each);
-    expect(startingFolders({ kind: 'gone', kindFound: 'gone' }, KINDS)).toEqual(each);
+    expect(startingFolders({ ...NOT_SET, kind: 'gone', kindFound: 'gone' }, KINDS)).toEqual(each);
     expect(startingFolders(null, KINDS)).toEqual(each);
+  });
+
+  describe('for a job nothing has said the kind of, by its title', () => {
+    const NEITHER = [
+      { folder: 'base', kind: 'PMO', ofJob: false },
+      { folder: 'base/strategy', kind: 'Strategy', ofJob: false },
+    ];
+    const TAKES_PMO = [
+      { folder: 'base', kind: 'PMO', ofJob: true, byTitle: true },
+      { folder: 'base/strategy', kind: 'Strategy', ofJob: false },
+    ];
+    const TAKES_STRATEGY = [
+      { folder: 'base', kind: 'PMO', ofJob: false },
+      { folder: 'base/strategy', kind: 'Strategy', ofJob: true, byTitle: true },
+    ];
+
+    it('takes the one kind it fits, marked, with the other kinds still beside it', () => {
+      expect(startingFolders(titled('Strategy Manager'), KINDS)).toEqual(TAKES_STRATEGY);
+      // By any of a kind's titles, the first kind's too, and written any way.
+      expect(startingFolders(titled('PMO Manager'), KINDS)).toEqual(TAKES_PMO);
+      expect(startingFolders(titled('program mgr'), KINDS)).toEqual(TAKES_PMO);
+    });
+
+    it('takes one that says more about the same work, either way round', () => {
+      expect(startingFolders(titled('Strategy Manager, Payments'), KINDS)).toEqual(TAKES_STRATEGY);
+      expect(startingFolders(titled('Manager, Strategy (Remote)'), KINDS)).toEqual(TAKES_STRATEGY);
+      const said = [
+        { id: 'pmo', name: 'PMO', roles: ['Program Manager, Infrastructure'] },
+        { id: 'strategy', name: 'Strategy', roles: ['Strategist'] },
+      ];
+      expect(startingFolders(titled('Program Manager'), said)).toEqual(TAKES_PMO);
+    });
+
+    it('goes by the work, however senior, as Profile asks that apart from the titles', () => {
+      expect(startingFolders(titled('Senior Strategy Manager'), KINDS)).toEqual(TAKES_STRATEGY);
+      expect(startingFolders(titled('Sr. Program Manager II'), KINDS)).toEqual(TAKES_PMO);
+      const senior = [
+        { id: 'pmo', name: 'PMO', roles: ['Principal Program Manager'] },
+        { id: 'strategy', name: 'Strategy', roles: ['Strategist'] },
+      ];
+      expect(startingFolders(titled('Program Manager'), senior)).toEqual(TAKES_PMO);
+    });
+
+    it('takes none it’s apart from, or another kind of work', () => {
+      expect(startingFolders(titled('Product Manager'), KINDS)).toEqual(NEITHER);
+      expect(startingFolders(titled('Strategy Analyst'), KINDS)).toEqual(NEITHER);
+      expect(startingFolders(titled('Program Manager, Designer'), KINDS)).toEqual(NEITHER);
+      const engineers = [
+        { id: 'pmo', name: 'PMO', roles: ['Engineer'] },
+        { id: 'strategy', name: 'Strategy', roles: ['Strategist'] },
+      ];
+      expect(startingFolders(titled('Engineer, Support'), engineers)).toEqual(NEITHER);
+    });
+
+    it('takes none where two kinds fit, by one title or each by its own', () => {
+      const both = [
+        { id: 'pmo', name: 'PMO', roles: ['Program Manager'] },
+        { id: 'strategy', name: 'Strategy', roles: ['Program Manager'] },
+      ];
+      expect(startingFolders(titled('Program Manager'), both)).toEqual(NEITHER);
+      expect(startingFolders(titled('Senior Program Manager, Data'), both)).toEqual(NEITHER);
+      // Each kind by a title of its own, and one fitting the same and the other more.
+      expect(startingFolders(titled('Strategy Program Manager'), KINDS)).toEqual(NEITHER);
+      const close = [
+        { id: 'pmo', name: 'PMO', roles: ['Manager'] },
+        { id: 'strategy', name: 'Strategy', roles: ['Strategy Manager'] },
+      ];
+      expect(startingFolders(titled('Strategy Manager'), close)).toEqual(NEITHER);
+    });
+
+    it('takes none for a kind with no titles, or a job with none', () => {
+      const none = [
+        { id: 'pmo', name: 'PMO', roles: [] },
+        { id: 'strategy', name: 'Strategy', roles: [] },
+      ];
+      expect(startingFolders(titled('PMO'), none)).toEqual(NEITHER);
+      expect(startingFolders(titled(''), KINDS)).toEqual(NEITHER);
+      expect(startingFolders(titled('(Remote)'), KINDS)).toEqual(NEITHER);
+    });
+
+    it('never wins over the kind you put it under, or the one found for it', () => {
+      const pmo = [{ folder: 'base', kind: 'PMO', ofJob: true }];
+      const job = titled('Strategy Manager');
+      expect(startingFolders({ ...job, kind: 'pmo' }, KINDS)).toEqual(pmo);
+      expect(startingFolders({ ...job, kindFound: 'pmo' }, KINDS)).toEqual(pmo);
+      // One that names none of your kinds says nothing, as for a kind since removed.
+      expect(startingFolders({ ...job, kind: 'gone', kindFound: 'gone' }, KINDS)).toEqual(
+        TAKES_STRATEGY,
+      );
+    });
+
+    it('takes one that says only how senior by its whole words alone', () => {
+      const chiefs = [
+        { id: 'pmo', name: 'PMO', roles: ['Chief of Staff'] },
+        { id: 'strategy', name: 'Strategy', roles: ['Director'] },
+      ];
+      expect(startingFolders(titled('Chief of Staff'), chiefs)).toEqual(TAKES_PMO);
+      expect(startingFolders(titled('Director'), chiefs)).toEqual(TAKES_STRATEGY);
+      // Which fits no work at that level, and no other title with no work in it.
+      expect(startingFolders(titled('Director of Strategy'), chiefs)).toEqual(NEITHER);
+      expect(startingFolders(titled('Vice President'), chiefs)).toEqual(NEITHER);
+    });
+
+    it('goes by the whole words of titles in letters matching can’t read', () => {
+      const kinds = [
+        { id: 'pmo', name: 'PMO', roles: ['プロジェクトマネージャー'] },
+        { id: 'strategy', name: 'Strategy', roles: ['戦略コンサルタント', 'Java 开发经理'] },
+      ];
+      expect(startingFolders(titled('プロジェクトマネージャー'), kinds)).toEqual(TAKES_PMO);
+      expect(startingFolders(titled('戦略コンサルタント'), kinds)).toEqual(TAKES_STRATEGY);
+      // Matching reads all of these as nothing, or the Latin alone, which is no fit for that.
+      expect(startingFolders(titled('営業マネージャー'), kinds)).toEqual(NEITHER);
+      expect(startingFolders(titled('Java Developer'), kinds)).toEqual(NEITHER);
+      expect(startingFolders(titled('Java 测试经理'), kinds)).toEqual(NEITHER);
+      expect(
+        startingFolders(titled('Java'), [
+          { id: 'pmo', name: 'PMO', roles: ['Java 开发经理'] },
+          { id: 'strategy', name: 'Strategy', roles: ['Strategist'] },
+        ]),
+      ).toEqual(NEITHER);
+      // A title in letters it can't read fits no title it can, and the other way round.
+      expect(startingFolders(titled('Project Manager'), kinds)).toEqual(NEITHER);
+      expect(startingFolders(titled('プロジェクトマネージャー'), KINDS)).toEqual(NEITHER);
+    });
+
+    it('carries the kind’s mark through to what its resumes say', () => {
+      const [, strategy] = startingFolders(titled('Strategy Manager'), KINDS);
+      expect(startingOnFile(strategy as never, [])).toEqual({
+        kind: 'Strategy',
+        ofJob: true,
+        byTitle: true,
+        positions: [],
+      });
+    });
   });
 
   it('are a folder’s resumes’ data, without a copy sync kept of one', () => {

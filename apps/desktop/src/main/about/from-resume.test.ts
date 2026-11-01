@@ -96,31 +96,47 @@ describe('what the resumes say of you', () => {
     write(join(workspace, 'base', 'broken.json'), '{"name": ', 9);
     write(join(workspace, 'base', 'strategy', 'startup-leader.json'), said('Strategy’s.'), 2);
     const kinds = [
-      { id: 'pmo', name: 'PMO' },
-      { id: 'strategy', name: 'Strategy' },
+      { id: 'pmo', name: 'PMO', roles: ['PMO Manager'] },
+      { id: 'strategy', name: 'Strategy', roles: ['Strategy Manager'] },
     ];
-    const linesIn = async (job: { kind: string | null; kindFound: string | null } | null) =>
+    const linesIn = async (
+      job: { kind: string | null; kindFound: string | null; role: string } | null,
+    ) =>
       (await startingOnDisk(workspace, job, kinds)).map(({ kind, ofJob, positions }) => [
         kind,
         ofJob,
         positions.flatMap(({ lines }) => lines),
       ]);
-    expect(await linesIn({ kind: 'pmo', kindFound: null })).toEqual([
+    const set = { kindFound: null, role: 'Analyst' };
+    expect(await linesIn({ ...set, kind: 'pmo' })).toEqual([
       ['PMO', true, ['First kind, big ones.', 'First kind, startups.']],
     ]);
-    expect(await linesIn({ kind: null, kindFound: 'strategy' })).toEqual([
+    expect(await linesIn({ kind: null, kindFound: 'strategy', role: 'Analyst' })).toEqual([
       ['Strategy', true, ['Strategy’s.']],
     ]);
     // Nothing says which, so it's each kind's, and none of them the job's.
-    expect(await linesIn(null)).toEqual([
-      ['PMO', false, ['First kind, big ones.', 'First kind, startups.']],
-      ['Strategy', false, ['Strategy’s.']],
-    ]);
+    const each = (pmo: boolean, strategy: boolean) => [
+      ['PMO', pmo, ['First kind, big ones.', 'First kind, startups.']],
+      ['Strategy', strategy, ['Strategy’s.']],
+    ];
+    expect(await linesIn(null)).toEqual(each(false, false));
+    expect(await linesIn({ ...set, kind: null })).toEqual(each(false, false));
+    // But the job's title fits one kind's alone, so it's each kind's, with that one the job's.
+    expect(await linesIn({ kind: null, kindFound: null, role: 'Strategy Manager' })).toEqual(
+      each(false, true),
+    );
+    // Which comes with what a form says of why.
+    const [, strategy] = await startingOnDisk(
+      workspace,
+      { kind: null, kindFound: null, role: 'Strategy Manager' },
+      kinds,
+    );
+    expect(strategy).toMatchObject({ kind: 'Strategy', byTitle: true });
     // A kind with no starting resumes yet says nothing.
     expect(
-      await startingOnDisk(workspace, { kind: 'data', kindFound: null }, [
+      await startingOnDisk(workspace, { ...set, kind: 'data' }, [
         ...kinds,
-        { id: 'data', name: 'Data' },
+        { id: 'data', name: 'Data', roles: [] },
       ]),
     ).toEqual([{ kind: 'Data', ofJob: true, positions: [] }]);
   });
