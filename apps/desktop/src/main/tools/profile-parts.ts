@@ -127,14 +127,33 @@ const CONTACT_LABELS: Readonly<Record<keyof Contact, string>> = {
   website: 'Website',
 };
 
+/** Words for a street, after its number. */
+const STREET_WORDS =
+  'st|street|ave|avenue|rd|road|blvd|boulevard|dr|drive|ln|lane|ct|court|way|pl|place|ter|terrace|hwy|highway|pkwy|parkway|cir|circle|sq|square';
+
 /**
- * What reads like a street or a postal code: a number and a word to start, a word and a number to
- * end, a word for a street, or a postal code's shape. Where the user lives is kept to a city and
- * state, and these are kept on this computer alone, so a run saves none it can tell, where it would
- * sync. It can't tell them all, so the dialog and the skill say so too.
+ * What reads like a street or a postal code: a number, a few words and a word for a street; a street
+ * in a language that puts its number after; a street, an apartment or a post box; or a postal
+ * code's shape. Where the user lives is kept to a city and state, and these are kept on this
+ * computer alone, so a run saves none it can tell, where it would sync. It can't tell them all, so
+ * the dialog and the skill say so too.
  */
-const STREET_OR_POSTAL =
-  /^\s*\d+[a-z]?(?:-\d+)?\s+\p{L}|\p{L}\s+\d{1,5}[a-z]?\s*(?:,|$)|\d{4,}|\b\d{3}-\d{4}\b|\b[a-z]\d[a-z]\s?\d[a-z]\d\b|\b[a-z]{1,2}\d[a-z\d]?\s\d[a-z]{2}\b|\b(?:street|avenue|ave|boulevard|blvd|road|rd|lane|apt|apartment|suite|p\.?o\.? box|calle|rue)\b|stra(?:ß|ss)e\b/iu;
+const STREET_OR_POSTAL = new RegExp(
+  [
+    `(?<![\\p{L}\\p{N}])\\d+[a-z]?(?:-\\d+)?\\s+(?:[\\p{L}.'’-]+\\s+){0,3}(?:${STREET_WORDS})(?!\\p{L})`,
+    '\\p{L}*stra(?:ß|ss)e\\s+\\d',
+    '\\b(?:calle|avenida)\\b[^,]*\\d',
+    '\\d+,?\\s+rue\\b',
+    '\\b(?:street|avenue|boulevard|blvd)\\b',
+    '\\b(?:apt|apartment|suite|unit)\\.?\\s*#?\\d',
+    '\\bp\\.?\\s?o\\.?\\s?box\\b',
+    '\\d{4,}',
+    '\\b\\d{3}-\\d{4}\\b',
+    '\\b[a-z]\\d[a-z]\\s?\\d[a-z]\\d\\b',
+    '\\b[a-z]{1,2}\\d[a-z\\d]?\\s\\d[a-z]{2}\\b',
+  ].join('|'),
+  'iu',
+);
 
 /** Throws when an answer about where the user lives looks like a street or a postal code. */
 function noStreet(input: Record<string, unknown>, keys: readonly string[]) {
@@ -143,7 +162,7 @@ function noStreet(input: Record<string, unknown>, keys: readonly string[]) {
     for (const value of Array.isArray(given) ? given : [given]) {
       if (typeof value === 'string' && STREET_OR_POSTAL.test(value)) {
         throw new Error(
-          `Not saved: ${key} looks like it has a street or a postal code, which stay on this computer, and Claude never saves them. Give the city and state alone, and tell the user they change those themselves, in For applications’ Change.`,
+          `Not saved: ${key} looks like it has a street or a postal code, which stay on this computer, and Claude never saves them. Give the city and state alone, and tell the user that For applications’ Change keeps their street and postal code.`,
         );
       }
     }
@@ -347,7 +366,7 @@ export function saveForApplications(
   const leavingOnly = call?.scope === 'part:leaving';
   const allowed = leavingOnly ? ['leaving'] : Object.keys(APPLICATION_LABELS);
   givenOnly(input, allowed, leavingOnly ? 'why they’re leaving' : 'For applications');
-  noStreet(input, ['city', 'region', 'country', 'preferredName', 'howHeard']);
+  noStreet(input, ['city', 'region', 'country']);
   const { applications } = about.answers();
   const read = readForApplications({ ...applications, ...input });
   if (!read) {
@@ -603,7 +622,7 @@ const HOW: Readonly<Record<ProfilePart, string>> = {
   resumes:
     'Make them in the starting resumes in base/, from verified facts, and build each one again.',
   templates: 'Make them with save_resume_choices, and save_template for a template’s own look.',
-  facts: `File them with the fact tools. To save what they typed, give “${CHANGES_QUESTION}” as the question, word for word: their words are their answer to it.`,
+  facts: `File them with the fact tools. To save what they typed, give “${CHANGES_QUESTION}” as the question, word for word, and word the fact in their words.`,
   shared:
     'Add to their notes with add_to_notes, and change the names kept private with keep_names_private.',
 };

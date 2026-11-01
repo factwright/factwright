@@ -18,7 +18,6 @@ import {
   factFileKind,
   isFactPath,
 } from '../../shared/facts.ts';
-import { MAX_CHANGES } from '../../shared/versions.ts';
 import type { FactBankFiles } from '../about/facts.ts';
 import { type Answered, type Backing, type FilingTool, questionKey } from '../claude/questions.ts';
 import type { ToolCall } from './mcp.ts';
@@ -517,33 +516,15 @@ function checkBacking(
         `Not saved: “${each.answer}” answers whether to use a fact, not what the user has done.`,
       );
     }
-    const most = each.typed ? MAX_CHANGES : MAX_KEPT_ANSWER;
-    if (each.question.length > MAX_KEPT_QUESTION || answerText(each).length > most) {
+    // What's typed for a run isn't kept with a fact.
+    if (each.typed) continue;
+    if (each.question.length > MAX_KEPT_QUESTION || answerText(each).length > MAX_KEPT_ANSWER) {
       throw new Error(
         'Not saved: that question or answer is too long to keep with a fact. Ask it in fewer words.',
       );
     }
   }
 }
-
-/**
- * The sentences of what the user typed that a fact draws on, which it keeps beside it. Whatever
- * else they typed for the run stays out of the fact, which syncs.
- */
-function typedSentences(typed: string, claimed: readonly (string | null)[]): string {
-  const meaning = new Set(claimed.flatMap((each) => meaningWords(each ?? '')));
-  return typed
-    .split(/(?<=[.!?])\s+|\s*\n+\s*/)
-    .filter((sentence) => meaningWords(sentence).some((word) => meaning.has(word)))
-    .join(' ');
-}
-
-/** The questions a fact keeps beside it, with only what it draws on of what the user typed. */
-const keptAnswers = (answers: readonly Answered[], claimed: readonly (string | null)[]) =>
-  answers.flatMap((each) => {
-    const answer = each.typed ? typedSentences(answerText(each), claimed) : answerText(each);
-    return answer ? [{ question: each.question, answer }] : [];
-  });
 
 /** The files of the fact bank that aren't a job's, which no fact from what's typed starts. */
 const NOT_A_JOB = new Set(['profile', 'skills', 'gaps', 'readme', 'projects']);
@@ -554,10 +535,11 @@ const NOT_A_JOB = new Set(['profile', 'skills', 'gaps', 'readme', 'projects']);
  */
 function jobNameIn(path: string, answers: readonly Answered[]): string | null {
   const name = path.replace(/^facts\//, '').replace(/\.md$/, '');
-  const parts = name.split('-');
-  if (NOT_A_JOB.has(name) || parts.every((part) => GLUE.has(part))) return null;
   const plain = (word: string) => word.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase();
+  const parts = name.split('-').map(plain);
+  if (NOT_A_JOB.has(name) || parts.every((part) => GLUE.has(part))) return null;
   const said = ownWords(answers);
+  if (parts.some((part) => onlyNegated(said, part))) return null;
   const found = [...said.matchAll(/[\p{L}\p{N}]+/gu)];
   const at = found.findIndex((_, first) =>
     parts.every((part, index) => {
@@ -566,24 +548,47 @@ function jobNameIn(path: string, answers: readonly Answered[]): string | null {
     }),
   );
   const [start, end] = [found[at], found[at + parts.length - 1]];
-  return at >= 0 && start && end ? said.slice(start.index, end.index + end[0].length) : null;
+  return at >= 0 && start && end
+    ? oneLine(said.slice(start.index, end.index + end[0].length).replace(/[`#*_<>]/g, ''))
+    : null;
 }
 
-/**
- * A word of a fact that the user only ever says with a "not" or a "never" just before it, when the
- * fact itself has none, so a request that says what they didn't do can't save that they did.
- */
-function negatedWord(said: string, claimed: readonly (string | null)[]): string | undefined {
-  const fact = claimed.filter(Boolean).join(' ');
-  if (negationsIn(fact) > 0) return undefined;
-  const tokens = words(said).trim().split(' ');
-  return meaningWords(fact).find((word) => {
-    const places = tokens.flatMap((token, at) => (token === word ? [at] : []));
-    return (
-      places.length > 0 &&
-      places.every((at) => tokens.slice(Math.max(0, at - 3), at).some((each) => NEGATING.has(each)))
-    );
+/** A "not" or a "never", with its apostrophe or without: "won" or "haven" alone says neither. */
+const NEGATION =
+  /(?<![\p{L}\p{N}])(?:not|never|no|none|nor|without|cannot|(?:ca|did|does|do|has|have|had|is|was|are|were|wo|would|could|should)n['’]?t)(?![\p{L}\p{N}])/iu;
+
+/** Each time some text says a word: whether a "not" or a "never" comes before it in its clause. */
+const negatedAt = (text: string, word: string): boolean[] =>
+  text.split(PARTS).flatMap((clause) => {
+    const at = clause.search(NEGATION);
+    const said = (part: string) =>
+      words(part)
+        .trim()
+        .split(' ')
+        .filter((each) => each === word);
+    return at < 0
+      ? said(clause).map(() => false)
+      : [...said(clause.slice(0, at)).map(() => false), ...said(clause.slice(at)).map(() => true)];
   });
+
+/** Whether the user only ever says a word with a "not" or a "never" before it. */
+const onlyNegated = (said: string, word: string) => {
+  const places = negatedAt(said, word);
+  return places.length > 0 && places.every(Boolean);
+};
+
+/**
+ * A word a fact says outright that the user only ever said with a "not" or a "never" before it, so
+ * a request that says what they didn't do can't save that they did.
+ */
+function negatedWord(said: string, claims: readonly (string | null)[]): string | undefined {
+  for (const claim of claims) {
+    const word = meaningWords(claim ?? '').find(
+      (each) => !negatedAt(claim ?? '', each).some(Boolean) && onlyNegated(said, each),
+    );
+    if (word) return word;
+  }
+  return undefined;
 }
 
 /**
@@ -674,15 +679,10 @@ export async function saveFact(
           `Not saved: “${stranger}” isn’t in what the user typed. Save what they said as they said it, in their words, or ask them about it with AskUserQuestion and save from their answer.`,
         );
       }
-      const negated = negatedWord(ownWords(answers), claimed);
+      const negated = negatedWord(ownWords(answers), [title, wording, details.short]);
       if (negated) {
         throw new Error(
           `Not saved: the user typed “${negated}” with a “not” or a “never” before it, and the fact says it without one. Save what they said, or ask them about it with AskUserQuestion.`,
-        );
-      }
-      if (confidence === 'high' && answers.some((each) => each.typed && saysUnsure(each))) {
-        throw new Error(
-          'Not saved: the user typed that they aren’t sure, so its confidence is medium or low, not high.',
         );
       }
     }
@@ -738,7 +738,11 @@ export async function saveFact(
     // A fact that replaces another takes its place, whatever section that's in.
     const under = section && !replacing ? sectionFor(bank, path, section, asked) : null;
 
-    const drawnOn = keptAnswers(answers, claimed);
+    // What they typed isn't kept beside the fact, which syncs, as it can say anything: the fact
+    // is held to its words, and says it came from there.
+    const heard = answers
+      .filter((each) => !each.typed)
+      .map((each) => ({ question: each.question, answer: answerText(each) }));
     const text = answeredClaimText({
       title,
       status,
@@ -747,8 +751,10 @@ export async function saveFact(
       wording,
       ...details,
       date: deps.today(),
-      context: contextOf(task, company),
-      asked: drawnOn,
+      context: answers.some((each) => each.typed)
+        ? 'typed for Update with Claude'
+        : contextOf(task, company),
+      asked: heard,
     });
     call.keep?.(path);
     const result = deps.facts.fileClaim(path, text, replacing, under?.heading ?? null, newJob);
@@ -762,7 +768,7 @@ export async function saveFact(
     call.onFiled?.({ facts: [...call.filed.facts], gaps: call.filed.gaps });
     const where = under ? `, under “${under.heading}”${under.made ? ', a new section' : ''}` : '';
     return [
-      `${replacing ? 'Replaced' : 'Saved'} “${title}” in ${path}${where}, unverified, from the user’s answer: “${drawnOn.map((each) => each.answer).join('”, then “')}”.`,
+      `${replacing ? 'Replaced' : 'Saved'} “${title}” in ${path}${where}, unverified, ${heard.length > 0 ? `from the user’s answer: “${heard.map((each) => each.answer).join('”, then “')}”` : 'from what the user typed'}.`,
       ...(answers.some((each) => each.typed)
         ? ['They verify it in the Fact bank.']
         : [
@@ -1012,7 +1018,8 @@ export async function correctFact(
       );
     }
     const [first] = answers;
-    if (!first || !namesFact(first.question, claim.title)) {
+    // A verified fact stays verified, so it rests only on what the user answered about it.
+    if (!first || answers.some((each) => each.typed) || !namesFact(first.question, claim.title)) {
       throw new Error(
         `Not saved: the question doesn’t name “${claim.title}”. Ask the user about the fact first, naming it by its title in quotes, then correct it from their answer.`,
       );
@@ -1031,19 +1038,18 @@ export async function correctFact(
     // What the fact said already is the user's, verified. What it gains must come from them now.
     const problem = correctionProblem(claim, { wording, ...details }, tags, ownWords(answers));
     if (problem) throw new Error(`Not saved: ${problem}`);
-    const drawnOn = keptAnswers(answers, [wording, ...Object.values(details)]);
     const text = correctedClaimText(claim, {
       ...tags,
       wording,
       ...details,
       source: `${bank.firstName ?? 'confirmed'} ${deps.today()}`,
-      asked: drawnOn,
+      asked: answers.map((each) => ({ question: each.question, answer: answerText(each) })),
     });
     call.keep?.(path);
     const result = deps.facts.correct(targetOf(path, claim, claims), text);
     if (!result.ok) throw refused(result);
     return [
-      `Corrected “${claim.title}” in ${path}, from the user’s answer: “${drawnOn.map((each) => each.answer).join('”, then “')}”.`,
+      `Corrected “${claim.title}” in ${path}, from the user’s answer: “${answers.map(answerText).join('”, then “')}”.`,
       'It stays verified, with their name and today as its Source. Use it as it reads now, and say which lines rest on it when you report.',
     ].join(' ');
   } catch (error) {

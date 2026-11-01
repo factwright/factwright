@@ -1185,7 +1185,7 @@ test('suits Claude’s levels to a Pro plan, once Claude Code signs in on one', 
   const { window } = opened;
   await expect(window.getByText('Signed in · Pro plan')).toBeVisible();
   const levels = window.getByRole('button', { name: /^Claude’s levels/ });
-  await expect(levels).toHaveAccessibleName('Claude’s levels: Opus · High. Lighter for 5 tasks.');
+  await expect(levels).toHaveAccessibleName('Claude’s levels: Opus · High. Lighter for 4 tasks.');
   await levels.hover();
   await expect(window.getByRole('tooltip')).toContainText('Best on your Pro plan');
   // Analyze job is one of the routine tasks, which start on Sonnet with Pro's levels.

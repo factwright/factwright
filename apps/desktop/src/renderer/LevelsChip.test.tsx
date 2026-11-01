@@ -39,7 +39,7 @@ describe('LevelsChip', () => {
 
   it('shows Pro’s levels on a Pro plan, and says what’s best overall too', () => {
     const { chip, help } = renderChip('pro');
-    expect(chip.textContent).toBe('Opus · HighLighter for 5 tasks');
+    expect(chip.textContent).toBe('Opus · HighLighter for 4 tasks');
     expect(help).toContain('Best overall: Opus at Extra high');
     expect(help).toContain(
       'Best on your Pro plan, whose limits are the tightest: Sonnet for analyzing jobs, salary checks, job searches and who to message, and Opus at High for the writing.',
@@ -49,7 +49,7 @@ describe('LevelsChip', () => {
 
   it('suggests Pro’s levels with an API key, where every token is billed', () => {
     const { chip, help } = renderChip(undefined, 'api_key');
-    expect(chip.textContent).toBe('Opus · HighLighter for 5 tasks');
+    expect(chip.textContent).toBe('Opus · HighLighter for 4 tasks');
     expect(help).toContain('Best when every token is billed, as with an API key');
   });
 

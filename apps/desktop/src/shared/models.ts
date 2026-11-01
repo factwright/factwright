@@ -1,5 +1,4 @@
 import type { PlanLevels } from './levels.ts';
-import type { ProfilePart } from './profile-parts.ts';
 import { REVISE_SKILL } from './revision.ts';
 import { EARLIER_SKILLS, HUNT_SKILLS, RUN_SKILLS, type RunTask, THANKS_SKILL } from './runs.ts';
 
@@ -42,9 +41,8 @@ export const RECOMMENDED_MODELS: Readonly<Record<ModelTask, Model>> = {
 };
 
 /**
- * Each task's model with Pro's levels: Sonnet, which uses less of a plan, for the checks, the
- * searches and changes to a part of Profile, which are mostly small, and Opus for the fact-checked
- * writing and getting to know the user.
+ * Each task's model with Pro's levels: Sonnet, which uses less of a plan, for the checks and
+ * searches, and Opus for the fact-checked writing and getting to know the user.
  */
 export const PRO_MODELS: Readonly<Record<ModelTask, Model>> = {
   'focused-resume': 'opus',
@@ -61,7 +59,7 @@ export const PRO_MODELS: Readonly<Record<ModelTask, Model>> = {
   'add-facts': 'opus',
   'make-template': 'opus',
   'work-history': 'opus',
-  'update-profile': 'sonnet',
+  'update-profile': 'opus',
 };
 
 /**
@@ -132,24 +130,13 @@ export const modelFor = (
   return (levelled && choices.tasks[levelled]) || modelWithout(choices, levelled, levels);
 };
 
-/** The parts of Profile whose changes are the same work as another task, whose levels they take. */
-const PART_LEVELS: Readonly<Partial<Record<ProfilePart, ModelTask>>> = {
-  resumes: 'get-started',
-  templates: 'make-template',
-  history: 'work-history',
-  facts: 'add-facts',
-};
-
 /**
  * The task whose levels a run takes: its own, but for a revision of a resume, which is writing,
- * at a tailored resume's, for thank-you notes after a call, at interview prep's, and for some
- * parts of Profile, at the task that does that work.
+ * at a tailored resume's, and for thank-you notes after a call, at interview prep's.
  */
 export const levelsTask = (task: RunTask): ModelTask =>
-  'part' in task
-    ? (PART_LEVELS[task.part] ?? task.skill)
-    : task.skill === REVISE_SKILL
-      ? 'focused-resume'
-      : task.skill === THANKS_SKILL
-        ? 'interview-prep'
-        : task.skill;
+  task.skill === REVISE_SKILL
+    ? 'focused-resume'
+    : task.skill === THANKS_SKILL
+      ? 'interview-prep'
+      : task.skill;

@@ -504,6 +504,10 @@ describe('a street or a postal code', () => {
     ['12 Elm St, Austin, TX'],
     ['12B Elm St'],
     ['12-14 Elm St'],
+    ['Seattle, 500 Pine St'],
+    ['Austin, TX, 12 Elm Dr'],
+    ['Home: 12 Elm St'],
+    ['My address is 500 Pine St, Seattle'],
     ['Elm Street'],
     ['PO Box 123'],
     ['Apt 5'],
@@ -517,6 +521,7 @@ describe('a street or a postal code', () => {
     ['Tokyo 150-0002'],
     ['Hauptstraße 12, Berlin'],
     ['Calle Mayor 5, Madrid'],
+    ['12 rue de la Paix, Paris'],
   ])('isn’t saved as where they live: %s', async (location) => {
     await expect(run('save_contact', { location }, callFor('about'))).rejects.toThrow(
       'stay on this computer',
@@ -526,6 +531,15 @@ describe('a street or a postal code', () => {
       run('save_for_applications', { city: location }, callFor('applications')),
     ).rejects.toThrow('stay on this computer');
     expect(about.answers().applications.city).toBe('');
+  });
+
+  it('leaves alone what isn’t about where they live', async () => {
+    await run(
+      'save_for_applications',
+      { preferredName: 'Lane', howHeard: 'Wall Street Journal, 2024' },
+      callFor('applications'),
+    );
+    expect(about.answers().applications.howHeard).toBe('Wall Street Journal, 2024');
   });
 
   it('isn’t saved as a remote place, or a city they’d work in', async () => {
@@ -546,6 +560,15 @@ describe('a street or a postal code', () => {
     'Remote, 3 days a month in Denver',
     'Rio de Janeiro',
     'Bay Area',
+    'Road Town',
+    'Lane Cove NSW',
+    'Ave Maria, FL',
+    'Prague 6',
+    'Paris 13e',
+    'Sector 62, Noida',
+    'District 1, Ho Chi Minh City',
+    '100 Mile House, BC',
+    '29 Palms, CA',
   ])('leaves a place alone: %s', async (location) => {
     await run('save_contact', { location }, callFor('about'));
     expect(about.answers().you.location).toBe(location);
@@ -598,26 +621,31 @@ describe('the fact tools, from what the user typed', () => {
 
   const WORDS = 'The billing rewrite went live in March, and it cut costs about 20%.';
 
-  it('saves it as they said it, unverified, with their words beside it', async () => {
+  it('saves it as they said it, unverified, saying where it came from', async () => {
     mkdirSync(join(root, 'facts'), { recursive: true });
     writeFileSync(join(root, 'facts', 'projects.md'), '# Projects\n');
     const text = await saveFact(FACT, callFor('facts', WORDS));
-    expect(text).toContain('Saved “Billing rewrite went live” in facts/projects.md, unverified');
+    expect(text).toContain(
+      'Saved “Billing rewrite went live” in facts/projects.md, unverified, from what the user typed.',
+    );
     const file = readFileSync(join(root, 'facts', 'projects.md'), 'utf8');
     expect(file).toContain('`unconfirmed`');
-    expect(file).toContain(CHANGES_QUESTION);
-    expect(file).toContain(WORDS);
+    expect(file).toContain(`> ${FACT.wording}`);
+    expect(file).toContain('- **Source:** answer 2026-11-01, typed for Update with Claude');
   });
 
-  it('keeps beside it only the sentences it draws on, so the rest stays out of the fact', async () => {
+  it.each([
+    `${WORDS} My street is 12 Elm St, 78701. Keep Bluebird off my resumes.`,
+    'The billing rewrite went live in March, and it cut costs about 20%, and I live at 12 Elm St, as a disabled veteran.',
+  ])('keeps nothing else they typed with the fact, which syncs: %s', async (said) => {
     mkdirSync(join(root, 'facts'), { recursive: true });
     writeFileSync(join(root, 'facts', 'projects.md'), '# Projects\n');
-    const said = `${WORDS} My street is 12 Elm St, 78701. Keep Bluebird off my resumes.`;
-    await saveFact(FACT, callFor('facts', said));
-    const file = readFileSync(join(root, 'facts', 'projects.md'), 'utf8');
-    expect(file).toContain(WORDS);
-    expect(file).not.toContain('Elm');
-    expect(file).not.toContain('Bluebird');
+    const reply = await saveFact(FACT, callFor('facts', said));
+    for (const text of [reply, readFileSync(join(root, 'facts', 'projects.md'), 'utf8')]) {
+      expect(text).not.toContain('Elm');
+      expect(text).not.toContain('Bluebird');
+      expect(text).not.toContain('veteran');
+    }
   });
 
   it('refuses a number they didn’t give', async () => {
@@ -692,35 +720,73 @@ describe('the fact tools, from what the user typed', () => {
   it.each([
     ['I never shipped Kafka at Acme', 'Shipped Kafka at Acme'],
     ['No, I have not used GraphQL', 'Used GraphQL'],
+    ['I can’t write Rust', 'I write Rust'],
+    ['I didnt ship Kafka at Acme', 'I ship Kafka at Acme'],
+    ['I have not personally led or shipped anything with Kafka', 'Shipped anything with Kafka'],
+    ['I never shipped Kafka. We had no outages.', 'Shipped Kafka, no outages'],
   ])('refuses to say they did what they typed they didn’t: %s', async (said, wording) => {
+    const keyword = wording
+      .split(' ')
+      .find((word) => /^[A-Z][a-zA-Z]+$/.test(word) && word !== 'I');
     await expect(
       saveFact(
-        { ...FACT, title: wording, wording, keywords: wording.split(' ').at(-1) as string },
+        {
+          ...FACT,
+          title: wording.split(',')[0] as string,
+          wording,
+          keywords: wording.includes('Kafka') ? 'Kafka' : (keyword ?? 'GraphQL'),
+        },
         callFor('facts', said),
       ),
     ).rejects.toThrow('with a “not” or a “never” before it');
   });
 
-  it('takes what they typed they didn’t do, said that way', async () => {
-    mkdirSync(join(root, 'facts'), { recursive: true });
-    writeFileSync(join(root, 'facts', 'projects.md'), '# Projects\n');
-    const said = 'I never shipped Kafka at Acme';
-    const fact = { ...FACT, title: 'Never shipped Kafka', wording: said, keywords: 'Kafka' };
-    expect(await saveFact(fact, callFor('facts', said))).toContain('Saved');
+  it('holds each of a fact’s words to it, so a title can’t cover for its wording', async () => {
+    await expect(
+      saveFact(
+        {
+          ...FACT,
+          title: 'Never shipped Kafka',
+          wording: 'Shipped Kafka at Acme',
+          keywords: 'Kafka',
+        },
+        callFor('facts', 'I never shipped Kafka at Acme'),
+      ),
+    ).rejects.toThrow('with a “not” or a “never” before it');
   });
 
-  it('won’t call it high confidence when they typed they aren’t sure', async () => {
+  it.each([
+    [
+      'I never shipped Kafka at Acme',
+      'Never shipped Kafka',
+      'I never shipped Kafka at Acme',
+      'Kafka',
+    ],
+    [
+      'No, I led the Acme migration.',
+      'Led the Acme migration',
+      'I led the Acme migration.',
+      'Acme',
+    ],
+    [
+      'I have no degree. I led the Acme migration.',
+      'Led the migration',
+      'I led the Acme migration.',
+      'Acme',
+    ],
+    ['Not Python, I used Go at Acme.', 'Used Go at Acme', 'I used Go at Acme.', 'Go'],
+    [
+      'I won the hackathon at Acme',
+      'Hackathon at Acme',
+      'I won the hackathon at Acme',
+      'hackathon',
+    ],
+    ['I worked in New Haven at Acme', 'Worked at Acme', 'I worked in New Haven at Acme', 'Acme'],
+    ['I never shipped Kafka but I shipped Redis', 'Shipped Redis', 'I shipped Redis', 'Redis'],
+  ])('takes what they typed as they said it: %s', async (said, title, wording, keywords) => {
     mkdirSync(join(root, 'facts'), { recursive: true });
     writeFileSync(join(root, 'facts', 'projects.md'), '# Projects\n');
-    const said = 'Not sure, maybe I shipped Kafka';
-    const fact = {
-      ...FACT,
-      title: 'Shipped Kafka',
-      wording: 'I shipped Kafka',
-      keywords: 'Kafka',
-    };
-    await expect(saveFact(fact, callFor('facts', said))).rejects.toThrow('aren’t sure');
-    expect(await saveFact({ ...fact, confidence: 'low' }, callFor('facts', said))).toContain(
+    expect(await saveFact({ ...FACT, title, wording, keywords }, callFor('facts', said))).toContain(
       'Saved',
     );
   });
@@ -754,6 +820,8 @@ describe('the fact tools, from what the user typed', () => {
     expect(readFileSync(join(root, 'facts', 'at-t.md'), 'utf8')).toMatch(/^# AT&T\n/);
     await saveFact({ ...fact, file: 'facts/muller-gmbh.md' }, callFor('facts', said));
     expect(readFileSync(join(root, 'facts', 'muller-gmbh.md'), 'utf8')).toMatch(/^# Müller GmbH\n/);
+    await saveFact({ ...fact, file: 'facts/müller-gmbh.md' }, callFor('facts', said));
+    expect(readFileSync(join(root, 'facts', 'müller-gmbh.md'), 'utf8')).toMatch(/^# Müller GmbH\n/);
     for (const file of ['facts/profile.md', 'facts/the.md', 'facts/support-gmbh.md']) {
       await expect(saveFact({ ...fact, file }, callFor('facts', said)), file).rejects.toThrow(
         'there’s no',
@@ -761,7 +829,38 @@ describe('the fact tools, from what the user typed', () => {
     }
   });
 
-  it('keeps the rest of what they typed off a correction too', async () => {
+  it('keeps a new job’s heading to one line, with no marks that would change the file', async () => {
+    mkdirSync(join(root, 'facts'), { recursive: true });
+    const fact = { ...FACT, title: 'Ran support', wording: 'I ran support', keywords: 'support' };
+    await saveFact(
+      { ...fact, file: 'facts/acme-health.md' },
+      callFor('facts', 'I ran support at Acme\nHealth plans'),
+    );
+    expect(readFileSync(join(root, 'facts', 'acme-health.md'), 'utf8')).toMatch(/^# Acme Health\n/);
+    await saveFact(
+      { ...fact, file: 'facts/beta-gamma.md' },
+      callFor('facts', 'I ran support at Beta ``` Gamma'),
+    );
+    expect(readFileSync(join(root, 'facts', 'beta-gamma.md'), 'utf8')).toMatch(/^# Beta Gamma\n/);
+  });
+
+  it('starts no file for a job they typed they never had', async () => {
+    const said = 'I never worked at Initech, and I ran support at home';
+    await expect(
+      saveFact(
+        {
+          ...FACT,
+          file: 'facts/initech.md',
+          title: 'Ran support',
+          wording: 'I ran support',
+          keywords: 'support',
+        },
+        callFor('facts', said),
+      ),
+    ).rejects.toThrow('there’s no facts/initech.md');
+  });
+
+  it('never rests a verified fact on what they typed, even beside an answer about it', async () => {
     mkdirSync(join(root, 'facts'), { recursive: true });
     writeFileSync(
       join(root, 'facts', 'acme.md'),
@@ -777,7 +876,7 @@ describe('the fact tools, from what the user typed', () => {
       tool_use_id: id,
       tool_input: { questions },
     });
-    const replied = { [asked]: 'About 35%' };
+    const replied = { [asked]: 'Change it' };
     call.questions.hear({
       hook_event_name: 'PostToolUse',
       tool_name: 'AskUserQuestion',
@@ -796,9 +895,9 @@ describe('the fact tools, from what the user typed', () => {
       tool_name: 'mcp__factwright__correct_fact',
       tool_input: input,
     });
-    await run('correct_fact', input, call);
+    await expect(run('correct_fact', input, call)).rejects.toThrow('doesn’t name “Deploys”');
     const file = readFileSync(join(root, 'facts', 'acme.md'), 'utf8');
-    expect(file).toContain('about 35%');
+    expect(file).toContain('about 40%');
     expect(file).not.toContain('Elm');
   });
 

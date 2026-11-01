@@ -20,8 +20,8 @@ interface Heard extends Answered {
   key: string;
   /** How many facts, rows of what the user doesn't have, and verified facts it has backed. */
   backed: { fact: number; gap: number; verify: number };
-  /** Whether it's one of the options Claude wrote, rather than words of the user's own. */
-  picked: boolean;
+  /** What's the user's own of it: all but the options they picked, which Claude wrote. */
+  own: string;
 }
 
 /** What one answer may back, at most: a fact per option a question can have, one gap, one fact verified. */
@@ -64,6 +64,22 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
 
 /** A question's key: its words on one line, in one form and case, so spacing can't tell two apart. */
 export const questionKey = (question: string) => oneLine(question).normalize('NFC').toLowerCase();
+
+/** The letters and digits of scripts that put spaces between words. */
+const SPACED = /[\p{Script=Latin}\p{Script=Cyrillic}\p{Script=Greek}\p{N}]/u;
+
+/** Whether some text has these words, whole: "Java" isn't in "JavaScript". */
+function hasWords(text: string, wanted: string): boolean {
+  for (let at = text.indexOf(wanted); at >= 0; at = text.indexOf(wanted, at + 1)) {
+    const before = text[at - 1] ?? '';
+    const after = text[at + wanted.length] ?? '';
+    const cutsIn =
+      (SPACED.test(before) && SPACED.test(wanted[0] ?? '')) ||
+      (SPACED.test(after) && SPACED.test(wanted.at(-1) ?? ''));
+    if (!cutsIn) return true;
+  }
+  return false;
+}
 
 /** A string of a length, trimmed, or null. */
 const text = (value: unknown, max: number): string | null =>
@@ -154,7 +170,7 @@ export class QuestionLog {
       notes: null,
       typed: true,
       backed: { fact: 0, gap: 0, verify: 0 },
-      picked: false,
+      own: answer,
     });
   }
 
@@ -168,9 +184,8 @@ export class QuestionLog {
     return (
       wanted.length >= 3 &&
       this.heard.some(
-        ({ answer, notes, picked }) =>
-          (!picked && questionKey(answer).includes(wanted)) ||
-          questionKey(notes ?? '').includes(wanted),
+        ({ own, notes }) =>
+          hasWords(questionKey(own), wanted) || hasWords(questionKey(notes ?? ''), wanted),
       )
     );
   }
@@ -249,14 +264,14 @@ export class QuestionLog {
       // A question the user skipped in the app's dialog has no answer to back anything.
       if (!answer || answer === SKIPPED_ANSWER) continue;
       const picked = options.find((option) => option.label.trim() === answer);
-      // Several picks come joined, so it's Claude's words only if its options account for it all.
-      const wrote =
-        options
-          .map(({ label }) => label.trim())
-          .filter(Boolean)
-          .sort((a, b) => b.length - a.length)
-          .reduce((left, label) => left.replaceAll(label, ''), answer)
-          .replace(/[\s,]/g, '') === '';
+      // Several picks come joined, with what the user typed beside them.
+      const labels = options.map(({ label }) => label.trim()).filter(Boolean);
+      const own = labels.includes(answer)
+        ? ''
+        : answer
+            .split(', ')
+            .filter((each) => !labels.includes(each))
+            .join(', ');
       this.heard.push({
         key: questionKey(raw),
         question: oneLine(raw),
@@ -264,7 +279,7 @@ export class QuestionLog {
         detail: picked?.description ?? null,
         notes: isRecord(note) ? text(note.notes, MAX_ANSWER) : null,
         backed: { fact: 0, gap: 0, verify: 0 },
-        picked: wrote,
+        own,
       });
     }
     if (this.heard.length > MAX_HEARD) this.heard.splice(0, this.heard.length - MAX_HEARD);

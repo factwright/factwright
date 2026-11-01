@@ -42,10 +42,10 @@ If what they typed has their street, postal code, gender, race, ethnicity, disab
 **Resume templates (`templates`).** With `save_resume_choices`: which templates they picked and what each is for, how long resumes run, and which files they come as. `list_templates` lists what can be picked. To change a template of their own, or make one they describe, load `/factwright:make-template`, then `read_template` and `save_template`, with replace for one of theirs they asked you to change, which this run may do, whatever that skill says about runs that copy a resume. Built-in templates can't be changed, so start one of their own from it. Copying a resume they like takes the file: they add it in Resume templates' Change.
 
 **Your fact bank (`facts`).** With the fact tools alone. What they typed is on record as their answer, so these go by it as they do by any answer.
-- **Something new:** `save_fact`, with `questions` set to "What should your Claude change?", word for word. Word it in their own words: every word and number in it must be theirs, and it says which isn't. It's saved unverified, with their words beside it, and they verify it in the Fact bank. A job the fact bank has no file for gets one, named for how they typed it, such as `facts/globex-health.md` for "Globex Health".
+- **Something new:** `save_fact`, with `questions` set to "What should your Claude change?", word for word. Word it in their own words: every word and number in it must be theirs, and it says which isn't. It's saved unverified, and they verify it in the Fact bank. A job the fact bank has no file for gets one, named for how they typed it, such as `facts/globex-health.md` for "Globex Health".
 - **Something they don't have:** ask first, with "No" as an option, then `save_gap` from their answer: what they typed isn't an answer to whether they have it.
 - **A fact that waits to be verified:** `save_fact` with `replaces`, once you've asked about it, naming it by its title in quotes.
-- **A verified fact:** ask first, naming it by its title in quotes, with options that carry what's new, then `correct_fact`, as the standing rules say. A question that names no fact can't change one.
+- **A verified fact:** ask first, naming it by its title in quotes, with options that carry what's new, then `correct_fact` from that answer alone, as the standing rules say. What they typed can't change one.
 - **Removing a fact, or a row under Doesn't have:** that stays with them. Tell them it's in the Fact bank.
 - Names to keep private go in with `keep_names_private`, never in a fact.
 
