@@ -4,6 +4,7 @@ import { isEqualOpportunity } from './forms.ts';
 import { matchJobs } from './matching.ts';
 import {
   foundOn,
+  isStartingResume,
   isSyncedAnswer,
   keptLength,
   kindTargetsIn,
@@ -12,7 +13,11 @@ import {
   payAskFor,
   profileAnswer,
   profileForForms,
+  type ResumeShape,
+  resumeDetails,
   sentAnswersOf,
+  startingFolders,
+  startingOnFile,
   uploadName,
   withFormQuestions,
   withProfileAnswers,
@@ -324,5 +329,126 @@ describe('finding a job on file', () => {
       ['acme--staff', 'posting'],
       ['acme--pm', 'role'],
     ]);
+  });
+});
+
+describe('what a resume says you did in a position', () => {
+  const position = (more: Partial<ResumeShape['experience'][number]> = {}) => ({
+    title: 'Program Manager',
+    company: 'Acme',
+    start: '2021',
+    end: 'Present',
+    ...more,
+  });
+  const resume = (...experience: ResumeShape['experience']): ResumeShape => ({
+    name: 'Ana Ruiz',
+    summary: '',
+    experience,
+  });
+  const linesOf = (more: Partial<ResumeShape['experience'][number]>) =>
+    resumeDetails(resume(position(more)), 'job').positions[0]?.lines;
+
+  it('is nothing for a position with no bullets', () => {
+    expect(linesOf({})).toEqual([]);
+    expect(linesOf({ bullet_groups: [{ bullets: [] }] })).toEqual([]);
+  });
+
+  it('is its intro, then a line to each bullet, across its groups, as plain text', () => {
+    expect(
+      linesOf({
+        intro: 'Joined as the **first** PM.',
+        bullet_groups: [
+          { heading: 'Delivery', bullets: [{ text: 'Ran **40** projects.' }] },
+          { heading: 'Planning', bullets: [{ lead: 'Roadmap', text: 'Set it.\n  Twice.' }] },
+        ] as never,
+      }),
+    ).toEqual(['Joined as the first PM.', 'Ran 40 projects.', 'Roadmap: Set it. Twice.']);
+  });
+
+  it('never carries a placeholder still to be filled in, or letters typed as one', () => {
+    expect(
+      linesOf({
+        bullet_groups: [
+          { bullets: [{ text: 'Grew revenue [[x%]].' }, { text: 'Grew pro\uFB01t twice.' }] },
+        ],
+      }),
+    ).toEqual(['Grew profit twice.']);
+  });
+
+  it('is the same for a job’s resume and your newest, which the form filler never takes it from', () => {
+    const made = resume(position({ bullet_groups: [{ bullets: [{ text: 'Ran it.' }] }] }));
+    expect(resumeDetails(made, 'newest').positions[0]?.lines).toEqual(['Ran it.']);
+  });
+});
+
+describe('a form’s job’s starting resumes', () => {
+  const KINDS = [
+    { id: 'pmo', name: 'PMO' },
+    { id: 'strategy', name: 'Strategy' },
+  ];
+  const NOT_SET = { kind: null, kindFound: null };
+
+  it('with one kind of job, are at the top of base, for any job or none', () => {
+    const one = [{ folder: 'base', kind: '', ofJob: true }];
+    expect(startingFolders(NOT_SET, [])).toEqual(one);
+    expect(startingFolders(null, [{ id: '', name: '' }])).toEqual(one);
+    expect(startingFolders({ kind: 'gone', kindFound: 'gone' }, [KINDS[0] as never])).toEqual(one);
+  });
+
+  it('are those of the kind you put the job under, or else the one found for it', () => {
+    const pmo = [{ folder: 'base', kind: 'PMO', ofJob: true }];
+    const strategy = [{ folder: 'base/strategy', kind: 'Strategy', ofJob: true }];
+    expect(startingFolders({ kind: 'pmo', kindFound: 'strategy' }, KINDS)).toEqual(pmo);
+    expect(startingFolders({ kind: null, kindFound: 'strategy' }, KINDS)).toEqual(strategy);
+    expect(startingFolders({ kind: null, kindFound: 'Strategy (`strategy`)' }, KINDS)).toEqual(
+      strategy,
+    );
+    expect(startingFolders({ kind: 'gone', kindFound: 'pmo' }, KINDS)).toEqual(pmo);
+  });
+
+  it('are each kind’s, none of them the job’s, while nothing says which, or with no job saved', () => {
+    const each = [
+      { folder: 'base', kind: 'PMO', ofJob: false },
+      { folder: 'base/strategy', kind: 'Strategy', ofJob: false },
+    ];
+    expect(startingFolders(NOT_SET, KINDS)).toEqual(each);
+    expect(startingFolders({ kind: 'gone', kindFound: 'gone' }, KINDS)).toEqual(each);
+    expect(startingFolders(null, KINDS)).toEqual(each);
+  });
+
+  it('are a folder’s resumes’ data, without a copy sync kept of one', () => {
+    expect(isStartingResume('big-company-leader.json')).toBe(true);
+    expect(isStartingResume('startup (old).pdf')).toBe(false);
+    expect(isStartingResume('AnaRuizResume_Startups.pdf')).toBe(false);
+    expect(isStartingResume('big-company-leader (Sam’s MacBook Pro, Oct 12).json')).toBe(false);
+    expect(isStartingResume('big-company-leader (conflict 1).json')).toBe(false);
+  });
+
+  it('say what you did in each position that says, from each file in turn', () => {
+    const job = (title: string, ...text: string[]) => ({
+      title,
+      company: 'Acme',
+      start: '2021',
+      end: '2023',
+      bullet_groups: [{ bullets: text.map((one) => ({ text: one })) }],
+    });
+    const file = (...experience: ResumeShape['experience']): ResumeShape => ({
+      name: 'Ana Ruiz',
+      summary: '',
+      experience,
+    });
+    expect(
+      startingOnFile({ folder: 'base', kind: 'PMO', ofJob: true }, [
+        file(job('Lead', 'Led it.'), job('Analyst')),
+        file(job('Director', 'Ran it.')),
+      ]),
+    ).toEqual({
+      kind: 'PMO',
+      ofJob: true,
+      positions: [
+        { company: 'Acme', title: 'Lead', start: '2021', lines: ['Led it.'] },
+        { company: 'Acme', title: 'Director', start: '2021', lines: ['Ran it.'] },
+      ],
+    });
   });
 });

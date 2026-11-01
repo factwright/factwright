@@ -408,6 +408,8 @@ export function answerSource(reply: FieldReply): string {
   ) {
     return reply.from;
   }
+  // What you did in a position, from Profile, among the words a resume has for it.
+  if (reply.from && reply.source === 'profile' && reply.kind === 'job-summary') return reply.from;
   if (reply.file) return reply.file === 'resume' ? 'The job’s resume' : 'The job’s cover letter';
   if (reply.source === 'resume') return 'From the job’s resume';
   // The pay you ask for at this job, as you set it in Factwright.
