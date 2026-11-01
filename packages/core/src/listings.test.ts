@@ -154,7 +154,9 @@ describe('workableSearchRequest', () => {
     expect(workableSearchRequest('registered nurse', 'Columbus, Ohio')).toBe(
       'https://jobs.workable.com/api/v1/jobs?query=registered%20nurse&location=Columbus%2C%20Ohio',
     );
-    expect(workableSearchRequest('PMO', '')).toBe('https://jobs.workable.com/api/v1/jobs?query=PMO');
+    expect(workableSearchRequest('PMO', '')).toBe(
+      'https://jobs.workable.com/api/v1/jobs?query=PMO',
+    );
     expect(workableSearchRequest('PMO', 'remote', 'a=b')).toBe(
       'https://jobs.workable.com/api/v1/jobs?query=PMO&workplace=remote&pageToken=a%3Db',
     );
@@ -188,9 +190,7 @@ describe('readWorkableSearch', () => {
   };
 
   it('reads a page of jobs', () => {
-    expect(
-      readWorkableSearch({ totalSize: 36, nextPageToken: 'abc', jobs: [LISTED] }),
-    ).toEqual({
+    expect(readWorkableSearch({ totalSize: 36, nextPageToken: 'abc', jobs: [LISTED] })).toEqual({
       rows: 1,
       next: 'abc',
       total: 36,

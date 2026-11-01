@@ -21,7 +21,6 @@ export {
 } from './answers.ts';
 export { type ApplySteps, readApplySteps } from './apply-steps.ts';
 export {
-  BOARD_PAGE_SIZE,
   type BoardJob,
   type BoardSource,
   boardAnswersJson,
@@ -30,13 +29,12 @@ export {
   boardJobLine,
   boardMarkdown,
   boardName,
-  boardPages,
   boardPostingId,
   boardRequest,
   boardSource,
   boardSystem,
-  boardTotal,
   jobsMarkdown,
+  listLine,
   paylocityBoardOf,
   paylocityJobId,
   paylocityJobPage,

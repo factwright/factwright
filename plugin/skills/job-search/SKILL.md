@@ -63,11 +63,12 @@ One web search brings about 10 results, most of them closed, and the same work g
 | Nonprofits | `idealist.org` |
 
 **Read before you search.** Where a tool can read an employer's list, use it rather than searching for that employer. It's all the employer has open today, with no stale results:
-- **An employer on Greenhouse, Lever, Ashby, Gem, SmartRecruiters, Recruitee, Workable, JazzHR, Paylocity, Oracle, Workday or iCIMS:** call `job_board` with its board's link and `titles`, the plan's titles for this kind.
+- **An employer on Greenhouse, Lever, Ashby, Gem, Recruitee, Workable, JazzHR, Paylocity, Workday or iCIMS:** call `job_board` with its board's link and `titles`, the plan's titles for this kind.
   - It lists only the jobs with those titles, and saves the rest in the file. Its titles stay on this computer.
-  - Greenhouse, Lever, Ashby, Gem, Recruitee and Workable save each posting in full. The rest list only what names it, so step 3 reads the ones that pass.
+  - Greenhouse, Lever, Ashby, Gem, Recruitee and Workable save each posting in full. JazzHR, Paylocity, Workday and iCIMS list only what names it, so step 3 reads the ones that pass.
   - Workday and iCIMS list what their sitemaps name, by the words in each link. When it says the list may be partial, as at Workday's big employers, also search that employer's name and the titles with its own host as `allowed_domains`.
 - **An employer with a careers site of its own:** call `careers_site` with its link and `titles`. It follows the site's robots.txt, and reads up to 12 postings a call. When it says it can't, because the site's robots.txt keeps it out, or its links don't name the job, search that employer instead, and don't try again.
+- **An employer on SmartRecruiters or Oracle:** search it, by its name and the titles, with its own host as `allowed_domains`, such as `acme.fa.us2.oraclecloud.com`. Their terms keep software from reading their whole boards, and no tool does.
 - **Federal work, or an open search across small employers:** call `job_listings` once for each place:
   - `usajobs`, with every title at once, as each call takes half a minute. Only for someone who could take a federal job.
   - `workable`, with up to 5 main titles. It lists small and mid-size employers across every field, in many countries.
@@ -123,7 +124,7 @@ For each listing that passed:
   - When it names this job (by its posting or its role), the user has seen it before: give that job's id as `job` in jobs.json, so the app adds this find to the job they have, and say so first in its flags, with where it stands and why they passed when it gives a reason ("passed Oct 14: pay"). Don't pitch it as new.
   - A job it lists only among the user's other jobs at the company is another job, unless you can tell it's the same posting, such as by its link or a title written another way. Then give its id too.
 - Confirm it's still open, and get the fine print on where it's worked, pay, schedule, and what kind of employer it is:
-  - **A job a board already listed:** its listing says it's open today. For its fine print, read what `job_board` saved, where it saved the posting in full. Otherwise read the job's link: `read_posting` on SmartRecruiters and Oracle, and `read_page` on JazzHR, Paylocity, Workday and iCIMS. Note related roles as "also: <role>".
+  - **A job a board already listed:** its listing says it's open today. For its fine print, read what `job_board` saved, where it saved the posting in full. Otherwise read the job's link with `read_page`. Note related roles as "also: <role>".
   - **A posting from a search, on any system `job_board` reads:** call `job_board` with the posting's link and the plan's titles. It says whether the posting is still open, and lists what else the employer has with those titles. Where it can't tell, as a sitemap can leave jobs out, it says so: read the posting.
   - **Anywhere else:** a web search often finds the posting on an applicant system. Otherwise, read the posting with `read_page`. It gives `Posted:` and `Closes:` lines when the page has them, and says when a Workday posting has closed.
     - **Closed:** the tool says it has closed, it answered 404 or 410, the page says it's closed or filled, or its closing date has passed. Leave it out, and count it as closed in `skipped` and the funnel.

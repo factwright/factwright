@@ -8,12 +8,16 @@ import { decodeEntities } from './posting.ts';
 
 /** The name a robots.txt can give Factwright rules by, in a "User-agent:" line of its own. */
 const AGENT = 'factwright';
-/** How much of one rule is read. No real one comes near this. */
+/**
+ * How long a rule can be, how many rules a site's robots.txt can have for Factwright, and how many
+ * "*"s in all, so a file built to take long can't make every link slow to check. No real one comes
+ * near these. One past them can't be followed in full, so it's read as asking software to stay out.
+ */
 const MAX_RULE = 1_000;
-/** The most rules kept, so a huge file can't make every link slow to check. */
-const MAX_RULES = 1_000;
+const MAX_RULES = 300;
+const MAX_STARS = 1_000;
 /** A link's path and query longer than this goes unread. No real posting's comes near it. */
-const MAX_PATH = 4_000;
+const MAX_PATH = 1_000;
 /** The most sitemaps a robots.txt can name that are kept. */
 const MAX_NAMED = 100;
 /** The most links read from one sitemap, which the sitemaps protocol puts at 50,000. */
@@ -53,6 +57,9 @@ function robotsRule(allow: boolean, written: string): RobotsRule {
   return { allow, length: written.length, parts, toEnd };
 }
 
+/** Everything off limits, as a rule. */
+const STAY_OUT = robotsRule(false, '/');
+
 /**
  * What a robots.txt says for Factwright, by the rules of RFC 9309: the group naming it when there's
  * one, and otherwise the group for everyone. Several groups for the same name count as one.
@@ -69,10 +76,7 @@ export function readRobots(text: string): Robots {
     const colon = content.indexOf(':');
     if (colon < 0) continue;
     const key = content.slice(0, colon).trim().toLowerCase();
-    const value = content
-      .slice(colon + 1)
-      .trim()
-      .slice(0, MAX_RULE);
+    const value = content.slice(colon + 1).trim();
     if (key === 'user-agent') {
       if (!naming || !group) {
         group = { agents: [], rules: [], crawlDelay: null };
@@ -81,7 +85,7 @@ export function readRobots(text: string): Robots {
       group.agents.push(value.toLowerCase());
       naming = true;
     } else if (key === 'sitemap') {
-      if (value && sitemaps.length < MAX_NAMED) sitemaps.push(value);
+      if (value && value.length <= MAX_RULE && sitemaps.length < MAX_NAMED) sitemaps.push(value);
     } else {
       naming = false;
       if (!group) continue;
@@ -97,8 +101,12 @@ export function readRobots(text: string): Robots {
   const named = (agent: string) => groups.filter((each) => each.agents.includes(agent));
   const ours = named(AGENT);
   const chosen = ours.length > 0 ? ours : named('*');
+  const rules = chosen.flatMap((each) => each.rules);
+  const stars = rules.reduce((sum, rule) => sum + rule.parts.length - 1, 0);
+  const tooMuch =
+    rules.length > MAX_RULES || stars > MAX_STARS || rules.some((rule) => rule.length > MAX_RULE);
   return {
-    rules: chosen.flatMap((each) => each.rules).slice(0, MAX_RULES),
+    rules: tooMuch ? [STAY_OUT] : rules,
     sitemaps,
     crawlDelay: chosen.find((each) => each.crawlDelay !== null)?.crawlDelay ?? null,
   };

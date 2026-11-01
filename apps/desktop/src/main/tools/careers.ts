@@ -5,8 +5,8 @@ import {
   boardSystem,
   jobPostingFields,
   jobsMarkdown,
+  listLine,
   localDate,
-  oneLine,
   type Robots,
   readSitemap,
   robotsAllow,
@@ -39,6 +39,10 @@ const SITEMAPS_MS = 22_000;
 const PAGES_MS = 38_000;
 /** The most links listed that weren't read. */
 const MAX_UNREAD_LISTED = 40;
+/** The most links with the titles' words that are kept, which is plenty to read from. */
+const MAX_MATCHES = 1_000;
+/** The most links kept from all of a site's sitemaps, so a huge one can't fill memory. */
+const MAX_LINKS = 200_000;
 
 /**
  * Systems whose terms or robots.txt keep software out, which this reader stays out of too, even when
@@ -50,6 +54,8 @@ const OFF_LIMITS: readonly (readonly [RegExp, string])[] = [
   [SUCCESSFACTORS, 'SuccessFactors'],
   [/(^|\.)(neogov\.com|schooljobs\.com)$/, 'NEOGOV'],
   [/(^|\.)(nlx\.org|us\.jobs|usnlx\.com)$/, 'the National Labor Exchange'],
+  [/(^|\.)oraclecloud\.com$/, 'Oracle'],
+  [/(^|\.)smartrecruiters\.com$/, 'SmartRecruiters'],
 ];
 
 function offLimits(host: string): string | null {
@@ -75,8 +81,9 @@ function sitemapAddress(address: string): string | null {
   }
 }
 
-/** What a sitemap's name says about whether it lists jobs. */
-const namesJobs = (address: string) => /job|career|posting|position|opening|vacanc/i.test(address);
+/** What a sitemap's own path says about whether it lists jobs, whatever its site is called. */
+const namesJobs = (address: string) =>
+  /job|career|posting|position|opening|vacanc/i.test(new URL(address).pathname);
 
 /** What a link's path says about whether it's to one posting. */
 const looksLikePosting = (link: string) =>
@@ -96,23 +103,27 @@ interface SitePages {
 
 /**
  * Every page a site's sitemaps list, the sitemaps that name jobs first, within the time given. An
- * index's sitemaps stay on its own site.
+ * index's sitemaps stay on its own site. `note` hears each before a request goes to it.
  */
 async function pagesOf(
   starts: readonly string[],
   fetch: Fetch,
   stop: () => boolean,
+  note: (url: string) => void,
 ): Promise<SitePages> {
-  const queue = starts.flatMap((start) => sitemapAddress(start) ?? []);
-  queue.sort((a, b) => Number(namesJobs(b)) - Number(namesJobs(a)));
+  const jobsFirst = (a: string, b: string) => Number(namesJobs(b)) - Number(namesJobs(a));
+  const allowed = (address: string | null): address is string =>
+    address !== null && !offLimits(new URL(address).hostname);
+  const queue = starts.map(sitemapAddress).filter(allowed).sort(jobsFirst);
   const seen = new Set<string>();
   const links: SitePages['links'] = [];
   let read = 0;
   let failure: unknown = null;
-  while (queue.length > 0 && read < MAX_SITEMAPS && !stop()) {
+  while (queue.length > 0 && read < MAX_SITEMAPS && links.length < MAX_LINKS && !stop()) {
     const next = queue.shift() ?? '';
     if (seen.has(next)) continue;
     seen.add(next);
+    note(next);
     let answer: unknown;
     try {
       answer = await fetch(next, false, SITEMAP_MAX_BYTES);
@@ -125,11 +136,12 @@ async function pagesOf(
     const sitemap = readSitemap(String(answer));
     if (sitemap.index) {
       const host = new URL(next).hostname;
-      const others = sitemap.links.flatMap(({ link }) => {
-        const child = sitemapAddress(link);
-        return child && new URL(child).hostname === host ? [child] : [];
-      });
-      others.sort((a, b) => Number(namesJobs(b)) - Number(namesJobs(a)));
+      const others = sitemap.links
+        .map(({ link }) => sitemapAddress(link))
+        .filter(allowed)
+        .filter((child) => new URL(child).hostname === host)
+        .sort(jobsFirst)
+        .slice(0, MAX_SITEMAPS);
       queue.push(...others);
     } else {
       for (const link of sitemap.links) links.push(link);
@@ -142,40 +154,41 @@ async function pagesOf(
 type PageRead =
   | { kind: 'job'; job: BoardJob }
   | { kind: 'closed' }
-  | { kind: 'gone' }
   | { kind: 'not a posting' }
-  | { kind: 'unread'; why: string };
+  | { kind: 'unread' };
 
 async function readJobPage(link: string, fetch: Fetch, today: string): Promise<PageRead> {
   let html: unknown;
   try {
     html = await fetch(link, false);
   } catch (error) {
-    if (error instanceof FetchRefused) throw error;
     if (error instanceof FetchAnswered && (error.status === 404 || error.status === 410)) {
-      return { kind: 'gone' };
+      return { kind: 'closed' };
     }
-    return { kind: 'unread', why: reasonOf(error) };
+    // It didn't load, or would have sent the request off the site. The next may do better.
+    return { kind: 'unread' };
   }
   const data = typeof html === 'string' ? jobPostingFields(html) : null;
-  if (!data?.title) return { kind: 'not a posting' };
+  const title = listLine(data?.title);
+  if (!data || !title) return { kind: 'not a posting' };
   if (data.closes && /^\d{4}-\d{2}-\d{2}$/.test(data.closes) && data.closes < today) {
     return { kind: 'closed' };
   }
+  const company = listLine(data.company);
   return {
     kind: 'job',
     job: {
       id: null,
-      title: oneLine(data.title).slice(0, 300),
-      location: data.where,
+      title,
+      location: listLine(data.where),
       workplace: null,
       team: null,
-      pay: data.pay,
+      pay: listLine(data.pay),
       link,
-      posted: data.posted,
+      posted: listLine(data.posted),
       text: data.text,
-      ...(data.company && { company: oneLine(data.company).slice(0, 300) }),
-      ...(data.closes && { closes: data.closes }),
+      ...(company && { company }),
+      ...(data.closes && { closes: listLine(data.closes) ?? data.closes }),
     },
   };
 }
@@ -265,12 +278,10 @@ export async function careersSite(
   let pages: SitePages;
   try {
     pages = await pagesOf(
-      starts.map((start) => {
-        deps.onRead?.(start);
-        return start;
-      }),
+      starts,
       fetch,
       () => spent() > SITEMAPS_MS,
+      (url) => deps.onRead?.(url),
     );
   } catch (error) {
     if (error instanceof FetchRefused) return `Not read: ${reasonOf(error)}`;
@@ -282,26 +293,28 @@ export async function careersSite(
 
   const fits = titleFilter(titles);
   const seen = new Set<string>();
-  const matches = pages.links.flatMap(({ link, changed }) => {
+  const matches: { link: string; changed: string | null }[] = [];
+  for (const { link, changed } of pages.links) {
+    if (matches.length >= MAX_MATCHES) break;
     let url: URL;
     try {
       url = new URL(link);
     } catch {
-      return [];
+      continue;
     }
-    if (url.protocol !== 'https:' || !home.has(bareHost(url.hostname))) return [];
+    if (url.protocol !== 'https:' || !home.has(bareHost(url.hostname))) continue;
     let words = url.pathname;
     try {
       words = decodeURIComponent(url.pathname);
     } catch {
       // A malformed path reads as it came.
     }
-    if (!fits(words) || !robotsAllow(robots, url.pathname + url.search)) return [];
-    const key = url.origin + url.pathname.replace(/\/$/, '');
-    if (seen.has(key)) return [];
+    if (!fits(words) || !robotsAllow(robots, url.pathname + url.search)) continue;
+    const key = url.origin + url.pathname.replace(/\/$/, '') + url.search;
+    if (seen.has(key)) continue;
     seen.add(key);
-    return [{ link: url.href, changed }];
-  });
+    matches.push({ link: url.href, changed });
+  }
   const listed = `${host}’s sitemap lists ${count(pages.links.length, 'page')}${
     pages.left > 0
       ? `, from the ${pages.read} sitemaps it had time for, with ${pages.left} left`
@@ -328,23 +341,16 @@ export async function careersSite(
   let readingStopped = false;
   stage = 'pages';
   for (const [i, { link }] of matches.entries()) {
-    if (i >= MAX_PAGES || readingStopped || spent() + delayMs > PAGES_MS) {
+    if (i >= MAX_PAGES || readingStopped || (i > 0 && spent() + delayMs > PAGES_MS)) {
       readingStopped = true;
       unread.push(link);
       continue;
     }
     if (i > 0 && delayMs > 0) await wait(delayMs);
     deps.onRead?.(link);
-    let read: PageRead;
-    try {
-      read = await readJobPage(link, fetch, today);
-    } catch (error) {
-      // A page that would send the request elsewhere, and only that page, is left out.
-      if (!(error instanceof FetchRefused)) throw error;
-      read = { kind: 'unread', why: reasonOf(error) };
-    }
+    const read = await readJobPage(link, fetch, today);
     if (read.kind === 'job') jobs.push(read.job);
-    else if (read.kind === 'closed' || read.kind === 'gone') closed++;
+    else if (read.kind === 'closed') closed++;
     else if (read.kind === 'not a posting') notPostings++;
     else unread.push(link);
   }

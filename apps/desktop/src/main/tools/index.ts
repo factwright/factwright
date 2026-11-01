@@ -388,7 +388,7 @@ export function factwrightTools(deps: ToolDeps): McpTool[] {
     {
       name: 'read_posting',
       description:
-        'Reads a job posting on Greenhouse, Lever, Ashby, Gem, SmartRecruiters, Recruitee, Workable or Oracle straight from the applicant system’s public feed, without asking the user. Then save it with save_posting. For a posting anywhere else, use read_page.',
+        'Reads a job posting on Greenhouse, Lever, Ashby, Gem, Recruitee or Workable straight from the applicant system’s public feed, without asking the user. Then save it with save_posting. For a posting anywhere else, use read_page.',
       inputSchema: {
         type: 'object',
         properties: { url: { type: 'string', description: 'The posting’s https link.' } },
@@ -406,7 +406,7 @@ export function factwrightTools(deps: ToolDeps): McpTool[] {
     {
       name: 'read_page',
       description:
-        'Reads any public web page as plain text: a posting on another site, a careers page, a company’s about or team page. Never LinkedIn’s. Read only what the task needs: the user sees each page you read. Use read_posting for postings on Greenhouse, Lever, Ashby, Gem, SmartRecruiters, Recruitee, Workable or Oracle. It gives Posted and Closes lines for a posting whose page has them. A posting read this way can then be saved with save_posting.',
+        'Reads any public web page as plain text: a posting on another site, a careers page, a company’s about or team page. Never LinkedIn’s. Read only what the task needs: the user sees each page you read. Use read_posting for postings on Greenhouse, Lever, Ashby, Gem, Recruitee or Workable. It gives Posted and Closes lines for a posting whose page has them. A posting read this way can then be saved with save_posting.',
       inputSchema: {
         type: 'object',
         properties: { url: { type: 'string', description: 'The page’s https link.' } },
@@ -648,7 +648,7 @@ export function factwrightTools(deps: ToolDeps): McpTool[] {
     {
       name: 'save_posting',
       description:
-        'Saves a job posting word for word as posting.md in the job’s folder, so it survives the link going dead: the posting the user saved from their browser for that link, which job_details names, LinkedIn’s included; what read_page or read_posting read from that link in this run; or a posting on Greenhouse, Lever, Ashby, Gem, SmartRecruiters, Recruitee, Workable or Oracle read from its feed. It reaches no other site. Use it for every posting with a link. A posting already saved in the folder is kept, unless the folder is another job’s, which it says. If it says the page needs a sign-in, ask the user to paste the posting.',
+        'Saves a job posting word for word as posting.md in the job’s folder, so it survives the link going dead: the posting the user saved from their browser for that link, which job_details names, LinkedIn’s included; what read_page or read_posting read from that link in this run; or a posting on Greenhouse, Lever, Ashby, Gem, Recruitee or Workable read from its feed. It reaches no other site. Use it for every posting with a link. A posting already saved in the folder is kept, unless the folder is another job’s, which it says. If it says the page needs a sign-in, ask the user to paste the posting.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -686,7 +686,7 @@ export function factwrightTools(deps: ToolDeps): McpTool[] {
     {
       name: 'job_board',
       description:
-        'Reads a company’s board on Greenhouse, Lever, Ashby, Gem, SmartRecruiters, Recruitee, Workable, JazzHR, Paylocity, Oracle, Workday or iCIMS, and saves what it gives as one file in a job search’s folder. Lists each job with where, pay and when it was posted when the system says, its link, and the line it starts on in the file. Give a link to the board, or to any posting on it: for a posting, it also says whether it’s still open. Give titles to list only the jobs that fit, which a big employer needs: they stay on this computer. Greenhouse, Lever, Ashby, Gem, Recruitee and Workable save each posting word for word. The rest save what lists it, so confirm a job and read its full text with read_page or read_posting. Workday and iCIMS come from their sitemaps, by the words in each link, and it says when that list may be partial. Use it to see all a company is hiring for, and to check that a job is still open.',
+        'Reads a company’s board on Greenhouse, Lever, Ashby, Gem, Recruitee, Workable, JazzHR, Paylocity, Workday or iCIMS, and saves what it gives as one file in a job search’s folder. Lists each job with where, pay and when it was posted when the system says, its link, and the line it starts on in the file. Give a link to the board, or to any posting on it: for a posting, it also says whether it’s still open. Give titles to list only the jobs that fit, which a big employer needs: they stay on this computer. Greenhouse, Lever, Ashby, Gem, Recruitee and Workable save each posting word for word. JazzHR, Paylocity, Workday and iCIMS save what lists it, so confirm a job and read its full text with read_page. Workday and iCIMS come from their sitemaps, by the words in each link, and it says when that list may be partial. Use it to see all a company is hiring for, and to check that a job is still open.',
       inputSchema: {
         type: 'object',
         properties: {

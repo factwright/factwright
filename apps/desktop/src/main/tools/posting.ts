@@ -152,7 +152,7 @@ export async function readLink(
     return `“${url}” isn’t a link.`;
   }
   if (deps.feedsOnly && !isFeedPosting(parsed.href)) {
-    return `${parsed.href} isn’t a posting on Greenhouse, Lever, Ashby, Gem, SmartRecruiters, Recruitee, Workable or Oracle. Read it with read_page, or use job_board for a company’s whole board.`;
+    return `${parsed.href} isn’t a posting on Greenhouse, Lever, Ashby, Gem, Recruitee or Workable. Read it with read_page, or use job_board for a company’s whole board.`;
   }
   // Each page a request goes to is noted for the task's card before it goes, so one that fails,
   // or redirects somewhere else, is noted too. One the fetch turns away outright never goes.

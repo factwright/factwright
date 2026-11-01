@@ -18,7 +18,10 @@ describe('readRobots', () => {
         'Sitemap: https://acme.example/two.xml',
       ].join('\r\n'),
     );
-    expect(robots.sitemaps).toEqual(['https://acme.example/one.xml', 'https://acme.example/two.xml']);
+    expect(robots.sitemaps).toEqual([
+      'https://acme.example/one.xml',
+      'https://acme.example/two.xml',
+    ]);
     expect(robots.crawlDelay).toBe(5);
     expect(robotsAllow(robots, '/private/page')).toBe(false);
     expect(robotsAllow(robots, '/private/open/page')).toBe(true);
@@ -109,16 +112,25 @@ describe('robotsAllow', () => {
     expect(robotsAllow(ukg, '/ACME/JobBoardView/')).toBe(false);
   });
 
-  it('takes no longer for rules built to take long, and leaves a huge link unread', () => {
+  it('reads rules built to take long as asking it to stay out, and leaves a huge link unread', () => {
+    for (const hostile of [
+      rules(...Array.from({ length: 301 }, (_, i) => `Disallow: /${i}`)),
+      rules(...Array.from({ length: 10 }, (_, i) => `Allow: /${'*a'.repeat(150)}${i}`)),
+      rules(`Allow: /${'a'.repeat(1_001)}`),
+    ]) {
+      expect(robotsAllow(hostile, '/jobs/1')).toBe(false);
+    }
+    expect(robotsAllow(NO_ROBOTS, `/${'a'.repeat(1_000)}`)).toBe(false);
+  });
+
+  it('takes no longer for the longest rules it follows', () => {
     const hostile = rules(
-      `Disallow: /${'*a'.repeat(450)}b`,
-      ...Array.from({ length: 5_000 }, (_, i) => `Disallow: /${'*a'.repeat(450)}${i}`),
+      ...Array.from({ length: 300 }, (_, i) => `Disallow: /${'*a'.repeat(3)}b${i}`),
     );
-    expect(hostile.rules.length).toBe(1_000);
-    const started = performance.now();
-    for (let i = 0; i < 200; i++) robotsAllow(hostile, `/${'a'.repeat(3_000)}`);
-    expect(performance.now() - started).toBeLessThan(2_000);
-    expect(robotsAllow(NO_ROBOTS, `/${'a'.repeat(5_000)}`)).toBe(false);
+    expect(robotsAllow(hostile, '/jobs/1')).toBe(true);
+    const started = Date.now();
+    for (let i = 0; i < 50; i++) robotsAllow(hostile, `/${'a'.repeat(990)}`);
+    expect(Date.now() - started).toBeLessThan(2_000);
   });
 });
 
@@ -158,7 +170,12 @@ describe('readSitemap', () => {
   });
 
   it('finds nothing in an answer that isn’t a sitemap, or stops short', () => {
-    for (const xml of ['', '<html><body>Not found</body></html>', 'just words', '<loc>never closed']) {
+    for (const xml of [
+      '',
+      '<html><body>Not found</body></html>',
+      'just words',
+      '<loc>never closed',
+    ]) {
       expect(readSitemap(xml), xml).toEqual({ index: false, links: [] });
     }
     expect(readSitemap('<loc>https://a.example/1</loc><loc>https://a.example/2').links).toEqual([
@@ -169,9 +186,9 @@ describe('readSitemap', () => {
   it('takes no longer for one built to take long, and stops at the most it keeps', () => {
     const unclosed = '<loc>'.repeat(2_000_000);
     const noClose = '<loc>a</loc><lastmod>'.repeat(500_000);
-    const started = performance.now();
+    const started = Date.now();
     expect(readSitemap(unclosed).links).toEqual([]);
     expect(readSitemap(noClose).links.length).toBe(100_000);
-    expect(performance.now() - started).toBeLessThan(2_000);
+    expect(Date.now() - started).toBeLessThan(2_000);
   });
 });

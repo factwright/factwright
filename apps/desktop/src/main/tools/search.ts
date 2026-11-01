@@ -2,7 +2,6 @@ import { randomUUID } from 'node:crypto';
 import { mkdir, rename, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import {
-  BOARD_PAGE_SIZE,
   type BoardJob,
   type BoardSource,
   boardAnswersJson,
@@ -11,12 +10,10 @@ import {
   boardJobLine,
   boardMarkdown,
   boardName,
-  boardPages,
   boardPostingId,
   boardRequest,
   boardSource,
   boardSystem,
-  boardTotal,
   HN_THREADS_URL,
   type HnThread,
   hiringThread,
@@ -64,8 +61,6 @@ const MONTH = /^\d{4}-(0[1-9]|1[0-2])$/;
 
 /** How long a tool keeps asking for more of a long list, leaving time to save what it has. */
 const PAGING_MS = 35_000;
-/** The most requests for one board that pages: 6,000 jobs. */
-const MAX_BOARD_PAGES = 60;
 /** The most sitemaps of one board a sitemap index can send a read to. */
 const MAX_BOARD_SITEMAPS = 25;
 /** A listing this long is worth narrowing. */
@@ -234,60 +229,26 @@ async function sitemapBoard(source: BoardSource, fetch: Fetch): Promise<BoardRea
   };
 }
 
-/** A board that comes a page at a time, for as long as there's more and time to ask. */
-async function pagedBoard(
-  source: BoardSource,
-  fetch: Fetch,
-  clock: () => Date,
-): Promise<BoardRead> {
-  const started = clock().getTime();
-  const jobs: BoardJob[] = [];
-  let total: number | null = null;
-  for (let page = 0; page < MAX_BOARD_PAGES; page++) {
-    let answer: unknown;
-    try {
-      answer = await fetch(boardRequest(source, page * BOARD_PAGE_SIZE), true, BOARD_MAX_BYTES);
-    } catch (error) {
-      // The first page failing means the board can't be read at all.
-      if (page === 0 || error instanceof FetchRefused) throw error;
-      break;
-    }
-    const found = readBoard(source, answer);
-    jobs.push(...found);
-    total ??= boardTotal(source, answer);
-    const read = (page + 1) * BOARD_PAGE_SIZE;
-    if (found.length === 0 || (total !== null && read >= total)) return { jobs, partial: null };
-    if (clock().getTime() - started > PAGING_MS) break;
-  }
-  return {
-    jobs,
-    partial: `it read ${jobs.length}${total === null ? '' : ` of ${total}`}, the newest first where the board sorts them, before running out of time.`,
-  };
-}
-
 /** Every open job the board's system gives, by whichever way that system gives them. */
-async function readWholeBoard(
-  source: BoardSource,
-  fetch: Fetch,
-  clock: () => Date,
-): Promise<BoardRead> {
+async function readWholeBoard(source: BoardSource, fetch: Fetch): Promise<BoardRead> {
   if (boardFromSitemap(source)) return sitemapBoard(source, fetch);
-  if (boardPages(source)) return pagedBoard(source, fetch, clock);
   const answer = await fetch(boardRequest(source), boardAnswersJson(source), BOARD_MAX_BYTES);
   return { jobs: readBoard(source, answer), partial: null };
 }
 
 /** The applicant systems job_board reads, for saying so. */
 const BOARD_SYSTEMS =
-  'Greenhouse, Lever, Ashby, Gem, SmartRecruiters, Recruitee, Workable, JazzHR, Paylocity, Oracle, Workday or iCIMS';
+  'Greenhouse, Lever, Ashby, Gem, Recruitee, Workable, JazzHR, Paylocity, Workday or iCIMS';
 
 /**
  * Stops a request a redirect would take off the applicant system's own site. The system's own
- * address is all that was asked for, so anywhere else isn't the board.
+ * address is all that was asked for, so anywhere else isn't the board. Workable's documented address
+ * is at www.workable.com, and it answers from another of its own sites.
  */
 const staysOn = (host: string) => (address: string) => {
   const to = new URL(address).hostname;
-  if (to !== host) throw new Error(`it sent the request on to ${to}`);
+  const home = host === 'www.workable.com' ? to.endsWith('.workable.com') : to === host;
+  if (!home) throw new Error(`it sent the request on to ${to}`);
 };
 
 /**
@@ -328,7 +289,7 @@ export async function jobBoard(
     }
     const host = new URL(boardRequest(source)).hostname;
     const fetch = fetchInTime({ ...deps, onRedirect: staysOn(host) });
-    read = await readWholeBoard(source, fetch, clock);
+    read = await readWholeBoard(source, fetch);
   } catch (error) {
     if (error instanceof FetchRefused) return `Not read: ${reasonOf(error)}`;
     return `Couldn’t read ${board} (${reasonOf(error)}). The company may have closed or moved it, so read its careers page with read_page instead.`;
@@ -425,7 +386,7 @@ async function usajobsListing(
   const today = localDate(started);
   const fits = titleFilter(titles);
   const keep = (name: string, places: string) => fits(name) && fitsPlace(place, places);
-  const jobs: BoardJob[] = [];
+  const jobs = new Map<string, BoardJob>();
   let rows = 0;
   let readBack = today;
   let source = '';
@@ -444,20 +405,20 @@ async function usajobsListing(
         // What was read still counts, so only a failure with nothing read is a failure.
         if (rows === 0 || error instanceof FetchRefused) throw error;
         const note = `USAJOBS stopped answering, so this covers jobs opened since ${readBack}.`;
-        return { jobs, rows, note, source };
+        return { jobs: [...jobs.values()], rows, note, source };
       }
-      jobs.push(...page.jobs);
+      for (const job of page.jobs) jobs.set(job.link, job);
       rows += page.rows;
       next = page.rows > 0 ? (page.next ?? undefined) : undefined;
     } while (next && !late());
     if (next) {
       const note = `It ran out of time partway through the jobs opened from ${from} to ${to}.`;
-      return { jobs, rows, note, source };
+      return { jobs: [...jobs.values()], rows, note, source };
     }
     readBack = from;
   }
   const note = `This covers jobs opened since ${readBack} that still take applications.`;
-  return { jobs, rows, note, source };
+  return { jobs: [...jobs.values()], rows, note, source };
 }
 
 /** Workable's public job search, for each title and the place, which are all it's sent. */

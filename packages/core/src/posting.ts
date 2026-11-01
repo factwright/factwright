@@ -4,10 +4,8 @@ export type PostingSource =
   | { kind: 'lever'; company: string; id: string }
   | { kind: 'gem'; board: string; id: string }
   | { kind: 'ashby'; board: string; id: string }
-  | { kind: 'smartrecruiters'; company: string; id: string }
   | { kind: 'recruitee'; board: string; id: string }
   | { kind: 'workable'; board: string; id: string }
-  | { kind: 'oracle'; site: string; board: string; id: string }
   | { kind: 'page'; url: string };
 
 /** A request for one source: the address, and whether it answers in JSON. */
@@ -146,11 +144,6 @@ export function htmlToText(html: string): string {
     .trim();
 }
 
-/** A company's own career site on Oracle, as "acme.fa.us2.oraclecloud.com". */
-export const ORACLE_HOST = /^[a-z0-9-]{1,63}\.fa(?:\.[a-z0-9-]{1,63})?\.oraclecloud\.com$/;
-/** The site Oracle's links mean when they name none. */
-export const ORACLE_DEFAULT_SITE = 'CX_1';
-
 /** Which source to read a posting from, by its address. */
 export function postingSource(address: string): PostingSource {
   const url = new URL(address);
@@ -177,13 +170,6 @@ export function postingSource(address: string): PostingSource {
   if (gem?.[1] && gem[2]) return { kind: 'gem', board: gem[1], id: gem[2] };
   const ashby = on(host === 'jobs.ashbyhq.com', /^\/([^/]+)\/([0-9a-f-]{36})/i);
   if (ashby?.[1] && ashby[2]) return { kind: 'ashby', board: ashby[1], id: ashby[2] };
-  const smartRecruiters = on(
-    host === 'jobs.smartrecruiters.com' || host === 'careers.smartrecruiters.com',
-    /^\/([\w-]{1,100})\/(\d{1,30})/,
-  );
-  if (smartRecruiters?.[1] && smartRecruiters[2]) {
-    return { kind: 'smartrecruiters', company: smartRecruiters[1], id: smartRecruiters[2] };
-  }
   const recruiteeHost = /^([a-z0-9-]{1,63})\.recruitee\.com$/.exec(host)?.[1];
   const recruitee = on(Boolean(recruiteeHost), /^\/o\/([^/]+)/);
   if (recruiteeHost && recruitee?.[1]) {
@@ -192,13 +178,6 @@ export function postingSource(address: string): PostingSource {
   const workable = on(host === 'apply.workable.com', /^\/([\w-]{1,100})\/j\/([A-Za-z0-9]{1,40})/);
   if (workable?.[1] && workable[2] && workable[1] !== 'j') {
     return { kind: 'workable', board: workable[1], id: workable[2] };
-  }
-  const oracle = on(
-    ORACLE_HOST.test(host),
-    /^\/hcmUI\/CandidateExperience\/[^/]+\/(?:sites\/([\w-]{1,100})\/)?job\/([\w-]{1,40})/i,
-  );
-  if (oracle?.[2]) {
-    return { kind: 'oracle', site: host, board: oracle[1] ?? ORACLE_DEFAULT_SITE, id: oracle[2] };
   }
   return { kind: 'page', url: url.href };
 }
@@ -233,13 +212,6 @@ export function postingRequests(source: PostingSource): PostingRequest[] {
           json: true,
         },
       ];
-    case 'smartrecruiters':
-      return [
-        {
-          url: `https://api.smartrecruiters.com/v1/companies/${part(source.company)}/postings/${part(source.id)}`,
-          json: true,
-        },
-      ];
     case 'recruitee':
       return [
         {
@@ -251,13 +223,6 @@ export function postingRequests(source: PostingSource): PostingRequest[] {
       return [
         {
           url: `https://apply.workable.com/api/v2/accounts/${part(source.board)}/jobs/${part(source.id)}`,
-          json: true,
-        },
-      ];
-    case 'oracle':
-      return [
-        {
-          url: `https://${source.site}/hcmRestApi/resources/latest/recruitingCEJobRequisitionDetails?expand=all&onlyData=true&finder=ById;Id=%22${part(source.id)}%22,siteNumber=${part(source.board)}`,
           json: true,
         },
       ];
@@ -407,33 +372,6 @@ export function readPosting(source: PostingSource, answer: unknown): Posting | n
         via: 'Ashby API',
       };
     }
-    case 'smartrecruiters': {
-      if (field(answer, 'active') === false) {
-        return { text: '', via: 'SmartRecruiters', closed: true };
-      }
-      const sections = field(field(answer, 'jobAd'), 'sections');
-      const body = [
-        'companyDescription',
-        'jobDescription',
-        'qualifications',
-        'additionalInformation',
-      ].flatMap((key) => {
-        const section = field(sections, key);
-        const content = text(field(section, 'text'));
-        return content
-          ? ['', `## ${text(field(section, 'title')) ?? ''}`, htmlToText(content)]
-          : [];
-      });
-      if (body.length === 0) return null;
-      return {
-        text: lines(
-          text(field(answer, 'name')),
-          text(field(field(answer, 'location'), 'fullLocation')),
-          ...body,
-        ),
-        via: 'SmartRecruiters API',
-      };
-    }
     case 'recruitee': {
       const offer = field(answer, 'offer');
       const description = text(field(offer, 'description'));
@@ -469,34 +407,6 @@ export function readPosting(source: PostingSource, answer: unknown): Posting | n
           htmlToText(text(field(answer, 'benefits')) ?? ''),
         ),
         via: 'Workable API',
-      };
-    }
-    case 'oracle': {
-      const items = field(answer, 'items');
-      // Its career site's API answers an ID it no longer posts with nothing at all.
-      if (!Array.isArray(items)) return null;
-      const job = items[0];
-      if (!job) return { text: '', via: 'Oracle', closed: true };
-      const posted = day(field(job, 'ExternalPostedStartDate'));
-      const closes = day(field(job, 'ExternalPostedEndDate'));
-      return {
-        text: lines(
-          text(field(job, 'Title')),
-          text(field(job, 'PrimaryLocation')),
-          posted ? `Posted: ${posted}` : null,
-          closes ? `Closes: ${closes}` : null,
-          ...[
-            'CorporateDescriptionStr',
-            'OrganizationDescriptionStr',
-            'ExternalDescriptionStr',
-            'ExternalResponsibilitiesStr',
-            'ExternalQualificationsStr',
-          ].flatMap((key) => {
-            const content = text(field(job, key));
-            return content ? ['', htmlToText(content)] : [];
-          }),
-        ),
-        via: 'Oracle’s career site API',
       };
     }
     case 'page': {

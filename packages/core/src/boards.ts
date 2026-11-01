@@ -1,11 +1,11 @@
 import { oneLine } from './answered.ts';
-import { decodeEntities, htmlToText, ORACLE_DEFAULT_SITE, ORACLE_HOST } from './posting.ts';
+import { decodeEntities, htmlToText } from './posting.ts';
 import { readSitemap } from './sitemaps.ts';
 
 /**
- * A company's job board on an applicant system, by the board's name there. Workday and Oracle give
- * each company a site of its own, with its boards on it. Every address a request goes to is built
- * from these, and each is checked first, so a link can't steer a request anywhere else.
+ * A company's job board on an applicant system, by the board's name there. Workday gives each
+ * company a site of its own, with its boards on it. Every address a request goes to is built from
+ * these, and each is checked first, so a link can't steer a request anywhere else.
  */
 export interface BoardSource {
   kind:
@@ -13,16 +13,14 @@ export interface BoardSource {
     | 'lever'
     | 'ashby'
     | 'gem'
-    | 'smartrecruiters'
     | 'recruitee'
     | 'workable'
     | 'jazzhr'
     | 'paylocity'
-    | 'oracle'
     | 'workday'
     | 'icims';
   board: string;
-  /** The company's own site on Workday or Oracle. */
+  /** The company's own site on Workday. */
   site?: string;
 }
 
@@ -56,12 +54,10 @@ const BOARD_NAMES: Readonly<Record<BoardSource['kind'], string>> = {
   lever: 'Lever',
   ashby: 'Ashby',
   gem: 'Gem',
-  smartrecruiters: 'SmartRecruiters',
   recruitee: 'Recruitee',
   workable: 'Workable',
   jazzhr: 'JazzHR',
   paylocity: 'Paylocity',
-  oracle: 'Oracle',
   workday: 'Workday',
   icims: 'iCIMS',
 };
@@ -71,7 +67,7 @@ export const boardSystem = (source: BoardSource) => BOARD_NAMES[source.kind];
 
 /**
  * A board's name to show and to name its file by. A board on a company's own site goes by that
- * site's name too, as many companies' Oracle boards are all "CX_1" and Workday's all "Careers".
+ * site's name too, as many companies' Workday boards are all "Careers".
  */
 export const boardName = (source: BoardSource) =>
   source.site ? `${source.site.split('.')[0]}/${source.board}` : source.board;
@@ -100,13 +96,6 @@ export const boardFromSitemap = (source: BoardSource) =>
 /** Whether a board's answer is JSON, or a page or a sitemap. */
 export const boardAnswersJson = (source: BoardSource) =>
   !boardFromSitemap(source) && source.kind !== 'jazzhr' && source.kind !== 'paylocity';
-
-/** How many jobs each request for a long board brings, for the systems that page. */
-export const BOARD_PAGE_SIZE = 100;
-
-/** Whether a board comes a page at a time, or all at once. */
-export const boardPages = (source: BoardSource) =>
-  source.kind === 'smartrecruiters' || source.kind === 'oracle';
 
 /** One label of a host name, as a company's name at its applicant system can be. */
 const HOST_LABEL = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
@@ -147,14 +136,6 @@ function workdayBoard(host: string, parts: readonly string[]): BoardSource | nul
   return { kind: 'workday', board, site };
 }
 
-/** The site and board in a link to a company's Oracle career site. */
-function oracleBoard(host: string, parts: readonly string[]): BoardSource | null {
-  if (!ORACLE_HOST.test(host) || parts[0]?.toLowerCase() !== 'hcmui') return null;
-  const at = parts.indexOf('sites');
-  const board = at < 0 ? ORACLE_DEFAULT_SITE : parts[at + 1];
-  return board && PATH_NAME.test(board) ? { kind: 'oracle', board, site: host } : null;
-}
-
 /** The first board name in a Paylocity link: the GUID after ".../jobs/all/". */
 function paylocityBoard(parts: readonly string[]): BoardSource | null {
   const [one, two, three, board] = parts.map((part) => part.toLowerCase());
@@ -183,7 +164,6 @@ export function boardSource(address: string): BoardSource | null {
     return board ? { kind: 'greenhouse', board } : null;
   }
   if (WORKDAY_HOST.test(host) || WORKDAY_SITE_HOST.test(host)) return workdayBoard(host, parts);
-  if (ORACLE_HOST.test(host)) return oracleBoard(host, parts);
   if (ICIMS_HOST.test(host)) return { kind: 'icims', board: host.split('.')[0] ?? '' };
   const recruitee = companyAt(host, 'recruitee.com');
   if (recruitee) return { kind: 'recruitee', board: recruitee };
@@ -197,9 +177,6 @@ export function boardSource(address: string): BoardSource | null {
   if (host === 'jobs.ashbyhq.com') return { kind: 'ashby', board: first };
   if (host === 'jobs.gem.com') return { kind: 'gem', board: first };
   if (!PATH_NAME.test(first)) return null;
-  if (host === 'jobs.smartrecruiters.com' || host === 'careers.smartrecruiters.com') {
-    return { kind: 'smartrecruiters', board: first };
-  }
   // "j" is Workable's short link to a posting, which names no company.
   if (host === 'apply.workable.com' && first !== 'j') return { kind: 'workable', board: first };
   return null;
@@ -234,8 +211,6 @@ export function boardPostingId(address: string): string | null {
       const query = url.searchParams.get('gh_jid') ?? url.searchParams.get('token');
       return query ?? url.pathname.match(/\/jobs\/(\d+)/)?.[1] ?? null;
     }
-    case 'smartrecruiters':
-      return parts[1]?.match(/^\d+/)?.[0] ?? null;
     case 'recruitee':
       return parts[0] === 'o' ? (parts[1] ?? null) : null;
     case 'workable':
@@ -244,10 +219,6 @@ export function boardPostingId(address: string): string | null {
       return parts[0] === 'apply' ? (parts[1] ?? null) : null;
     case 'paylocity':
       return null;
-    case 'oracle': {
-      const at = parts.indexOf('job');
-      return at < 0 ? null : (parts[at + 1] ?? null);
-    }
     case 'workday':
       return workdayPostingPart(parts)?.id ?? null;
     case 'icims':
@@ -334,9 +305,9 @@ export function workablePostingId(address: string): string | null {
 
 /**
  * Where the applicant system lists the open jobs on the board: as JSON, or as a page or a sitemap
- * for the systems that give only those. For a board that pages, `offset` is how far along.
+ * for the systems that give only those.
  */
-export function boardRequest(source: BoardSource, offset = 0): string {
+export function boardRequest(source: BoardSource): string {
   const board = encodeURIComponent(source.board);
   switch (source.kind) {
     case 'greenhouse':
@@ -347,32 +318,19 @@ export function boardRequest(source: BoardSource, offset = 0): string {
       return `https://api.ashbyhq.com/posting-api/job-board/${board}?includeCompensation=true`;
     case 'gem':
       return `https://api.gem.com/job_board/v0/${board}/job_posts/`;
-    case 'smartrecruiters':
-      return `https://api.smartrecruiters.com/v1/companies/${board}/postings?limit=${BOARD_PAGE_SIZE}&offset=${offset}`;
     case 'recruitee':
       return `https://${board}.recruitee.com/api/offers/`;
     case 'workable':
-      return `https://apply.workable.com/api/v1/widget/accounts/${board}?details=true`;
+      return `https://www.workable.com/api/accounts/${board}?details=true`;
     case 'jazzhr':
       return `https://${board}.applytojob.com/apply`;
     case 'paylocity':
       return `https://recruiting.paylocity.com/recruiting/jobs/All/${board}`;
-    case 'oracle':
-      return `https://${source.site}/hcmRestApi/resources/latest/recruitingCEJobRequisitions?onlyData=true&expand=requisitionList.secondaryLocations&finder=findReqs;siteNumber=${board},limit=${BOARD_PAGE_SIZE},offset=${offset},sortBy=POSTING_DATES_DESC`;
     case 'workday':
       return `https://${source.site}/${board}/siteMap.xml`;
     case 'icims':
       return `https://${board}.icims.com/sitemap.xml`;
   }
-}
-
-/** How many jobs a board that pages says it has in all, when it says. */
-export function boardTotal(source: BoardSource, answer: unknown): number | null {
-  const total =
-    source.kind === 'oracle'
-      ? field(list(field(answer, 'items'))[0], 'TotalJobsCount')
-      : field(answer, 'totalFound');
-  return typeof total === 'number' ? total : null;
 }
 
 type Json = Record<string, unknown>;
@@ -453,14 +411,6 @@ export function job(
 /** Words for a line of a list, such as a title, which a hostile feed could fill with anything. */
 export const listLine = (value: string | null | undefined) =>
   (value && oneLine(value).slice(0, 300)) || null;
-
-/** A place, without the blanks SmartRecruiters leaves in, as "Queensland, , Australia". */
-const placeWords = (value: string | null) =>
-  value
-    ?.split(',')
-    .map((part) => part.trim())
-    .filter(Boolean)
-    .join(', ') || null;
 
 /** A link's words, as "Staff-Nurse--ICU" reads: "Staff Nurse ICU". */
 const linkWords = (value: string) => listLine(value.replace(/[-_+]+/g, ' ')) ?? '';
@@ -658,33 +608,6 @@ export function readBoard(source: BoardSource, answer: unknown): BoardJob[] {
               (text(field(each, 'content_plain')) ?? ''),
           }) ?? [],
       );
-    case 'smartrecruiters':
-      return list(field(answer, 'content')).flatMap((each) => {
-        const posting = id(field(each, 'id'));
-        const place = field(each, 'location');
-        const link =
-          posting &&
-          `https://jobs.smartrecruiters.com/${encodeURIComponent(source.board)}/${encodeURIComponent(posting)}`;
-        return (
-          job({
-            id: posting,
-            title: listLine(text(field(each, 'name'))),
-            location: listLine(placeWords(text(field(place, 'fullLocation')))),
-            workplace:
-              field(place, 'remote') === true
-                ? 'Remote'
-                : field(place, 'hybrid') === true
-                  ? 'Hybrid'
-                  : null,
-            team: listLine(
-              text(field(field(each, 'department'), 'label')) ??
-                text(field(field(each, 'function'), 'label')),
-            ),
-            link,
-            posted: day(field(each, 'releasedDate')),
-          }) ?? []
-        );
-      });
     case 'recruitee':
       return list(field(answer, 'offers')).flatMap((each) => {
         const slug = text(field(each, 'slug'));
@@ -773,28 +696,6 @@ export function readBoard(source: BoardSource, answer: unknown): BoardJob[] {
         );
       });
     }
-    case 'oracle':
-      return list(field(list(field(answer, 'items'))[0], 'requisitionList')).flatMap((each) => {
-        const posting = id(field(each, 'Id'));
-        const others = list(field(each, 'secondaryLocations')).length;
-        const primary = listLine(text(field(each, 'PrimaryLocation')));
-        const link =
-          posting &&
-          `https://${source.site}/hcmUI/CandidateExperience/en/sites/${encodeURIComponent(source.board)}/job/${encodeURIComponent(posting)}`;
-        return (
-          job({
-            id: posting,
-            title: listLine(text(field(each, 'Title'))),
-            location: primary && others > 0 ? `${primary}, and ${others} more` : primary,
-            workplace: workplace(field(each, 'WorkplaceType')),
-            team: listLine(text(field(each, 'Department')) ?? text(field(each, 'Organization'))),
-            link,
-            posted: day(field(each, 'PostedDate')),
-            closes: day(field(each, 'PostingEndDate')) ?? undefined,
-            text: text(field(each, 'ShortDescriptionStr')) ?? '',
-          }) ?? []
-        );
-      });
     case 'workday':
       return workdayJobs(source, answer);
     case 'icims':

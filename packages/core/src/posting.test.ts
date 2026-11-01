@@ -308,3 +308,104 @@ describe('a page made to keep the app busy', () => {
     expect(decodeEntities('a&#x110000;b&#99999999;c')).toBe('a�b�c');
   });
 });
+
+describe('reading a posting on Recruitee or Workable', () => {
+  it('reads it from the system’s public feed, by the names in its link', () => {
+    const recruitee = postingSource('https://bunq.recruitee.com/o/data-scientist-3?source=hn');
+    expect(recruitee).toEqual({ kind: 'recruitee', board: 'bunq', id: 'data-scientist-3' });
+    expect(postingRequests(recruitee)).toEqual([
+      { url: 'https://bunq.recruitee.com/api/offers/data-scientist-3', json: true },
+    ]);
+    expect(
+      readPosting(recruitee, {
+        offer: {
+          title: 'Data Scientist',
+          location: 'Amsterdam',
+          description: '<p>Build models.</p>',
+          requirements: '<ul><li>Python</li></ul>',
+        },
+      }),
+    ).toEqual({
+      text: 'Data Scientist\nAmsterdam\n\nBuild models.\n\n- Python',
+      via: 'Recruitee API',
+    });
+
+    const workable = postingSource('https://apply.workable.com/seeq/j/1B6E0A1710/apply');
+    expect(workable).toEqual({ kind: 'workable', board: 'seeq', id: '1B6E0A1710' });
+    expect(postingRequests(workable)).toEqual([
+      { url: 'https://apply.workable.com/api/v2/accounts/seeq/jobs/1B6E0A1710', json: true },
+    ]);
+    expect(
+      readPosting(workable, {
+        title: 'Staff Engineer',
+        remote: true,
+        location: { country: 'United States', city: null, region: null },
+        description: '<p>Build things.</p>',
+        requirements: '<p>Ten years.</p>',
+        benefits: '<p>Dental.</p>',
+      }),
+    ).toEqual({
+      text: 'Staff Engineer\nUnited States\nRemote\n\nBuild things.\n\nTen years.\n\nDental.',
+      via: 'Workable API',
+    });
+  });
+
+  it.each([
+    'https://apply.workable.com/j/1B6E0A1710',
+    'https://apply.workable.com/seeq',
+    'https://bunq.recruitee.com/',
+    'https://jobs.smartrecruiters.com/Sodexo/744000158662429',
+    'https://eswt.fa.us6.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1001/job/24825',
+    'https://a.b.recruitee.com.evil.example/o/nurse',
+  ])('reads %s as a page, through no feed', (link) => {
+    expect(postingSource(link).kind).toBe('page');
+  });
+
+  it('never lets a link change where its feed’s request goes', () => {
+    const encoded = postingSource('https://apply.workable.com/seeq/j/ABC');
+    expect(postingRequests(encoded)[0]?.url).toBe(
+      'https://apply.workable.com/api/v2/accounts/seeq/jobs/ABC',
+    );
+    const slug = postingSource('https://bunq.recruitee.com/o/..%2F..%2Fadmin');
+    expect(postingRequests(slug)[0]?.url).toBe(
+      'https://bunq.recruitee.com/api/offers/..%2F..%2Fadmin',
+    );
+  });
+
+  it('finds nothing in an empty or hostile answer', () => {
+    const recruitee = postingSource('https://bunq.recruitee.com/o/data-scientist-3');
+    const workable = postingSource('https://apply.workable.com/seeq/j/ABC');
+    for (const answer of [null, 'text', 42, [], {}, { offer: 'x' }, { offer: {} }]) {
+      expect(readPosting(recruitee, answer)).toBeNull();
+      expect(readPosting(workable, answer)).toBeNull();
+    }
+  });
+});
+
+describe('a page whose job data is a teaser', () => {
+  const page = (description: string, body: string) =>
+    `<html><script type="application/ld+json">${JSON.stringify({
+      '@type': 'JobPosting',
+      title: 'Nurse',
+      description,
+    })}</script><body><main>${body}</main></body></html>`;
+  const source = { kind: 'page', url: 'https://www.usajobs.gov/job/1' } as const;
+
+  it('gives the page’s text too, when that’s where the posting is', () => {
+    const body = `<p>${'The duties of this job, at length. '.repeat(40)}</p>`;
+    const read = readPosting(source, page('A short summary.', body));
+    expect(read?.via).toBe('the page’s JobPosting data and its text');
+    expect(read?.text).toContain('A short summary.');
+    expect(read?.text).toContain('The duties of this job');
+  });
+
+  it('gives only the job data when that’s all there is, or it’s long', () => {
+    expect(readPosting(source, page('A short summary.', ''))?.via).toBe(
+      'the page’s JobPosting data',
+    );
+    const full = 'All the duties of this job, at length. '.repeat(60);
+    const read = readPosting(source, page(full, '<p>Menus and other words.</p>'));
+    expect(read?.via).toBe('the page’s JobPosting data');
+    expect(read?.text).not.toContain('Menus');
+  });
+});
