@@ -39,7 +39,8 @@ else, never updates itself, unless it's built with a download site of its own, a
 
 ## Claude's panel
 Claude's panel runs your own Claude Code in a real terminal (node-pty and xterm.js), in the workspace folder inside the app's data folder. Each run is locked down too:
-- **No shell:** Claude Code starts in restricted mode, so it can't run commands.
+- **No shell:** Claude Code starts in restricted mode, so Claude can't run commands. Its terminal drops a `!` that would start Claude Code's shell mode, as far as it can tell from the keys.
+- **Only the tools it needs:** the app names the built-in tools a run has, so the rest stay off, in helpers too, along with new ones in later versions of Claude Code. The exception is what Claude Code adds itself, so far a tool on some models for ending a conversation, which can only end that run. Prompt suggestions and auto mode are off, and helpers work only in the workspace.
 - **Only Factwright's extras:** it loads only Factwright's plugin, tools and settings.
 - **No outside reach:** your claude.ai connectors are off, and there's no browser automation.
 - **Signals to the app:** hooks report when Claude is working, needs your answer, or is done. A turn you interrupt in the terminal, as with Esc, ends with no hook, so the run reads done once Claude Code says it's waiting for you, about a minute later. While a permission prompt or question is open, it keeps reading "Needs your answer", even as tools running alongside finish. A run started with nothing to do sends no hook until you type, so it reads "Ready" once Claude Code reaches Factwright's tools, which it does only past its first-run screens and the question about trust. They go over HTTP to a server on this computer that only accepts that run's token. The token reaches Claude Code through its environment, never a file. The same server answers Claude's calls to Factwright's tools.
@@ -84,7 +85,7 @@ The first run asks a question of its own: Claude Code wants to know whether to t
 - The run reads "Needs your answer", and the panel comes back.
 - The terminal gets an outline that pulses a few times, then stays, until it's answered.
 - A note above the terminal says how to answer: use the arrow keys to pick "Yes, I trust this folder", then press Enter.
-- The note also explains that the warning doesn't apply: Claude Code has no shell here, so it can't run programs.
+- The note also explains that the warning doesn't apply: Claude has no shell here, so it can't run programs.
 - The panel grows to fit the note rather than shrinking the terminal, because Claude Code can drop a line of its screen when it redraws for a resize.
 
 Before that question, a Claude Code that's never been opened shows its first-run screens: its text style, whether to use an API key it found in the environment, its security notes, and its terminal setup. Signing in with `claude auth login` doesn't mark them done. The app marks them done itself, as [the setup check](#the-setup-check) says, so they rarely show. When they do ([`src/main/claude/screen.ts`](src/main/claude/screen.ts)):

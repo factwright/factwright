@@ -49,6 +49,20 @@ for (const file of [
     process.exit(1);
   }
 }
+// Nor, here, without what keeps a run to the built-in tools the app names, in one argument, with
+// none that runs code or fetches pages.
+const builtIn = args
+  .find((arg) => arg.startsWith('--tools='))
+  ?.slice('--tools='.length)
+  .split(',');
+if (
+  !args.includes('--restricted') ||
+  !builtIn?.includes('Read') ||
+  builtIn.some((tool) => ['Bash', 'PowerShell', 'WebFetch'].includes(tool))
+) {
+  console.error(`A run needs --restricted and a tool list, without a shell: ${args.join(' ')}`);
+  process.exit(1);
+}
 const settings = JSON.parse(readFileSync(after('--settings'), 'utf8'));
 const tools = JSON.parse(readFileSync(after('--mcp-config'), 'utf8')).mcpServers.factwright;
 const hookUrl = settings.hooks.Stop[0].hooks[0].url;
@@ -371,6 +385,23 @@ async function permission(tool, input) {
 async function work(text) {
   await hook('UserPromptSubmit', { prompt: text });
   show(`> ${text}\nWorking on it…\n`);
+  // As Claude Code does with a helper Claude asks for in a worktree: it asks the hook every call
+  // has, and on a no starts nothing.
+  if (text === 'start a helper in a worktree') {
+    const heard = await post(activityUrl, {
+      hook_event_name: 'PreToolUse',
+      session_id: 'fake',
+      tool_name: 'Agent',
+      tool_use_id: 'toolu_helper_elsewhere',
+      tool_input: { description: 'Work elsewhere', prompt: 'Go', isolation: 'worktree' },
+    });
+    const answer = heard.status === 200 ? (await heard.json()).hookSpecificOutput : null;
+    show(
+      answer?.permissionDecision === 'deny'
+        ? `No helper: ${answer.permissionDecisionReason}\n`
+        : 'A helper started in a worktree.\n',
+    );
+  }
   // As Claude would for a question about a job: read what's on file, then answer each one
   // that's waiting, with the tool that keeps the answer with the job.
   const asked = text.match(/^\/factwright:ask job (\S+)(?: question (\S+))?/);
@@ -776,6 +807,8 @@ async function work(text) {
 }
 
 async function begin() {
+  // Pastes come marked, as they do for Claude Code.
+  show('\x1b[?2004h');
   show(`Fake Claude Code 2.1.300 · ${given('--model')} · ${given('--effort')} effort\n`);
   await post(tools.url, { jsonrpc: '2.0', id: 1, method: 'initialize', params: {} });
   const listed = await post(tools.url, { jsonrpc: '2.0', id: 2, method: 'tools/list' });
@@ -821,8 +854,17 @@ process.stdin.on('data', async (chunk) => {
     }
     return;
   }
-  if (!text.includes('\r')) {
-    typed += text;
+  // Ctrl-U clears the box.
+  if (text === '\x15') {
+    typed = '';
+    return;
+  }
+  // Marks around a paste are no part of what's in the box. Enter is the last key sent: in a paste,
+  // a line break arrives as one too.
+  // biome-ignore lint/suspicious/noControlCharactersInRegex: a paste's marks start with ESC
+  const clean = text.replace(/\x1b\[20[01]~/g, '');
+  if (!text.endsWith('\r')) {
+    typed += clean;
     return;
   }
   if (firstRunLeft > 0) {
@@ -844,6 +886,12 @@ process.stdin.on('data', async (chunk) => {
   if (askingTrust) {
     askingTrust = false;
     await begin();
+    return;
+  }
+  // Like Claude Code, it takes a "!" first in the box as a command for the user's shell.
+  if (typed.startsWith('!')) {
+    show(`Ran in your shell: ${typed.slice(1).trim()}\n`);
+    typed = '';
     return;
   }
   const line = typed.trim();

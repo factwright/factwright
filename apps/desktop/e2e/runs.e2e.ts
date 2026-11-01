@@ -195,6 +195,73 @@ test('shows where a run is in its working strip: its step on Claude’s to-do li
   await expect(claudePanel()).toHaveCount(0);
 });
 
+test('keeps a "!" from starting Claude Code’s shell mode, and helpers in the workspace', async () => {
+  const { window } = opened;
+  await window.getByRole('button', { name: 'Find jobs' }).click();
+  await window
+    .getByRole('dialog', { name: 'Find jobs' })
+    .getByRole('button', { name: /^Search/ })
+    .click();
+  const status = claudePanel().getByRole('status').first();
+  await expect(status).toHaveText('Done');
+  await showWork(window);
+  const typing = claudePanel().locator('[data-shown] .xterm-helper-textarea');
+  const sent = (line: string) => expect.poll(() => terminalText(window)).toContain(`> ${line}`);
+
+  // Typed first in the box, the "!" goes no further, and the rest is words for Claude.
+  await typing.pressSequentially('! first typed');
+  await typing.press('Enter');
+  await sent('first typed');
+  await expect(status).toHaveText('Done');
+
+  // Pasted first, as the terminal hands a paste to Claude Code.
+  await window.evaluate(`(() => {
+    const pasted = new DataTransfer();
+    pasted.setData('text/plain', '! second pasted');
+    const input = document.querySelector(
+      'section[aria-label="Claude"] [data-shown] .xterm-helper-textarea',
+    );
+    input.focus();
+    input.dispatchEvent(
+      new ClipboardEvent('paste', { clipboardData: pasted, bubbles: true, cancelable: true }),
+    );
+  })()`);
+  await typing.press('Enter');
+  await sent('second pasted');
+  await expect(status).toHaveText('Done');
+
+  // After a key the app can't follow, the same.
+  await typing.pressSequentially('gone');
+  await typing.press('Control+U');
+  await typing.pressSequentially('!third cleared');
+  await typing.press('Enter');
+  await sent('third cleared');
+  await expect(status).toHaveText('Done');
+
+  // After other words, it's only punctuation.
+  await typing.pressSequentially('wow! fourth');
+  await typing.press('Enter');
+  await sent('wow! fourth');
+  await expect(status).toHaveText('Done');
+
+  // A reply from the run's bar, which the app types into the box.
+  const reply = claudePanel().getByRole('textbox', { name: 'Reply to Claude' });
+  await reply.fill('! fifth replied');
+  await reply.press('Enter');
+  await sent('fifth replied');
+  await expect(status).toHaveText('Done');
+  expect(await terminalText(window)).not.toContain('Ran in your shell');
+
+  // A helper asked for in a worktree never starts, and the window hears nothing of it.
+  await typing.pressSequentially('start a helper in a worktree');
+  await typing.press('Enter');
+  await expect.poll(() => terminalText(window)).toContain('No helper: Helpers work in the');
+  await expect(status).toHaveText('Done');
+  await expect(claudePanel()).not.toContainText('Work elsewhere');
+  await claudePanel().getByRole('button', { name: 'Close' }).click();
+  await expect(claudePanel()).toHaveCount(0);
+});
+
 test('keeps a run working whose turn ends in an error while its helpers work in the background', async () => {
   const { window } = opened;
   await window.getByRole('button', { name: 'Find jobs' }).click();

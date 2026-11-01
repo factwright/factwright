@@ -25,6 +25,16 @@ describe('sessionSettings', () => {
     expect(settings.disableClaudeAiConnectors).toBe(true);
   });
 
+  it('turns off what Claude Code would do past the app’s tools and the user’s own say', () => {
+    for (const scope of ['hunt', 'profile', 'history', 'revise', 'template'] as const) {
+      expect(scoped(scope)).toMatchObject({
+        promptSuggestionEnabled: false,
+        respondToBashCommands: false,
+        disableAutoMode: 'disable',
+      });
+    }
+  });
+
   it('lets a run on the job hunt search, read pages, run its skills, use every tool and change any file, without asking', () => {
     expect(settings.permissions.allow).toEqual([
       'WebSearch',
@@ -179,6 +189,11 @@ describe('sessionSettings', () => {
       // Claude Code loads these where there's no CLAUDE.md, as in the workspace.
       'Edit(./AGENTS.md)',
       'Edit(./**/AGENTS.md)',
+      // What sets up a git repository, which no run has any use for.
+      'Edit(./HEAD)',
+      'Edit(./**/HEAD)',
+      'Edit(./.git)',
+      'Edit(./**/.git)',
       // The user's own notes, shared files and Profile, which go in through Factwright's tools.
       'Edit(./about-me/notes.md)',
       'Edit(./about-me/files/**)',

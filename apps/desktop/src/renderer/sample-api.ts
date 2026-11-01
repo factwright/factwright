@@ -79,7 +79,7 @@ const SETUP_CHECKS: Readonly<Record<string, SetupCheck>> = {
 const SAMPLES: Readonly<Record<string, ClaudeStatus>> = {
   ready: READY,
   'signed-out': { state: 'signed-out', version: '2.1.296' },
-  'too-old': { state: 'too-old', version: '2.0.12', minimum: '2.1.270' },
+  'too-old': { state: 'too-old', version: '2.0.12', minimum: '2.1.295' },
   missing: { state: 'missing' },
   unknown: { state: 'unknown' },
 };

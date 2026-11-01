@@ -23,7 +23,7 @@ describe('ClaudeCard', () => {
   it.each([
     [{ state: 'signed-out', version: '2.1.296' }, 'Not signed in', 'claude auth login'],
     [
-      { state: 'too-old', version: '2.0.12', minimum: '2.1.270' },
+      { state: 'too-old', version: '2.0.12', minimum: '2.1.295' },
       'Needs an update',
       'claude update',
     ],
@@ -62,7 +62,7 @@ describe('ClaudeCard', () => {
     expect((await axe.run(container)).violations).toEqual([]);
 
     for (const [status, command] of [
-      [{ state: 'too-old', version: '2.0.12', minimum: '2.1.270', claude }, `${claude} update`],
+      [{ state: 'too-old', version: '2.0.12', minimum: '2.1.295', claude }, `${claude} update`],
       [{ state: 'unknown', claude }, `${claude} --version`],
     ] as [ClaudeStatusView, string][]) {
       copy.mockClear();

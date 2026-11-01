@@ -8,7 +8,14 @@ Notable changes to Factwright, newest first. The format follows [Keep a Changelo
 - Factwright's roadmap, at factwright.com/roadmap: what's planned, what's in progress, and what's shipped, with the release each came in. Below it, the ideas to vote on, most votes first, and Suggest a feature, with a title, a few lines and an email to hear back, if you like. Steve reads each suggestion before it shows. Voting needs no account and sets no cookie: your browser keeps a random ID, and a vote sends only a one-way hash of it and the idea, so nobody can tell how you voted. Clicking again takes your vote back.
 - Suggest a feature, in the sidebar beside Report a problem, opens Factwright's roadmap at factwright.com/roadmap in your browser, to suggest a feature or vote for the ideas there, with no account. The app sends nothing itself.
 
+### Security
+- Each run of Claude Code has only the built-in tools Factwright's tasks use, and what Claude Code adds itself, so far a tool on some models for ending a conversation. The rest of its built-in tools are off, in helpers too, and a new one in a later version stays off until Factwright names it.
+- Prompt suggestions and auto mode are off in a run, and helpers work only in your workspace.
+- The terminal in Claude's panel drops a `!` that would start Claude Code's shell mode, as far as it can tell from the keys. To run a command of your own, use your own terminal.
+- Factwright now needs Claude Code 2.1.295 or newer, since Claude Code's changelog says that version fixed `--tools` and `--restricted` not applying to built-in tools that register after launch. With an older one, Factwright says it needs an update, and what to run.
+
 ### Changed
+- A run uses fewer requests of your plan: no prompt suggestions, and no session title.
 - The privacy policy has a part on ideas and the roadmap: what a suggestion keeps, that an email left with one is deleted once the idea is closed, that a vote is kept only as a one-way hash, and that your IP address only limits how often one address can suggest or vote, and isn't kept. It takes effect October 27, 2026.
 
 ## 0.18.1 - 2026-10-27
