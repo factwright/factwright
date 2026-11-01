@@ -1,6 +1,7 @@
 import type { AboutYou } from './about.ts';
 import { kindsOf } from './kinds.ts';
 import { isRegion, placesIn, savedPlaces } from './places.ts';
+import { savedTitles } from './titles.ts';
 
 /** Where each site keeps its own search. */
 const LINKEDIN = 'https://www.linkedin.com/jobs/search/';
@@ -188,7 +189,7 @@ export function browserSearches(answers: AboutYou): KindSearches[] {
   const { places, cut: citiesCut } = placesFor(answers);
   const publicWork = answers.companies.includes('public');
   return kindsOf(answers).map(({ id, name, roles }) => {
-    const titles = distinct(roles);
+    const titles = distinct(savedTitles(distinct(roles)));
     return {
       id,
       name,

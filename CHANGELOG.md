@@ -39,7 +39,7 @@ Notable changes to Factwright, newest first. The format follows [Keep a Changelo
 - A form's panel and field menus say which kind of job's target pay they filled in, where they said only "From Profile".
 
 ### Fixed
-- A city in What you want can hold a comma, so "Chicago, IL" stays one city, where it used to become Chicago and IL. Press Enter to add it. "Chicago, Denver" still adds two.
+- A city or a job title in What you want can hold a comma, so "Chicago, IL" stays one city and "Director, Sales" one title, where each used to become two. Press Enter to add it. "Chicago, Denver" and "Product Manager, Program Manager" still add two.
 - Filling through sync takes a job's kind of job from the job search that found it, as the app does, so a form's pay box fills with that kind's target pay.
 - A form's hint such as "Minimum 200 characters" no longer reads as the most the box takes.
 - A box of rich text on a form keeps an answer's lines on their own lines.

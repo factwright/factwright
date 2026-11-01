@@ -631,6 +631,28 @@ describe('ProfilePage', () => {
     expect(within(dialog).getByRole('button', { name: 'Remove Columbus, Ohio' })).toBeTruthy();
   });
 
+  it('keeps a job title with a comma whole, and adds two titles typed together', async () => {
+    const api = profileApi();
+    render(<Harness api={api} />);
+    const wants = await screen.findByRole('region', { name: 'What you want' });
+    await userEvent.click(within(wants).getByRole('button', { name: 'Change' }));
+    const dialog = await screen.findByRole('dialog', { name: 'What you want' });
+    const titles = within(dialog).getByLabelText('Job titles you want');
+    await userEvent.type(titles, 'Director, Sales');
+    // A comma doesn't add what's typed. Enter does.
+    expect((titles as HTMLInputElement).value).toBe('Director, Sales');
+    await userEvent.type(titles, '{Enter}');
+    await userEvent.type(titles, 'Scrum Master, Program Lead, Risk{Enter}');
+    for (const title of ['Director, Sales', 'Scrum Master, Program Lead, Risk']) {
+      expect(within(dialog).getByRole('button', { name: `Remove ${title}` })).toBeTruthy();
+    }
+    await userEvent.type(titles, 'Accountant, Controller');
+    await userEvent.tab();
+    for (const title of ['Accountant', 'Controller']) {
+      expect(within(dialog).getByRole('button', { name: `Remove ${title}` })).toBeTruthy();
+    }
+  });
+
   it('adds another kind of job, with its own titles and pay, and names the first', async () => {
     const api = profileApi();
     render(<Harness api={api} />);
