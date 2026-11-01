@@ -8,6 +8,7 @@
 }
 
 .theme {
+  position: relative;
   display: flex;
   flex-direction: column;
   gap: var(--fw-space-2);
@@ -21,17 +22,19 @@
   background: var(--fw-hover);
 }
 
-/* The real control, out of sight, which the keyboard and screen readers use. */
+/* The real control, out of sight, which the keyboard and screen readers use. It covers its theme,
+   so the dialog scrolls a theme into view as the keyboard reaches it. */
 .radio {
   position: absolute;
-  width: 1px;
-  height: 1px;
+  inset: 0;
+  width: 100%;
+  height: 100%;
   margin: 0;
   opacity: 0;
   pointer-events: none;
 }
 
-/* A frame around the tiny window. Its line is the theme's, so a dark window shows on a dark page. */
+/* A line around the tiny window, so a dark window shows on a dark page. */
 .frame {
   position: relative;
   display: block;

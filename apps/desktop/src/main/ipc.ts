@@ -40,7 +40,7 @@ import { registerAboutIpc } from './about/ipc.ts';
 import type { TemplatePreviews } from './about/previews.ts';
 import type { PrivateAnswers } from './about/private.ts';
 import type { AboutStore } from './about/store.ts';
-import { loadTheme, saveTheme } from './appearance.ts';
+import { saveTheme } from './appearance.ts';
 import type { AnalyzeNew } from './claude/analyze-new.ts';
 import { saveAtOnce } from './claude/at-once.ts';
 import type { Desk } from './claude/desk.ts';
@@ -149,8 +149,6 @@ function shotFor(value: unknown): ShotFor | null {
 }
 
 export interface IpcDeps {
-  /** Shows a theme the user chose, in the window's own colors too. */
-  showTheme: (choice: ThemeChoice) => void;
   /** Whether a page is the app's own, the only page whose requests are answered. */
   isAppPage: (url: string) => boolean;
   /** What the user tells Factwright about themselves, their templates, and the previews. */
@@ -228,9 +226,43 @@ const sameFile = (a: string, b: string) => {
   }
 };
 
+/** Answers a request from the app's own page. One from anywhere else is refused. */
+const answerer =
+  (isAppPage: IpcDeps['isAppPage']) =>
+  (channel: string, reply: (...args: unknown[]) => unknown) => {
+    ipcMain.handle(channel, (event, ...args: unknown[]) => {
+      if (!isAppPage(event.senderFrame?.url ?? '')) {
+        throw new Error('Refused a request from a page outside the app.');
+      }
+      return reply(...args);
+    });
+  };
+
+/**
+ * How the app looks, for this profile on this computer. It's set up on its own, ahead of the
+ * rest, since the window asks for its theme as soon as it loads, before it draws anything.
+ */
+export function registerAppearance({
+  isAppPage,
+  dataDir,
+  chosen,
+  show,
+}: Pick<IpcDeps, 'isAppPage' | 'dataDir'> & {
+  chosen: () => ThemeChoice;
+  show: (choice: ThemeChoice) => void;
+}): void {
+  const answer = answerer(isAppPage);
+  answer('appearance:theme', chosen);
+  answer('appearance:set-theme', async (value) => {
+    if (!isThemeChoice(value)) throw new Error('Refused a theme Factwright doesn’t have.');
+    show(value);
+    await saveTheme(dataDir, value);
+    return value;
+  });
+}
+
 /** Answers the window's requests, after checking each one came from the app's own page. */
 export function registerIpc({
-  showTheme,
   isAppPage,
   about,
   kept,
@@ -261,13 +293,7 @@ export function registerIpc({
   const fromApp = (event: IpcMainEvent | IpcMainInvokeEvent) =>
     isAppPage(event.senderFrame?.url ?? '');
 
-  /** A request that expects an answer. Ones from outside the app are refused. */
-  const answer = (channel: string, reply: (...args: unknown[]) => unknown) => {
-    ipcMain.handle(channel, (event, ...args: unknown[]) => {
-      if (!fromApp(event)) throw new Error('Refused a request from a page outside the app.');
-      return reply(...args);
-    });
-  };
+  const answer = answerer(isAppPage);
 
   // Claude Code's first-run screens, which signing in with `claude auth login` leaves showing, are
   // marked done as pressing Enter through them would. Only for a Claude account: one signed in
@@ -296,15 +322,6 @@ export function registerIpc({
   // Where an update stands, and restarting into one that's downloaded.
   answer('updates:status', (): UpdateStatus => updates?.current() ?? { state: 'none' });
   answer('updates:install', () => updates?.install() ?? false);
-
-  // How the app looks, for this profile on this computer.
-  answer('appearance:theme', () => loadTheme(dataDir));
-  answer('appearance:set-theme', async (value) => {
-    if (!isThemeChoice(value)) throw new Error('Refused a theme Factwright doesn’t have.');
-    showTheme(value);
-    await saveTheme(dataDir, value);
-    return value;
-  });
 
   // Which model Claude runs on, for everything and for each task. A change applies from the next
   // start, or the next task that needs another model.

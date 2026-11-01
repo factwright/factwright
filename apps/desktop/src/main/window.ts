@@ -29,6 +29,9 @@ export function showTheme(choice: ThemeChoice): void {
   for (const follow of followers) follow();
 }
 
+/** The theme chosen, as the window shows it, whether or not it could be kept for next time. */
+export const themeChosen = (): ThemeChoice => theme;
+
 /**
  * Opens the app's window, locked down, in the colors of the theme chosen. It's told whether this
  * copy has Factwright's own sync, to offer it.
