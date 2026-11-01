@@ -577,6 +577,17 @@ describe('the fact tools, from what the user typed', () => {
     expect(file).toContain(WORDS);
   });
 
+  it('keeps beside it only the sentences it draws on, so the rest stays out of the fact', async () => {
+    mkdirSync(join(root, 'facts'), { recursive: true });
+    writeFileSync(join(root, 'facts', 'projects.md'), '# Projects\n');
+    const said = `${WORDS} My street is 12 Elm St, 78701. Keep Bluebird off my resumes.`;
+    await saveFact(FACT, callFor('facts', said));
+    const file = readFileSync(join(root, 'facts', 'projects.md'), 'utf8');
+    expect(file).toContain(WORDS);
+    expect(file).not.toContain('Elm');
+    expect(file).not.toContain('Bluebird');
+  });
+
   it('refuses a number they didn’t give', async () => {
     await expect(
       saveFact(

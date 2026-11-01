@@ -526,6 +526,24 @@ function checkBacking(
   }
 }
 
+/**
+ * The sentences of what the user typed that a fact draws on, which it keeps beside it. Whatever
+ * else they typed for the run stays out of the fact, which syncs.
+ */
+function typedSentences(typed: string, claimed: readonly (string | null)[]): string {
+  const said = claimed.filter((each): each is string => Boolean(each));
+  const meaning = new Set(said.flatMap(meaningWords));
+  const numbers = new Set(said.flatMap((each) => [...numbersIn(each)]));
+  return typed
+    .split(/(?<=[.!?])\s+|\s*\n+\s*/)
+    .filter(
+      (sentence) =>
+        meaningWords(sentence).some((word) => meaning.has(word)) ||
+        [...numbersIn(sentence)].some((number) => numbers.has(number)),
+    )
+    .join(' ');
+}
+
 /** Whether every word of a new file's name, such as facts/acme-health.md, is the user's own. */
 function namedByUser(path: string, answers: readonly Answered[]): boolean {
   const own = new Set(words(ownWords(answers)).trim().split(' '));
@@ -674,6 +692,8 @@ export async function saveFact(
     // A fact that replaces another takes its place, whatever section that's in.
     const under = section && !replacing ? sectionFor(bank, path, section, asked) : null;
 
+    const kept = (each: Answered) =>
+      each.typed ? typedSentences(answerText(each), claimed) : answerText(each);
     const text = answeredClaimText({
       title,
       status,
@@ -683,7 +703,7 @@ export async function saveFact(
       ...details,
       date: deps.today(),
       context: contextOf(task, company),
-      asked: answers.map((each) => ({ question: each.question, answer: answerText(each) })),
+      asked: answers.map((each) => ({ question: each.question, answer: kept(each) })),
     });
     call.keep?.(path);
     const result = deps.facts.fileClaim(
@@ -703,7 +723,7 @@ export async function saveFact(
     call.onFiled?.({ facts: [...call.filed.facts], gaps: call.filed.gaps });
     const where = under ? `, under “${under.heading}”${under.made ? ', a new section' : ''}` : '';
     return [
-      `${replacing ? 'Replaced' : 'Saved'} “${title}” in ${path}${where}, unverified, from the user’s answer: “${answers.map(answerText).join('”, then “')}”.`,
+      `${replacing ? 'Replaced' : 'Saved'} “${title}” in ${path}${where}, unverified, from the user’s answer: “${answers.map(kept).join('”, then “')}”.`,
       ...(answers.some((each) => each.typed)
         ? ['They verify it in the Fact bank.']
         : [
