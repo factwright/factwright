@@ -63,7 +63,9 @@ import type { ChangesRequest, DocKind, DocVersion } from './versions.ts';
  * Until then, the window shows commands for the user to run in their terminal, and `claude` is
  * what they type to start Claude Code there, when that isn't just `claude`: its whole path, such
  * as `~/.local/bin/claude`. Its installer doesn't add its folder to PATH on Windows, nor always
- * on a Mac. While it's missing, it's where its own installer puts it.
+ * on a Mac. While it's missing, it's where its own installer puts it. When it's too old, `update`
+ * is what they type to update it, when that isn't `claude update`: Homebrew's or WinGet's own
+ * command, for a Claude Code that one of them installed.
  */
 export type ClaudeStatus =
   | {
@@ -78,7 +80,7 @@ export type ClaudeStatus =
       method?: string | undefined;
     }
   | { state: 'signed-out'; version: string; claude?: string }
-  | { state: 'too-old'; version: string; minimum: string; claude?: string }
+  | { state: 'too-old'; version: string; minimum: string; claude?: string; update?: string }
   | { state: 'missing'; claude?: string }
   | { state: 'unknown'; claude?: string };
 

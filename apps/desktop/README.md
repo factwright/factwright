@@ -269,7 +269,7 @@ People who share a computer each keep their own job hunt in a profile of their o
 ## Run it
 - **The app:** `pnpm dev` from the repo root opens it. The screens reload as you edit them, and the app restarts when the main process changes. Extra arguments go to Electron, such as `--remote-debugging-port=9223`. Switching profiles closes it, since the screens' server closes with the app: run `pnpm dev` again to open the profile chosen.
 - **The screens alone:** `pnpm --filter @factwright/desktop screens` shows them in a browser with sample data, for checking the design.
-  - `?claude=signed-out` picks Claude's state (also `missing`, `too-old`, `unknown` and `checking`). With `?path=off`, a new terminal doesn't find Claude Code by its name, so the steps start it by its whole path, as they do while it's missing.
+  - `?claude=signed-out` picks Claude's state (also `missing`, `too-old`, `unknown` and `checking`). With `?path=off`, a new terminal doesn't find Claude Code by its name, so the steps start it by its whole path, as they do while it's missing. With `?installed=homebrew` (or `winget`), `too-old` updates it with that package manager's own command.
   - `?jobs=none` shows the screen before there are jobs (also `failed` and `loading`). Otherwise made-up jobs show every state. Edits, such as logging a call or adding a job, stick until a reload.
   - `?platform=win32` shows the Windows title bar layout.
   - `?sync=on` picks sync's state (also `off`, `first`, `link`, `signing-in`, `syncing`, `offline`, `problem`, `signed-out`, `unavailable` and `no-server`). Turning it on plays through each step.

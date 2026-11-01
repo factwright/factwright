@@ -3,7 +3,13 @@ import { delimiter, dirname } from 'node:path';
 import type { ClaudeStatus } from '../../shared/api.ts';
 import { checkAuth } from './auth.ts';
 import { claudeCommand } from './command.ts';
-import { claudeInTerminal, findClaude, installedClaude, nodeFindDeps } from './find.ts';
+import {
+  claudeInTerminal,
+  findClaude,
+  installedClaude,
+  nodeFindDeps,
+  packageManagerUpdate,
+} from './find.ts';
 import { launchEnv } from './launch.ts';
 import { checkVersion, MIN_VERSION } from './version.ts';
 
@@ -19,12 +25,18 @@ export interface StatusDeps {
   inTerminal: (claude: string) => Promise<string | null>;
   /** What the user types to start Claude Code once its own installer has put it in place. */
   installed: () => string;
+  /**
+   * What the user types to update the claude found, when that isn't `claude update`: its package
+   * manager's own command. `byName` says whether a new terminal window finds it by name.
+   */
+  update: (claude: string, byName: boolean) => Promise<string | null>;
 }
 
 /**
  * Checks that the user's Claude Code is installed, new enough and signed in. Uses none of their
  * plan. When it isn't ready, it says what the user types to start it in their terminal, for the
- * commands the window shows them, when that isn't just `claude`.
+ * commands the window shows them, when that isn't just `claude`, and when it's too old, what
+ * updates it, when that isn't `claude update`.
  */
 export async function claudeStatus(deps: StatusDeps): Promise<ClaudeStatus> {
   const claude = await deps.find();
@@ -32,7 +44,8 @@ export async function claudeStatus(deps: StatusDeps): Promise<ClaudeStatus> {
   const status = await check(claude, deps);
   if (status.state === 'ready') return status;
   const typed = await deps.inTerminal(claude);
-  return typed ? { ...status, claude: typed } : status;
+  const update = status.state === 'too-old' ? await deps.update(claude, typed === null) : null;
+  return { ...status, ...(typed && { claude: typed }), ...(update && { update }) };
 }
 
 /** Whether the claude found is new enough and signed in. */
@@ -58,6 +71,7 @@ export function nodeStatusDeps(): StatusDeps {
     find: () => findClaude(computer),
     inTerminal: (claude) => claudeInTerminal(claude, computer),
     installed: () => installedClaude(computer),
+    update: (claude, byName) => packageManagerUpdate(claude, byName, computer),
     run: (claude, args) =>
       new Promise((resolve) => {
         const command = claudeCommand(claude, args, process.platform);

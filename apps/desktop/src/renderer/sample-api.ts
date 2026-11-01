@@ -84,6 +84,12 @@ const SAMPLES: Readonly<Record<string, ClaudeStatus>> = {
   unknown: { state: 'unknown' },
 };
 
+/** What updates a Claude Code that's too old, for ?installed: a package manager's own command. */
+const PACKAGE_UPDATES: Readonly<Record<string, string>> = {
+  homebrew: 'brew upgrade claude-code',
+  winget: 'winget upgrade Anthropic.ClaudeCode',
+};
+
 /**
  * A made-up run, in the colors Claude Code's ANSI themes use: main text, secondary text, and a
  * bar behind the user's message (seen in a real run of the dark theme; light mirrors it).
@@ -449,7 +455,8 @@ const noted = (round: QuestionRound, reply: RoundReply): [string, string][] =>
  * Sample answers for checking the screens in a browser. The query string picks Claude's status,
  * such as ?claude=signed-out&platform=win32, and ?claude=checking never answers. With
  * ?path=off, a new terminal doesn't find Claude Code by name, as after its installer on Windows,
- * so the steps start it by its whole path, as they do while it's missing. ?plan picks the
+ * so the steps start it by its whole path, as they do while it's missing. With ?installed=homebrew
+ * or winget, ?claude=too-old updates it with that package manager's own command. ?plan picks the
  * plan Claude is ready on: pro, team, or api for an API key. ?jobs picks the jobs: none, failed
  * or loading. ?profile picks how far the user's profile has come: new, started or done.
  * ?profiles picks how many profiles there are: two, three with an added one open (added), or two
@@ -1039,7 +1046,13 @@ export function sampleApi(): FactwrightApi {
           : '~/.local/bin/claude';
       const byPath =
         status.state !== 'ready' && (status.state === 'missing' || query.get('path') === 'off');
-      return Promise.resolve(byPath ? { ...status, claude: typed } : status);
+      const update =
+        status.state === 'too-old' ? PACKAGE_UPDATES[query.get('installed') ?? ''] : undefined;
+      return Promise.resolve({
+        ...status,
+        ...(byPath && { claude: typed }),
+        ...(update && { update }),
+      });
     },
     setupCheck: async () => SETUP_CHECKS[query.get('setup') ?? 'passed'] ?? null,
     // Checking again takes a moment, then passes, as it would once Factwright is updated.
