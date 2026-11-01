@@ -3,6 +3,8 @@ import { ArrowLeft, ArrowRight } from 'lucide-react';
 import { useEffect, useRef } from 'react';
 import { wordCount } from '../../shared/about.ts';
 import type { FactwrightApi } from '../../shared/api.ts';
+import type { ProfilePart } from '../../shared/profile-parts.ts';
+import type { RunControls } from '../jobs/RunActions.tsx';
 import type { ClaudeStatusView } from '../useClaudeStatus.ts';
 import { ClaudeReady } from './ClaudeReady.tsx';
 import styles from './GetStarted.module.css';
@@ -14,6 +16,7 @@ import { TemplatesStep } from './steps/TemplatesStep.tsx';
 import { WantsStep } from './steps/WantsStep.tsx';
 import { WelcomeStep } from './steps/WelcomeStep.tsx';
 import { WordsStep } from './steps/WordsStep.tsx';
+import { UpdateWithClaude } from './UpdateWithClaude.tsx';
 import type { ProfileState } from './useProfile.ts';
 
 export const STEPS = [
@@ -27,6 +30,18 @@ export const STEPS = [
   'Beyond work',
   'Ready',
 ] as const;
+
+/**
+ * The part of Profile each step fills in, which has Update with Claude here too, so nobody has to
+ * wait until they've started. Files are the user's alone to add, and the rest ask nothing to change.
+ */
+const STEP_PARTS: Readonly<Partial<Record<number, ProfilePart>>> = {
+  1: 'about',
+  3: 'shared',
+  4: 'wants',
+  5: 'templates',
+  6: 'beyond',
+};
 
 /** The fewest words about themselves that, without a file, give Claude something to start from. */
 const ENOUGH_WORDS = 20;
@@ -48,6 +63,7 @@ export function GetStarted({
   onOpenSync,
   claudeSignIn,
   onAddProfile = null,
+  run,
 }: {
   state: ProfileState & { profile: NonNullable<ProfileState['profile']> };
   api: FactwrightApi;
@@ -63,6 +79,8 @@ export function GetStarted({
   onStart: () => void;
   /** Starts Claude making a template from a resume the user likes, which the app kept. */
   onMakeTemplate: (source: string) => void;
+  /** Claude's runs, for Update with Claude, or nothing until it's ready. */
+  run?: RunControls | undefined;
   onSkip: () => void;
   /**
    * Opens sync, for someone who already has a job hunt on another computer, or null in a copy built
@@ -120,6 +138,16 @@ export function GetStarted({
         />
       </div>
       <div className={styles.body}>
+        {STEP_PARTS[step] && (
+          <div className={styles.claude}>
+            <UpdateWithClaude
+              part={STEP_PARTS[step] as ProfilePart}
+              api={api}
+              run={run}
+              onBefore={state.flush}
+            />
+          </div>
+        )}
         {step === 0 && (
           <WelcomeStep claude={claudeBox} onOpenSync={onOpenSync} onAddProfile={onAddProfile} />
         )}

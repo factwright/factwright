@@ -1,6 +1,7 @@
 import { CALL_KIND_LABELS, type Job, type JobView, payLabel } from '@factwright/core';
 import { FIT_TIER_DISPLAY } from '@factwright/ui';
 import type { RunStep } from '../shared/activity.ts';
+import { PROFILE_SKILL } from '../shared/profile-parts.ts';
 import { REVISE_SKILL } from '../shared/revision.ts';
 import {
   FACTS_SKILL,
@@ -122,6 +123,9 @@ export function runOutcome(
         }
       : null;
   }
+  // Claude says what it changed and what it left, which its panel shows, and its card lists each
+  // change, so there's nothing more to say.
+  if ('part' in task) return null;
   if (task.skill === TEMPLATE_SKILL) {
     return called(steps, 'save_template')
       ? { text: 'Your new template is saved.', place: { page: 'profile' } }
@@ -248,6 +252,7 @@ export function makesSomething(task: RunTask | null): boolean {
     GET_STARTED_SKILL,
     FACTS_SKILL,
     HISTORY_SKILL,
+    PROFILE_SKILL,
     'who-to-message',
     'salary-check',
   ].includes(task.skill);

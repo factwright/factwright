@@ -438,9 +438,14 @@ const isPlainNo = (each: Answered) => startsNo(questionKey(each.answer)) && !say
 const guessedNumbers = ({ answer }: Answered) =>
   numbersIn(questionKey(answer).replace(new RegExp(UNSURE.source, 'g'), ' '));
 
-/** Everything the user saw and said in the questions a fact rests on, to check it against. */
+/**
+ * Everything the user saw and said in the questions a fact rests on, to check it against. The app's
+ * own question over what they typed names nothing a fact could be about, so it doesn't count.
+ */
 const askedText = (answers: readonly Answered[]) =>
-  answers.map((each) => `${each.question} ${answerText(each)}`).join(' ');
+  answers
+    .map((each) => (each.typed ? answerText(each) : `${each.question} ${answerText(each)}`))
+    .join(' ');
 
 /** The claims in a file of the bank, by its path. */
 const claimsIn = (bank: FactBank, path: string): FactBlock[] =>
@@ -511,12 +516,79 @@ function checkBacking(
         `Not saved: “${each.answer}” answers whether to use a fact, not what the user has done.`,
       );
     }
+    // What's typed for a run isn't kept with a fact.
+    if (each.typed) continue;
     if (each.question.length > MAX_KEPT_QUESTION || answerText(each).length > MAX_KEPT_ANSWER) {
       throw new Error(
         'Not saved: that question or answer is too long to keep with a fact. Ask it in fewer words.',
       );
     }
   }
+}
+
+/** The files of the fact bank that aren't a job's, which no fact from what's typed starts. */
+const NOT_A_JOB = new Set(['profile', 'skills', 'gaps', 'readme', 'projects']);
+
+/**
+ * A new job's name as the user typed it, for a file such as facts/acme-health.md: its words side by
+ * side in what they said, such as "Acme Health", or null when they didn't say it.
+ */
+function jobNameIn(path: string, answers: readonly Answered[]): string | null {
+  const name = path.replace(/^facts\//, '').replace(/\.md$/, '');
+  const plain = (word: string) => word.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase();
+  const parts = name.split('-').map(plain);
+  if (NOT_A_JOB.has(name) || parts.every((part) => GLUE.has(part))) return null;
+  const said = ownWords(answers);
+  if (parts.some((part) => onlyNegated(said, part))) return null;
+  const found = [...said.matchAll(/[\p{L}\p{N}]+/gu)];
+  const at = found.findIndex((_, first) =>
+    parts.every((part, index) => {
+      const word = found[first + index]?.[0];
+      return word !== undefined && plain(word) === part;
+    }),
+  );
+  const [start, end] = [found[at], found[at + parts.length - 1]];
+  return at >= 0 && start && end
+    ? oneLine(said.slice(start.index, end.index + end[0].length).replace(/[`#*_<>]/g, ''))
+    : null;
+}
+
+/** A "not" or a "never", with its apostrophe or without: "won" or "haven" alone says neither. */
+const NEGATION =
+  /(?<![\p{L}\p{N}])(?:not|never|no|none|nor|without|cannot|(?:ca|did|does|do|has|have|had|is|was|are|were|wo|would|could|should)n['’]?t)(?![\p{L}\p{N}])/iu;
+
+/** Each time some text says a word: whether a "not" or a "never" comes before it in its clause. */
+const negatedAt = (text: string, word: string): boolean[] =>
+  text.split(PARTS).flatMap((clause) => {
+    const at = clause.search(NEGATION);
+    const said = (part: string) =>
+      words(part)
+        .trim()
+        .split(' ')
+        .filter((each) => each === word);
+    return at < 0
+      ? said(clause).map(() => false)
+      : [...said(clause.slice(0, at)).map(() => false), ...said(clause.slice(at)).map(() => true)];
+  });
+
+/** Whether the user only ever says a word with a "not" or a "never" before it. */
+const onlyNegated = (said: string, word: string) => {
+  const places = negatedAt(said, word);
+  return places.length > 0 && places.every(Boolean);
+};
+
+/**
+ * A word a fact says outright that the user only ever said with a "not" or a "never" before it, so
+ * a request that says what they didn't do can't save that they did.
+ */
+function negatedWord(said: string, claims: readonly (string | null)[]): string | undefined {
+  for (const claim of claims) {
+    const word = meaningWords(claim ?? '').find(
+      (each) => !negatedAt(claim ?? '', each).some(Boolean) && onlyNegated(said, each),
+    );
+    if (word) return word;
+  }
+  return undefined;
 }
 
 /**
@@ -566,7 +638,9 @@ export async function saveFact(
       corrected !== null && namesFact(each.question, corrected);
     checkBacking(answers, correcting);
     const [first] = answers;
-    if (first && !(isUseChoice(first.answer) && correcting(first))) {
+    // A request typed for the run isn't an answer to whether they have something, so it isn't
+    // judged as a yes or a no. What's saved from it is held to its words instead, below.
+    if (first && !first.typed && !(isUseChoice(first.answer) && correcting(first))) {
       if (saysUnsure(first) && guessedNumbers(first).size === 0) {
         throw new Error(
           `Not saved: the user wasn’t sure (“${first.answer}”). Claim nothing from that answer, and leave out a number they didn’t give.`,
@@ -596,8 +670,24 @@ export async function saveFact(
         `Not saved: the fact’s title and wording don’t say what you asked about (${keywords}). Word it as the user’s answer about that.`,
       );
     }
+    const claimed = [title, wording, details.short, details.numbers, details.say, keywords];
+    if (answers.some((each) => each.typed)) {
+      const own = new Set(meaningWords(ownWords(answers)));
+      const stranger = claimed.flatMap((each) => meaningWords(each ?? '')).find((w) => !own.has(w));
+      if (stranger) {
+        throw new Error(
+          `Not saved: “${stranger}” isn’t in what the user typed. Save what they said as they said it, in their words, or ask them about it with AskUserQuestion and save from their answer.`,
+        );
+      }
+      const negated = negatedWord(ownWords(answers), [title, wording, details.short]);
+      if (negated) {
+        throw new Error(
+          `Not saved: the user typed “${negated}” with a “not” or a “never” before it, and the fact says it without one. Save what they said, or ask them about it with AskUserQuestion.`,
+        );
+      }
+    }
     const known = numbersIn(asked);
-    const stated = [title, wording, details.short, details.numbers, details.say, keywords]
+    const stated = claimed
       .flatMap((each) => [...numbersIn(each ?? '')])
       .find((number) => !known.has(number));
     if (stated) {
@@ -636,7 +726,11 @@ export async function saveFact(
         `Not saved: ${path} has a fact titled “${taken.title}” already. Give this one a title of its own.`,
       );
     }
-    if (!bank.files.some((file) => file.path === path) && path !== 'facts/projects.md') {
+    // A job the fact bank doesn't have yet gets a file only in a run on the fact bank, from what the
+    // user typed or answered, named as they wrote it. It's unverified, like the fact in it.
+    const onFile = bank.files.some((file) => file.path === path) || path === 'facts/projects.md';
+    const newJob = !onFile && call.scope === 'part:facts' ? jobNameIn(path, answers) : null;
+    if (!onFile && !newJob) {
       throw new Error(
         `Not saved: there’s no ${path} in the fact bank. File it in a file that’s there, or in facts/projects.md for work outside a job.`,
       );
@@ -644,6 +738,11 @@ export async function saveFact(
     // A fact that replaces another takes its place, whatever section that's in.
     const under = section && !replacing ? sectionFor(bank, path, section, asked) : null;
 
+    // What they typed isn't kept beside the fact, which syncs, as it can say anything: the fact
+    // is held to its words, and says it came from there.
+    const heard = answers
+      .filter((each) => !each.typed)
+      .map((each) => ({ question: each.question, answer: answerText(each) }));
     const text = answeredClaimText({
       title,
       status,
@@ -652,11 +751,13 @@ export async function saveFact(
       wording,
       ...details,
       date: deps.today(),
-      context: contextOf(task, company),
-      asked: answers.map((each) => ({ question: each.question, answer: answerText(each) })),
+      context: answers.some((each) => each.typed)
+        ? 'typed for Update with Claude'
+        : contextOf(task, company),
+      asked: heard,
     });
     call.keep?.(path);
-    const result = deps.facts.fileClaim(path, text, replacing, under?.heading ?? null);
+    const result = deps.facts.fileClaim(path, text, replacing, under?.heading ?? null, newJob);
     if (!result.ok) throw refused(result);
     // A fact this run filed, then replaced, counts once.
     call.filed.facts = call.filed.facts.filter(
@@ -667,8 +768,12 @@ export async function saveFact(
     call.onFiled?.({ facts: [...call.filed.facts], gaps: call.filed.gaps });
     const where = under ? `, under “${under.heading}”${under.made ? ', a new section' : ''}` : '';
     return [
-      `${replacing ? 'Replaced' : 'Saved'} “${title}” in ${path}${where}, unverified, from the user’s answer: “${answers.map(answerText).join('”, then “')}”.`,
-      'Use it in this run’s work: the user just said it. Say which lines rest on it when you report.',
+      `${replacing ? 'Replaced' : 'Saved'} “${title}” in ${path}${where}, unverified, ${heard.length > 0 ? `from the user’s answer: “${heard.map((each) => each.answer).join('”, then “')}”` : 'from what the user typed'}.`,
+      ...(answers.some((each) => each.typed)
+        ? ['They verify it in the Fact bank.']
+        : [
+            'Use it in this run’s work: the user just said it. Say which lines rest on it when you report.',
+          ]),
       'Later runs offer it to the user before using it, until they verify it.',
     ].join(' ');
   } catch (error) {
@@ -711,7 +816,7 @@ function detailOf(details: string, label: string): string {
 
 /** Words that carry nothing a correction could plant: they join the words that do. */
 const GLUE = new Set(
-  'a an the and or but so yet of to in on at by for with from into onto over under per as than then that this these those it its their them they there here we us our you your he she his her was were is are be been being am has have had do does did done will would can could should may might must about around roughly nearly almost approximately more most less fewer each every all both some any such very also only just still now up down out off across after before during while since until which who whom whose what where when why how yes yeah yep ok okay right'.split(
+  'i me my mine a an the and or but so yet of to in on at by for with from into onto over under per as than then that this these those it its their them they there here we us our you your he she his her was were is are be been being am has have had do does did done will would can could should may might must about around roughly nearly almost approximately more most less fewer each every all both some any such very also only just still now up down out off across after before during while since until which who whom whose what where when why how yes yeah yep ok okay right'.split(
     ' ',
   ),
 );
@@ -913,7 +1018,8 @@ export async function correctFact(
       );
     }
     const [first] = answers;
-    if (!first || !namesFact(first.question, claim.title)) {
+    // A verified fact stays verified, so it rests only on what the user answered about it.
+    if (!first || answers.some((each) => each.typed) || !namesFact(first.question, claim.title)) {
       throw new Error(
         `Not saved: the question doesn’t name “${claim.title}”. Ask the user about the fact first, naming it by its title in quotes, then correct it from their answer.`,
       );
@@ -972,6 +1078,12 @@ export async function saveGap(
     checkBacking(answers);
     const [answer] = answers;
     if (!answer) throw notAnswered(question, call);
+    // Words typed for the run aren't a no to anything: only an answer to a question about it is.
+    if (answer.typed) {
+      throw new Error(
+        `Not saved: ask them first, with AskUserQuestion, such as “Have you used ${topic}?”, with “No” as an option, then save their answer.`,
+      );
+    }
     if (SAYS_YES.test(questionKey(answer.answer))) {
       throw new Error(
         `Not saved: the user answered “${answer.answer}”, a yes. Save what they have with save_fact instead.`,

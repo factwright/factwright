@@ -88,6 +88,7 @@ const api: FactwrightApi = {
   useVersion: (jobId, folder) => ipcRenderer.invoke('versions:use', jobId, folder),
   removeVersion: (jobId, folder) => ipcRenderer.invoke('versions:remove', jobId, folder),
   requestChanges: (request) => ipcRenderer.invoke('versions:changes', request),
+  requestProfileChanges: (request) => ipcRenderer.invoke('about:request-changes', request),
   copyText: (text) => ipcRenderer.invoke('clipboard:write', text),
   saveFile: (name, text) => ipcRenderer.invoke('files:save', name, text),
   theme: () => ipcRenderer.invoke('appearance:theme'),

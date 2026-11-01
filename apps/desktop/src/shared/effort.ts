@@ -39,6 +39,7 @@ export const RECOMMENDED_EFFORT: Readonly<Record<ModelTask, Effort>> = {
   'add-facts': 'xhigh',
   'make-template': 'xhigh',
   'work-history': 'xhigh',
+  'update-profile': 'xhigh',
 };
 
 /**
@@ -61,6 +62,7 @@ export const PRO_EFFORT: Readonly<Record<ModelTask, Effort>> = {
   'add-facts': 'high',
   'make-template': 'high',
   'work-history': 'high',
+  'update-profile': 'high',
 };
 
 /**

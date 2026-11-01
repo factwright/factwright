@@ -598,6 +598,54 @@ describe('analyzing several jobs', () => {
   });
 });
 
+describe('a task on a part of Profile', () => {
+  const request = '0123456789abcdef';
+
+  it('takes a part by its name, a kind of job by its id for that part alone, and a request', () => {
+    expect(parseRunTask({ skill: 'update-profile', part: 'about', request })).toEqual({
+      skill: 'update-profile',
+      part: 'about',
+      request,
+    });
+    expect(
+      parseRunTask({ skill: 'update-profile', part: 'kind', kind: 'design', request }),
+    ).toEqual({
+      skill: 'update-profile',
+      part: 'kind',
+      kind: 'design',
+      request,
+    });
+  });
+
+  it.each([
+    { skill: 'update-profile', request },
+    { skill: 'update-profile', part: 'about' },
+    { skill: 'update-profile', part: 'about', request: 'Typed into the prompt' },
+    { skill: 'update-profile', part: 'street', request },
+    { skill: 'update-profile', part: 'kind', request },
+    { skill: 'update-profile', part: 'kind', kind: 'Not An Id!', request },
+    { skill: 'update-profile', part: 'about', kind: 'design', request },
+    { skill: 'update-profile', part: 'about', changes: 'Typed into the prompt', request },
+    { skill: 'update-profile', part: 'about', jobId: 'acme--staff', request },
+    { skill: 'work-history', part: 'about', request },
+  ])('refuses %j', (value) => {
+    expect(parseRunTask(value)).toBeNull();
+  });
+
+  it('types only the app’s own word for the part, and a kind of job’s id', () => {
+    expect(runPrompt({ skill: 'update-profile', part: 'applications', request })).toBe(
+      '/factwright:update-profile applications',
+    );
+    expect(
+      runPrompt({ skill: 'update-profile', part: 'kind', kind: 'project-manager', request }),
+    ).toBe('/factwright:update-profile kind project-manager');
+  });
+
+  it('asks the user its own questions, as any task does', () => {
+    expect(asksNothing(runPrompt({ skill: 'update-profile', part: 'about', request }))).toBeNull();
+  });
+});
+
 describe('runPrompt', () => {
   it('names a new version, or changes, by the app’s own words, never the user’s', () => {
     expect(runPrompt({ skill: 'cover-letter', jobId: 'acme--staff-engineer', again: true })).toBe(

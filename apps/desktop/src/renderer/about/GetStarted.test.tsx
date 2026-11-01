@@ -14,6 +14,7 @@ import {
 } from '../../shared/about.ts';
 import type { ClaudeStatus, FactwrightApi } from '../../shared/api.ts';
 import type { Profile } from '../../shared/profile.ts';
+import type { RunControls } from '../jobs/RunActions.tsx';
 import type { ClaudeStatusView } from '../useClaudeStatus.ts';
 import { GetStarted } from './GetStarted.tsx';
 import { useProfile } from './useProfile.ts';
@@ -117,6 +118,7 @@ function Harness({
   onMakeTemplate = () => {},
   onSkip = () => {},
   onOpenSync = () => {},
+  run,
 }: {
   api: Api;
   claude?: ClaudeStatusView;
@@ -124,6 +126,7 @@ function Harness({
   onMakeTemplate?: (source: string) => void;
   onSkip?: () => void;
   onOpenSync?: (() => void) | null;
+  run?: RunControls;
 }) {
   const state = useProfile(api as unknown as FactwrightApi);
   if (!state.profile) return null;
@@ -138,6 +141,7 @@ function Harness({
       onMakeTemplate={onMakeTemplate}
       onSkip={onSkip}
       onOpenSync={onOpenSync}
+      run={run}
     />
   );
 }
@@ -147,6 +151,39 @@ const SAVED = { timeout: 4000 };
 
 const next = () =>
   userEvent.click(screen.getByRole('button', { name: /^(Continue|Get started)$/ }));
+
+describe('Update with Claude, before getting started', () => {
+  const free: RunControls = {
+    stateOf: () => null,
+    tasksOn: () => [],
+    start: vi.fn(),
+    show: vi.fn(),
+  };
+
+  it.each([
+    [1, 'About you'],
+    [3, 'What you’ve shared'],
+    [4, 'What you want'],
+    [5, 'Resume templates'],
+    [6, 'Beyond work'],
+  ])('is on step %i, for %s', async (step, part) => {
+    render(<Harness api={profileApi({ step, reached: step })} run={free} />);
+    const button = await screen.findByRole('button', { name: `Update with Claude: ${part}` });
+    expect((button as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it.each([0, 2, 7])('isn’t on step %i, which has nothing of its own to change', async (step) => {
+    render(<Harness api={profileApi({ step, reached: step })} run={free} />);
+    await screen.findByRole('navigation', { name: 'Getting started' });
+    expect(screen.queryByRole('button', { name: /^Update with Claude/ })).toBeNull();
+  });
+
+  it('waits for Claude Code to be ready', async () => {
+    render(<Harness api={profileApi({ step: 1, reached: 1 })} />);
+    const button = await screen.findByRole('button', { name: 'Update with Claude: About you' });
+    expect((button as HTMLButtonElement).disabled).toBe(true);
+  });
+});
 
 describe('GetStarted', () => {
   it('welcomes the user, says whose Claude does the work, and can be skipped', async () => {

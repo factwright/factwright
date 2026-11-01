@@ -191,10 +191,13 @@ function sampleRun(dark: boolean) {
               `${color('34', '✻')} ${color(secondary, 'Reading the newest “Who is hiring?” thread…')}\r\n`,
             ],
     taskDone: (task: RunTask) => [
-      `\r\n${color(main, `⏺ Done. ${'jobId' in task ? 'The job’s panel shows what changed.' : 'The jobs that fit are under New.'}`)}\r\n\r\n${color(secondary, '❯')} `,
+      `\r\n${color(main, `⏺ Done. ${'part' in task ? PART_SAID : 'jobId' in task ? 'The job’s panel shows what changed.' : 'The jobs that fit are under New.'}`)}\r\n\r\n${color(secondary, '❯')} `,
     ],
   };
 }
+
+/** What a made-up change to a part of Profile says once it's done. */
+const PART_SAID = 'I saved what you asked for, and nothing else.';
 
 /** Claude Code's line for a call that needs the user's OK, as its terminal prompt names it. */
 function permissionCall(ask: PermissionAsk): string {
@@ -648,7 +651,13 @@ export function sampleApi(): FactwrightApi {
   };
   const finish = (sample: Sample) => {
     if (sample.task) tracker.madeBy(sample.task);
-    ended(sample, { said: 'Done. The job’s panel shows what changed.', error: null });
+    ended(sample, {
+      said:
+        sample.task && 'part' in sample.task
+          ? `Done. ${PART_SAID}`
+          : 'Done. The job’s panel shows what changed.',
+      error: null,
+    });
     changes.done(sample.record, sample.task);
     done(sample);
   };

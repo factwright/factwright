@@ -13,6 +13,7 @@ type ProfileApi = Pick<
   | 'savePrivateAnswers'
   | 'contactFromResume'
   | 'saveHistory'
+  | 'requestProfileChanges'
   | 'saveNotes'
   | 'changeConfidential'
   | 'addFile'
@@ -311,6 +312,7 @@ export function sampleProfile(state: string | null): ProfileApi {
       return answers;
     },
     privateAnswers: async () => kept,
+    requestProfileChanges: async () => ({ ok: true, request: '0123456789abcdef' }),
     saveHistory: async (saved) => {
       history = saved;
       changed();

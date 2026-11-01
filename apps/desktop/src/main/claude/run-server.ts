@@ -6,9 +6,10 @@ import type { FiledFacts } from '../../shared/facts.ts';
 import type { PermissionAnswer, PermissionAsk } from '../../shared/permission-asks.ts';
 import type { QuestionRound, RoundReply } from '../../shared/rounds.ts';
 import type { RunScope } from '../../shared/runs.ts';
+import type { BoundProfileChanges } from '../about/profile-requests.ts';
 import type { BoundRevision } from '../jobs/revisions.ts';
 import type { BoundChanges } from '../jobs/versions.ts';
-import { TOOLS_INSTRUCTIONS } from '../tools/index.ts';
+import { runHasTool, TOOLS_INSTRUCTIONS } from '../tools/index.ts';
 import { answerMcp, type McpAnswer, type McpTool, newCall, type ToolCall } from '../tools/mcp.ts';
 import { type AskContext, permissionAskFrom, permissionReply, toolKey } from './permission-asks.ts';
 import { hookReply, roundFrom } from './rounds.ts';
@@ -135,7 +136,7 @@ export interface ListenOptions {
   /** The revision the run was started for, which only its own tool calls can read. */
   revision?: BoundRevision;
   /** The changes the user asked for, which only the run's own tool calls can read. */
-  changes?: BoundChanges;
+  changes?: BoundChanges | BoundProfileChanges;
   /** Asks the user Claude's questions in the app's dialog. Without it, the terminal asks them. */
   ask?: QuestionAsker;
   /**
@@ -523,7 +524,8 @@ export class RunServer {
     try {
       answer = await answerMcp(
         parseJson(body),
-        this.options.tools,
+        // A tool a run doesn't have is one it doesn't see, and can't call.
+        this.options.tools.filter((tool) => runHasTool(call.scope, tool.name)),
         { name: 'factwright', version: this.options.version, instructions: TOOLS_INSTRUCTIONS },
         call,
       );

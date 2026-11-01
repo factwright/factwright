@@ -39,6 +39,7 @@ import { DOC_KINDS, type DocKind, parseChangesRequest } from '../shared/versions
 import { registerAboutIpc } from './about/ipc.ts';
 import type { TemplatePreviews } from './about/previews.ts';
 import type { PrivateAnswers } from './about/private.ts';
+import type { ProfileRequests } from './about/profile-requests.ts';
 import type { AboutStore } from './about/store.ts';
 import { saveTheme } from './appearance.ts';
 import type { AnalyzeNew } from './claude/analyze-new.ts';
@@ -170,6 +171,8 @@ export interface IpcDeps {
   revisions: Pick<Revisions, 'prepare' | 'state'>;
   /** The versions of jobs' resumes, cover letters and Projects pages. */
   versions: Pick<Versions, 'keep' | 'use' | 'remove' | 'prepareChanges' | 'list'>;
+  /** What the user asked to change in a part of Profile, waiting for its run. */
+  profileRequests: ProfileRequests;
   workspace: string;
   sync: SyncAccount;
   /** The app's own data folder, which holds Claude's settings. */
@@ -275,6 +278,7 @@ export function registerIpc({
   jobs,
   revisions,
   versions,
+  profileRequests,
   workspace,
   sync,
   dataDir,
@@ -824,5 +828,5 @@ export function registerIpc({
   });
   answer('helper:files-and-folders', () => saveHelper.openFilesAndFolders());
 
-  registerAboutIpc(answer, { about, previews, templates, kept, workspace });
+  registerAboutIpc(answer, { about, previews, templates, kept, workspace, profileRequests });
 }

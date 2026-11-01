@@ -41,6 +41,7 @@ import type {
   Profile,
   TemplateUpload,
 } from './profile.ts';
+import type { ProfileChanges } from './profile-parts.ts';
 import type { AddProfileResult, ProfileList } from './profiles.ts';
 import type { RevisionRequest, RevisionState } from './revision.ts';
 import type { QuestionRound, RoundReply } from './rounds.ts';
@@ -120,8 +121,9 @@ export interface TerminalSize {
 /**
  * Why a run didn't start. "revision": the app has no revision prepared for it, such as after a
  * restart, so it needs sending again. "changes": the same, for the changes the user asked for.
+ * "profile-changes": the same, for the changes they asked for in a part of Profile.
  */
-export type StartProblem = 'not-ready' | 'failed' | 'revision' | 'changes';
+export type StartProblem = 'not-ready' | 'failed' | 'revision' | 'changes' | 'profile-changes';
 
 /**
  * What a task in line waits for: its turn, while as many run as may at once; Claude's other task
@@ -581,6 +583,13 @@ export interface FactwrightApi {
    * starts next, which reads it through a tool, never typed into it.
    */
   requestChanges(request: ChangesRequest): Promise<EditResult>;
+  /**
+   * Holds what the user asked to change in a part of Profile, for the run the window starts next,
+   * which reads it with requested_changes, and answers with the ID that run's task names it by.
+   */
+  requestProfileChanges(
+    request: ProfileChanges,
+  ): Promise<{ ok: true; request: string } | { ok: false; message: string }>;
   /** Copies text to the clipboard, such as the journey as a flow chart. */
   copyText(text: string): Promise<EditResult>;
   /** Saves text to a file where the user picks, such as the journey as a spreadsheet. */

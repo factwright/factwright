@@ -2,6 +2,7 @@ import { effortFor } from '../../shared/effort.ts';
 import { modelFor } from '../../shared/models.ts';
 import { REVISE_SKILL } from '../../shared/revision.ts';
 import { ANALYZE_SKILL, type RunTask, scopeOf, taskJobs } from '../../shared/runs.ts';
+import type { ProfileRequests } from '../about/profile-requests.ts';
 import type { Revisions } from '../jobs/revisions.ts';
 import type { Versions } from '../jobs/versions.ts';
 import { runPrompt } from '../policy.ts';
@@ -16,6 +17,8 @@ export interface PrepareDeps {
   revisions: Pick<Revisions, 'claim' | 'release' | 'record'>;
   /** The changes the user asked for, which a run started for them claims. */
   versions: Pick<Versions, 'claimChanges' | 'releaseChanges'>;
+  /** The changes the user asked for in a part of Profile, which a run for that part claims. */
+  profileRequests: Pick<ProfileRequests, 'find'>;
 }
 
 /**
@@ -34,6 +37,11 @@ export function taskPreparer(deps: PrepareDeps): (task: RunTask | null) => Promi
         ? deps.versions.claimChanges(task.jobId, task.skill === REVISE_SKILL ? 'resume' : 'letter')
         : undefined;
     if (changes === null) return { ok: false, problem: 'changes' };
+    const update =
+      task && 'part' in task
+        ? deps.profileRequests.find(task.request, task.part, task.kind)
+        : undefined;
+    if (update === null) return { ok: false, problem: 'profile-changes' };
     const letGo = () => {
       if (revision) deps.revisions.release(revision);
       if (changes) deps.versions.releaseChanges(changes);
@@ -58,7 +66,7 @@ export function taskPreparer(deps: PrepareDeps): (task: RunTask | null) => Promi
         // The jobs it analyzes, which only an Analyze job run may merge others into.
         jobs: task?.skill === ANALYZE_SKILL ? taskJobs(task) : [],
         ...(revision && { revision }),
-        ...(changes && { changes }),
+        ...((changes || update) && { changes: changes ?? update }),
       },
       started: async (ok) => {
         if (!ok) letGo();
