@@ -89,8 +89,10 @@ import { SyncDialog } from './sync/SyncDialog.tsx';
 import { useApprovals, useSync } from './sync/useSync.ts';
 import { TopBar } from './TopBar.tsx';
 import { hasUnsaved } from './unsaved.ts';
+import { JustUpdated } from './updates/JustUpdated.tsx';
 import { inBanner, isPutOff } from './updates/putOff.ts';
 import { UpdateBanner } from './updates/UpdateBanner.tsx';
+import { useJustUpdated } from './updates/useJustUpdated.ts';
 import { useUpdates } from './updates/useUpdates.ts';
 import { isOpen, startsNow, useClaudeRuns } from './useClaudeRuns.ts';
 import { typedClaude, useClaudeStatus } from './useClaudeStatus.ts';
@@ -276,6 +278,13 @@ export function App({ api }: { api: FactwrightApi }) {
     jobs.list.jobs.length === 0
       ? 'profile'
       : 'jobs');
+
+  // What's new in the version just installed, as the window opens on it.
+  const justUpdated = useJustUpdated(api, {
+    opened: profile !== null && jobs.state === 'ready' && profiles.list !== null,
+    gettingStarted: page === 'profile' && gettingStarted,
+    runGoing: claude.runs.some((run) => !startedOnItsOwn(run.task)),
+  });
 
   // Going to a part of the fact bank lasts while it shows: back from elsewhere, it opens as usual.
   useEffect(() => {
@@ -1018,6 +1027,7 @@ export function App({ api }: { api: FactwrightApi }) {
           )}
         </Dialog>
       )}
+      {justUpdated.shown && <JustUpdated {...justUpdated.shown} onClose={justUpdated.close} />}
       {turns.shown?.kind === 'questions' && (
         <ClaudeQuestions
           key={turns.shown.item.id}
