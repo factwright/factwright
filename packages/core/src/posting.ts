@@ -207,13 +207,26 @@ export function postingRequests(source: PostingSource): PostingRequest[] {
 }
 
 /**
+ * A Workday posting's own link, from a link to its page for applying, which can say a posting has
+ * closed when it hasn't. It looks at each part of the path once, so a long link takes as long as
+ * it is long.
+ */
+function withoutApply(address: string): string {
+  const end = address.search(/[?#]/);
+  const path = end < 0 ? address : address.slice(0, end);
+  const parts = path.split('/');
+  // The parts before these are the scheme, the gap after it, and the host.
+  const at = parts.findIndex((part, index) => index > 2 && part.toLowerCase() === 'apply');
+  return at < 0 ? address : parts.slice(0, at).join('/') + address.slice(path.length);
+}
+
+/**
  * Where to read a page. An iCIMS posting's page is little more than a frame that loads the posting
  * later, so reading it gets next to nothing. Asked for the frame's own view, it gives the posting
  * in full, with its JobPosting data.
  */
 function pageAddress(address: string): string {
-  // Workday's page for applying can say a posting's closed when it isn't, so read the posting's.
-  if (onWorkday(address)) return address.replace(/\/apply(\/[^?#]*)?(?=[?#]|$)/i, '');
+  if (onWorkday(address)) return withoutApply(address);
   const url = new URL(address);
   if (!/(^|\.)icims\.com$/i.test(url.hostname) || !url.pathname.startsWith('/jobs/')) {
     return address;

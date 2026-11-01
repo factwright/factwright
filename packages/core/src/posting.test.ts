@@ -184,6 +184,11 @@ describe('a Workday posting’s page', () => {
       address('https://wd5.myworkdaysite.com/recruiting/acme/Careers/job/Nurse_R1/apply'),
     ).toBe('https://wd5.myworkdaysite.com/recruiting/acme/Careers/job/Nurse_R1');
     expect(address('https://acme.example/jobs/1/apply')).toBe('https://acme.example/jobs/1/apply');
+    // A title that only starts with the word stays, and a long link takes as long as it is long.
+    expect(address(`${posting}/Apply-Today_R2`)).toBe(`${posting}/Apply-Today_R2`);
+    const start = Date.now();
+    expect(address(`${posting}${'/apply'.repeat(200_000)}`)).toBe(posting);
+    expect(Date.now() - start).toBeLessThan(1000);
   });
 
   it('says the posting has closed when the page says so', () => {
