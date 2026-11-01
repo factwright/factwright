@@ -2,6 +2,7 @@ import {
   type AboutYou,
   COMPANY_KINDS,
   EMPLOYMENT,
+  entriesLine,
   FIELDS,
   type JobKind,
   LEVELS,
@@ -16,13 +17,6 @@ function either(words: readonly string[], joiner = 'or'): string {
   if (words.length <= 1) return words.join('');
   return `${words.slice(0, -1).join(', ')} ${joiner} ${words.at(-1)}`;
 }
-
-/**
- * Titles or cities in a line, as "a, b or c". One can hold a comma, as in "Director, Sales" or
- * "Chicago, IL", and then they're kept apart by more: "a; b; c".
- */
-const entriesLine = (entries: readonly string[]) =>
-  entries.some((entry) => entry.includes(',')) ? entries.join('; ') : either(entries);
 
 const lower = (words: readonly string[]) => words.map((word) => word.toLowerCase());
 

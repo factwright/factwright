@@ -642,8 +642,8 @@ describe('ProfilePage', () => {
     // A comma doesn't add what's typed. Enter does.
     expect((titles as HTMLInputElement).value).toBe('Director, Sales');
     await userEvent.type(titles, '{Enter}');
-    await userEvent.type(titles, 'Scrum Master, Program Lead, Risk{Enter}');
-    for (const title of ['Director, Sales', 'Scrum Master, Program Lead, Risk']) {
+    await userEvent.type(titles, 'Scrum Master, Payments{Enter}');
+    for (const title of ['Director, Sales', 'Scrum Master, Payments']) {
       expect(within(dialog).getByRole('button', { name: `Remove ${title}` })).toBeTruthy();
     }
     await userEvent.type(titles, 'Accountant, Controller');

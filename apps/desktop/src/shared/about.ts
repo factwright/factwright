@@ -271,6 +271,17 @@ export const labelOf = <T extends string>(
   value: T,
 ) => list.find(([each]) => each === value)?.[1] ?? value;
 
+/**
+ * Job titles or cities in a line, as "a, b or c". One can hold a comma, as in "Director, Sales" or
+ * "Chicago, IL", and then they're kept apart by more: "a; b; c".
+ */
+export function entriesLine(entries: readonly string[]): string {
+  if (entries.some((entry) => entry.includes(','))) return entries.join('; ');
+  return entries.length <= 1
+    ? entries.join('')
+    : `${entries.slice(0, -1).join(', ')} or ${entries.at(-1)}`;
+}
+
 /** Nothing told yet. */
 export const NO_ANSWERS: AboutYou = {
   you: { name: '', email: '', phone: '', location: '', linkedin: '', website: '' },
