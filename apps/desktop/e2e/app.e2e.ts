@@ -1326,6 +1326,8 @@ test('chooses a theme for the whole window, and keeps it', async () => {
   await reopened.getByText('System', { exact: true }).click();
   await expect(again.locator('html')).not.toHaveAttribute('data-theme');
   await expect.poll(source).toBe('system');
+  await reopened.getByRole('button', { name: 'Done' }).click();
+  await expect(reopened).toHaveCount(0);
 });
 
 test('drags a job’s details to any width beside the list, and keeps it', async () => {
