@@ -12,8 +12,9 @@
 // it suggests. A Greenhouse form you submit, on a page served here, marks its job Applied, with
 // Undo. Turned off in setup, they're gone, and Fill from the popup still fills the form in its
 // page, with a note whose Details opens the side panel. On a form with fields you can't see, as a
-// page's traps for bots, it reads only those you can. Nothing real is submitted, and nothing
-// leaves this computer.
+// page's traps for bots, it reads only those you can. A form's box for what you did in a job takes
+// the job's own resume's words, then its starting resume's, then Profile's, with the others in its
+// menu. Nothing real is submitted, and nothing leaves this computer.
 // `pnpm --filter @factwright/extension e2e:fill` (it needs Playwright's Chromium, as `e2e` does,
 // and a C compiler, for the helper). With `-- --shots <folder>`, it saves the panel and the filled
 // form there as pictures, to look over a change, and with `-- --screenshots`, it draws the stores'
@@ -27,6 +28,7 @@ import {
   readFileSync,
   realpathSync,
   rmSync,
+  utimesSync,
   writeFileSync,
 } from 'node:fs';
 import { createServer } from 'node:http';
@@ -266,6 +268,39 @@ try {
       `- **Links:** Workday ${local.origin}${WORKDAY_PATH}`,
     ].join('\n'),
   );
+  /** A position at Tidewater Analytics, as a resume lists it, saying what you did there. */
+  const position = (title: string, ...text: string[]) => ({
+    title,
+    company: 'Tidewater Analytics',
+    start: '2021',
+    end: 'Present',
+    bullet_groups: [{ bullets: text.map((each) => ({ text: each })) }],
+  });
+  const resumeListing = (...experience: ReturnType<typeof position>[]) =>
+    JSON.stringify({
+      name: 'Ana María Ruiz',
+      headline: 'Product manager',
+      summary: 'Ships data products.',
+      experience,
+    });
+  // Its own resume says what you did in your newest job, and only there.
+  const DIRECTOR_LINES = ['Runs product for six teams.', 'Took forecasting to 40 customers.'];
+  writeFileSync(
+    join(workdayFolder, 'resume.json'),
+    resumeListing(position('Director of Product', ...DIRECTOR_LINES)),
+  );
+  // Your one kind of job's starting resume, from before the jobs' own, so it's not your newest.
+  const STARTING_LINES = ['Set the roadmap for data products.', 'Hired the first four PMs.'];
+  const startingResume = join(workspace, 'base', 'big-company-ic.json');
+  mkdirSync(join(workspace, 'base'), { recursive: true });
+  writeFileSync(
+    startingResume,
+    resumeListing(
+      position('Director of Product', ...STARTING_LINES),
+      position('Senior Product Manager', 'Ran discovery for three products.'),
+    ),
+  );
+  utimesSync(startingResume, new Date('2026-01-01'), new Date('2026-01-01'));
   // The other applicant systems' jobs, each with its application's address.
   systemsJobs(workspace, local.origin);
   // A job on Greenhouse you haven't applied to, with its resume.
@@ -935,14 +970,26 @@ try {
         company: 'Tidewater Analytics',
         location: 'Denver, CO',
         positions: [
-          { title: 'Director of Product', start: '2023-04', end: 'present', summary: '' },
+          {
+            title: 'Director of Product',
+            start: '2023-04',
+            end: 'present',
+            summary: 'Runs product at Tidewater.',
+          },
           { title: 'Senior Product Manager', start: '2021-03', end: '2023-04', summary: '' },
         ],
       },
       {
         company: 'Fernway',
         location: 'Boulder, CO',
-        positions: [{ title: 'Product Manager', start: '2018-06', end: '2021-03', summary: '' }],
+        positions: [
+          {
+            title: 'Product Manager',
+            start: '2018-06',
+            end: '2021-03',
+            summary: 'Shipped the first forecasting product.',
+          },
+        ],
       },
     ],
     schools: [
@@ -999,6 +1046,11 @@ try {
     workday
       .locator(`[aria-labelledby="${panel}"] [name="${name}"]`)
       .evaluate((input) => (input as HTMLInputElement).value);
+  /** What's in the Role Description of one of Workday's parts, by the part's heading's id. */
+  const describedIn = (panel: string) =>
+    workday
+      .locator(`[aria-labelledby="${panel}"] textarea`)
+      .evaluate((box) => (box as HTMLTextAreaElement).value);
   /** What one of its lists you search keeps, as pills, by the box's id. */
   const pills = (id: string) =>
     workday
@@ -1072,6 +1124,40 @@ try {
     'the first Work Experience takes your newest job, its dates typed a key at a time, in place of what Workday filled',
   );
   check(
+    (await typedIn('workExperience-225--roleDescription')) === DIRECTOR_LINES.join('\n') &&
+      (await workdayPanel.getByText('Role Description', { exact: false }).count()) >= 1 &&
+      (await workdayPanel.getByText('From the job’s resume').count()) >= 1,
+    'its Role Description takes what the job’s own resume says you did there, in plain lines, and the panel says so',
+  );
+  await shoot(workdayPanel, 'fill-10b-workday-description-panel');
+  // Its menu offers what else is on file for the position: the starting resume's words and
+  // Profile's. Each goes in the box only once you pick it.
+  await workday.bringToFront();
+  await workday.locator('[id="workExperience-225--roleDescription"]').click();
+  const descriptionMenu = await frameOn('menu', 'From your starting resume', 20_000, workday);
+  const menuSays = await descriptionMenu.locator('body').innerText();
+  check(
+    menuSays.includes('From the job’s resume') &&
+      menuSays.includes('Set the roadmap for data products.') &&
+      menuSays.includes('From your work history') &&
+      menuSays.includes('Runs product at Tidewater.'),
+    'the box’s menu offers the starting resume’s words and Profile’s beside the job’s own',
+  );
+  check(
+    (await typedIn('workExperience-225--roleDescription')) === DIRECTOR_LINES.join('\n'),
+    'and nothing changes in the box until you pick one',
+  );
+  await shoot(workday, 'fill-10c-workday-description-menu', false);
+  await press(descriptionMenu.getByRole('button', { name: /From your starting resume/ }), workday);
+  await workday.waitForFunction(
+    (wanted) =>
+      (document.getElementById('workExperience-225--roleDescription') as HTMLTextAreaElement)
+        .value === wanted,
+    STARTING_LINES.join('\n'),
+    { timeout: 10_000 },
+  );
+  check(true, 'picking the starting resume’s words puts them in the box, as plain lines');
+  check(
     (await typedIn('education-247--schoolName')) === 'CU Boulder' &&
       (await shows('education-247--degree')) === 'Bachelors' &&
       (await pills('education-247--fieldOfStudy')) === 'Computer Science',
@@ -1088,6 +1174,12 @@ try {
       (await typedIn('workExperience-225--jobTitle')) === 'Director of Product',
     'Add for your other jobs presses Workday’s Add Another, and fills each new part with the next job',
   );
+  check(
+    (await describedIn('Work-Experience-2-panel')) === 'Ran discovery for three products.' &&
+      (await describedIn('Work-Experience-3-panel')) === 'Shipped the first forecasting product.' &&
+      (await typedIn('workExperience-225--roleDescription')) === STARTING_LINES.join('\n'),
+    'each new part’s Role Description takes the starting resume’s words for that job, or else Profile’s, and what you picked stays',
+  );
   await workdayPanel
     .getByRole('button', { name: 'Add 1 for your other school', exact: true })
     .click();
@@ -1097,6 +1189,7 @@ try {
     'and for your other school',
   );
   await shoot(workday, 'fill-11-workday-my-experience');
+  await shoot(workdayPanel, 'fill-11b-workday-my-experience-panel');
 
   await nextPage('Application Questions');
   await fillThisPage();

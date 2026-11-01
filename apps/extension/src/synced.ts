@@ -3,6 +3,7 @@ import {
   type CollectedJob,
   collectJobs,
   folderFiles,
+  isStartingResume,
   type Job,
   jobList,
   knownJobsOf,
@@ -363,4 +364,38 @@ export function resumePaths(synced: Synced): string[] {
     )
     .sort(([, a], [, b]) => b.modified.localeCompare(a.modified))
     .map(([path]) => path);
+}
+
+/**
+ * A folder's starting resumes, as sync holds them, in their names' order, as the app reads them.
+ * The folder for the first kind of job is base, and the other kinds' are in folders of their own.
+ */
+export function startingPaths(synced: Synced, folder: string): string[] {
+  return [...synced.files.keys()]
+    .filter((path) => {
+      const name = path.slice(folder.length + 1);
+      return path.startsWith(`${folder}/`) && !name.includes('/') && isStartingResume(name);
+    })
+    .sort();
+}
+
+/** Where job searches keep what they found: each run's jobs.json, in a search's folder. */
+const SEARCH_JOBS = /^searches\/[^/]+\/jobs(?:-[1-9]\d{0,2})?\.json$/;
+
+/** The path of each run of a job search, as sync holds them. */
+export const searchPaths = (synced: Synced): string[] =>
+  [...synced.files.keys()].filter((path) => SEARCH_JOBS.test(path));
+
+/**
+ * The kind of job the app knows a job as, from its fit check or the job search that found it, by
+ * the app's own matching, from the job.md files and job searches' files read, in `texts`.
+ */
+export function kindFoundIn(
+  synced: Synced,
+  id: string,
+  texts: ReadonlyMap<string, string>,
+): string | null {
+  return (
+    foundJobs(syncedWorkspace(synced.files, texts), jobRows(synced)).get(id)?.kindFound ?? null
+  );
 }

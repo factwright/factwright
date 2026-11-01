@@ -285,6 +285,48 @@ describe('what a field’s menu offers', () => {
   });
 });
 
+describe('what a field’s menu offers for what you did in a position', () => {
+  const box = field(0, 'Description', { control: 'long', type: '' });
+  const OTHERS: FieldReply['others'] = [
+    { text: 'Set the strategy.', source: 'resume', from: 'From your Strategy starting resume' },
+    { text: 'Ran the PMO.', source: 'resume', from: 'From your PMO starting resume' },
+  ];
+
+  it('each answer on file, saying which it is, Profile’s too', () => {
+    const offered = menuAnswers(box, {
+      kind: 'job-summary',
+      text: 'Runs product.',
+      source: 'profile',
+      from: 'From your work history',
+      others: OTHERS,
+    });
+    expect(offered.map((each) => each.shown)).toEqual([
+      { text: 'Runs product.', from: 'From your work history' },
+      { text: 'Set the strategy.', from: 'From your Strategy starting resume' },
+      { text: 'Ran the PMO.', from: 'From your PMO starting resume' },
+    ]);
+    expect(offered[1]?.answer).toEqual({ text: 'Set the strategy.' });
+  });
+
+  it('with none of them to fill, each kind of job’s, to pick from', () => {
+    const offered = menuAnswers(box, {
+      kind: 'job-summary',
+      source: 'you',
+      left: 'new',
+      from: 'Factwright doesn’t know this job’s kind of job yet.',
+      others: OTHERS,
+    });
+    expect(offered.map((each) => each.shown.from)).toEqual([
+      'From your Strategy starting resume',
+      'From your PMO starting resume',
+    ]);
+  });
+
+  it('never for a field left for you with nothing on file', () => {
+    expect(menuAnswers(box, { kind: 'job-summary', source: 'you', left: 'unset' })).toEqual([]);
+  });
+});
+
 describe('what you give a field, offered to keep', () => {
   it('only for a field whose answer Profile keeps, never an equal-opportunity one', () => {
     expect(keepsAnswer(FORM.fields[1] as PageField, REPLIES[1])).toBe(true);

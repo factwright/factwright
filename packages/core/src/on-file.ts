@@ -7,11 +7,13 @@ import {
   type RememberedKind,
   type ResumeOnFile,
   type SentBefore,
+  type StartingOnFile,
 } from './fill.ts';
 import { type FieldKind, fieldKind } from './forms.ts';
 import type { AskedJob } from './inbox.ts';
 import type { Job } from './jobs.ts';
-import { type KindName, kindNamesIn, kindOfJob } from './kinds.ts';
+import { type KindName, kindNamed, kindNamesIn, kindOfJob } from './kinds.ts';
+import { unmarked } from './letter.ts';
 import { hostOf } from './links.ts';
 import { matchJobs } from './matching.ts';
 import type { JobFile } from './records.ts';
@@ -253,10 +255,46 @@ export interface ResumeShape {
     linkedin?: string;
     website?: string;
   };
-  experience: { title: string; company: string; location?: string; start: string; end: string }[];
+  experience: {
+    title: string;
+    company: string;
+    location?: string;
+    start: string;
+    end: string;
+    intro?: string;
+    bullet_groups?: { bullets: { lead?: string; text: string }[] }[];
+  }[];
   education?: { degree: string; school: string; start?: string; end?: string }[];
   skills?: { category: string; items: string[] }[];
   extra_sections?: { heading: string; items: string[] }[];
+}
+
+/**
+ * A line of a resume as a form's box takes it: with no **bold** marks, with letters typed as one
+ * character written out, as applicant systems misread those, on one line. None for a line that
+ * still holds a [[placeholder]].
+ */
+function plainLine(text: string): string {
+  const line = unmarked(text)
+    .replace(/[\uFB00-\uFB06]/g, (joined) => joined.normalize('NFKC'))
+    .replace(/\s+/g, ' ')
+    .trim();
+  return line.includes('[[') ? '' : line;
+}
+
+/**
+ * What a resume says you did in a position, as plain text: its intro, then a line to a bullet, each
+ * with its lead-in, as the resume shows it. Headings over groups of bullets stay out, as a form's
+ * box has none.
+ */
+function positionLines(position: ResumeShape['experience'][number]): string[] {
+  const bullets = (position.bullet_groups ?? []).flatMap((group) => group.bullets);
+  return [
+    position.intro ?? '',
+    ...bullets.map(({ lead, text }) => (lead ? `${lead}: ${text}` : text)),
+  ]
+    .map(plainLine)
+    .filter(Boolean);
 }
 
 /** What a resume says of you, as the form filler takes it. */
@@ -282,6 +320,7 @@ export function resumeDetails(resume: ResumeShape, from: ResumeOnFile['from']): 
       location: each.location ?? '',
       start: each.start,
       end: each.end,
+      lines: positionLines(each),
     })),
     education: (resume.education ?? []).map((each) => ({
       school: each.school,
@@ -294,6 +333,59 @@ export function resumeDetails(resume: ResumeShape, from: ResumeOnFile['from']): 
     summary: resume.summary,
   };
 }
+
+/** A kind of job's starting resumes, as a form takes from them: where they are, and for what. */
+export type StartingFolder = Pick<StartingOnFile, 'kind' | 'ofJob'> & {
+  /** Its folder in the workspace: base, for the first kind, or base/<kind> for each other. */
+  folder: string;
+};
+
+/**
+ * Where a form's job's starting resumes are. With one kind of job, its own, for any job. With more
+ * than one, those of the kind the job is under, as you put it or its fit check or job search found
+ * it, or each kind's, for a job none of those has said yet, or a form with no job saved, as a job
+ * only counts as the first kind until one says.
+ */
+export function startingFolders(
+  job: Pick<Job, 'kind' | 'kindFound'> | null,
+  kinds: readonly KindName[],
+): StartingFolder[] {
+  if (kinds.length < 2) return [{ folder: 'base', kind: '', ofJob: true }];
+  const id = job && (kindNamed(job.kind, kinds) ?? kindNamed(job.kindFound, kinds));
+  const each = kinds.map((kind, at) => ({
+    folder: at === 0 ? 'base' : `base/${kind.id}`,
+    kind: kind.name,
+    ofJob: kind.id === id,
+  }));
+  return id ? each.filter(({ ofJob }) => ofJob) : each;
+}
+
+/**
+ * Whether a file in a folder of starting resumes is one: a resume's data, and not a copy sync kept
+ * of one two devices changed, as "startup-ic (Sam’s MacBook Pro, Oct 12).json".
+ */
+export function isStartingResume(name: string): boolean {
+  if (!name.endsWith('.json')) return false;
+  const stem = name.slice(0, -'.json'.length);
+  return !(stem.endsWith(')') && stem.includes(' ('));
+}
+
+/** What a kind of job's starting resumes say, as a form's box takes it, in their files' order. */
+export const startingOnFile = (
+  { kind, ofJob }: StartingFolder,
+  resumes: readonly ResumeShape[],
+): StartingOnFile => ({
+  kind,
+  ofJob,
+  positions: resumes.flatMap(({ experience }) =>
+    experience.flatMap((each) => {
+      const lines = positionLines(each);
+      return lines.length > 0
+        ? [{ company: each.company, title: each.title, start: each.start, lines }]
+        : [];
+    }),
+  ),
+});
 
 /**
  * The longest line Profile keeps, the longest entry in one of its lists, and the longest answer

@@ -110,6 +110,7 @@ export {
   type ResumeOnFile,
   readEqualOpportunity,
   type SentBefore,
+  type StartingOnFile,
 } from './fill.ts';
 export { FIT_TIERS, type FitTier } from './fit.ts';
 export {
@@ -326,6 +327,7 @@ export {
   askedJob,
   formJob,
   foundOn,
+  isStartingResume,
   isSyncedAnswer,
   jobPdfs,
   type KindTarget,
@@ -344,10 +346,13 @@ export {
   readContact,
   readForApplications,
   resumeDetails,
+  type StartingFolder,
   SYNCED_ANSWERS,
   type SyncedAnswerKind,
   sentAnswersOf,
   sentBefore,
+  startingFolders,
+  startingOnFile,
   uploadName,
   withFormQuestions,
   withProfileAnswers,

@@ -25,12 +25,15 @@ import {
   type WorkHistory,
   yearOf,
 } from './history.ts';
+import { companyKey } from './keys.ts';
+import { companyMatch, isTitled, readTitle, titleFit } from './matching.ts';
 import { parsePay, payBand } from './pay.ts';
 
 /**
  * Answering an application form from what's on file, field by field: Profile first, then the
  * job's own resume and letter, or your newest resume where Profile is blank or the job has none
- * yet, then what you sent before, then your Claude's drafts for the job.
+ * yet, then what you sent before, then your Claude's drafts for the job. What you did in a position
+ * fits the job: its own resume's words, then its kind of job's starting resume's, then Profile's.
  * Anything else is left for you. Equal-opportunity questions are answered only from what you set
  * in Profile, personal questions never, and passwords, payment details, ID numbers and dates of
  * birth never.
@@ -138,8 +141,18 @@ export interface ResumeOnFile {
   company: string;
   title: string;
   since: string;
-  /** Every position the resume lists, newest first, with its company, and when, as it says. */
-  positions: { company: string; title: string; location: string; start: string; end: string }[];
+  /**
+   * Every position the resume lists, newest first, with its company, and when, as it says, and
+   * what it says you did there, as plain text, a line to a bullet.
+   */
+  positions: {
+    company: string;
+    title: string;
+    location: string;
+    start: string;
+    end: string;
+    lines: string[];
+  }[];
   /** Your schools, as the resume lists them, newest first. */
   education: { school: string; degree: string; start: string; end: string }[];
   /** Your skills, by their category. */
@@ -147,6 +160,21 @@ export interface ResumeOnFile {
   /** Its other sections, such as Certifications, by their headings. */
   sections: { heading: string; items: string[] }[];
   summary: string;
+}
+
+/**
+ * What a kind of job's starting resumes say you did in each position, for a form's box that asks:
+ * each position that says, from all its starting resumes, in the order of their files' names.
+ */
+export interface StartingOnFile {
+  /** The kind of job's name, when you want more than one, such as "Strategy", or "" with one. */
+  kind: string;
+  /**
+   * Whether the job the form is for is under this kind. With more than one kind, a job nobody has
+   * put under one yet takes none of them, and a field's menu offers each.
+   */
+  ofJob: boolean;
+  positions: { company: string; title: string; start: string; lines: string[] }[];
 }
 
 /**
@@ -194,6 +222,8 @@ export interface OnFile {
   pay: PayAsk | null;
   /** What the job's own resume, or your newest, says of you, or null when you have none yet. */
   resume: ResumeOnFile | null;
+  /** The starting resumes of the job's kind of job, or of each kind while that isn't known. */
+  starting: readonly StartingOnFile[];
   /** Profile's work history and education, for forms that ask for each job and school. */
   history: WorkHistory;
   /**
@@ -356,6 +386,9 @@ const EQUAL_OPPORTUNITY_PICKS: {
   },
 };
 
+/** Words on one line, with single spaces. */
+const squashed = (text: string) => text.replace(/\s+/g, ' ').trim();
+
 /** Words, compared: lowercase, letters and digits. */
 const plain = (text: string) =>
   text
@@ -445,6 +478,58 @@ function currentPosition(onFile: OnFile): HeldAt | null {
     source: 'resume',
     from: fromResume(resume),
   };
+}
+
+/**
+ * How a resume's position goes with one you held, by its company and title, however each is
+ * written: the same, or close, where one says more of it, as "Acme Robotics" and "Acme" do. Another
+ * level, as "Senior Analyst" is from "Analyst", is another position.
+ */
+function positionFit(
+  held: HeldPosition,
+  listed: { company: string; title: string },
+): 'same' | 'close' | null {
+  const named = (company: string) => ({ company, companyKey: companyKey(company) });
+  const company = companyMatch(named(held.company), named(listed.company));
+  if (company === 'different') return null;
+  const ours = readTitle(held.title);
+  const theirs = readTitle(listed.title);
+  // A title in letters matching can't read, such as Japanese, goes by its words.
+  const title =
+    isTitled(ours) && isTitled(theirs)
+      ? titleFit(ours, theirs)
+      : plain(held.title) === plain(listed.title)
+        ? 'same'
+        : 'different';
+  if (title === 'same') return company === 'same' ? 'same' : 'close';
+  return title === 'more' ? 'close' : null;
+}
+
+/**
+ * A position you held, among those a resume lists: the one with its company and title, or else
+ * one close to them that it can't be mistaken for. The same position twice, as a job you came back
+ * to, goes by the year each started.
+ */
+function listedAs<T extends { company: string; title: string; start: string }>(
+  positions: readonly T[],
+  held: HeldPosition,
+): T | null {
+  const fits = positions.flatMap((each) => {
+    const fit = positionFit(held, each);
+    return fit ? [{ each, fit }] : [];
+  });
+  const same = fits.filter(({ fit }) => fit === 'same');
+  const named = ({ company, title }: T) => plain(`${company} ${title}`);
+  const [one] = fits;
+  const alike =
+    same.length > 0
+      ? same
+      : one && fits.every(({ each }) => named(each) === named(one.each))
+        ? fits
+        : [];
+  const year = yearOf(held.start);
+  const when = alike.find(({ each }) => year && yearOf(datedAs(each.start)) === year);
+  return (when ?? alike[0])?.each ?? null;
 }
 
 /** The school a form asks for, the nth time it asks: from Profile, or else the resume. */
@@ -838,6 +923,113 @@ function linkOrHandle(
   return said(link);
 }
 
+/** Text as a form sends it, where each line break goes as two characters. */
+const sentLength = (text: string) => text.length + text.split('\n').length - 1;
+
+/** Lines in a box that holds one line, each ended so the next reads on from it. */
+const inOneLine = (lines: readonly string[]) =>
+  lines
+    .map((line, at) => (at === lines.length - 1 || /[.!?;:]$/.test(line) ? line : `${line};`))
+    .join(' ');
+
+/**
+ * What a position's description comes to in a field: all of it, or else, where it's longer than the
+ * field takes, each whole line in turn that still fits. With no whole line that fits, it's the
+ * first line's whole sentences, or else, as `rough`, its first words.
+ */
+function toFit(
+  lines: readonly string[],
+  field: FormField,
+): { text: string; cut: boolean; rough: boolean } {
+  const joined = (kept: readonly string[]) =>
+    field.control === 'long' ? kept.join('\n') : inOneLine(kept);
+  const limit = field.limit;
+  const fits = (kept: readonly string[]) => !limit || sentLength(joined(kept)) <= limit;
+  if (fits(lines)) return { text: joined(lines), cut: false, rough: false };
+  const kept: string[] = [];
+  for (const line of lines) if (fits([...kept, line])) kept.push(line);
+  if (kept.length > 0) return { text: joined(kept), cut: true, rough: false };
+  const [line = ''] = lines;
+  const sentences: string[] = [];
+  // Lines have single spaces, so a sentence ends at one, with the next's capital or number after.
+  for (const sentence of line.split(/(?<=[.!?]) (?=[\p{Lu}\p{N}])/u)) {
+    if (!fits([[...sentences, sentence].join(' ')])) break;
+    sentences.push(sentence);
+  }
+  if (sentences.length > 0) return { text: sentences.join(' '), cut: true, rough: false };
+  const room = line.slice(0, limit ?? line.length);
+  const words = line[room.length] === ' ' ? room : room.slice(0, room.lastIndexOf(' ') + 1) || room;
+  let end = words.length;
+  while (end > 0 && ' ,;:–—-'.includes(words.charAt(end - 1))) end -= 1;
+  return { text: words.slice(0, end), cut: true, rough: true };
+}
+
+/** Why a position's description is left for you, while its job's kind of job isn't known. */
+const NO_KIND_YET =
+  'Factwright doesn’t know this job’s kind of job yet. Set it in Factwright, then Fill again.';
+
+/**
+ * What you did in a position, as the field takes it: the job's own resume's words, then its kind of
+ * job's starting resume's, then Profile's, the first that has any, by the position's company and
+ * title. Never your newest resume's, which were written for another job. A field too small for any
+ * of it takes the first one with whole lines or sentences that fit, and says what it cut. The rest
+ * go beside it, for the field menus to offer, with each kind's starting resume, for a job nobody
+ * has put under one yet, which Fill never picks for you.
+ */
+function descriptionReply(field: FormField, onFile: OnFile, held: HeldAt): FieldReply {
+  const kind = 'job-summary';
+  if (choosing(field)) return left(kind, 'pick');
+  const { resume, starting } = onFile;
+  const own = resume?.from === 'job' ? listedAs(resume.positions, held) : null;
+  const ofKind = ({ kind: name, ofJob, positions }: StartingOnFile) => ({
+    lines: listedAs(positions, held)?.lines ?? [],
+    source: 'resume' as const,
+    from: `From your ${name ? `${name} ` : ''}starting resume`,
+    ofJob,
+  });
+  const described: {
+    lines: readonly string[];
+    source: AnswerSource;
+    from: string;
+    ofJob: boolean;
+  }[] = [
+    {
+      lines: own?.lines ?? [],
+      source: 'resume',
+      from: resume ? fromResume(resume) : '',
+      ofJob: true,
+    },
+    ...starting.filter(({ ofJob }) => ofJob).map(ofKind),
+    {
+      lines: held.summary.split('\n').map(squashed).filter(Boolean),
+      source: 'profile',
+      from: 'From your work history',
+      ofJob: true,
+    },
+    ...starting.filter(({ ofJob }) => !ofJob).map(ofKind),
+  ];
+  // The same words twice are one.
+  const said = new Set<string>();
+  const answers = described.flatMap(({ lines, source, from, ofJob }) => {
+    const words = plain(lines.join(' '));
+    if (!words || said.has(words)) return [];
+    said.add(words);
+    const { text, cut, rough } = toFit(lines, field);
+    if (!text) return [];
+    const whence = cut ? `${from}, cut to fit ${field.limit} characters` : from;
+    return [{ answer: { text, source, from: whence }, ofJob, rough }];
+  });
+  if (answers.length === 0) return left(kind, 'unset');
+  const first =
+    answers.find(({ ofJob, rough }) => ofJob && !rough) ?? answers.find(({ ofJob }) => ofJob);
+  const others = answers
+    .filter((each) => each !== first)
+    .slice(0, MOST_OTHERS)
+    .map(({ answer }) => answer);
+  if (!first) return { ...left(kind, 'new'), from: NO_KIND_YET, others };
+  return { kind, ...first.answer, ...(others.length > 0 && { others }) };
+}
+
 /** Pay as one amount a year, for a box that takes a number, or null when it isn't one, clearly. */
 function yearlyPay(field: FormField, ask: string): number | null {
   // By the hour, week or month, or in thousands, a number says something else.
@@ -1085,6 +1277,7 @@ export function answerField(field: FormField, onFile: OnFile, nth = 0): FieldRep
       // hold now.
       const held = fieldPart(field) === 'job' ? positionAt(onFile, nth) : currentPosition(onFile);
       if (!held) return left(kind, 'unset');
+      if (kind === 'job-summary') return descriptionReply(field, onFile, held);
       const said = { source: held.source, from: held.from };
       if (kind === 'job-start' || kind === 'job-end') {
         return dateReply(kind, field, kind === 'job-start' ? held.start : held.end, said);
@@ -1094,9 +1287,7 @@ export function answerField(field: FormField, onFile: OnFile, nth = 0): FieldRep
           ? held.company
           : kind === 'current-title'
             ? held.title
-            : kind === 'job-location'
-              ? held.location
-              : held.summary;
+            : held.location;
       if (!words) return left(kind, 'unset');
       return withinLimit(kind, field, { ...fromProfile(kind, field, words), ...said });
     }

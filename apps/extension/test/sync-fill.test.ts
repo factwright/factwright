@@ -792,6 +792,184 @@ const synced = (replies: Record<string, FieldReply | undefined>) =>
     ),
   );
 
+describe('what you did in a position, through sync', () => {
+  const ASK = {
+    ...FILL,
+    fields: [
+      asked('Description', { section: 'Work Experience 1', control: 'long' }),
+      asked('Description', { section: 'Work Experience 2', control: 'long', limit: 40 }),
+    ],
+  };
+  const COMPANY = 'Tidewater Analytics';
+  /** A resume listing a position's words: the first, then the one before it. */
+  const saying = (first: string[], second: string[] = []) =>
+    JSON.stringify({
+      name: 'Ana María Ruiz',
+      headline: 'Product manager',
+      summary: 'Ships data products.',
+      experience: [
+        ['Senior Product Manager', '2021', 'Present', first],
+        ['Product Manager', '2018', '2021', second],
+      ].map(([title, start, end, bullets]) => ({
+        title,
+        company: COMPANY,
+        start,
+        end,
+        bullet_groups: [{ bullets: (bullets as string[]).map((text) => ({ text })) }],
+      })),
+    });
+  /** What Profile's work history says of those two positions. */
+  const HISTORY = JSON.stringify({
+    jobs: [
+      {
+        company: COMPANY,
+        location: 'Denver, CO',
+        positions: [
+          {
+            title: 'Senior Product Manager',
+            start: '2021',
+            end: 'present',
+            summary: 'From Profile.',
+          },
+          { title: 'Product Manager', start: '2018', end: '2021', summary: 'Ran a team of three.' },
+        ],
+      },
+    ],
+    schools: [],
+  });
+  /** The same answers from the app and through sync, with the same answers again asked again. */
+  async function both(
+    desktop: Awaited<ReturnType<typeof computer>>,
+    keys: AccountKeys,
+    client: SyncClient,
+  ) {
+    desktop.jobs.read();
+    const app = await answerAsk(ASK, desktop.deps);
+    const synced = ok(await fillFor(client, keys).ask(ASK));
+    if (!app.ok || app.did !== 'fill' || synced.did !== 'fill') throw new Error('No plan.');
+    expect(synced.replies).toEqual(app.replies);
+    return synced.replies;
+  }
+  const words = (reply: FieldReply | undefined) => [reply?.text, reply?.from];
+  const KINDS = JSON.stringify({
+    first: { id: 'pmo', name: 'PMO' },
+    others: [{ id: 'strategy', name: 'Strategy' }],
+  });
+
+  it('gives what the app gives, at each step, by the job’s own resume and its kind of job', async () => {
+    const { desktop, keys, client, engine } = await account();
+    desktop.write('about-me/history.json', HISTORY);
+    desktop.write('about-me/kinds-of-job.json', KINDS);
+    desktop.write('base/big-company-leader.json', saying(['Ran the PMO.']));
+    desktop.write(
+      'base/big-company-leader (Sam’s Mac, Oct 12).json',
+      saying(['Sync’s copy, first by its name.']),
+    );
+    desktop.write('base/strategy/startup-leader.json', saying(['Set the strategy.']));
+    desktop.write('base/strategy/big-company-leader.json', saying(['Sized markets.']));
+    await engine.syncOnce();
+
+    // Nothing says its kind yet: Profile's, with each kind's words in the menu.
+    let replies = await both(desktop, keys, client);
+    expect(words(replies[0])).toEqual(['From Profile.', 'From your work history']);
+    expect(replies[0]?.others?.map((each) => each.from)).toEqual([
+      'From your PMO starting resume',
+      'From your Strategy starting resume',
+    ]);
+    expect(words(replies[1])).toEqual(['Ran a team of three.', 'From your work history']);
+
+    // Put under one, its row says so.
+    const at = { today: '2026-10-23', now: '2026-10-23T18:00:00.000Z' };
+    desktop.tracker.updateJob(JOB, { kind: 'strategy' }, at);
+    await engine.syncOnce();
+    replies = await both(desktop, keys, client);
+    // Of a kind's starting resumes, the first by its file's name that says what you did there.
+    expect(words(replies[0])).toEqual(['Sized markets.', 'From your Strategy starting resume']);
+    expect(replies[0]?.others).toEqual([
+      { text: 'From Profile.', source: 'profile', from: 'From your work history' },
+    ]);
+
+    // The job's own resume wins, a field's limit cuts it, and the kind's go in the menu.
+    const long = 'Took the data team from three people to thirty in two years.';
+    desktop.write(
+      `applications/${FOLDER}/resume.json`,
+      saying(['Led the data products.'], ['Ran the roadmap.', long, 'Cut cost 9%.']),
+    );
+    await engine.syncOnce();
+    replies = await both(desktop, keys, client);
+    expect(words(replies[0])).toEqual(['Led the data products.', 'From the job’s resume']);
+    expect(words(replies[1])).toEqual([
+      'Ran the roadmap.\nCut cost 9%.',
+      'From the job’s resume, cut to fit 40 characters',
+    ]);
+  });
+
+  it('gives what the app gives from an app before rows named folders', async () => {
+    const { desktop, keys, client, engine } = await account({ older: true });
+    desktop.write('about-me/history.json', HISTORY);
+    desktop.write('about-me/kinds-of-job.json', KINDS);
+    desktop.write('base/big-company-leader.json', saying(['Ran the PMO.']));
+    desktop.write('base/strategy/big-company-leader.json', saying(['Set the strategy.']));
+    const notes = join(desktop.workspace, 'applications', FOLDER, 'job.md');
+    writeFileSync(notes, `${readFileSync(notes, 'utf8')}\n- **Kind of job:** strategy\n`);
+    await engine.syncOnce();
+    const replies = await both(desktop, keys, client);
+    expect(words(replies[0])).toEqual(['Set the strategy.', 'From your Strategy starting resume']);
+  });
+
+  it('knows a job’s kind from the job search that found it, as the app does', async () => {
+    const { desktop, keys, client, engine } = await account();
+    desktop.write('about-me/history.json', HISTORY);
+    desktop.write('about-me/kinds-of-job.json', KINDS);
+    desktop.write('base/big-company-leader.json', saying(['Ran the PMO.']));
+    desktop.write('base/strategy/big-company-leader.json', saying(['Set the strategy.']));
+    desktop.write(
+      'searches/2026-10-21-greenhouse/jobs.json',
+      JSON.stringify({
+        meta: { checked: '2026-10-21', source: 'Greenhouse' },
+        jobs: [
+          {
+            company: 'Harbor & Pine',
+            role: 'Account Executive',
+            posting: SEARCHED,
+            remote: 'Remote, US',
+            tier: 'good',
+            score: 74,
+            kind: 'strategy',
+          },
+        ],
+      }),
+    );
+    await engine.syncOnce();
+    desktop.jobs.read();
+    const form = {
+      ...ASK,
+      url: SEARCHED,
+      company: 'Harbor & Pine',
+      role: 'Account Executive',
+    };
+    const app = await answerAsk(form, desktop.deps);
+    const synced = ok(await fillFor(client, keys).ask(form));
+    if (!app.ok || app.did !== 'fill' || synced.did !== 'fill') throw new Error('No plan.');
+    expect(synced.job?.company).toBe('Harbor & Pine');
+    expect(synced.replies).toEqual(app.replies);
+    expect(words(synced.replies[0])).toEqual([
+      'Set the strategy.',
+      'From your Strategy starting resume',
+    ]);
+  });
+
+  it('leaves out your newest resume’s words, as the app does', async () => {
+    const { desktop, keys, client, engine } = await account();
+    desktop.write('about-me/history.json', HISTORY);
+    desktop.write(`applications/${LUMEN}/resume.json`, saying(['Written for Lumen Health.']));
+    await engine.syncOnce();
+    const replies = await both(desktop, keys, client);
+    expect(words(replies[0])).toEqual(['From Profile.', 'From your work history']);
+    expect(replies[0]?.others).toBeUndefined();
+  });
+});
+
 describe('the pay to ask for, and why you’re leaving, through sync', () => {
   const LEAVING = 'I want to build data products for more than one team.';
   const PAY_FIELDS = [

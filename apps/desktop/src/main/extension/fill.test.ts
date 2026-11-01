@@ -398,6 +398,79 @@ describe('answering from the resumes, where Profile is blank', () => {
   });
 });
 
+describe('what you did in a position', () => {
+  /** A resume that says what you did as a Senior Product Manager at Tidewater Analytics. */
+  const saying = (...text: string[]) =>
+    JSON.stringify({
+      name: 'Ana María Ruiz',
+      headline: 'Product manager',
+      summary: 'Ships data products.',
+      experience: [
+        {
+          title: 'Senior Product Manager',
+          company: 'Tidewater Analytics',
+          start: '2021',
+          end: 'Present',
+          bullet_groups: [{ bullets: text.map((each) => ({ text: each })) }],
+        },
+      ],
+    });
+  const write = (path: string, contents: string) => {
+    mkdirSync(join(workspace, path, '..'), { recursive: true });
+    writeFileSync(join(workspace, path), contents);
+  };
+  const DESCRIPTION = field('Description', { section: 'Work Experience 1', control: 'long' });
+  const asked = async () => ((await fill([DESCRIPTION])) as Filled).replies[0];
+
+  it('fits the job: its own resume, then its kind of job’s starting resume', async () => {
+    about = {
+      ...ABOUT,
+      firstKind: { id: 'pmo', name: 'PMO' },
+      otherKinds: [
+        {
+          id: 'strategy',
+          name: 'Strategy',
+          roles: [],
+          fields: [],
+          levels: [],
+          minPay: '',
+          targetPay: '',
+          payFilter: false,
+        },
+      ],
+    };
+    jobs = jobs.map((job) => ({ ...job, kind: 'strategy' }));
+    write('base/big-company-leader.json', saying('Ran the PMO.'));
+    write('base/strategy/big-company-leader.json', saying('Set the strategy.'));
+    expect(await asked()).toMatchObject({
+      text: 'Set the strategy.',
+      source: 'resume',
+      from: 'From your Strategy starting resume',
+    });
+    write(`applications/${FOLDER}/resume.json`, saying('Led the account.', 'Closed 40 deals.'));
+    expect(await asked()).toMatchObject({
+      text: 'Led the account.\nClosed 40 deals.',
+      from: 'From the job’s resume',
+      others: [{ text: 'Set the strategy.', from: 'From your Strategy starting resume' }],
+    });
+  });
+
+  it('never takes your newest resume’s words, for a form with no job saved', async () => {
+    write(`applications/${FOLDER}/resume.json`, saying('Written for Harbor & Pine.'));
+    const answer = (await fill(
+      [DESCRIPTION, field('Company', { section: 'Work Experience 1' })],
+      'https://jobs.lever.co/elsewhere/1a2b3c4d/apply',
+      'Elsewhere',
+      'Designer',
+    )) as Filled;
+    expect(answer.job).toBeNull();
+    expect(answer.replies).toEqual([
+      { kind: 'job-summary', source: 'you', left: 'unset' },
+      expect.objectContaining({ text: 'Tidewater Analytics', from: 'From your newest resume' }),
+    ]);
+  });
+});
+
 describe('a part of a file', () => {
   /** The resume's version, as the job's form offers it. */
   const offered = async () =>
