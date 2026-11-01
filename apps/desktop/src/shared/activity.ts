@@ -125,6 +125,7 @@ const TOOLS: Readonly<Record<string, StepWords>> = {
   save_beyond_work: words('Saving Beyond work', 'Saved Beyond work'),
   save_resume_choices: words('Saving your resume choices', 'Saved your resume choices'),
   add_to_notes: words('Adding to your notes', 'Added to your notes'),
+  keep_names_private: words('Changing the names kept private', 'Changed the names kept private'),
   log_check: words('Logging the check', 'Logged the check'),
 };
 
@@ -163,6 +164,7 @@ const TOOL_KINDS: Readonly<Record<string, StepKind>> = {
   save_beyond_work: 'writing',
   save_resume_choices: 'writing',
   add_to_notes: 'writing',
+  keep_names_private: 'writing',
   log_check: 'writing',
 };
 

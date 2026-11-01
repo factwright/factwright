@@ -79,6 +79,7 @@ const about = {
   notes: () => '',
   addToNotes: () => true,
   confidential: () => [] as string[],
+  changeConfidential: () => [] as string[],
   criteriaIsOwn: () => false,
 };
 
@@ -195,6 +196,7 @@ it('marks the tools that stay on this computer, which Claude may call without as
       ...TEMPLATE_TOOLS,
       // Each part of Profile's own, which only a run on that part has.
       'add_to_notes',
+      'keep_names_private',
       'save_beyond_work',
       'save_contact',
       'save_for_applications',

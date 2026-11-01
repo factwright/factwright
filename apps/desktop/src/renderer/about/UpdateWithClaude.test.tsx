@@ -28,8 +28,10 @@ const controls = (over: Partial<RunControls> = {}): RunControls => ({
   ...over,
 });
 
+const REQUEST = '0123456789abcdef';
+
 const api = () => ({
-  requestProfileChanges: vi.fn(async () => ({ ok: true }) as const),
+  requestProfileChanges: vi.fn(async () => ({ ok: true, request: REQUEST }) as const),
 });
 
 async function open(name: string) {
@@ -55,7 +57,11 @@ describe('UpdateWithClaude', () => {
       changes: 'Use my new email',
     });
     // Nothing the user typed is in the task, and what they'd typed elsewhere saved first.
-    expect(run.start).toHaveBeenCalledWith({ skill: 'update-profile', part: 'about' });
+    expect(run.start).toHaveBeenCalledWith({
+      skill: 'update-profile',
+      part: 'about',
+      request: REQUEST,
+    });
     expect(flush).toHaveBeenCalled();
     expect(screen.queryByRole('dialog')).toBeNull();
   });
@@ -95,6 +101,7 @@ describe('UpdateWithClaude', () => {
       skill: 'update-profile',
       part: 'kind',
       kind: 'project-manager',
+      request: REQUEST,
     });
   });
 
@@ -107,6 +114,7 @@ describe('UpdateWithClaude', () => {
   });
 
   it.each([
+    ['about', 'About you', 'Your street and postal code stay on this computer'],
     ['facts', 'Your fact bank', 'Removing a fact stays with you'],
     ['shared', 'What you’ve shared', 'Adding or removing a file stays with you'],
     ['resumes', 'Starting resumes', 'Facts still waiting to be verified stay off them'],
@@ -133,16 +141,48 @@ describe('UpdateWithClaude', () => {
     expect((within(dialog).getByRole('textbox') as HTMLTextAreaElement).value).toBe('Change it');
   });
 
-  it('stays there, unable to start, until Claude Code is ready', () => {
+  it('stays there, unable to start, saying why, until Claude Code is ready', () => {
     render(<UpdateWithClaude part="about" api={api()} run={undefined} />);
     const button = screen.getByRole('button', { name: 'Update with Claude: About you' });
     expect((button as HTMLButtonElement).disabled).toBe(true);
+    expect(button.getAttribute('title')).toBe('Your Claude needs to be ready first.');
+  });
+
+  it('says so, keeping the words, when Claude Code stops being ready while it’s open', async () => {
+    const requests = api();
+    const { rerender } = render(<UpdateWithClaude part="about" api={requests} run={controls()} />);
+    const dialog = await open('About you');
+    await userEvent.type(within(dialog).getByRole('textbox'), 'Change it');
+    rerender(<UpdateWithClaude part="about" api={requests} run={undefined} />);
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Make the changes' }));
+    expect((await within(dialog).findByRole('alert')).textContent).toContain('isn’t ready');
+    expect(requests.requestProfileChanges).not.toHaveBeenCalled();
+    expect((within(dialog).getByRole('textbox') as HTMLTextAreaElement).value).toBe('Change it');
+  });
+
+  it('starts nothing when it’s closed while it’s saving what’s waiting', async () => {
+    const run = controls();
+    const requests = api();
+    let saved = () => {};
+    const flush = () =>
+      new Promise<void>((resolve) => {
+        saved = resolve;
+      });
+    render(<UpdateWithClaude part="about" api={requests} run={run} onBefore={flush} />);
+    const dialog = await open('About you');
+    await userEvent.type(within(dialog).getByRole('textbox'), 'Change it');
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Make the changes' }));
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    saved();
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(run.start).not.toHaveBeenCalled();
   });
 
   it('says Claude is on it, or in line, for that part and no other', () => {
-    const about: RunTask = { skill: 'update-profile', part: 'about' };
-    const wants: RunTask = { skill: 'update-profile', part: 'wants' };
-    const design: RunTask = { skill: 'update-profile', part: 'kind', kind: 'design' };
+    const about: RunTask = { skill: 'update-profile', part: 'about', request: REQUEST };
+    const wants: RunTask = { skill: 'update-profile', part: 'wants', request: REQUEST };
+    const design: RunTask = { skill: 'update-profile', part: 'kind', kind: 'design', request: '' };
     const run = runControlsFor(
       [
         { id: 'run-1', task: about, phase: 'working' },
@@ -167,8 +207,13 @@ describe('UpdateWithClaude', () => {
         </section>
       </>,
     );
-    expect(screen.getByRole('region', { name: 'About' }).textContent).toBe('Claude is on it');
-    expect(screen.getByRole('region', { name: 'Wants' }).textContent).toBe('In line');
+    // Named for a screen reader, which may be elsewhere.
+    expect(screen.getByRole('region', { name: 'About' }).textContent).toBe(
+      'Claude is on it (Update with Claude: About you)',
+    );
+    expect(screen.getByRole('region', { name: 'Wants' }).textContent).toBe(
+      'In line (Update with Claude: What you want)',
+    );
     expect(run.stateOf(design)).toBeNull();
     // Another kind of job, or another part, is free to go in line.
     expect(screen.getByRole('button', { name: 'Update with Claude: Design' })).toBeTruthy();

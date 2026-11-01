@@ -40,7 +40,7 @@ The app passes the rest with each run:
   - `list_templates`, `read_template` and `save_template`: your resume templates, built in and your own, to pick from, to start a new one from, and to save one Claude made, checked first
   - `save_about_you`: something you told Claude that applications ask for, saved to your profile
   - `requested_changes`: what you asked to change in a job's resume or letter, or a part of your Profile, in your own words, typed in the app for that run
-  - `save_contact`, `save_what_you_want`, `save_for_applications`, `save_beyond_work`, `save_resume_choices` and `add_to_notes`: one part of your Profile each, which only a run started with that part's Update with Claude has
+  - `save_contact`, `save_what_you_want`, `save_for_applications`, `save_beyond_work`, `save_resume_choices`, `keep_names_private` and `add_to_notes`: one part of your Profile each, which only a run started with that part's Update with Claude has
   - `save_fact`, `save_gap`, `verify_fact` and `correct_fact`: what you answer Claude's questions while it works, saved to your fact bank: a yes as a fact to verify, with the question and your answer as the app recorded them; a no under Doesn't have; a fact verified when you pick "Use and verify"; and a new number or a correction for a verified fact, which stays verified. They save only answers you gave in that run
   - `read_posting`: a posting on Greenhouse, Lever, Ashby or Gem, read from the applicant system's public feed
   - `read_page`: any other web page as plain text, never LinkedIn's

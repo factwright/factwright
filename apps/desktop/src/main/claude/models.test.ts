@@ -50,13 +50,14 @@ describe('which model Claude runs on', () => {
     }
   });
 
-  it('recommends a model for every task, and Sonnet only for the checks and searches', () => {
+  it('recommends a model for every task, and Sonnet for the checks, searches and small changes', () => {
     expect(MODEL_TASKS.every((task) => RECOMMENDED_MODELS[task] === 'opus')).toBe(true);
     expect(MODEL_TASKS.filter((task) => PRO_MODELS[task] === 'sonnet')).toEqual([
       'analyze-job',
       'salary-check',
       'who-to-message',
       'job-search',
+      'update-profile',
     ]);
   });
 

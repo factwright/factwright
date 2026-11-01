@@ -125,7 +125,7 @@ function profileApi(
     removeTemplate: vi.fn(async () => ({ ok: true as const })),
     contactFromResume: vi.fn(async () => fromResume),
     saveHistory: vi.fn(async (saved: WorkHistory) => saved),
-    requestProfileChanges: vi.fn(async () => ({ ok: true as const })),
+    requestProfileChanges: vi.fn(async () => ({ ok: true as const, request: REQUEST })),
   };
 }
 
@@ -162,6 +162,8 @@ function Harness({
 
 /** Answers save half a second after the last change, which a busy computer can stretch. */
 const SAVED = { timeout: 4000 };
+
+const REQUEST = '0123456789abcdef';
 
 const CARDS = [
   'Your fact bank',
@@ -249,6 +251,7 @@ describe('Update with Claude', () => {
         skill: 'update-profile',
         part: 'kind',
         kind: 'design',
+        request: REQUEST,
       }),
     );
     expect(within(card).getByRole('button', { name: 'Update with Claude: Product' })).toBeTruthy();

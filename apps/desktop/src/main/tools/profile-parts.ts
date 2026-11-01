@@ -57,11 +57,23 @@ import type { ToolCall } from './mcp.ts';
 /** What these tools need of the user's Profile. */
 export type PartAbout = Pick<
   AboutStore,
-  'answers' | 'saveAnswers' | 'notes' | 'addToNotes' | 'confidential' | 'criteriaIsOwn' | 'history'
+  | 'answers'
+  | 'saveAnswers'
+  | 'notes'
+  | 'addToNotes'
+  | 'confidential'
+  | 'changeConfidential'
+  | 'criteriaIsOwn'
+  | 'history'
 >;
 
+/** A list's values, a blank one included, which says it's not told. */
+const values = (options: readonly (readonly [string, ...string[]])[]) =>
+  options.map(([value]) => value);
+
+/** A list's values in words for Claude, leaving out a blank, which a sentence says on its own. */
 const list = (options: readonly (readonly [string, ...string[]])[]) =>
-  options.map(([value]) => value).filter(Boolean);
+  values(options).filter(Boolean);
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -115,6 +127,25 @@ const CONTACT_LABELS: Readonly<Record<keyof Contact, string>> = {
   website: 'Website',
 };
 
+/**
+ * A number and a word, as a street starts, or a postal code. Where they live is kept to a city and
+ * state, and these are kept on this computer alone, so a run never saves one where it would sync.
+ */
+const STREET_OR_POSTAL =
+  /(?:^|[\s,])\d{1,6}\s+\p{L}|\b\d{5}(?:-\d{4})?\b|\b\p{Lu}\d\p{Lu}\s?\d\p{Lu}\d\b|\b\p{Lu}{1,2}\d[\p{Lu}\d]?\s\d\p{Lu}{2}\b/u;
+
+/** Throws when an answer about where the user lives looks like a street or a postal code. */
+function noStreet(input: Record<string, unknown>, keys: readonly string[]) {
+  for (const key of keys) {
+    const value = input[key];
+    if (typeof value === 'string' && STREET_OR_POSTAL.test(value)) {
+      throw new Error(
+        `Not saved: ${key} looks like it has a street or a postal code, which stay on this computer, and Claude never saves them. Give the city and state alone, and tell the user they change those themselves, in For applications’ Change.`,
+      );
+    }
+  }
+}
+
 /** About you: the user's name and contact details, a field at a time. Blank clears one. */
 export function saveContact(
   input: Record<string, unknown>,
@@ -129,6 +160,7 @@ export function saveContact(
     Object.entries(input).map(([key, value]) => [key, (value as string).trim()]),
   );
   if (given.name === '') throw new Error('Not saved: their name can’t be blank.');
+  noStreet(given, ['location']);
   const { you } = about.answers();
   about.saveAnswers(checked({ you: { ...you, ...given } }, 'About you'), call?.keep);
   return saved(
@@ -215,12 +247,13 @@ export function saveWhatYouWant(
     }
   }
   if (renames) {
+    if (typeof input.name !== 'string') throw new Error('Not saved: give the kind’s name as text.');
     if (!hasKinds(current)) {
       throw new Error(
         'Not saved: with one kind of job, it has no name. A name comes with a second.',
       );
     }
-    const edit = renameKind(working, kind.id, String(input.name));
+    const edit = renameKind(working, kind.id, input.name);
     if (!edit.ok) throw new Error(`Not saved: ${edit.message}`);
     add(edit.changes);
     lines.push([`${kind.name}, now called`, input.name]);
@@ -309,6 +342,7 @@ export function saveForApplications(
   const leavingOnly = call?.scope === 'part:leaving';
   const allowed = leavingOnly ? ['leaving'] : Object.keys(APPLICATION_LABELS);
   givenOnly(input, allowed, leavingOnly ? 'why they’re leaving' : 'For applications');
+  noStreet(input, ['city', 'region', 'country']);
   const { applications } = about.answers();
   const read = readForApplications({ ...applications, ...input });
   if (!read) {
@@ -354,12 +388,13 @@ export function saveBeyondWork(
     if (!isRecord(each) || typeof each.name !== 'string' || !each.name.trim()) {
       throw new Error('Not saved: give each project in addProjects a name.');
     }
+    givenOnly(each, Object.keys(PROJECT_FIELDS), 'a project');
     const id = projectIdFor(each.name, taken);
     taken.push(id);
     lines.push(['New project', each.name.trim()]);
     return { ...newProject(id), ...each, id, name: each.name.trim() };
   });
-  const left = taken.length - asList(input.removeProjects, 'removeProjects').length;
+  const left = taken.length - new Set(asList(input.removeProjects, 'removeProjects')).size;
   if (left > BEYOND_LIMITS.projects) {
     throw new Error(
       `Not saved: that’s more than the ${BEYOND_LIMITS.projects} projects Factwright keeps.`,
@@ -457,6 +492,40 @@ export function addToNotes(
   return `Added to the user’s notes: “${text.trim()}”.`;
 }
 
+/**
+ * Adds to the names to keep off what the user sends, which only makes the resume check stricter, and
+ * so any part's run that hears one may. Taking one off makes it less strict, so only a run on What
+ * you've shared may, when the user asks.
+ */
+export function keepNamesPrivate(
+  input: Record<string, unknown>,
+  about: Pick<PartAbout, 'changeConfidential'>,
+  call: ToolCall | undefined,
+): string {
+  givenOnly(input, ['add', 'remove'], 'the names to keep private');
+  const names = (value: unknown): string[] =>
+    asList(value, 'the names').map((name) => {
+      if (typeof name !== 'string' || !name.trim() || name.length > ANSWER_LIMITS.entry) {
+        throw new Error(
+          `Not saved: give each name as text, of ${ANSWER_LIMITS.entry} characters or fewer.`,
+        );
+      }
+      return name.trim();
+    });
+  const add = names(input.add);
+  const remove = names(input.remove);
+  if (remove.length > 0 && call?.scope !== 'part:shared') {
+    throw new Error('Not saved: only a run on What you’ve shared takes a name off the list.');
+  }
+  about.changeConfidential({ add, remove }, call?.keep);
+  return saved([
+    ...(add.length > 0 ? ([['Names kept private, added', add]] as [string, unknown][]) : []),
+    ...(remove.length > 0
+      ? ([['Names kept private, taken off', remove]] as [string, unknown][])
+      : []),
+  ]);
+}
+
 /** What a part holds now, as Claude reads it to change it, with each id and value exact. */
 function partNow(part: ProfilePart, kind: string | undefined, about: PartAbout): unknown {
   const answers = about.answers();
@@ -524,13 +593,13 @@ const HOW: Readonly<Record<ProfilePart, string>> = {
   leaving: 'Make them with save_for_applications, with leaving alone.',
   beyond: 'Make them with save_beyond_work.',
   history:
-    'Make them with save_work_history, which takes everything, whole, in place of what’s there.',
+    'Make them with save_work_history, which takes everything, whole, in place of what’s there. What they typed goes in as they said it, even where the facts don’t have it.',
   resumes:
     'Make them in the starting resumes in base/, from verified facts, and build each one again.',
   templates: 'Make them with save_resume_choices, and save_template for a template’s own look.',
   facts: `File them with the fact tools. To save what they typed, give “${CHANGES_QUESTION}” as the question, word for word: their words are their answer to it.`,
   shared:
-    'Add to their notes with add_to_notes, and change the names kept private in guide/confidential-terms.txt.',
+    'Add to their notes with add_to_notes, and change the names kept private with keep_names_private.',
 };
 
 /**
@@ -587,7 +656,7 @@ const PROJECT_FIELDS = {
   what: text('What it is, in a line or two, in their words.'),
   role: text('Their part in it, such as “Built it alone”.'),
   under: text('A company or group it’s part of.'),
-  status: { type: 'string', enum: list(PROJECT_STATUSES) },
+  status: { type: 'string', enum: values(PROJECT_STATUSES) },
   when: text('When, as they say it, such as “2023 to now”.'),
   links: lines('Its website, store page or repository.'),
   results: text('What they can count or point to, as they said it.'),
@@ -623,7 +692,7 @@ export const WANTS_SCHEMA = {
     workplaces: manyOf(list(WORKPLACES), 'How they’d work, whole.'),
     remoteFrom: text('Where they can work remotely from.'),
     places: lines('Cities for hybrid or on-site work, whole.'),
-    relocate: { type: 'string', enum: list(RELOCATE), description: 'Blank for not sure yet.' },
+    relocate: { type: 'string', enum: values(RELOCATE), description: 'Blank for not sure yet.' },
     companies: manyOf(list(COMPANY_KINDS), 'Kinds of company, whole.'),
     industries: lines('Industries they’d love, whole.'),
     avoid: lines('Industries they won’t work in, whole.'),
@@ -665,10 +734,10 @@ export const APPLICATIONS_SCHEMA = {
     countries: lines('Countries they can work in without a visa, whole.'),
     sponsorship: {
       type: 'string',
-      enum: list(SPONSORSHIP),
+      enum: values(SPONSORSHIP),
       description: 'Blank leaves it for them.',
     },
-    over18: { type: 'string', enum: list(OVER_18), description: 'Blank leaves it for them.' },
+    over18: { type: 'string', enum: values(OVER_18), description: 'Blank leaves it for them.' },
   },
   additionalProperties: false,
 };

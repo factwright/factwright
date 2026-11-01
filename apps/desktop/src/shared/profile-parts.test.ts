@@ -40,7 +40,8 @@ describe('parseProfileChanges', () => {
 });
 
 describe('a task on a part of Profile', () => {
-  const task = { skill: 'update-profile', part: 'about' } as const;
+  const REQUEST = '0123456789abcdef';
+  const task = { skill: 'update-profile', part: 'about', request: REQUEST } as const;
 
   it('has that part’s scope, and any other scope has no part', () => {
     expect(partOf(scopeOf(task))).toBe('about');
@@ -53,12 +54,14 @@ describe('a task on a part of Profile', () => {
     expect(lanesOf(task)).toEqual(['profile']);
     expect(sharesLane(task, { skill: 'add-facts', mode: 'interview' })).toBe(true);
     expect(sharesLane(task, { skill: 'work-history' })).toBe(true);
-    expect(sharesLane(task, { skill: 'update-profile', part: 'wants' })).toBe(true);
+    expect(sharesLane(task, { skill: 'update-profile', part: 'wants', request: REQUEST })).toBe(
+      true,
+    );
     expect(sharesLane(task, { skill: 'job-search' })).toBe(false);
   });
 
   it('waits for a template’s run too, when it’s on the templates', () => {
-    const templates = { skill: 'update-profile', part: 'templates' } as const;
+    const templates = { skill: 'update-profile', part: 'templates', request: REQUEST } as const;
     expect(sharesLane(templates, { skill: 'make-template', source: '2026-10-12-1.pdf' })).toBe(
       true,
     );

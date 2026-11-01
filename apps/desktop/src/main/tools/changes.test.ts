@@ -41,6 +41,7 @@ describe('requested_changes, for a part of Profile', () => {
     history: () => NO_HISTORY,
     notes: () => 'Every word of my notes.',
     confidential: () => ['Bluebird'],
+    changeConfidential: () => ['Bluebird'],
     criteriaIsOwn: () => false,
     saveAnswers: () => answers,
     addToNotes: () => true,

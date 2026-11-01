@@ -1,5 +1,5 @@
 import { Button, Dialog, DialogActions, Field, TextArea } from '@factwright/ui';
-import { type FormEvent, useState } from 'react';
+import { type FormEvent, useEffect, useRef, useState } from 'react';
 import type { FactwrightApi } from '../../shared/api.ts';
 import {
   CHANGES_QUESTION,
@@ -19,6 +19,8 @@ const PARTS: Readonly<Record<ProfilePart, { changes: string; example: string; le
     about: {
       changes: 'your name, email, phone, where you live, LinkedIn and website',
       example: 'Such as: I moved to Austin, and use sam@example.com from now on',
+      leftOut:
+        'Your street and postal code stay on this computer, and your Claude never sees them. Leave them out of what you type here. For applications’ Change has them.',
     },
     wants: {
       changes:
@@ -54,7 +56,8 @@ const PARTS: Readonly<Record<ProfilePart, { changes: string; example: string; le
     resumes: {
       changes: 'your starting resumes, from your verified facts',
       example: 'Such as: lead with the platform work, and keep them to one page',
-      leftOut: 'Facts still waiting to be verified stay off them until you verify them.',
+      leftOut:
+        'Facts still waiting to be verified stay off them until you verify them. Update your fact bank to add one.',
     },
     templates: {
       changes:
@@ -106,7 +109,8 @@ export function UpdateWithClaude({
 }) {
   const [open, setOpen] = useState(false);
   const shown = name ?? PART_NAMES[part];
-  const task: RunTask = { skill: PROFILE_SKILL, part, ...(kind && { kind }) };
+  // To say where a task on this part stands: which request it's for makes no difference.
+  const task: RunTask = { skill: PROFILE_SKILL, part, ...(kind && { kind }), request: '' };
   return (
     <>
       <ClaudeButton
@@ -124,9 +128,11 @@ export function UpdateWithClaude({
           kind={kind}
           name={shown}
           api={api}
-          onAsked={() => {
+          // Claude Code can stop being ready while the dialog's open, which says so.
+          ready={run !== undefined}
+          onAsked={(request) => {
             setOpen(false);
-            run?.start(task);
+            run?.start({ ...task, request });
           }}
           onBefore={onBefore}
           onClose={() => setOpen(false)}
@@ -142,6 +148,7 @@ function UpdateDialog({
   kind,
   name,
   api,
+  ready,
   onAsked,
   onBefore,
   onClose,
@@ -150,7 +157,8 @@ function UpdateDialog({
   kind: string | undefined;
   name: string;
   api: Pick<FactwrightApi, 'requestProfileChanges'>;
-  onAsked: () => void;
+  ready: boolean;
+  onAsked: (request: string) => void;
   onBefore: (() => Promise<void>) | undefined;
   onClose: () => void;
 }) {
@@ -158,9 +166,21 @@ function UpdateDialog({
   const [problem, setProblem] = useState<string | null>(null);
   const [asking, setAsking] = useState(false);
   const words = PARTS[part];
+  // Closed while it's saving what's waiting, nothing starts.
+  const open = useRef(true);
+  useEffect(() => {
+    open.current = true;
+    return () => {
+      open.current = false;
+    };
+  }, []);
   const ask = async (event: FormEvent, close: () => void) => {
     event.preventDefault();
     if (!changes.trim()) return;
+    if (!ready) {
+      setProblem('Your Claude isn’t ready. The card in the sidebar says what to do.');
+      return;
+    }
     setAsking(true);
     let result: Awaited<ReturnType<typeof api.requestProfileChanges>>;
     try {
@@ -169,13 +189,14 @@ function UpdateDialog({
     } catch {
       result = { ok: false, message: 'That didn’t reach your Claude. Try again.' };
     }
+    if (!open.current) return;
     setAsking(false);
     if (!result.ok) {
       setProblem(result.message);
       return;
     }
     close();
-    onAsked();
+    onAsked(result.request);
   };
   return (
     <Dialog

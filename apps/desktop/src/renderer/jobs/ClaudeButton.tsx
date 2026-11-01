@@ -1,4 +1,4 @@
-import { Button } from '@factwright/ui';
+import { Button, VisuallyHidden } from '@factwright/ui';
 import { Clock, LoaderCircle, Plus, Sparkles } from 'lucide-react';
 import type { RunTask } from '../../shared/runs.ts';
 import styles from './ClaudeButton.module.css';
@@ -46,6 +46,7 @@ export function ClaudeButton({
       <span className={styles.running}>
         <LoaderCircle className={styles.spin} size={14} aria-hidden="true" />
         Claude is on it
+        {ariaLabel && <VisuallyHidden> ({ariaLabel})</VisuallyHidden>}
       </span>
     );
   }
@@ -54,6 +55,7 @@ export function ClaudeButton({
       <span className={styles.inLine}>
         <Clock size={14} aria-hidden="true" />
         In line
+        {ariaLabel && <VisuallyHidden> ({ariaLabel})</VisuallyHidden>}
       </span>
     );
   }
@@ -64,6 +66,7 @@ export function ClaudeButton({
       variant={primary ? 'primary' : quiet ? 'quiet' : 'secondary'}
       icon={<Icon size={14} aria-hidden="true" />}
       disabled={disabled}
+      {...(!run && { title: 'Your Claude needs to be ready first.' })}
       {...(ariaLabel && { 'aria-label': ariaLabel })}
       onClick={onStart ?? (() => run?.start(task))}
       {...(primary && FOCUS_NEXT)}

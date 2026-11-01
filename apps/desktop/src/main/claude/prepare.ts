@@ -18,7 +18,7 @@ export interface PrepareDeps {
   /** The changes the user asked for, which a run started for them claims. */
   versions: Pick<Versions, 'claimChanges' | 'releaseChanges'>;
   /** The changes the user asked for in a part of Profile, which a run for that part claims. */
-  profileRequests: Pick<ProfileRequests, 'claim' | 'release'>;
+  profileRequests: Pick<ProfileRequests, 'find'>;
 }
 
 /**
@@ -38,12 +38,13 @@ export function taskPreparer(deps: PrepareDeps): (task: RunTask | null) => Promi
         : undefined;
     if (changes === null) return { ok: false, problem: 'changes' };
     const update =
-      task && 'part' in task ? deps.profileRequests.claim(task.part, task.kind) : undefined;
+      task && 'part' in task
+        ? deps.profileRequests.find(task.request, task.part, task.kind)
+        : undefined;
     if (update === null) return { ok: false, problem: 'profile-changes' };
     const letGo = () => {
       if (revision) deps.revisions.release(revision);
       if (changes) deps.versions.releaseChanges(changes);
-      if (update) deps.profileRequests.release(update);
     };
     let chosen: Awaited<ReturnType<typeof loadModels>>;
     let effort: Awaited<ReturnType<typeof loadEffort>>;

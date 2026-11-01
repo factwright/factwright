@@ -98,24 +98,29 @@ const OFF_THE_WEB = [
   ...[...PUBLIC_API_TOOLS, ...WEB_TOOLS].map((tool) => `mcp__${TOOLS_SERVER}__${tool}`),
 ];
 
-/** The names to keep off what the user sends, which adding to only makes the resume check stricter. */
-const TERMS = 'guide/confidential-terms.txt';
-
 /**
- * What a run on a part of Profile may edit itself, beside those names. Most save through their
- * part's tools alone, and a starting resume is a file of its own, as is a nudge from what the user
- * asked of one.
+ * What a run on a part of Profile may edit itself. The rest save through their part's tools alone,
+ * and a starting resume is a file of its own.
  */
 const PART_EDITS: Readonly<Partial<Record<ProfilePart, readonly string[]>>> = {
-  resumes: ['base/**', 'guide/preferences.md'],
+  resumes: ['base/**'],
 };
 
 /**
  * What a run on a part of Profile never reads: what came from the web, or from someone else, so
- * nothing it saves can come from a page that could tell it what to write. It works from the user's
- * words, their facts and their Profile.
+ * nothing it saves can come from a page or a file that could tell it what to write. It works from
+ * the user's words, their facts and their Profile.
  */
-const FROM_ELSEWHERE = ['applications/**', 'searches/**', 'outreach/**', 'templates/sources/**'];
+const FROM_ELSEWHERE = [
+  'applications/**',
+  'searches/**',
+  'outreach/**',
+  'templates/sources/**',
+  'linkedin/**',
+];
+
+/** The files the user shared, which might hold anything: only their work history reads them. */
+const SHARED_FILES = 'about-me/files/**';
 
 /** What Claude may do without asking, from what the run is for. */
 function allowed(scope: RunScope): string[] {
@@ -129,7 +134,7 @@ function allowed(scope: RunScope): string[] {
     return [
       skills,
       ...named([...PART_READS, ...PART_TOOLS[part]]),
-      ...[TERMS, ...(PART_EDITS[part] ?? [])].map(edits),
+      ...(PART_EDITS[part] ?? []).map(edits),
     ];
   }
   // A template run copies a resume from anywhere, so it reads and saves templates and nothing
@@ -225,7 +230,11 @@ export function sessionSettings({
         ...LOGS_THE_APP_WRITES.map(edits),
         ...(scope === 'profile' ? [] : [edits(FACTS)]),
         ...(scope === 'hunt' ? [] : OFF_THE_WEB),
-        ...(partOf(scope) ? FROM_ELSEWHERE.map((path) => `Read(./${path})`) : []),
+        ...(partOf(scope)
+          ? [...FROM_ELSEWHERE, ...(scope === 'part:history' ? [] : [SHARED_FILES])].map(
+              (path) => `Read(./${path})`,
+            )
+          : []),
         // A revision changes a template only through save_template, which asks.
         ...(scope === 'revise' ? [edits(`${TEMPLATES_FOLDER}/**`)] : []),
       ],

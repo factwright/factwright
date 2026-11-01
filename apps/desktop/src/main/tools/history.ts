@@ -78,6 +78,13 @@ export function saveHistory(
   about: { saveHistory(history: WorkHistory, keep?: (path: string) => void): WorkHistory },
   keep?: (path: string) => void,
 ): string {
+  // It replaces what's there, so one left out would be lost.
+  const given = (input ?? {}) as Record<string, unknown>;
+  if (!Array.isArray(given.jobs) || !Array.isArray(given.schools)) {
+    throw new Error(
+      'Not saved: give both jobs and schools, whole, even if one is empty: this replaces what’s there.',
+    );
+  }
   const kept = about.saveHistory(readHistory(input ?? NO_HISTORY), keep);
   const positions = positionsOf(kept).length;
   const notes = leftOut(input, kept);

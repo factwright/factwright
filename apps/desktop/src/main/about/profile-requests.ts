@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto';
 import type { ProfileChanges, ProfilePart } from '../../shared/profile-parts.ts';
 
 /** A request for changes to a part of Profile, held for the run that makes them. */
@@ -6,12 +7,14 @@ export interface BoundProfileChanges extends ProfileChanges {
   at: string;
 }
 
-const keyOf = (part: ProfilePart, kind: string | undefined) => `${part}/${kind ?? ''}`;
+/** How many requests are held, the newest, as a run's Try again can ask for one later. */
+const MOST_HELD = 20;
 
 /**
- * What the user asked to change in each part of Profile, waiting for its run, one each: their
- * words, which only that run gets, and which never reach Claude as if typed. They're lost with a
- * restart, as the run in line for them is.
+ * What the user asked to change in each part of Profile, by a request's ID, which its run's task
+ * carries: their words, which only that run gets, and which never reach Claude as if typed. Starting
+ * the task again, as Try again does, finds the same words. They're lost with a restart, as the run
+ * in line for them is.
  */
 export class ProfileRequests {
   private readonly held = new Map<string, BoundProfileChanges>();
@@ -21,25 +24,20 @@ export class ProfileRequests {
     this.now = now;
   }
 
-  /** Holds what the user asked, for the run the window starts next, which claims it. */
-  hold(request: ProfileChanges): void {
-    this.held.set(keyOf(request.part, request.kind), {
-      ...request,
-      at: this.now().toISOString(),
-    });
+  /** Holds what the user asked, and answers with the ID its run's task names it by. */
+  hold(request: ProfileChanges): string {
+    const id = randomBytes(8).toString('hex');
+    this.held.set(id, { ...request, at: this.now().toISOString() });
+    for (const old of this.held.keys()) {
+      if (this.held.size <= MOST_HELD) break;
+      this.held.delete(old);
+    }
+    return id;
   }
 
-  /** The changes held for a run the window starts, which only that run gets. Null for none. */
-  claim(part: ProfilePart, kind: string | undefined): BoundProfileChanges | null {
-    const key = keyOf(part, kind);
-    const held = this.held.get(key) ?? null;
-    this.held.delete(key);
-    return held;
-  }
-
-  /** Holds changes again when their run didn't start, so starting it again finds them. */
-  release(changes: BoundProfileChanges): void {
-    const key = keyOf(changes.part, changes.kind);
-    if (!this.held.has(key)) this.held.set(key, changes);
+  /** What's held for a run on a part, by its request's ID, or null when it's not for that part. */
+  find(id: string, part: ProfilePart, kind: string | undefined): BoundProfileChanges | null {
+    const held = this.held.get(id);
+    return held && held.part === part && held.kind === kind ? held : null;
   }
 }

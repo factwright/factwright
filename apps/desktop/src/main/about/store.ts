@@ -305,16 +305,21 @@ export class AboutStore {
    * Adds and removes confidential names as the user changed them. Names Claude added since the
    * user's list was read stay, and every pattern Claude wrote keeps its exact line.
    */
-  changeConfidential({
-    add,
-    remove,
-  }: {
-    add: readonly string[];
-    remove: readonly string[];
-  }): string[] {
+  changeConfidential(
+    {
+      add,
+      remove,
+    }: {
+      add: readonly string[];
+      remove: readonly string[];
+    },
+    keep?: (path: string) => void,
+  ): string[] {
     const gone = new Set(remove.map((name) => name.trim().toLowerCase()));
     const kept = this.confidential().filter((name) => !gone.has(name.toLowerCase()));
-    this.write(ABOUT.terms, withTerms(this.read(ABOUT.terms), [...kept, ...add]));
+    this.keepingFor(keep, () =>
+      this.write(ABOUT.terms, withTerms(this.read(ABOUT.terms), [...kept, ...add])),
+    );
     return this.confidential();
   }
 

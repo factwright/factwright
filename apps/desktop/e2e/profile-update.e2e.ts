@@ -88,6 +88,8 @@ test('changes a part that had no way before, from the user’s words, with Undo'
   expect(typed).toContain('The usual tool: Not saved: A change to one part of Profile');
   await expect(window.getByRole('dialog')).toHaveCount(0);
   expect(answers().start ?? '').toBe('');
+  // What it left, which only Claude knows, shows without opening the terminal.
+  await expect(claudePanel()).toContainText('I left your pay: that’s What you want’s.');
 
   // Its card lists the file it changed, and Undo puts it back as it was before the task.
   const changed = claudePanel().getByRole('list', { name: 'Files Claude changed' });
@@ -95,6 +97,16 @@ test('changes a part that had no way before, from the user’s words, with Undo'
   await claudePanel().getByRole('button', { name: 'Undo about-me/answers.json' }).click();
   await expect(changed).toContainText('Undone');
   await expect.poll(() => answers().applications?.howHeard ?? '').toBe('');
+
+  // Asked for more in the same run, it still stays to its part, with no dialog either.
+  const reply = claudePanel().getByRole('textbox', { name: 'Reply to Claude' });
+  await reply.fill('try the usual tool');
+  await claudePanel().getByRole('button', { name: 'Send' }).click();
+  await expect
+    .poll(() => terminalText(window))
+    .toContain('Still the usual tool: Not saved: A change to one part of Profile');
+  await expect(window.getByRole('dialog')).toHaveCount(0);
+  await expect(claudePanel().getByRole('status').first()).toHaveText('Done');
   await closeRun();
 });
 
@@ -112,8 +124,8 @@ test('says what stays out of Claude’s reach, and turns it away if it comes any
   await ask('For applications', 'My street is 12 Elm');
   const typed = await terminalText(window);
   expect(typed).toContain('A street: Not saved: street, postal code and equal-opportunity answers');
-  // It never reaches a file that syncs as a street, and the file kept apart isn't touched.
-  expect(answers().applications).not.toHaveProperty('street');
+  // It never reaches a file that syncs.
+  expect(readFileSync(workspace('about-me/answers.json'), 'utf8')).not.toContain('12 Elm');
   await closeRun();
 });
 
@@ -170,6 +182,7 @@ test('refuses a run on a part with nothing asked, saying so in a tab of its own'
     (globalThis as unknown as Api).factwright.startClaude({
       skill: 'update-profile',
       part: 'about',
+      request: '0000000000000000',
     }),
   );
   const panel = claudePanel();

@@ -45,7 +45,7 @@ export const RECOMMENDED_EFFORT: Readonly<Record<ModelTask, Effort>> = {
 /**
  * Each task's effort with Pro's levels, for a Pro plan, whose limits are the tightest, or a way of
  * signing in that bills every token: high for the writing and judgment calls, and medium for
- * salary checks and job searches.
+ * salary checks, job searches and changes to a part of Profile.
  */
 export const PRO_EFFORT: Readonly<Record<ModelTask, Effort>> = {
   'focused-resume': 'high',
@@ -62,7 +62,7 @@ export const PRO_EFFORT: Readonly<Record<ModelTask, Effort>> = {
   'add-facts': 'high',
   'make-template': 'high',
   'work-history': 'high',
-  'update-profile': 'high',
+  'update-profile': 'medium',
 };
 
 /**

@@ -1,38 +1,45 @@
 import { describe, expect, it } from 'vitest';
+import { PROFILE_REQUEST } from '../../shared/profile-parts.ts';
 import { ProfileRequests } from './profile-requests.ts';
 
 const NOW = new Date('2026-11-01T14:30:12.000Z');
 
 describe('ProfileRequests', () => {
-  it('holds what the user asked for the run on that part, which claims it once', () => {
+  it('holds what the user asked by an ID of its own, for a run on that part alone', () => {
     const held = new ProfileRequests(() => NOW);
-    held.hold({ part: 'about', changes: 'Use my new email' });
-    expect(held.claim('wants', undefined)).toBeNull();
-    expect(held.claim('about', undefined)).toEqual({
+    const id = held.hold({ part: 'about', changes: 'Use my new email' });
+    expect(id).toMatch(PROFILE_REQUEST);
+    expect(held.find(id, 'about', undefined)).toEqual({
       part: 'about',
       changes: 'Use my new email',
       at: NOW.toISOString(),
     });
-    expect(held.claim('about', undefined)).toBeNull();
+    expect(held.find(id, 'wants', undefined)).toBeNull();
+    expect(held.find('0000000000000000', 'about', undefined)).toBeNull();
+  });
+
+  it('finds the same words again, for Try again, and each request its own', () => {
+    const held = new ProfileRequests(() => NOW);
+    const first = held.hold({ part: 'about', changes: 'First' });
+    const second = held.hold({ part: 'about', changes: 'Second' });
+    expect(held.find(first, 'about', undefined)?.changes).toBe('First');
+    expect(held.find(first, 'about', undefined)?.changes).toBe('First');
+    expect(held.find(second, 'about', undefined)?.changes).toBe('Second');
   });
 
   it('keeps each kind of job’s apart', () => {
     const held = new ProfileRequests(() => NOW);
-    held.hold({ part: 'kind', kind: 'design', changes: 'Add UX' });
-    held.hold({ part: 'kind', kind: 'product', changes: 'Add PM' });
-    expect(held.claim('kind', 'product')?.changes).toBe('Add PM');
-    expect(held.claim('kind', 'design')?.changes).toBe('Add UX');
+    const design = held.hold({ part: 'kind', kind: 'design', changes: 'Add UX' });
+    expect(held.find(design, 'kind', 'design')?.changes).toBe('Add UX');
+    expect(held.find(design, 'kind', 'product')).toBeNull();
   });
 
-  it('finds them again when their run didn’t start, unless the user asked again since', () => {
+  it('holds only the newest', () => {
     const held = new ProfileRequests(() => NOW);
-    held.hold({ part: 'about', changes: 'First' });
-    const claimed = held.claim('about', undefined);
-    if (!claimed) throw new Error('Nothing held.');
-    held.release(claimed);
-    expect(held.claim('about', undefined)?.changes).toBe('First');
-    held.hold({ part: 'about', changes: 'Second' });
-    held.release(claimed);
-    expect(held.claim('about', undefined)?.changes).toBe('Second');
+    const oldest = held.hold({ part: 'about', changes: 'Oldest' });
+    let newest = oldest;
+    for (let n = 0; n < 20; n++) newest = held.hold({ part: 'about', changes: `Next ${n}` });
+    expect(held.find(oldest, 'about', undefined)).toBeNull();
+    expect(held.find(newest, 'about', undefined)?.changes).toBe('Next 19');
   });
 });

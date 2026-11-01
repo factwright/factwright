@@ -169,8 +169,11 @@ export type RunTask =
   | { skill: typeof FACTS_SKILL; mode: 'interview' | 'new' }
   | { skill: typeof TEMPLATE_SKILL; source: string }
   | { skill: typeof HISTORY_SKILL }
-  /** Changes to one part of Profile, and for one kind of job, which kind, by its id. */
-  | { skill: typeof PROFILE_SKILL; part: ProfilePart; kind?: string }
+  /**
+   * Changes to one part of Profile, and for one kind of job, which kind, by its id. The app holds
+   * what the user asked by the request's ID, and the run reads it with requested_changes.
+   */
+  | { skill: typeof PROFILE_SKILL; part: ProfilePart; kind?: string; request: string }
   | {
       skill: typeof REVISE_SKILL;
       jobId: string;

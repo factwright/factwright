@@ -630,15 +630,18 @@ async function work(text) {
       templates: ['save_resume_choices', { format: 'both' }],
       shared: ['add_to_notes', { text: words }],
     }[updating[1]];
-    if (saves) show(`${await callAllowed(...saves)}\n`);
+    // Told a street, it tries to save it, which the tool refuses, so it can't sync.
+    if (/street/i.test(words) && updating[1] === 'applications') {
+      show(`A street: ${await call('save_for_applications', { street: words })}\n`);
+    } else if (saves) show(`${await callAllowed(...saves)}\n`);
     // Past its part: another part's tool isn't listed, and the tool every other run saves with
     // needs an OK, which the app turns away, with no dialog.
     show(`Another part: ${(await call('save_beyond_work', { cares: words })) || 'no such tool'}\n`);
     show(`The usual tool: ${await callAllowed('save_about_you', { start: words })}\n`);
-    // Told a street, it tries to save it, which the tool refuses, so it can't sync.
-    if (/street/i.test(words) && updating[1] === 'applications') {
-      show(`A street: ${await call('save_for_applications', { street: words })}\n`);
-    }
+  }
+  // Asked for more in the same run, it tries the tool other runs save with, which still needs an OK.
+  if (text === 'try the usual tool') {
+    show(`Still the usual tool: ${await callAllowed('save_about_you', { start: 'Soon' })}\n`);
   }
   // As Claude would for a revision: read what the user picked in the X-ray through the tool,
   // never from the prompt, ask about the term the fact bank doesn't back, then change the resume
@@ -835,7 +838,11 @@ async function work(text) {
   // Its turn ends a moment later, with Stop, before it takes the next prompt, as Claude Code's does.
   await new Promise((resolve) => setTimeout(resolve, 300));
   show('Done.\n> ');
-  await hook('Stop', { last_assistant_message: 'Done.' });
+  // A run on a part of Profile says what it left, which only Claude knows.
+  const said = /^\/factwright:update-profile /.test(text)
+    ? 'Done. I left your pay: that’s What you want’s.'
+    : 'Done.';
+  await hook('Stop', { last_assistant_message: said });
 }
 
 async function begin() {

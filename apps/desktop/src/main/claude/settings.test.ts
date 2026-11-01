@@ -35,7 +35,7 @@ describe('a run on one part of Profile', () => {
       facts: 'save_fact',
       shared: 'add_to_notes',
     } as const;
-    const others = ['save_contact', 'save_what_you_want', 'save_for_applications'];
+    const others = ['save_contact', 'save_what_you_want', 'save_for_applications', 'past_answers'];
     for (const part of PROFILE_PARTS) {
       expect(allowed(part), part).toContain(tool(saving[part]));
       expect(allowed(part), part).toContain(tool('requested_changes'));
@@ -61,17 +61,28 @@ describe('a run on one part of Profile', () => {
     }
   });
 
-  it('changes no file at will, past the names to keep private and a starting resume', () => {
+  it('changes no file itself, but for a starting resume', () => {
     const edits = (part: ProfilePart) =>
       scoped(`part:${part}`).permissions.allow.filter((rule) => rule.startsWith('Edit('));
     for (const part of PROFILE_PARTS.filter((each) => each !== 'resumes')) {
-      expect(edits(part), part).toEqual(['Edit(./guide/confidential-terms.txt)']);
+      expect(edits(part), part).toEqual([]);
     }
-    expect(edits('resumes')).toEqual([
-      'Edit(./guide/confidential-terms.txt)',
-      'Edit(./base/**)',
-      'Edit(./guide/preferences.md)',
-    ]);
+    expect(edits('resumes')).toEqual(['Edit(./base/**)']);
+  });
+
+  it('saves no fact from a run on the starting resumes, which use verified ones', () => {
+    const { allow } = scoped('part:resumes').permissions;
+    for (const name of ['save_fact', 'save_gap', 'verify_fact', 'correct_fact']) {
+      expect(allow).not.toContain(tool(name));
+    }
+  });
+
+  it('reads what the user shared only for their work history', () => {
+    const shared = 'Read(./about-me/files/**)';
+    for (const part of PROFILE_PARTS) {
+      if (part === 'history') expect(scoped('part:history').permissions.deny).not.toContain(shared);
+      else expect(scoped(`part:${part}`).permissions.deny, part).toContain(shared);
+    }
   });
 
   it('never edits the fact bank or the user’s own files, even for the part they’re in', () => {
@@ -95,14 +106,17 @@ describe('a run on one part of Profile', () => {
       expect(deny, scope).toContain('Read(./applications/**)');
       expect(deny, scope).toContain('Read(./searches/**)');
       expect(deny, scope).toContain('Read(./templates/sources/**)');
+      expect(deny, scope).toContain('Read(./linkedin/**)');
     }
     // No other run gives that up.
     expect(settings.permissions.deny).not.toContain('Read(./applications/**)');
   });
 
   it('is the scope of a task on that part, for one kind of job too', () => {
-    expect(scopeOf({ skill: 'update-profile', part: 'about' })).toBe('part:about');
-    expect(scopeOf({ skill: 'update-profile', part: 'kind', kind: 'design' })).toBe('part:kind');
+    expect(scopeOf({ skill: 'update-profile', part: 'about', request: '' })).toBe('part:about');
+    expect(scopeOf({ skill: 'update-profile', part: 'kind', kind: 'design', request: '' })).toBe(
+      'part:kind',
+    );
   });
 });
 

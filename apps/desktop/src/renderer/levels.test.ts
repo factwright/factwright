@@ -16,7 +16,7 @@ describe('the levels Claude runs at', () => {
     expect(each['salary-check']).toEqual({ model: 'sonnet', effort: 'medium' });
     const { most, others } = summarize(each);
     expect(levelName(most)).toBe('Opus · High');
-    expect(others).toBe('Lighter for 4 tasks');
+    expect(others).toBe('Lighter for 5 tasks');
   });
 
   it('follows the user’s own choices over the plan’s', () => {

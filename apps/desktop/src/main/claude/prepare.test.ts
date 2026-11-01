@@ -16,8 +16,6 @@ const prepare = () =>
     profileRequests: held,
   });
 
-const TASK = { skill: 'update-profile', part: 'leaving' } as const;
-
 beforeEach(() => {
   dataDir = mkdtempSync(join(tmpdir(), 'factwright-prepare-'));
   held = new ProfileRequests();
@@ -27,10 +25,13 @@ afterEach(() => {
   rmSync(dataDir, { recursive: true, force: true });
 });
 
+const taskFor = (request: string) =>
+  ({ skill: 'update-profile', part: 'leaving', request }) as const;
+
 describe('a task on a part of Profile, as it starts', () => {
-  it('claims the words held for it, for its own tool calls, with its part’s scope', async () => {
-    held.hold({ part: 'leaving', changes: 'Make it warmer' });
-    const prepared = await prepare()(TASK);
+  it('reads the words held for it, for its own tool calls, with its part’s scope', async () => {
+    const request = held.hold({ part: 'leaving', changes: 'Make it warmer' });
+    const prepared = await prepare()(taskFor(request));
     if (!prepared.ok) throw new Error(prepared.problem);
     expect(prepared.options.scope).toBe('part:leaving');
     expect(prepared.options.prompt).toBe('/factwright:update-profile leaving');
@@ -40,22 +41,21 @@ describe('a task on a part of Profile, as it starts', () => {
   });
 
   it('says so when no words are held, as after a restart', async () => {
-    expect(await prepare()(TASK)).toEqual({ ok: false, problem: 'profile-changes' });
+    expect(await prepare()(taskFor('0000000000000000'))).toEqual({
+      ok: false,
+      problem: 'profile-changes',
+    });
   });
 
-  it('lets go of the words when its run didn’t start, so starting it again finds them', async () => {
-    held.hold({ part: 'leaving', changes: 'Make it warmer' });
-    const prepared = await prepare()(TASK);
-    if (!prepared.ok) throw new Error(prepared.problem);
-    await prepared.started(false);
-    expect(held.claim('leaving', undefined)?.changes).toBe('Make it warmer');
-  });
-
-  it('holds on to them once its run started', async () => {
-    held.hold({ part: 'leaving', changes: 'Make it warmer' });
-    const prepared = await prepare()(TASK);
-    if (!prepared.ok) throw new Error(prepared.problem);
-    await prepared.started(true);
-    expect(held.claim('leaving', undefined)).toBeNull();
+  it('finds the same words when it starts again, as Try again does', async () => {
+    const request = held.hold({ part: 'leaving', changes: 'Make it warmer' });
+    for (const started of [true, false]) {
+      const prepared = await prepare()(taskFor(request));
+      if (!prepared.ok) throw new Error(prepared.problem);
+      await prepared.started(started);
+    }
+    const again = await prepare()(taskFor(request));
+    if (!again.ok) throw new Error(again.problem);
+    expect(again.options.changes).toMatchObject({ changes: 'Make it warmer' });
   });
 });

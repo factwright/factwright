@@ -41,8 +41,9 @@ export const RECOMMENDED_MODELS: Readonly<Record<ModelTask, Model>> = {
 };
 
 /**
- * Each task's model with Pro's levels: Sonnet, which uses less of a plan, for the checks and
- * searches, and Opus for the fact-checked writing and getting to know the user.
+ * Each task's model with Pro's levels: Sonnet, which uses less of a plan, for the checks, the
+ * searches and changes to a part of Profile, which are mostly small, and Opus for the fact-checked
+ * writing and getting to know the user.
  */
 export const PRO_MODELS: Readonly<Record<ModelTask, Model>> = {
   'focused-resume': 'opus',
@@ -59,7 +60,7 @@ export const PRO_MODELS: Readonly<Record<ModelTask, Model>> = {
   'add-facts': 'opus',
   'make-template': 'opus',
   'work-history': 'opus',
-  'update-profile': 'opus',
+  'update-profile': 'sonnet',
 };
 
 /**

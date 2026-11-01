@@ -170,6 +170,18 @@ describe('save_what_you_want', () => {
     );
   });
 
+  it('refuses a name that isn’t text', async () => {
+    await run(
+      'save_what_you_want',
+      { firstKindName: 'Engineer', addKinds: [{ name: 'Project manager' }] },
+      callFor('wants'),
+    );
+    await expect(
+      run('save_what_you_want', { kind: 'project-manager', name: null }, callFor('wants')),
+    ).rejects.toThrow('give the kind’s name as text');
+    expect(about.answers().otherKinds[0]?.name).toBe('Project manager');
+  });
+
   it('refuses a value it doesn’t know, with nothing saved', async () => {
     await expect(
       run('save_what_you_want', { levels: ['wizard'], mustHaves: 'Hm' }, callFor('wants')),
@@ -340,6 +352,17 @@ describe('save_beyond_work', () => {
     expect(about.answers().projects).toEqual([]);
   });
 
+  it('refuses a field a project doesn’t have, rather than drop it', async () => {
+    await expect(
+      run(
+        'save_beyond_work',
+        { addProjects: [{ name: 'Trailhead', rating: 5 }] },
+        callFor('beyond'),
+      ),
+    ).rejects.toThrow('rating isn’t part of a project');
+    expect(about.answers().projects).toEqual([]);
+  });
+
   it('refuses a project that isn’t there, and one with no name', async () => {
     await expect(
       run(
@@ -391,6 +414,27 @@ describe('save_beyond_work', () => {
   });
 });
 
+describe('save_work_history, in a run on it', () => {
+  it('refuses part of it, which would lose the rest', async () => {
+    about.saveHistory({
+      jobs: [],
+      schools: [{ school: 'SFSU', degree: '', field: '', start: '', end: '' }],
+    });
+    await expect(run('save_work_history', { jobs: [] }, callFor('history'))).rejects.toThrow(
+      'give both jobs and schools',
+    );
+    expect(about.history().schools).toHaveLength(1);
+  });
+});
+
+describe('build_resume, in a run on the starting resumes', () => {
+  it('builds only those, never a job’s', async () => {
+    expect(
+      await run('build_resume', { folder: '2026-10-11-acme-staff-engineer' }, callFor('resumes')),
+    ).toContain('Not built');
+  });
+});
+
 describe('save_resume_choices', () => {
   it('saves the templates picked, how long, and which files', async () => {
     const text = await run(
@@ -422,6 +466,60 @@ describe('save_resume_choices', () => {
   });
 });
 
+describe('keep_names_private', () => {
+  it('adds a name from any run that has it, escaped, and keeps the file for Undo', async () => {
+    const text = await run('keep_names_private', { add: ['Blue.bird'] }, callFor('facts'));
+    expect(text).toBe('Saved to the user’s Profile: Names kept private, added: Blue.bird.');
+    expect(about.confidential()).toEqual(['Blue.bird']);
+    expect(readFileSync(join(root, 'guide', 'confidential-terms.txt'), 'utf8')).toContain(
+      'Blue\\.bird',
+    );
+    expect(kept.some((path) => path.endsWith(join('guide', 'confidential-terms.txt')))).toBe(true);
+  });
+
+  it('takes a name off only for a run on What you’ve shared', async () => {
+    about.changeConfidential({ add: ['Bluebird'], remove: [] });
+    await expect(
+      run('keep_names_private', { remove: ['Bluebird'] }, callFor('resumes')),
+    ).rejects.toThrow('only a run on What you’ve shared');
+    expect(about.confidential()).toEqual(['Bluebird']);
+    await run('keep_names_private', { remove: ['Bluebird'] }, callFor('shared'));
+    expect(about.confidential()).toEqual([]);
+  });
+
+  it('is no tool of a run with no reason to hear a name', () => {
+    for (const part of ['about', 'wants', 'applications', 'templates'] as const) {
+      expect(runHasTool(`part:${part}`, 'keep_names_private'), part).toBe(false);
+    }
+  });
+});
+
+describe('a street or a postal code', () => {
+  it.each([
+    ['12 Elm St, Austin, TX'],
+    ['Austin, TX 78701'],
+    ['Toronto, ON M5V 2T6'],
+    ['London SW1A 1AA'],
+  ])('isn’t saved as where they live: %s', async (location) => {
+    await expect(run('save_contact', { location }, callFor('about'))).rejects.toThrow(
+      'stay on this computer',
+    );
+    expect(about.answers().you.location).toBe('Denver, CO');
+    await expect(
+      run('save_for_applications', { city: location }, callFor('applications')),
+    ).rejects.toThrow('stay on this computer');
+    expect(about.answers().applications.city).toBe('');
+  });
+
+  it.each(['Austin, TX', 'Remote', 'St. Louis, MO', 'Washington, D.C.'])(
+    'leaves a place alone: %s',
+    async (location) => {
+      await run('save_contact', { location }, callFor('about'));
+      expect(about.answers().you.location).toBe(location);
+    },
+  );
+});
+
 describe('add_to_notes', () => {
   it('adds what the user typed, as they typed it, after what’s there', async () => {
     about.saveNotes('What I do now: lead a team.');
@@ -451,7 +549,7 @@ describe('the fact tools, from what the user typed', () => {
     title: 'Billing rewrite went live',
     status: 'live',
     confidence: 'high',
-    wording: 'Rewrote billing, which went live in March and cut costs about 20%.',
+    wording: 'The billing rewrite went live in March, and it cut costs about 20%.',
     keywords: 'billing',
     questions: [CHANGES_QUESTION],
   };
@@ -482,10 +580,90 @@ describe('the fact tools, from what the user typed', () => {
   it('refuses a number they didn’t give', async () => {
     await expect(
       saveFact(
-        { ...FACT, wording: 'Rewrote billing, which cut costs about 45%.' },
+        { ...FACT, wording: 'The billing rewrite went live in March, and it cut costs about 45%.' },
         callFor('facts', WORDS),
       ),
     ).rejects.toThrow('45 isn’t in the user’s answer');
+  });
+
+  it('refuses a claim that isn’t what they typed, whatever its keywords', async () => {
+    await expect(
+      saveFact(
+        {
+          ...FACT,
+          title: 'Change management at Google',
+          wording: 'Led change management at Google as CTO.',
+          keywords: 'change',
+        },
+        callFor('facts', 'Fix my phone number please'),
+      ),
+    ).rejects.toThrow('“change” isn’t in the question or the user’s answer');
+    await expect(
+      saveFact(
+        { ...FACT, wording: 'The billing rewrite went live in March, as I led the whole team.' },
+        callFor('facts', WORDS),
+      ),
+    ).rejects.toThrow('isn’t in what the user typed');
+  });
+
+  it('doesn’t judge what they typed as a yes or a no', async () => {
+    mkdirSync(join(root, 'facts'), { recursive: true });
+    writeFileSync(join(root, 'facts', 'projects.md'), '# Projects\n');
+    const said = 'Not urgent, but add that I shipped Kafka at Acme.';
+    const fact = {
+      ...FACT,
+      title: 'Shipped Kafka',
+      wording: 'Shipped Kafka at Acme.',
+      keywords: 'Kafka',
+    };
+    expect(await saveFact(fact, callFor('facts', said))).toContain('Saved “Shipped Kafka”');
+  });
+
+  it('never takes what they typed as a no: that’s asked first', async () => {
+    const call = callFor('facts', 'Add Kubernetes to what I don’t have');
+    const input = { topic: 'Kubernetes', question: CHANGES_QUESTION };
+    call.questions.hear({
+      hook_event_name: 'PreToolUse',
+      tool_name: 'mcp__factwright__save_gap',
+      tool_input: input,
+    });
+    await expect(run('save_gap', input, call)).rejects.toThrow('ask them first');
+  });
+
+  it('takes as long a request as the dialog does, and several facts from it', async () => {
+    mkdirSync(join(root, 'facts'), { recursive: true });
+    writeFileSync(join(root, 'facts', 'projects.md'), '# Projects\n');
+    const long = `The billing rewrite went live in March, and it cut costs about 20%. ${'And more. '.repeat(120)}`;
+    expect(long.length).toBeGreaterThan(1000);
+    const call = callFor('facts', long.slice(0, 2000));
+    for (const n of ['one', 'two', 'three', 'four', 'five']) {
+      const title =
+        n === 'one'
+          ? 'Billing rewrite'
+          : `Billing rewrite and more ${n === 'two' ? 'march' : n === 'three' ? 'costs' : n === 'four' ? 'cut' : 'live'}`;
+      await saveFact({ ...FACT, title, wording: 'The billing rewrite went live in March.' }, call);
+    }
+    expect(call.filed.facts).toHaveLength(5);
+  });
+
+  it('starts a file for a job the user named, and for no other', async () => {
+    mkdirSync(join(root, 'facts'), { recursive: true });
+    writeFileSync(join(root, 'facts', 'projects.md'), '# Projects\n');
+    const said = 'I ran support at Globex Health for three years.';
+    const fact = {
+      ...FACT,
+      file: 'facts/globex-health.md',
+      title: 'Ran support',
+      wording: 'I ran support at Globex Health for three years.',
+      keywords: 'support',
+    };
+    expect(await saveFact(fact, callFor('facts', said))).toContain('facts/globex-health.md');
+    const file = readFileSync(join(root, 'facts', 'globex-health.md'), 'utf8');
+    expect(file).toContain('# Globex Health');
+    expect(file).toContain('`unconfirmed`');
+    await expect(
+      saveFact({ ...fact, file: 'facts/initech.md' }, callFor('facts', said)),
+    ).rejects.toThrow('there’s no facts/initech.md');
   });
 
   it('never lets their typed words verify a fact or correct a verified one', async () => {

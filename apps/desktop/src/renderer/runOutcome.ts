@@ -1,7 +1,7 @@
 import { CALL_KIND_LABELS, type Job, type JobView, payLabel } from '@factwright/core';
 import { FIT_TIER_DISPLAY } from '@factwright/ui';
 import type { RunStep } from '../shared/activity.ts';
-import { PROFILE_SKILL, partTitle } from '../shared/profile-parts.ts';
+import { PROFILE_SKILL } from '../shared/profile-parts.ts';
 import { REVISE_SKILL } from '../shared/revision.ts';
 import {
   FACTS_SKILL,
@@ -96,10 +96,6 @@ const wrote = (steps: readonly RunStep[], name: string) =>
 const called = (steps: readonly RunStep[], tool: string) =>
   steps.some((step) => step.state === 'done' && step.tool === `mcp__factwright__${tool}`);
 
-/** A call that changes a part of Profile, or a starting resume, by Factwright's tools or Claude's. */
-const SAVES_TO_PROFILE =
-  /^(?:mcp__factwright__(?:save_|add_to_notes|correct_fact|verify_fact|build_resume)|Edit$|Write$|MultiEdit$)/;
-
 /**
  * What a finished task made, from how its job, or the jobs, changed since it started, and from
  * what Claude did: a resume, a letter, a job analyzed and so on, said in a sentence with where it
@@ -127,13 +123,9 @@ export function runOutcome(
         }
       : null;
   }
-  // What it changed is on its card. It's said only once something was saved, as a run may ask
-  // first, or say what it left.
-  if ('part' in task) {
-    return steps.some((step) => step.state === 'done' && SAVES_TO_PROFILE.test(step.tool))
-      ? { text: `${partTitle(task.part, task.kind)}: updated.`, place: { page: 'profile' } }
-      : null;
-  }
+  // Claude says what it changed and what it left, which its panel shows, and its card lists each
+  // change, so there's nothing more to say.
+  if ('part' in task) return null;
   if (task.skill === TEMPLATE_SKILL) {
     return called(steps, 'save_template')
       ? { text: 'Your new template is saved.', place: { page: 'profile' } }

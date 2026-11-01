@@ -18,6 +18,7 @@ import {
   factFileKind,
   isFactPath,
 } from '../../shared/facts.ts';
+import { MAX_CHANGES } from '../../shared/versions.ts';
 import type { FactBankFiles } from '../about/facts.ts';
 import { type Answered, type Backing, type FilingTool, questionKey } from '../claude/questions.ts';
 import type { ToolCall } from './mcp.ts';
@@ -438,9 +439,14 @@ const isPlainNo = (each: Answered) => startsNo(questionKey(each.answer)) && !say
 const guessedNumbers = ({ answer }: Answered) =>
   numbersIn(questionKey(answer).replace(new RegExp(UNSURE.source, 'g'), ' '));
 
-/** Everything the user saw and said in the questions a fact rests on, to check it against. */
+/**
+ * Everything the user saw and said in the questions a fact rests on, to check it against. The app's
+ * own question over what they typed names nothing a fact could be about, so it doesn't count.
+ */
 const askedText = (answers: readonly Answered[]) =>
-  answers.map((each) => `${each.question} ${answerText(each)}`).join(' ');
+  answers
+    .map((each) => (each.typed ? answerText(each) : `${each.question} ${answerText(each)}`))
+    .join(' ');
 
 /** The claims in a file of the bank, by its path. */
 const claimsIn = (bank: FactBank, path: string): FactBlock[] =>
@@ -511,12 +517,20 @@ function checkBacking(
         `Not saved: “${each.answer}” answers whether to use a fact, not what the user has done.`,
       );
     }
-    if (each.question.length > MAX_KEPT_QUESTION || answerText(each).length > MAX_KEPT_ANSWER) {
+    const most = each.typed ? MAX_CHANGES : MAX_KEPT_ANSWER;
+    if (each.question.length > MAX_KEPT_QUESTION || answerText(each).length > most) {
       throw new Error(
         'Not saved: that question or answer is too long to keep with a fact. Ask it in fewer words.',
       );
     }
   }
+}
+
+/** Whether every word of a new file's name, such as facts/acme-health.md, is the user's own. */
+function namedByUser(path: string, answers: readonly Answered[]): boolean {
+  const own = new Set(words(ownWords(answers)).trim().split(' '));
+  const name = path.replace(/^facts\//, '').replace(/\.md$/, '');
+  return name.split('-').every((part) => own.has(part));
 }
 
 /**
@@ -566,7 +580,9 @@ export async function saveFact(
       corrected !== null && namesFact(each.question, corrected);
     checkBacking(answers, correcting);
     const [first] = answers;
-    if (first && !(isUseChoice(first.answer) && correcting(first))) {
+    // A request typed for the run isn't an answer to whether they have something, so it isn't
+    // judged as a yes or a no. What's saved from it is held to its words instead, below.
+    if (first && !first.typed && !(isUseChoice(first.answer) && correcting(first))) {
       if (saysUnsure(first) && guessedNumbers(first).size === 0) {
         throw new Error(
           `Not saved: the user wasn’t sure (“${first.answer}”). Claim nothing from that answer, and leave out a number they didn’t give.`,
@@ -596,8 +612,18 @@ export async function saveFact(
         `Not saved: the fact’s title and wording don’t say what you asked about (${keywords}). Word it as the user’s answer about that.`,
       );
     }
+    const claimed = [title, wording, details.short, details.numbers, details.say, keywords];
+    if (answers.some((each) => each.typed)) {
+      const own = new Set(meaningWords(ownWords(answers)));
+      const stranger = claimed.flatMap((each) => meaningWords(each ?? '')).find((w) => !own.has(w));
+      if (stranger) {
+        throw new Error(
+          `Not saved: “${stranger}” isn’t in what the user typed. Save what they said as they said it, in their words, or ask them about it with AskUserQuestion and save from their answer.`,
+        );
+      }
+    }
     const known = numbersIn(asked);
-    const stated = [title, wording, details.short, details.numbers, details.say, keywords]
+    const stated = claimed
       .flatMap((each) => [...numbersIn(each ?? '')])
       .find((number) => !known.has(number));
     if (stated) {
@@ -636,7 +662,11 @@ export async function saveFact(
         `Not saved: ${path} has a fact titled “${taken.title}” already. Give this one a title of its own.`,
       );
     }
-    if (!bank.files.some((file) => file.path === path) && path !== 'facts/projects.md') {
+    // A job the fact bank doesn't have yet gets a file only from the user's own word for it, in a
+    // run on the fact bank: no run can give them a job they never held.
+    const onFile = bank.files.some((file) => file.path === path) || path === 'facts/projects.md';
+    const newJob = !onFile && call.scope === 'part:facts' && namedByUser(path, answers);
+    if (!onFile && !newJob) {
       throw new Error(
         `Not saved: there’s no ${path} in the fact bank. File it in a file that’s there, or in facts/projects.md for work outside a job.`,
       );
@@ -656,7 +686,13 @@ export async function saveFact(
       asked: answers.map((each) => ({ question: each.question, answer: answerText(each) })),
     });
     call.keep?.(path);
-    const result = deps.facts.fileClaim(path, text, replacing, under?.heading ?? null);
+    const result = deps.facts.fileClaim(
+      path,
+      text,
+      replacing,
+      under?.heading ?? null,
+      Boolean(newJob),
+    );
     if (!result.ok) throw refused(result);
     // A fact this run filed, then replaced, counts once.
     call.filed.facts = call.filed.facts.filter(
@@ -668,7 +704,11 @@ export async function saveFact(
     const where = under ? `, under “${under.heading}”${under.made ? ', a new section' : ''}` : '';
     return [
       `${replacing ? 'Replaced' : 'Saved'} “${title}” in ${path}${where}, unverified, from the user’s answer: “${answers.map(answerText).join('”, then “')}”.`,
-      'Use it in this run’s work: the user just said it. Say which lines rest on it when you report.',
+      ...(answers.some((each) => each.typed)
+        ? ['They verify it in the Fact bank.']
+        : [
+            'Use it in this run’s work: the user just said it. Say which lines rest on it when you report.',
+          ]),
       'Later runs offer it to the user before using it, until they verify it.',
     ].join(' ');
   } catch (error) {
@@ -972,6 +1012,12 @@ export async function saveGap(
     checkBacking(answers);
     const [answer] = answers;
     if (!answer) throw notAnswered(question, call);
+    // Words typed for the run aren't a no to anything: only an answer to a question about it is.
+    if (answer.typed) {
+      throw new Error(
+        `Not saved: ask them first, with AskUserQuestion, such as “Have you used ${topic}?”, with “No” as an option, then save their answer.`,
+      );
+    }
     if (SAYS_YES.test(questionKey(answer.answer))) {
       throw new Error(
         `Not saved: the user answered “${answer.answer}”, a yes. Save what they have with save_fact instead.`,

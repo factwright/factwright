@@ -60,6 +60,9 @@ export function partTitle(part: ProfilePart, kind?: string): string {
  */
 export const CHANGES_QUESTION = 'What should your Claude change?';
 
+/** The ID of a request for changes to a part of Profile, which the app makes as it holds one. */
+export const PROFILE_REQUEST = /^[0-9a-f]{16}$/;
+
 /** What the user asked to change in a part of Profile, from the window. */
 export interface ProfileChanges {
   part: ProfilePart;

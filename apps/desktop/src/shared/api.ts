@@ -585,9 +585,11 @@ export interface FactwrightApi {
   requestChanges(request: ChangesRequest): Promise<EditResult>;
   /**
    * Holds what the user asked to change in a part of Profile, for the run the window starts next,
-   * which reads it with requested_changes.
+   * which reads it with requested_changes, and answers with the ID that run's task names it by.
    */
-  requestProfileChanges(request: ProfileChanges): Promise<EditResult>;
+  requestProfileChanges(
+    request: ProfileChanges,
+  ): Promise<{ ok: true; request: string } | { ok: false; message: string }>;
   /** Copies text to the clipboard, such as the journey as a flow chart. */
   copyText(text: string): Promise<EditResult>;
   /** Saves text to a file where the user picks, such as the journey as a spreadsheet. */

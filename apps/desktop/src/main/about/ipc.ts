@@ -153,14 +153,13 @@ export function registerAboutIpc(
   });
 
   // Words typed for Update with Claude, held for its run, which reads them with requested_changes.
-  answer('about:request-changes', (value): EditResult => {
+  answer('about:request-changes', (value) => {
     const request = parseProfileChanges(value);
     if (!request) throw new Error('Refused changes that aren’t in the shape the app takes.');
     if (request.kind && !kindsOf(about.answers()).some((kind) => kind.id === request.kind)) {
       return { ok: false, message: 'That kind of job isn’t in your Profile anymore.' };
     }
-    profileRequests.hold(request);
-    return { ok: true };
+    return { ok: true, request: profileRequests.hold(request) };
   });
 
   answer('about:start', () => about.start());

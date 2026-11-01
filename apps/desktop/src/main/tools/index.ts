@@ -33,6 +33,7 @@ import {
   BEYOND_SCHEMA,
   CHOICES_SCHEMA,
   CONTACT_SCHEMA,
+  keepNamesPrivate,
   type PartAbout,
   saveBeyondWork,
   saveContact,
@@ -151,13 +152,13 @@ export const PART_TOOLS: Readonly<Record<ProfilePart, readonly string[]>> = {
   wants: ['save_what_you_want'],
   kind: ['save_what_you_want'],
   applications: ['save_for_applications'],
-  leaving: ['save_for_applications', 'past_answers'],
-  beyond: ['save_beyond_work'],
-  history: ['save_work_history'],
-  resumes: ['list_templates', 'build_resume', ...FACT_TOOLS],
+  leaving: ['save_for_applications'],
+  beyond: ['save_beyond_work', 'keep_names_private'],
+  history: ['save_work_history', 'keep_names_private'],
+  resumes: ['list_templates', 'build_resume', 'keep_names_private'],
   templates: ['save_resume_choices', ...TEMPLATE_READS, ...TEMPLATE_TOOLS],
-  facts: FACT_TOOLS,
-  shared: ['add_to_notes'],
+  facts: [...FACT_TOOLS, 'keep_names_private'],
+  shared: ['add_to_notes', 'keep_names_private'],
 };
 
 /** The tools only a run on a part of Profile has, as each is for what the user asked in it. */
@@ -168,6 +169,7 @@ const PART_ONLY = [
   'save_beyond_work',
   'save_resume_choices',
   'add_to_notes',
+  'keep_names_private',
 ];
 
 /**
@@ -417,15 +419,21 @@ export function factwrightTools(deps: ToolDeps): McpTool[] {
       },
       // It writes only resume files, beside their data, from what's on this computer.
       annotations: { readOnlyHint: false, idempotentHint: true, openWorldHint: false },
-      run: async (input, call) =>
-        buildResume(textInput(input, 'folder', true) ?? '', textInput(input, 'format', false), {
+      run: async (input, call) => {
+        const folder = textInput(input, 'folder', true) ?? '';
+        // A run on the starting resumes builds those, and never a job's.
+        if (call?.scope === 'part:resumes' && !folder.startsWith('base/')) {
+          return `Not built: this run is on the starting resumes in base/, and a job’s resume isn’t one of them.`;
+        }
+        return buildResume(folder, textInput(input, 'format', false), {
           workspace: deps.workspace,
           printer: deps.printer,
           templates: deps.templates,
           jobs: () => deps.jobs.list().jobs,
           ...(deps.now && { now: deps.now }),
           ...(call?.keep && { keep: call.keep }),
-        }),
+        });
+      },
     },
     {
       name: 'build_cover_letter',
@@ -596,7 +604,12 @@ export function factwrightTools(deps: ToolDeps): McpTool[] {
             id: textInput(input, 'id', true) ?? '',
             template: input.template,
             replace: input.replace === true,
-            resume: textInput(input, 'resume', false),
+            // A run on Resume templates reads no job's folder, even for a preview.
+            resume:
+              call?.scope === 'part:templates' &&
+              !textInput(input, 'resume', false)?.startsWith('base/')
+                ? undefined
+                : textInput(input, 'resume', false),
           },
           {
             workspace: deps.workspace,
@@ -1097,7 +1110,7 @@ export function factwrightTools(deps: ToolDeps): McpTool[] {
     {
       name: 'save_work_history',
       description:
-        'Saves the user’s work history and education in Profile, whole, in place of what’s there, for application forms that ask for each job and school one at a time. Give every position they held, newest first, under its company: several positions at one company are each their own, with their own title, dates and summary, under that company, never merged. Give every school, newest first. Dates are YYYY-MM, or YYYY when only the year is known, and an end of present for a position they still hold. Save only what the fact bank and their resumes say, and leave a date blank rather than guess it.',
+        'Saves the user’s work history and education in Profile, whole, in place of what’s there, for application forms that ask for each job and school one at a time. Give every position they held, newest first, under its company: several positions at one company are each their own, with their own title, dates and summary, under that company, never merged. Give every school, newest first. Dates are YYYY-MM, or YYYY when only the year is known, and an end of present for a position they still hold. Save only what the fact bank and their resumes say, or what they asked for in this run’s requested_changes, and leave a date blank rather than guess it.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -1196,6 +1209,29 @@ export function factwrightTools(deps: ToolDeps): McpTool[] {
       inputSchema: CHOICES_SCHEMA,
       annotations: SAVES_PART,
       run: async (input, call) => saveResumeChoices(input, deps.about, deps.templates, call),
+    },
+    {
+      name: 'keep_names_private',
+      description:
+        'Adds names to the user’s list of names that must never reach an employer: customers, coworkers, internal project names, codenames and internal tools. Every resume is checked against it. Give each name as they said it. A run on What you’ve shared can take names off too, when they ask.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          add: {
+            type: 'array',
+            items: { type: 'string' },
+            description: 'Names to add, each as they said it.',
+          },
+          remove: {
+            type: 'array',
+            items: { type: 'string' },
+            description: 'Names to take off. Only a run on What you’ve shared can.',
+          },
+        },
+        additionalProperties: false,
+      },
+      annotations: { readOnlyHint: false, idempotentHint: true, openWorldHint: false },
+      run: async (input, call) => keepNamesPrivate(input, deps.about, call),
     },
     {
       name: 'add_to_notes',

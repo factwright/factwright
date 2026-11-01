@@ -9,12 +9,17 @@ import type { FiledFacts } from '../../shared/facts.ts';
 import { type PlanLevels, planLevels } from '../../shared/levels.ts';
 import type { Model } from '../../shared/models.ts';
 import type { RunChanges as RunChangesView } from '../../shared/run-changes.ts';
-import type { RunScope } from '../../shared/runs.ts';
+import { partOf, type RunScope } from '../../shared/runs.ts';
 import type { BoundProfileChanges } from '../about/profile-requests.ts';
 import type { BoundRevision } from '../jobs/revisions.ts';
 import type { BoundChanges } from '../jobs/versions.ts';
 import { workspaceDir } from '../jobs/workspace.ts';
-import { asksNothing, asksNothingAfter, permitsNothing } from '../policy.ts';
+import {
+  asksNothing,
+  asksNothingAfter,
+  permitsNothing,
+  UPDATE_PERMITS_NOTHING,
+} from '../policy.ts';
 import { RunActivity, turnEnd } from './activity.ts';
 import { claudeCommand } from './command.ts';
 import { findClaude, nodeFindDeps } from './find.ts';
@@ -295,7 +300,8 @@ export async function openRun(
       onFiled: events.filed,
       ask: deps.ask,
       noQuestions: () => quiet.reason,
-      noPermits: () => quiet.permits,
+      // A run on a part of Profile stays to that part, whatever it's asked next.
+      noPermits: () => (partOf(scope) ? UPDATE_PERMITS_NOTHING : quiet.permits),
       permit: deps.permit,
       // A call the user answered in the app is one the run no longer waits on them for.
       onAnswered: (call) => signals.answered(call),
