@@ -2,6 +2,7 @@ import {
   type AboutYou,
   COMPANY_KINDS,
   EMPLOYMENT,
+  entriesLine,
   FIELDS,
   type JobKind,
   LEVELS,
@@ -28,9 +29,10 @@ function where(answers: AboutYou): string | null {
   const local = answers.workplaces.filter((place) => place !== 'remote');
   if (local.length > 0) {
     const kinds = either(local.map((place) => (place === 'onsite' ? 'on-site' : place)));
-    parts.push(answers.places.length > 0 ? `${kinds} in ${either(answers.places)}` : kinds);
+    parts.push(answers.places.length > 0 ? `${kinds} in ${entriesLine(answers.places)}` : kinds);
   }
-  if (parts.length === 0 && answers.places.length > 0) parts.push(`In ${either(answers.places)}`);
+  if (parts.length === 0 && answers.places.length > 0)
+    parts.push(`In ${entriesLine(answers.places)}`);
   if (parts.length === 0) return null;
   const sentence = `${parts.join('; ')}.`;
   const moving = answers.relocate
@@ -56,7 +58,7 @@ function kindFilters(kind: JobKind): string[] {
     .map((field) => labelOf(FIELDS, field));
   const work = [
     fields.length > 0 ? `${either(fields)}.` : '',
-    kind.roles.length > 0 ? `Roles such as ${either(kind.roles)}, and close matches.` : '',
+    kind.roles.length > 0 ? `Roles such as ${entriesLine(kind.roles)}, and close matches.` : '',
   ]
     .filter(Boolean)
     .join(' ');
@@ -82,7 +84,7 @@ const kindPay = (kind: JobKind) => [
 /** The level and shape a kind of job's roles take, such as "Senior roles: Staff Engineer". */
 function shapeOf(kind: JobKind): string {
   const levels = kind.levels.map((level) => labelOf(LEVELS, level));
-  return [levels.length > 0 ? either(levels) : '', kind.roles.length > 0 ? either(kind.roles) : '']
+  return [levels.length > 0 ? either(levels) : '', entriesLine(kind.roles)]
     .filter(Boolean)
     .join(' roles: ');
 }

@@ -192,6 +192,20 @@ describe('browserSearches', () => {
     expect(searches.map(({ where }) => where)).toEqual(['Chicago, IL']);
   });
 
+  it('puts a title back together that a comma split in Profile, as a level says too little', () => {
+    const searches = searchesFor({
+      roles: ['Director', 'Sales', 'Program Manager', 'Payments', 'Director, Sales'],
+    });
+    expect(searches.map(({ title }) => title)).toEqual([
+      'Director, Sales',
+      'Program Manager',
+      'Payments',
+    ]);
+    expect(linkOn(searches[0], 'Indeed')).toBe(
+      'https://www.indeed.com/jobs?q=Director%2C%20Sales&fromage=7',
+    );
+  });
+
   it('keeps to the first few titles and cities, and says so', () => {
     const [kept] = browserSearches(
       readAnswers({

@@ -50,6 +50,24 @@ describe('criteriaMarkdown', () => {
     expect(text).toMatch(/\*\*Quiet search:\*\* they’re employed/);
   });
 
+  it('keeps titles and cities apart when one holds a comma', () => {
+    const text = criteriaMarkdown(
+      readAnswers({
+        ...ANSWERS,
+        levels: ['senior'],
+        roles: ['Director, Sales', 'Program Manager'],
+        places: ['Chicago, IL', 'Denver, CO', 'Tulsa'],
+      }),
+    );
+    for (const line of [
+      '- **Where:** Remote from anywhere in the US; hybrid in Chicago, IL; Denver, CO; Tulsa. Open to relocating for the right job.',
+      '- **Kind of work:** Design and UX. Roles such as Director, Sales; Program Manager, and close matches.',
+      '| Role | 25 | The level and shape fit what the user wants: Senior roles: Director, Sales; Program Manager |',
+    ]) {
+      expect(text).toContain(line);
+    }
+  });
+
   it('keeps the lowest pay out of the filters unless the user asked', () => {
     const text = criteriaMarkdown({ ...ANSWERS, payFilter: false });
     expect(text).not.toContain('- **Pay:**');
