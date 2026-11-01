@@ -1286,6 +1286,48 @@ test('explains Claude Code’s first-run screens when the app leaves them, and c
   await closeRun();
 });
 
+test('chooses a theme for the whole window, and keeps it', async () => {
+  const { window } = opened;
+  const html = window.locator('html');
+  const source = () => opened.app.evaluate(({ nativeTheme }) => nativeTheme.themeSource);
+  // It follows the system until someone chooses.
+  await expect(html).not.toHaveAttribute('data-theme');
+  expect(await source()).toBe('system');
+
+  await window.getByRole('button', { name: 'Appearance' }).click();
+  const dialog = window.getByRole('dialog', { name: 'Appearance' });
+  await expect(dialog.getByRole('radio', { name: 'System' })).toBeChecked();
+  await dialog.getByText('Tokyo Night', { exact: true }).click();
+  await expect(html).toHaveAttribute('data-theme', 'tokyo-night');
+  await expect(window.locator('body')).toHaveCSS('background-color', 'rgb(22, 22, 30)');
+  // The system's own controls and what Claude Code is told go by it being dark.
+  await expect.poll(source).toBe('dark');
+  await dialog.getByRole('button', { name: 'Done' }).click();
+
+  // It's still chosen the next time the app opens, from its first color on.
+  await opened.app.close();
+  opened = await openApp(dataDir);
+  const again = opened.window;
+  await expect(again.locator('html')).toHaveAttribute('data-theme', 'tokyo-night');
+  await expect.poll(source).toBe('dark');
+  expect(
+    await opened.app.evaluate(({ BrowserWindow }) =>
+      BrowserWindow.getAllWindows()[0]?.getBackgroundColor(),
+    ),
+  ).toBe('#16161E');
+
+  // A light theme turns the system's controls light, and System goes back to following them.
+  await again.getByRole('button', { name: 'Appearance' }).click();
+  const reopened = again.getByRole('dialog', { name: 'Appearance' });
+  await expect(reopened.getByRole('radio', { name: 'Tokyo Night' })).toBeChecked();
+  await reopened.getByText('Solarized Light', { exact: true }).click();
+  await expect(again.locator('html')).toHaveAttribute('data-theme', 'solarized-light');
+  await expect.poll(source).toBe('light');
+  await reopened.getByText('System', { exact: true }).click();
+  await expect(again.locator('html')).not.toHaveAttribute('data-theme');
+  await expect.poll(source).toBe('system');
+});
+
 // Greenhouse lists a form's questions before it's open. The tests' copy of the app reads a
 // made-up answer from a file in Greenhouse's place, so no test reaches Greenhouse.
 test('gets a Greenhouse form’s questions before it’s open, and has your Claude draft them', async () => {

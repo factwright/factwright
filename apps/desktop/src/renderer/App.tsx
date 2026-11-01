@@ -27,6 +27,7 @@ import {
   usersTask,
 } from '../shared/runs.ts';
 import styles from './App.module.css';
+import { AppearanceDialog } from './AppearanceDialog.tsx';
 import { GetStarted } from './about/GetStarted.tsx';
 import { ProfilePage } from './about/ProfilePage.tsx';
 import { needsGettingStarted, useProfile } from './about/useProfile.ts';
@@ -193,6 +194,7 @@ export function App({ api }: { api: FactwrightApi }) {
     | 'sync'
     | 'claude-settings'
     | 'extension'
+    | 'appearance'
     | 'add-profile'
     | 'profiles'
     | 'merge'
@@ -717,6 +719,7 @@ export function App({ api }: { api: FactwrightApi }) {
           }
           onOpenClaudeSettings={() => setDialog('claude-settings')}
           onOpenExtension={() => setDialog('extension')}
+          onOpenAppearance={() => setDialog('appearance')}
           levels={levels.choices}
           jobCount={jobs.state === 'ready' ? openJobs : undefined}
           factCount={profile?.status.facts.claims || undefined}
@@ -924,6 +927,7 @@ export function App({ api }: { api: FactwrightApi }) {
         />
       )}
       {dialog === 'extension' && <ExtensionDialog api={api} onClose={() => setDialog(null)} />}
+      {dialog === 'appearance' && <AppearanceDialog api={api} onClose={() => setDialog(null)} />}
       {dialog === 'claude-settings' && (
         <ClaudeSettingsDialog
           api={api}

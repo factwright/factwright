@@ -1,0 +1,149 @@
+.themes {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  gap: var(--fw-space-3);
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.theme {
+  display: flex;
+  flex-direction: column;
+  gap: var(--fw-space-2);
+  min-width: 0;
+  padding: var(--fw-space-2);
+  border-radius: var(--fw-radius-lg);
+  cursor: pointer;
+}
+
+.theme:hover {
+  background: var(--fw-hover);
+}
+
+/* The real control, out of sight, which the keyboard and screen readers use. */
+.radio {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* A frame around the tiny window. Its line is the theme's, so a dark window shows on a dark page. */
+.frame {
+  position: relative;
+  display: block;
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  border: 1px solid var(--fw-control-border);
+  border-radius: var(--fw-radius-md);
+}
+
+.theme[data-picked] .frame {
+  outline: 2px solid var(--fw-accent);
+  outline-offset: 1px;
+}
+
+.theme:has(.radio:focus-visible) .frame {
+  outline: 2px solid var(--fw-accent);
+  outline-offset: 3px;
+}
+
+/* System: the dark window over the light one, cut on the diagonal. */
+.darkHalf {
+  position: absolute;
+  inset: 0;
+  clip-path: polygon(100% 0, 100% 100%, 0 100%);
+}
+
+.sample {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  background: var(--fw-bg);
+}
+
+.sampleBar {
+  flex: 0 0 22%;
+  background: var(--fw-bar);
+  border-right: 1px solid var(--fw-border);
+}
+
+.sampleCard {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 5px;
+  margin: 9px;
+  padding: 9px;
+  border: 1px solid var(--fw-border);
+  border-radius: var(--fw-radius-sm);
+  background: var(--fw-surface);
+}
+
+.sampleTitle,
+.sampleLine {
+  display: block;
+  height: 5px;
+  border-radius: var(--fw-radius-full);
+}
+
+.sampleTitle {
+  width: 62%;
+  background: var(--fw-text);
+}
+
+.sampleLine {
+  width: 84%;
+  background: var(--fw-muted);
+  opacity: 0.7;
+}
+
+.sampleRow {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: auto;
+}
+
+.sampleButton {
+  width: 34%;
+  height: 11px;
+  border-radius: var(--fw-radius-sm);
+  background: var(--fw-accent);
+}
+
+.sampleDot {
+  width: 8px;
+  height: 8px;
+  border-radius: var(--fw-radius-full);
+}
+
+.need {
+  background: var(--fw-need);
+}
+
+.ok {
+  background: var(--fw-ok);
+}
+
+.name {
+  display: flex;
+  align-items: center;
+  gap: var(--fw-space-1);
+  font-size: 13px;
+  font-weight: 550;
+  color: var(--fw-text);
+}
+
+.name svg {
+  color: var(--fw-accent-text);
+}
+
+.problem {
+  margin: var(--fw-space-3) 0 0;
+  color: var(--fw-bad);
+  font-size: 13px;
+}

@@ -6,6 +6,7 @@ Notable changes to Factwright, newest first. The format follows [Keep a Changelo
 
 ### Added
 - Factwright's roadmap, at factwright.com/roadmap: what's planned, what's in progress, and what's shipped, with the release each came in. Below it, the ideas to vote on, most votes first, and Suggest a feature, with a title, a few lines and an email to hear back, if you like. Steve reads each suggestion before it shows. Voting needs no account and sets no cookie: your browser keeps a random ID, and a vote sends only a one-way hash of it and the idea, so nobody can tell how you voted. Clicking again takes your vote back.
+- Appearance, in the sidebar: choose how Factwright looks, rather than only following your computer's light or dark setting. Besides System, Light and Dark, there's Tokyo Night, Nord, Catppuccin, Rosé Pine, Solarized Light and Rosé Pine Dawn. A theme shows straight away, in the window and in Claude's panel, and Factwright keeps it.
 - Suggest a feature, in the sidebar beside Report a problem, opens Factwright's roadmap at factwright.com/roadmap in your browser, to suggest a feature or vote for the ideas there, with no account. The app sends nothing itself.
 
 ### Security

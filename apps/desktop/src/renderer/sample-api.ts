@@ -1,4 +1,5 @@
 import { localDate } from '@factwright/core';
+import { SYSTEM_THEME } from '@factwright/ui';
 import {
   type RunProgress,
   type RunStep,
@@ -45,6 +46,7 @@ import { sampleTracker } from './jobs/sample-tracker.ts';
 import { sampleProfiles } from './profiles/sample-profiles.ts';
 import { sampleChanges } from './sample-changes.ts';
 import { sampleSync } from './sync/sample-sync.ts';
+import { themeNow } from './theme.ts';
 
 const READY: ClaudeStatus = {
   state: 'ready',
@@ -530,7 +532,9 @@ export function sampleApi(): FactwrightApi {
   let analyzesNew = true;
   // ?end=question has a run stop to ask in its own words, and ?end=rate_limit end in that error.
   const ending = query.get('end');
-  const dark = () => window.matchMedia('(prefers-color-scheme: dark)').matches;
+  const dark = () => themeNow().mode === 'dark';
+  // ?theme=nord picks how the app looks, as Appearance would. It lasts until a reload.
+  let theme = query.get('theme') ?? SYSTEM_THEME;
 
   // The made-up runs, side by side, a tab each, and the tasks waiting in line, as many at once
   // as the app runs them.
@@ -1243,6 +1247,11 @@ export function sampleApi(): FactwrightApi {
     installUpdate: async () => true,
     ...sampleSaveHelper(query.get('helper'), query.get('platform') ?? 'darwin'),
     // Which model Claude runs on, kept until the page reloads.
+    theme: async () => theme,
+    setTheme: async (chosen) => {
+      theme = chosen;
+      return chosen;
+    },
     claudeModels: async () => models,
     setClaudeModels: async (chosen) => {
       models = chosen;

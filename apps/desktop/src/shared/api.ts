@@ -17,6 +17,7 @@ import type {
   SearchFocus,
   WorkHistory,
 } from '@factwright/core';
+import type { ThemeChoice } from '@factwright/ui/themes';
 import type { AboutYou, AnswerChanges, Contact } from './about.ts';
 import type { RunProgress, RunStep, TurnEnd } from './activity.ts';
 import type { EffortChoices } from './effort.ts';
@@ -582,6 +583,10 @@ export interface FactwrightApi {
   copyText(text: string): Promise<EditResult>;
   /** Saves text to a file where the user picks, such as the journey as a spreadsheet. */
   saveFile(name: string, text: string): Promise<SaveFileResult>;
+  /** The theme chosen for how the app looks, or following the system's setting. */
+  theme(): Promise<ThemeChoice>;
+  /** Chooses a theme, which also shows in the window's own colors, and keeps it. */
+  setTheme(theme: ThemeChoice): Promise<ThemeChoice>;
   /** Which model Claude runs on, for everything and for each task. */
   claudeModels(): Promise<ModelChoices>;
   /** Changes which model Claude runs on, from its next start or the next task that needs another. */

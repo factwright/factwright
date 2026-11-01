@@ -4,6 +4,7 @@ import { homedir } from 'node:os';
 import { basename, extname, join } from 'node:path';
 import { ASK_ID, localDate } from '@factwright/core';
 import { isRequestId } from '@factwright/sync';
+import { isThemeChoice, type ThemeChoice } from '@factwright/ui/themes';
 import {
   app,
   BrowserWindow,
@@ -39,6 +40,7 @@ import { registerAboutIpc } from './about/ipc.ts';
 import type { TemplatePreviews } from './about/previews.ts';
 import type { PrivateAnswers } from './about/private.ts';
 import type { AboutStore } from './about/store.ts';
+import { loadTheme, saveTheme } from './appearance.ts';
 import type { AnalyzeNew } from './claude/analyze-new.ts';
 import { saveAtOnce } from './claude/at-once.ts';
 import type { Desk } from './claude/desk.ts';
@@ -147,6 +149,8 @@ function shotFor(value: unknown): ShotFor | null {
 }
 
 export interface IpcDeps {
+  /** Shows a theme the user chose, in the window's own colors too. */
+  showTheme: (choice: ThemeChoice) => void;
   /** Whether a page is the app's own, the only page whose requests are answered. */
   isAppPage: (url: string) => boolean;
   /** What the user tells Factwright about themselves, their templates, and the previews. */
@@ -226,6 +230,7 @@ const sameFile = (a: string, b: string) => {
 
 /** Answers the window's requests, after checking each one came from the app's own page. */
 export function registerIpc({
+  showTheme,
   isAppPage,
   about,
   kept,
@@ -291,6 +296,15 @@ export function registerIpc({
   // Where an update stands, and restarting into one that's downloaded.
   answer('updates:status', (): UpdateStatus => updates?.current() ?? { state: 'none' });
   answer('updates:install', () => updates?.install() ?? false);
+
+  // How the app looks, for this profile on this computer.
+  answer('appearance:theme', () => loadTheme(dataDir));
+  answer('appearance:set-theme', async (value) => {
+    if (!isThemeChoice(value)) throw new Error('Refused a theme Factwright doesn’t have.');
+    showTheme(value);
+    await saveTheme(dataDir, value);
+    return value;
+  });
 
   // Which model Claude runs on, for everything and for each task. A change applies from the next
   // start, or the next task that needs another model.

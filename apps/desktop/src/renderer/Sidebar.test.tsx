@@ -21,6 +21,7 @@ function renderSidebar(sync: SyncStatus | 'checking', onOpenExtension = vi.fn())
       onOpenSync={vi.fn()}
       onOpenClaudeSettings={vi.fn()}
       onOpenExtension={onOpenExtension}
+      onOpenAppearance={vi.fn()}
       levels={null}
       update={{
         status: { state: 'none' },
@@ -49,6 +50,7 @@ function sidebarWithUpdate(status: UpdateStatus, onRestart: () => Promise<boolea
       onOpenSync={vi.fn()}
       onOpenClaudeSettings={vi.fn()}
       onOpenExtension={vi.fn()}
+      onOpenAppearance={vi.fn()}
       levels={null}
       update={{ status, inBanner: false, busy: false, unsaved: () => false, onRestart }}
       version="0.18.0"

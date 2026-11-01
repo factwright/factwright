@@ -266,12 +266,19 @@ People who share a computer each keep their own job hunt in a profile of their o
 - **Removing one:** Manage profiles moves an added profile's folder to the trash, never the open one or the first, whose folder holds the others.
 - **Not private:** anyone who can use the computer login can open any profile. Separate computer logins keep job hunts private, as [docs/security.md](../../docs/security.md#profiles) says.
 
+## Appearance
+
+**Appearance,** in the sidebar, chooses how the app looks: **System**, which follows the computer's light or dark setting as it always did, **Light**, **Dark**, or a theme: Tokyo Night, Nord, Catppuccin, Rosé Pine, Solarized Light or Rosé Pine Dawn. A pick shows straight away, and it's kept for this profile on this computer ([`src/main/appearance.ts`](src/main/appearance.ts)), so it doesn't sync.
+
+Each theme is light or dark at heart, and tells the system so ([`nativeTheme.themeSource`](src/main/window.ts)). So the system's own controls and title bar match it, and Claude Code, told which kind it runs in, picks its text's colors to suit. Claude Code picks them only as it starts, so a run that started in a dark theme keeps plain dark colors if you turn to a light one, and the other way round, rather than turn pale on pale. The next task picks up the theme's own.
+
 ## Run it
 - **The app:** `pnpm dev` from the repo root opens it. The screens reload as you edit them, and the app restarts when the main process changes. Extra arguments go to Electron, such as `--remote-debugging-port=9223`. Switching profiles closes it, since the screens' server closes with the app: run `pnpm dev` again to open the profile chosen.
 - **The screens alone:** `pnpm --filter @factwright/desktop screens` shows them in a browser with sample data, for checking the design.
   - `?claude=signed-out` picks Claude's state (also `missing`, `too-old`, `unknown` and `checking`). With `?path=off`, a new terminal doesn't find Claude Code by its name, so the steps start it by its whole path, as they do while it's missing.
   - `?jobs=none` shows the screen before there are jobs (also `failed` and `loading`). Otherwise made-up jobs show every state. Edits, such as logging a call or adding a job, stick until a reload.
   - `?platform=win32` shows the Windows title bar layout.
+  - `?theme=tokyo-night` shows a theme, as Appearance picks one (also `light`, `dark`, `nord`, `catppuccin`, `rose-pine`, `solarized-light` and `rose-pine-dawn`).
   - `?sync=on` picks sync's state (also `off`, `first`, `link`, `signing-in`, `syncing`, `offline`, `problem`, `signed-out`, `unavailable` and `no-server`). Turning it on plays through each step.
   - `?profile=done` shows a finished profile (also `new` and `started`).
   - `?profiles=two` shows two profiles, with the switcher at the top of the sidebar (also `added`, with an added profile open, whose Claude signs in with a command of its own).
