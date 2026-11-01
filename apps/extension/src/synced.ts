@@ -2,11 +2,14 @@ import {
   byJob,
   type CollectedJob,
   collectJobs,
+  companyKey,
   folderFiles,
   isStartingResume,
   type Job,
+  jobLikeness,
   jobList,
   knownJobsOf,
+  type Link,
   readRecords,
   type StoredRow,
   type TrackedRow,
@@ -388,14 +391,22 @@ export const searchPaths = (synced: Synced): string[] =>
 
 /**
  * The kind of job the app knows a job as, from its fit check or the job search that found it, by
- * the app's own matching, from the job.md files and job searches' files read, in `texts`.
+ * the app's own matching, from the job.md files and job searches' files read, in `texts`. Only what
+ * could be the job goes through matching, as a whole job hunt's searches take it seconds: the job
+ * and any merged into it, and whatever's at their companies or has the same posting.
  */
 export function kindFoundIn(
   synced: Synced,
-  id: string,
+  job: Pick<Job, 'id'>,
   texts: ReadonlyMap<string, string>,
 ): string | null {
-  return (
-    foundJobs(syncedWorkspace(synced.files, texts), jobRows(synced)).get(id)?.kindFound ?? null
-  );
+  const rows = jobRows(synced);
+  const named = rows.filter((row) => row.id === job.id || row.mergedInto === job.id);
+  const could = (each: { company: string; role: string; links: Link[] }) => {
+    const known = { ...each, companyKey: companyKey(each.company) };
+    return named.some((row) => jobLikeness(row, known) !== null);
+  };
+  const records = readRecords(syncedWorkspace(synced.files, texts)).filter(could);
+  const found = collectJobs(records, knownJobsOf(rows.filter(could)));
+  return found.find((each) => each.id === job.id)?.kindFound ?? null;
 }

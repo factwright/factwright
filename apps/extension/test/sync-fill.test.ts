@@ -971,11 +971,56 @@ describe('what you did in a position, through sync', () => {
   it('leaves out your newest resume’s words, as the app does', async () => {
     const { desktop, keys, client, engine } = await account();
     desktop.write('about-me/history.json', HISTORY);
+    // The job has no resume of its own: another job's is your newest.
+    rmSync(join(desktop.workspace, 'applications', FOLDER, 'resume.json'));
     desktop.write(`applications/${LUMEN}/resume.json`, saying(['Written for Lumen Health.']));
     await engine.syncOnce();
     const replies = await both(desktop, keys, client);
     expect(words(replies[0])).toEqual(['From Profile.', 'From your work history']);
     expect(replies[0]?.others).toBeUndefined();
+    // Its company and title are what the form's other boxes would take, as before.
+    const blank = await both(
+      await (async () => {
+        desktop.write('about-me/history.json', JSON.stringify({ jobs: [], schools: [] }));
+        await engine.syncOnce();
+        return desktop;
+      })(),
+      keys,
+      client,
+    );
+    expect(blank[0]).toEqual({ kind: 'job-summary', source: 'you', left: 'unset' });
+  });
+
+  it('takes a kind its fit check named over a job search’s, even one you’ve since removed', async () => {
+    const { desktop, keys, client, engine } = await account();
+    desktop.write('about-me/history.json', HISTORY);
+    desktop.write('about-me/kinds-of-job.json', KINDS);
+    desktop.write('base/big-company-leader.json', saying(['Ran the PMO.']));
+    desktop.write('base/strategy/big-company-leader.json', saying(['Set the strategy.']));
+    const notes = join(desktop.workspace, 'applications', FOLDER, 'job.md');
+    writeFileSync(notes, `${readFileSync(notes, 'utf8')}\n- **Kind of job:** removed-kind\n`);
+    desktop.write(
+      'searches/2026-10-22-lever/jobs.json',
+      JSON.stringify({
+        meta: { checked: '2026-10-22', source: 'Lever' },
+        jobs: [
+          {
+            company: 'Northwind Labs',
+            role: 'Senior Product Manager, Data',
+            posting: FORM_URL.replace(/\/apply$/, ''),
+            kind: 'strategy',
+          },
+        ],
+      }),
+    );
+    await engine.syncOnce();
+    const replies = await both(desktop, keys, client);
+    // Its kind isn't known, in the app or through sync, so each kind's goes in the menu.
+    expect(words(replies[0])).toEqual(['From Profile.', 'From your work history']);
+    expect(replies[0]?.others?.map((each) => each.from)).toEqual([
+      'From your PMO starting resume',
+      'From your Strategy starting resume',
+    ]);
   });
 });
 

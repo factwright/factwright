@@ -336,21 +336,19 @@ export class SyncFill {
 
   /**
    * A job, with the kind of job the job search that found it gave it, as the app knows it, for one
-   * that nothing else has said a kind for, which only then needs the job searches' files read. With
-   * one kind of job, there's nothing to tell.
+   * you haven't put under a kind, and whose fit check didn't name one, which only then needs the job
+   * searches' files read. With one kind of job, there's nothing to tell.
    */
   private async withSearchKind(read: Read, job: Job): Promise<Job> {
     const kinds = read.targets;
-    if (kinds.length < 2 || kindNamed(job.kind, kinds) || kindNamed(job.kindFound, kinds)) {
-      return job;
-    }
+    if (kinds.length < 2 || kindNamed(job.kind, kinds) || job.kindFound) return job;
     const paths = searchPaths(read.synced);
     const texts = new Map(read.notes);
     await inTurns(paths, async (path) => {
       const text = await this.text(read, path);
       if (text) texts.set(path, text);
     });
-    return { ...job, kindFound: kindFoundIn(read.synced, job.id, texts) ?? job.kindFound };
+    return { ...job, kindFound: kindFoundIn(read.synced, job, texts) };
   }
 
   /** A job by its ID, among all the jobs read. */

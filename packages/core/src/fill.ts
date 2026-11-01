@@ -301,7 +301,10 @@ export interface FieldReply {
 /** Another answer on file for a field, as a menu in the field offers it. */
 export type OtherAnswer = Pick<FieldReply, 'text' | 'pick' | 'exact' | 'source' | 'from'>;
 
-/** The most other answers a field's reply carries. */
+/**
+ * The most other answers a form's own question carries. What you did in a position carries each of
+ * its few sources, and each kind of job's starting resume.
+ */
 export const MOST_OTHERS = 3;
 
 /** The words that mean "I'd rather not say", as forms put them. */
@@ -480,56 +483,78 @@ function currentPosition(onFile: OnFile): HeldAt | null {
   };
 }
 
+/** A resume's position, as far as telling which it is takes. */
+interface Listed {
+  company: string;
+  title: string;
+  start: string;
+}
+
+/** Whether words hold letters matching can't read: it keeps only the Latin of "Java 开发经理". */
+const unreadable = (text: string) => /[^ -~]/.test(plain(text));
+
+/** Whether two sets of words say the same, however they're written, as matching can't read them. */
+const sameWords = (a: string, b: string) => plain(a) !== '' && plain(a) === plain(b);
+
 /**
  * How a resume's position goes with one you held, by its company and title, however each is
  * written: the same, or close, where one says more of it, as "Acme Robotics" and "Acme" do. Another
  * level, as "Senior Analyst" is from "Analyst", is another position.
  */
-function positionFit(
-  held: HeldPosition,
-  listed: { company: string; title: string },
-): 'same' | 'close' | null {
+function positionFit(held: HeldPosition, listed: Listed): 'same' | 'close' | null {
   const named = (company: string) => ({ company, companyKey: companyKey(company) });
-  const company = companyMatch(named(held.company), named(listed.company));
+  const company =
+    unreadable(held.company) || unreadable(listed.company)
+      ? sameWords(held.company, listed.company)
+        ? 'same'
+        : 'different'
+      : companyMatch(named(held.company), named(listed.company));
   if (company === 'different') return null;
   const ours = readTitle(held.title);
   const theirs = readTitle(listed.title);
-  // A title in letters matching can't read, such as Japanese, goes by its words.
   const title =
-    isTitled(ours) && isTitled(theirs)
-      ? titleFit(ours, theirs)
-      : plain(held.title) === plain(listed.title)
+    unreadable(held.title) || unreadable(listed.title) || !isTitled(ours) || !isTitled(theirs)
+      ? sameWords(held.title, listed.title)
         ? 'same'
-        : 'different';
+        : 'different'
+      : titleFit(ours, theirs);
   if (title === 'same') return company === 'same' ? 'same' : 'close';
   return title === 'more' ? 'close' : null;
 }
 
+/** The year a position started, as a resume or the work history says it, or "". */
+const startYear = (date: string) => yearOf(datedAs(date));
+
 /**
- * A position you held, among those a resume lists: the one with its company and title, or else
- * one close to them that it can't be mistaken for. The same position twice, as a job you came back
- * to, goes by the year each started.
+ * The position at a place among those on file, among those a resume lists: the one with its company
+ * and title, or else one close to them that it can't be mistaken for, and that no other position on
+ * file could be either. The same position twice, as a job you came back to, each takes its own, by
+ * the year it started, or else in turn, and never the other's.
  */
-function listedAs<T extends { company: string; title: string; start: string }>(
+function listedAs<T extends Listed>(
   positions: readonly T[],
-  held: HeldPosition,
+  onFile: readonly HeldPosition[],
+  at: number,
 ): T | null {
-  const fits = positions.flatMap((each) => {
-    const fit = positionFit(held, each);
-    return fit ? [{ each, fit }] : [];
-  });
-  const same = fits.filter(({ fit }) => fit === 'same');
-  const named = ({ company, title }: T) => plain(`${company} ${title}`);
-  const [one] = fits;
-  const alike =
-    same.length > 0
-      ? same
-      : one && fits.every(({ each }) => named(each) === named(one.each))
-        ? fits
-        : [];
-  const year = yearOf(held.start);
-  const when = alike.find(({ each }) => year && yearOf(datedAs(each.start)) === year);
-  return (when ?? alike[0])?.each ?? null;
+  const held = onFile[at];
+  if (!held) return null;
+  const same = positions.filter((each) => positionFit(held, each) === 'same');
+  if (same.length > 0) {
+    const year = startYear(held.start);
+    const times = onFile.flatMap((each, place) =>
+      positionFit(held, each) === 'same' ? [{ place, year: startYear(each.start) }] : [],
+    );
+    const takenYears = times.filter((each) => each.year && each.year !== year).map((e) => e.year);
+    const free = same.filter((each) => !takenYears.includes(startYear(each.start)));
+    const inTurn = times.findIndex(({ place }) => place === at);
+    return free.find((each) => year && startYear(each.start) === year) ?? free[inTurn] ?? null;
+  }
+  const close = positions.filter((each) => positionFit(held, each) === 'close');
+  const [one] = close;
+  const name = ({ company, title }: Listed) => plain(`${company} ${title}`);
+  if (!one || close.some((each) => name(each) !== name(one))) return null;
+  const another = onFile.some((each, place) => place !== at && positionFit(each, one) !== null);
+  return another ? null : one;
 }
 
 /** The school a form asks for, the nth time it asks: from Profile, or else the resume. */
@@ -933,9 +958,16 @@ const inOneLine = (lines: readonly string[]) =>
     .join(' ');
 
 /**
+ * Where a sentence ends inside a line, by a word's end and the next's capital or number, so "U.S."
+ * and "Dr." don't end one, or by a mark that takes no space after it, as Japanese and Chinese have.
+ */
+const SENTENCE_ENDS = /(?<=[\p{Ll}\p{N}]{2}[.!?])(?= [\p{Lu}\p{N}])|(?<=[。！？])(?=.)/gu;
+
+/**
  * What a position's description comes to in a field: all of it, or else, where it's longer than the
  * field takes, each whole line in turn that still fits. With no whole line that fits, it's the
- * first line's whole sentences, or else, as `rough`, its first words.
+ * first line's whole sentences, or else, as `rough`, its whole words. With not even one word that
+ * fits, it's nothing.
  */
 function toFit(
   lines: readonly string[],
@@ -943,22 +975,20 @@ function toFit(
 ): { text: string; cut: boolean; rough: boolean } {
   const joined = (kept: readonly string[]) =>
     field.control === 'long' ? kept.join('\n') : inOneLine(kept);
-  const limit = field.limit;
-  const fits = (kept: readonly string[]) => !limit || sentLength(joined(kept)) <= limit;
+  const limit = field.limit || Number.POSITIVE_INFINITY;
+  const fits = (kept: readonly string[]) => sentLength(joined(kept)) <= limit;
   if (fits(lines)) return { text: joined(lines), cut: false, rough: false };
   const kept: string[] = [];
   for (const line of lines) if (fits([...kept, line])) kept.push(line);
   if (kept.length > 0) return { text: joined(kept), cut: true, rough: false };
   const [line = ''] = lines;
-  const sentences: string[] = [];
-  // Lines have single spaces, so a sentence ends at one, with the next's capital or number after.
-  for (const sentence of line.split(/(?<=[.!?]) (?=[\p{Lu}\p{N}])/u)) {
-    if (!fits([[...sentences, sentence].join(' ')])) break;
-    sentences.push(sentence);
-  }
-  if (sentences.length > 0) return { text: sentences.join(' '), cut: true, rough: false };
-  const room = line.slice(0, limit ?? line.length);
-  const words = line[room.length] === ' ' ? room : room.slice(0, room.lastIndexOf(' ') + 1) || room;
+  const sentence = [...line.matchAll(SENTENCE_ENDS)]
+    .map(({ index }) => index)
+    .filter((end) => end <= limit)
+    .at(-1);
+  if (sentence) return { text: line.slice(0, sentence), cut: true, rough: false };
+  const room = line.slice(0, limit);
+  const words = line[room.length] === ' ' ? room : room.slice(0, room.lastIndexOf(' ') + 1);
   let end = words.length;
   while (end > 0 && ' ,;:–—-'.includes(words.charAt(end - 1))) end -= 1;
   return { text: words.slice(0, end), cut: true, rough: true };
@@ -969,20 +999,25 @@ const NO_KIND_YET =
   'Factwright doesn’t know this job’s kind of job yet. Set it in Factwright, then Fill again.';
 
 /**
- * What you did in a position, as the field takes it: the job's own resume's words, then its kind of
- * job's starting resume's, then Profile's, the first that has any, by the position's company and
- * title. Never your newest resume's, which were written for another job. A field too small for any
- * of it takes the first one with whole lines or sentences that fit, and says what it cut. The rest
- * go beside it, for the field menus to offer, with each kind's starting resume, for a job nobody
- * has put under one yet, which Fill never picks for you.
+ * What you did in the position at a place among those on file, as the field takes it: the job's own
+ * resume's words, then its kind of job's starting resume's, then Profile's, the first that has any,
+ * by the position's company and title. Never your newest resume's, which were written for another
+ * job. A field too small for any of it takes the first one with whole lines or sentences that fit,
+ * and says what it cut. The rest go beside it, for the field menus to offer, with each kind's
+ * starting resume, for a job nobody has put under one yet, which Fill never picks for you.
  */
-function descriptionReply(field: FormField, onFile: OnFile, held: HeldAt): FieldReply {
+function descriptionReply(field: FormField, onFile: OnFile, at: number): FieldReply {
   const kind = 'job-summary';
+  const positions = Array.from({ length: blocksOnFile(onFile).jobs }, (_, place) =>
+    positionAt(onFile, place),
+  ).filter((each) => each !== null);
+  const held = positions[at];
+  if (!held) return left(kind, 'unset');
   if (choosing(field)) return left(kind, 'pick');
   const { resume, starting } = onFile;
-  const own = resume?.from === 'job' ? listedAs(resume.positions, held) : null;
-  const ofKind = ({ kind: name, ofJob, positions }: StartingOnFile) => ({
-    lines: listedAs(positions, held)?.lines ?? [],
+  const own = resume?.from === 'job' ? listedAs(resume.positions, positions, at) : null;
+  const ofKind = ({ kind: name, ofJob, positions: listed }: StartingOnFile) => ({
+    lines: listedAs(listed, positions, at)?.lines ?? [],
     source: 'resume' as const,
     from: `From your ${name ? `${name} ` : ''}starting resume`,
     ofJob,
@@ -1022,10 +1057,7 @@ function descriptionReply(field: FormField, onFile: OnFile, held: HeldAt): Field
   if (answers.length === 0) return left(kind, 'unset');
   const first =
     answers.find(({ ofJob, rough }) => ofJob && !rough) ?? answers.find(({ ofJob }) => ofJob);
-  const others = answers
-    .filter((each) => each !== first)
-    .slice(0, MOST_OTHERS)
-    .map(({ answer }) => answer);
+  const others = answers.filter((each) => each !== first).map(({ answer }) => answer);
   if (!first) return { ...left(kind, 'new'), from: NO_KIND_YET, others };
   return { kind, ...first.answer, ...(others.length > 0 && { others }) };
 }
@@ -1267,17 +1299,17 @@ export function answerField(field: FormField, onFile: OnFile, nth = 0): FieldRep
       return linkOrHandle(kind, field, applications.github);
     case 'website':
       return linkOrHandle(kind, field, you.website, resume, resume?.website);
+    case 'job-summary':
+      return descriptionReply(field, onFile, nth);
     case 'current-company':
     case 'current-title':
     case 'job-start':
     case 'job-end':
-    case 'job-location':
-    case 'job-summary': {
+    case 'job-location': {
       // In a part of the form for each job, the job it's asking for; asked once, the one you
       // hold now.
       const held = fieldPart(field) === 'job' ? positionAt(onFile, nth) : currentPosition(onFile);
       if (!held) return left(kind, 'unset');
-      if (kind === 'job-summary') return descriptionReply(field, onFile, held);
       const said = { source: held.source, from: held.from };
       if (kind === 'job-start' || kind === 'job-end') {
         return dateReply(kind, field, kind === 'job-start' ? held.start : held.end, said);

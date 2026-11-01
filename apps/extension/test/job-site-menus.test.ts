@@ -269,7 +269,7 @@ describe('what a field’s menu offers', () => {
       others: [
         { text: 'I build data products.', source: 'sent', from: 'From your Fernway application' },
         { text: 'A draft.', source: 'claude', from: 'Your Claude’s draft for this job' },
-        ...Array.from({ length: 6 }, (_, at) => ({
+        ...Array.from({ length: MENU_ROWS + 2 }, (_, at) => ({
           text: `Another, ${at}`,
           source: 'sent' as const,
           from: `From your application ${at}`,

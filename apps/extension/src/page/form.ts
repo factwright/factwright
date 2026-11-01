@@ -1024,12 +1024,25 @@ export async function formPage(
   const limitOf = (control: Element, words: string): number | null => {
     const max = Number(control.getAttribute('maxlength'));
     if (Number.isInteger(max) && max > 0 && max < 1_000_000) return max;
-    const said =
-      /(\d[\d,]*)\s*(?:characters|chars)\b|max(?:imum)?\.?(?: of)?\s*(\d[\d,]*)\s*char/i.exec(
-        words.slice(0, MAX_TEXT * 2),
-      );
-    const count = said ? Number((said[1] ?? said[2] ?? '').replace(/,/g, '')) : NaN;
-    return Number.isInteger(count) && count > 0 ? count : null;
+    const asked = words.slice(0, MAX_TEXT * 2);
+    const counts = asked.matchAll(
+      /(\d[\d,]*)\s*(?:characters|chars)\b|max(?:imum)?\.?(?: of)?\s*(\d[\d,]*)\s*char/gi,
+    );
+    for (const said of counts) {
+      // "Minimum 200 characters" and "200 characters minimum" are the least it takes.
+      const end = said.index + said[0].length;
+      if (
+        /\b(?:min(?:imum)?\.?(?: of)?|at least)\s*$/i.test(
+          asked.slice(Math.max(0, said.index - 16), said.index),
+        ) ||
+        /^\s*min(?:imum)?\b/i.test(asked.slice(end, end + 10))
+      ) {
+        continue;
+      }
+      const count = Number((said[1] ?? said[2] ?? '').replace(/,/g, ''));
+      if (Number.isInteger(count) && count > 0) return count;
+    }
+    return null;
   };
 
   /** The words of an option of a radio button or checkbox: its label, or the words beside it. */
@@ -2189,7 +2202,12 @@ export async function formPage(
     const text = answer.text ?? picks[0] ?? '';
     if (control.isContentEditable) {
       control.focus({ preventScroll: true });
-      control.textContent = text;
+      // Each line on its own, as a box of rich text runs them together otherwise.
+      control.replaceChildren(
+        ...text
+          .split('\n')
+          .flatMap((line, at) => (at === 0 ? [line] : ['\n', doc.createElement('br'), line])),
+      );
       control.dispatchEvent(new Event('input', TYPED));
       control.blur();
       return done(squash(control.textContent ?? '') === squash(text));

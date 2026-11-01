@@ -4,7 +4,6 @@ import {
   answerForm,
   blocksOnFile,
   datedAs,
-  MOST_OTHERS,
   NO_APPLICATIONS,
   NO_EQUAL_OPPORTUNITY,
   NO_PRIVATE,
@@ -14,6 +13,7 @@ import {
 } from './fill.ts';
 import type { FieldControl, FormField } from './forms.ts';
 import { NO_HISTORY, type WorkHistory } from './history.ts';
+import { KIND_LIMITS } from './kinds.ts';
 
 const ON_FILE: OnFile = {
   you: {
@@ -1510,6 +1510,144 @@ describe('what you did in a position, in a box on a form', () => {
       ).toEqual(['Since returning.', 'Back then.']);
     });
 
+    it('never another role’s words, where the resume lists only that one', () => {
+      const company = TIDEWATER.company;
+      const roles = (...titles: string[]): WorkHistory => ({
+        jobs: [
+          {
+            company,
+            location: '',
+            positions: titles.map((title) => ({ title, start: '', end: '', summary: '' })),
+          },
+        ],
+        schools: [],
+      });
+      const listing = (title: string) => ({
+        ...OF_KIND,
+        positions: [{ company, title, start: '2021', lines: ['Platform work.'] }],
+      });
+      const both = [box(), box({ section: 'Work Experience 2' })];
+      // "Software Engineer" says less of "Software Engineer, Platform", which you held too.
+      const history = roles('Software Engineer, Platform', 'Software Engineer');
+      const starting = [listing('Software Engineer, Platform')];
+      expect(answerForm(both, { ...NONE, history, starting }).map((one) => one.text)).toEqual([
+        'Platform work.',
+        undefined,
+      ]);
+      // Alone on file, it's the same position.
+      expect(said({ ...NONE, history: roles('Software Engineer'), starting })?.text).toBe(
+        'Platform work.',
+      );
+      // Two you held that could each be it: neither.
+      const two = roles('Software Engineer, Data', 'Software Engineer, Growth');
+      const plainTitle = [listing('Software Engineer')];
+      expect(
+        answerForm(both, { ...NONE, history: two, starting: plainTitle }).map((one) => one.text),
+      ).toEqual([undefined, undefined]);
+    });
+
+    it('never another company’s, where it says more of a name you worked at too', () => {
+      const position = { title: 'Software Engineer', start: '', end: '', summary: '' };
+      const history: WorkHistory = {
+        jobs: [
+          { company: 'Amazon', location: '', positions: [position] },
+          { company: 'Amazon Web Services', location: '', positions: [position] },
+        ],
+        schools: [],
+      };
+      const starting = [
+        {
+          ...OF_KIND,
+          positions: [
+            {
+              company: 'Amazon Web Services',
+              title: 'Software Engineer',
+              start: '2021',
+              lines: ['Ran AWS work.'],
+            },
+          ],
+        },
+      ];
+      const both = [box(), box({ section: 'Work Experience 2' })];
+      expect(answerForm(both, { ...NONE, history, starting }).map((one) => one.text)).toEqual([
+        undefined,
+        'Ran AWS work.',
+      ]);
+    });
+
+    it('a job you came back to, each time its own, and never the other’s', () => {
+      const company = 'Fernway';
+      const times = (...starts: string[]): WorkHistory => ({
+        jobs: [
+          {
+            company,
+            location: '',
+            positions: starts.map((start) => ({
+              title: 'Analyst',
+              start,
+              end: '',
+              summary: '',
+            })),
+          },
+        ],
+        schools: [],
+      });
+      const listed = (...starts: [string, string][]) => [
+        {
+          ...OF_KIND,
+          positions: starts.map(([start, line]) => ({
+            company,
+            title: 'Analyst',
+            start,
+            lines: [line],
+          })),
+        },
+      ];
+      const both = [box(), box({ section: 'Work Experience 2' })];
+      const words = (history: WorkHistory, starting: OnFile['starting']) =>
+        answerForm(both, { ...NONE, history, starting }).map((one) => one.text);
+      // Only the newer time listed: the older one takes nothing.
+      expect(words(times('2023', '2015'), listed(['2023', 'Since returning.']))).toEqual([
+        'Since returning.',
+        undefined,
+      ]);
+      // Only the older one listed: the newer one takes nothing.
+      expect(words(times('2023', '2015'), listed(['Jun 2015', 'Back then.']))).toEqual([
+        undefined,
+        'Back then.',
+      ]);
+      // Dates Profile doesn't have go in turn, as each lists them newest first.
+      expect(
+        words(times('', ''), listed(['2023', 'Since returning.'], ['2015', 'Back then.'])),
+      ).toEqual(['Since returning.', 'Back then.']);
+      expect(words(times('', ''), listed(['2023', 'Since returning.']))).toEqual([
+        'Since returning.',
+        undefined,
+      ]);
+    });
+
+    it('with a resume on file for the positions past what Profile lists', () => {
+      const history = {
+        jobs: [
+          {
+            company: TIDEWATER.company,
+            location: '',
+            positions: [{ title: TIDEWATER.title, start: '2021', end: 'present', summary: '' }],
+          },
+        ],
+        schools: [],
+      };
+      // The same position, in Profile and again, in its place, on a resume that lists one before.
+      const resume = {
+        ...JOB_RESUME,
+        positions: [
+          { ...TIDEWATER, location: '', start: '2019', end: '2021', lines: ['Earlier.'] },
+          { ...TIDEWATER, location: '', start: '2021', end: 'Present', lines: JOB_LINES },
+        ],
+      };
+      expect(said({ ...NONE, history, resume })?.text).toBe(JOB_LINES.join('\n'));
+    });
+
     it('in letters that matching can’t read, by their words', () => {
       const history: WorkHistory = {
         jobs: [
@@ -1529,6 +1667,37 @@ describe('what you did in a position, in a box on a form', () => {
       });
       expect(said(onFile('部長'))?.text).toBe('全社の戦略。');
       expect(said(onFile('課長'))).toMatchObject({ left: 'unset' });
+    });
+
+    it('with the Latin of a title that’s partly in other letters telling nothing', () => {
+      const asTitled = (title: string, listed: string): OnFile => ({
+        ...NONE,
+        history: {
+          jobs: [
+            {
+              company: TIDEWATER.company,
+              location: '',
+              positions: [{ title, start: '2021', end: 'present', summary: '' }],
+            },
+          ],
+          schools: [],
+        },
+        starting: [
+          {
+            ...OF_KIND,
+            positions: [
+              { company: TIDEWATER.company, title: listed, start: '2021', lines: ['Their words.'] },
+            ],
+          },
+        ],
+      });
+      expect(said(asTitled('Java 开发经理', 'Java 工程师'))).toMatchObject({ left: 'unset' });
+      expect(said(asTitled('Senior Разработчик', 'Senior Тестировщик'))).toMatchObject({
+        left: 'unset',
+      });
+      expect(said(asTitled('Java 开发经理', 'Java 开发经理'))?.text).toBe('Their words.');
+      // Accents are written either way, as any resume may.
+      expect(said(asTitled('Gérant', 'Gerant'))?.text).toBe('Their words.');
     });
   });
 
@@ -1593,57 +1762,59 @@ describe('what you did in a position, in a box on a form', () => {
       });
     });
 
-    it('keeps a line’s first whole sentences', () => {
-      const history: WorkHistory = {
+    /** Profile's work history, with what you did in your one position. */
+    const summarized = (summary: string): OnFile => ({
+      ...NONE,
+      history: {
         jobs: [
           {
             company: 'Fernway',
             location: '',
-            positions: [
-              {
-                title: 'Analyst',
-                start: '2023',
-                end: 'present',
-                summary: 'Built the model. Ran it for 3.5 years. Trained 12 analysts on it.',
-              },
-            ],
+            positions: [{ title: 'Analyst', start: '2023', end: 'present', summary }],
           },
         ],
         schools: [],
-      };
-      const onFile = { ...NONE, history };
+      },
+    });
+
+    it('keeps a line’s first whole sentences', () => {
+      const onFile = summarized(
+        'Built the model. Ran it for 3.5 years. Trained 12 analysts on it.',
+      );
       expect(said(onFile, { limit: 40 })).toMatchObject({
         text: 'Built the model. Ran it for 3.5 years.',
         source: 'profile',
         from: 'From your work history, cut to fit 40 characters',
       });
+      // As Japanese and Chinese end one, with no space after it.
+      expect(said(summarized('全社の戦略を立てた。新市場を開拓した。'), { limit: 12 })?.text).toBe(
+        '全社の戦略を立てた。',
+      );
+    });
+
+    it('never takes an abbreviation’s period for a sentence’s end', () => {
+      const army = 'Served in the U.S. Army for six years, then Dr. Lee’s lab.';
+      expect(said(summarized(army), { limit: 30 })?.text).toBe('Served in the U.S. Army for');
     });
 
     it('cuts at a word, only where nothing else fits, and says so', () => {
-      const history: WorkHistory = {
-        jobs: [
-          {
-            company: 'Fernway',
-            location: '',
-            positions: [
-              {
-                title: 'Analyst',
-                start: '2023',
-                end: 'present',
-                summary: 'Ran planning across six teams, every quarter',
-              },
-            ],
-          },
-        ],
-        schools: [],
-      };
-      expect(said({ ...NONE, history }, { limit: 30 })).toMatchObject({
+      const onFile = summarized('Ran planning across six teams, every quarter');
+      expect(said(onFile, { limit: 30 })).toMatchObject({
         text: 'Ran planning across six teams',
         from: 'From your work history, cut to fit 30 characters',
       });
-      // At the end of a word, that whole word stays. One word too long is cut where it must be.
-      expect(said({ ...NONE, history }, { limit: 12 })?.text).toBe('Ran planning');
-      expect(said({ ...NONE, history }, { limit: 2 })?.text).toBe('Ra');
+      // At the end of a word, that whole word stays.
+      expect(said(onFile, { limit: 12 })?.text).toBe('Ran planning');
+    });
+
+    it('leaves it for you where not even one whole word fits', () => {
+      expect(said(summarized('Architected the platform'), { limit: 5 })).toEqual({
+        kind: 'job-summary',
+        source: 'you',
+        left: 'unset',
+      });
+      expect(said(summarized('🚀 Launched it'), { limit: 1 })).toMatchObject({ left: 'unset' });
+      expect(said(summarized('全社の戦略を立てた'), { limit: 3 })).toMatchObject({ left: 'unset' });
     });
 
     it('takes a field with no limit whole', () => {
@@ -1722,13 +1893,13 @@ describe('what you did in a position, in a box on a form', () => {
       expect(reply?.others).toHaveLength(2);
     });
 
-    it('keeps to as many in the menu as a field’s reply carries', () => {
+    it('offers every kind’s, as many as you can have', () => {
       const many = ['A', 'B', 'C', 'D', 'E', 'F'].map((name) => ({
         kind: name,
         ofJob: false,
         positions: [{ ...TIDEWATER, start: '2021', lines: [`For ${name}.`] }],
       }));
-      expect(said({ ...NONE, starting: many })?.others).toHaveLength(MOST_OTHERS);
+      expect(said({ ...NONE, starting: many })?.others).toHaveLength(KIND_LIMITS.kinds);
     });
   });
 });

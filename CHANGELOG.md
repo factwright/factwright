@@ -22,6 +22,8 @@ Notable changes to Factwright, newest first. The format follows [Keep a Changelo
 
 ### Fixed
 - Filling through sync takes a job's kind of job from the job search that found it, as the app does, so a form's pay box fills with that kind's target pay.
+- A form's hint such as "Minimum 200 characters" no longer reads as the most the box takes.
+- A box of rich text on a form keeps an answer's lines on their own lines.
 - When your Claude Code is too old and Homebrew or WinGet installed it, Factwright gives the command that updates it, `brew upgrade claude-code` or `winget upgrade Anthropic.ClaudeCode`, with a button to copy it. On those installs, `claude update`, which it gave before, only names that command.
 
 ## 0.18.1 - 2026-10-27
