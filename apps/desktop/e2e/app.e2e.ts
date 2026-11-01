@@ -1286,6 +1286,57 @@ test('explains Claude Code’s first-run screens when the app leaves them, and c
   await closeRun();
 });
 
+test('drags a job’s details to any width beside the list, and keeps it', async () => {
+  const { window } = opened;
+  await window.getByRole('button', { name: 'Add job' }).click();
+  const add = window.getByRole('dialog', { name: 'Add a job' });
+  await add.getByRole('textbox', { name: 'Company' }).fill('Harbor & Pine Outfitters');
+  await add.getByRole('textbox', { name: 'Role' }).fill('Account Executive');
+  await add.getByRole('button', { name: 'Add job' }).click();
+  const details = jobPanel();
+  await expect(details).toBeVisible();
+  const edge = window.getByRole('separator', { name: 'Width of the job’s details' });
+  const widthOf = async () => (await details.boundingBox())?.width ?? 0;
+  const dragBy = async (distance: number) => {
+    const at = await edge.boundingBox();
+    if (!at) throw new Error('The edge of the job’s details isn’t on the screen.');
+    const y = at.y + at.height / 2;
+    await window.mouse.move(at.x + at.width / 2, y);
+    await window.mouse.down();
+    await window.mouse.move(at.x + at.width / 2 + distance, y, { steps: 8 });
+    await window.mouse.up();
+  };
+
+  const started = await widthOf();
+  await dragBy(-150);
+  await expect.poll(widthOf).toBeCloseTo(started + 150, -1);
+  const dragged = await widthOf();
+  // No text is selected by dragging across the list.
+  expect(await window.evaluate('String(getSelection())')).toBe('');
+
+  // Having the window to itself and coming back keeps the width, as does opening the window again.
+  await details.getByRole('button', { name: 'Expand' }).click();
+  await expect(edge).toHaveCount(0);
+  await details.getByRole('button', { name: 'Show beside the list' }).click();
+  await expect.poll(widthOf).toBeCloseTo(dragged, 0);
+  await window.reload();
+  await window.getByRole('button', { name: /^Harbor & Pine Outfitters/ }).click();
+  await expect.poll(widthOf).toBeCloseTo(dragged, 0);
+
+  // The list keeps its room, however far it's dragged, and still shows if the details go over it.
+  await dragBy(-3000);
+  const list = await window.getByRole('main').boundingBox();
+  const box = await details.boundingBox();
+  const room = (box?.x ?? 0) + (box?.width ?? 0) - (list?.x ?? 0);
+  await expect.poll(widthOf).toBeCloseTo(room - (room <= 980 ? 48 : 360), -1);
+
+  // A double-click puts it back, and it never goes narrower than its areas are laid out for.
+  await dragBy(3000);
+  await expect.poll(widthOf).toBeCloseTo(340, -1);
+  await edge.dblclick();
+  await expect.poll(widthOf).toBeCloseTo(started, 0);
+});
+
 // Greenhouse lists a form's questions before it's open. The tests' copy of the app reads a
 // made-up answer from a file in Greenhouse's place, so no test reaches Greenhouse.
 test('gets a Greenhouse form’s questions before it’s open, and has your Claude draft them', async () => {

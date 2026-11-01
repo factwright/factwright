@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { addDays, type Job, localDate } from '@factwright/core';
-import { cleanup, render, screen, within } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import axe from 'axe-core';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
@@ -780,6 +780,51 @@ describe('JobPanel', () => {
     // A heading still names each section for screen readers.
     expect(screen.getByRole('heading', { name: 'Progress' })).toBeTruthy();
     expect(screen.getByRole('heading', { name: 'Notes' })).toBeTruthy();
+  });
+
+  it('takes any width from its edge by keyboard, kept for next time, until a double-click', () => {
+    // The room the window has for the list and the details, which the tests don't lay out.
+    const room = vi.spyOn(Element.prototype, 'clientWidth', 'get').mockReturnValue(1200);
+    const box = vi
+      .spyOn(HTMLElement.prototype, 'getBoundingClientRect')
+      .mockReturnValue(new DOMRect(800, 0, 400, 600));
+    panel(byCompany('Northwind Labs'));
+    const edge = screen.getByRole('separator', { name: 'Width of the job’s details' });
+    const width = () => edge.parentElement?.style.getPropertyValue('--panel-width');
+    // The list keeps its 360 beside the details.
+    expect(edge.getAttribute('aria-valuenow')).toBe('400');
+    expect(edge.getAttribute('aria-valuemax')).toBe('840');
+    expect(width()).toBe('');
+    fireEvent.keyDown(edge, { key: 'ArrowLeft' });
+    expect(width()).toBe('424px');
+    expect(localStorage.getItem('factwright.panel.width')).toBe('424');
+    fireEvent.keyDown(edge, { key: 'End' });
+    expect(width()).toBe('840px');
+    fireEvent.keyDown(edge, { key: 'Home' });
+    expect(width()).toBe('340px');
+    // It starts the next time at the width it was left at.
+    cleanup();
+    panel(byCompany('Northwind Labs'));
+    const again = screen.getByRole('separator', { name: 'Width of the job’s details' });
+    expect(again.parentElement?.style.getPropertyValue('--panel-width')).toBe('340px');
+    fireEvent.doubleClick(again);
+    expect(again.parentElement?.style.getPropertyValue('--panel-width')).toBe('');
+    expect(localStorage.getItem('factwright.panel.width')).toBe('null');
+    room.mockRestore();
+    box.mockRestore();
+  });
+
+  it('closes with Escape from the edge too', () => {
+    const { onClose } = panel(byCompany('Northwind Labs'));
+    fireEvent.keyDown(screen.getByRole('separator', { name: 'Width of the job’s details' }), {
+      key: 'Escape',
+    });
+    expect(onClose).toHaveBeenCalled();
+  });
+
+  it('has no edge to drag while the job has the window to itself', () => {
+    panel(byCompany('Northwind Labs'), {}, { onExpand: () => {}, expanded: true });
+    expect(screen.queryByRole('separator', { name: 'Width of the job’s details' })).toBeNull();
   });
 
   it('gives the job the window, moves through the list, and Escape puts it back', async () => {
