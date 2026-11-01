@@ -4,6 +4,7 @@ import { homedir } from 'node:os';
 import { basename, extname, join } from 'node:path';
 import { ASK_ID, localDate } from '@factwright/core';
 import { isRequestId } from '@factwright/sync';
+import { isThemeChoice, type ThemeChoice } from '@factwright/ui/themes';
 import {
   app,
   BrowserWindow,
@@ -40,6 +41,7 @@ import type { TemplatePreviews } from './about/previews.ts';
 import type { PrivateAnswers } from './about/private.ts';
 import type { ProfileRequests } from './about/profile-requests.ts';
 import type { AboutStore } from './about/store.ts';
+import { saveTheme } from './appearance.ts';
 import type { AnalyzeNew } from './claude/analyze-new.ts';
 import { saveAtOnce } from './claude/at-once.ts';
 import type { Desk } from './claude/desk.ts';
@@ -227,6 +229,41 @@ const sameFile = (a: string, b: string) => {
   }
 };
 
+/** Answers a request from the app's own page. One from anywhere else is refused. */
+const answerer =
+  (isAppPage: IpcDeps['isAppPage']) =>
+  (channel: string, reply: (...args: unknown[]) => unknown) => {
+    ipcMain.handle(channel, (event, ...args: unknown[]) => {
+      if (!isAppPage(event.senderFrame?.url ?? '')) {
+        throw new Error('Refused a request from a page outside the app.');
+      }
+      return reply(...args);
+    });
+  };
+
+/**
+ * How the app looks, for this profile on this computer. It's set up on its own, ahead of the
+ * rest, since the window asks for its theme as soon as it loads, before it draws anything.
+ */
+export function registerAppearance({
+  isAppPage,
+  dataDir,
+  chosen,
+  show,
+}: Pick<IpcDeps, 'isAppPage' | 'dataDir'> & {
+  chosen: () => ThemeChoice;
+  show: (choice: ThemeChoice) => void;
+}): void {
+  const answer = answerer(isAppPage);
+  answer('appearance:theme', chosen);
+  answer('appearance:set-theme', async (value) => {
+    if (!isThemeChoice(value)) throw new Error('Refused a theme Factwright doesn’t have.');
+    show(value);
+    await saveTheme(dataDir, value);
+    return value;
+  });
+}
+
 /** Answers the window's requests, after checking each one came from the app's own page. */
 export function registerIpc({
   isAppPage,
@@ -260,13 +297,7 @@ export function registerIpc({
   const fromApp = (event: IpcMainEvent | IpcMainInvokeEvent) =>
     isAppPage(event.senderFrame?.url ?? '');
 
-  /** A request that expects an answer. Ones from outside the app are refused. */
-  const answer = (channel: string, reply: (...args: unknown[]) => unknown) => {
-    ipcMain.handle(channel, (event, ...args: unknown[]) => {
-      if (!fromApp(event)) throw new Error('Refused a request from a page outside the app.');
-      return reply(...args);
-    });
-  };
+  const answer = answerer(isAppPage);
 
   // Claude Code's first-run screens, which signing in with `claude auth login` leaves showing, are
   // marked done as pressing Enter through them would. Only for a Claude account: one signed in

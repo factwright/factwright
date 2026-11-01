@@ -1,4 +1,4 @@
-import { FONTS, TERMINAL_COLORS } from '@factwright/ui';
+import { FONTS } from '@factwright/ui';
 import { FitAddon } from '@xterm/addon-fit';
 import { Terminal } from '@xterm/xterm';
 import '@xterm/xterm/css/xterm.css';
@@ -6,11 +6,11 @@ import { useEffect, useRef } from 'react';
 import type { FactwrightApi } from '../shared/api.ts';
 import styles from './ClaudePanel.module.css';
 import { pastedPictures, readPictures } from './jobs/Screenshots.tsx';
+import { terminalColors, themeNow, watchTheme } from './theme.ts';
 
 /**
  * The terminal one run's Claude Code runs in. It shows that run's output, sends what the user
- * types to it, follows the system's light or dark setting, and reports its size in characters
- * whenever it changes. A picture pasted into it is saved where Claude can read it, with the run's
+ * types to it, follows the theme, and reports its size in characters whenever it changes. A picture pasted into it is saved where Claude can read it, with the run's
  * job, and pasted as where it is, which Claude Code takes as the picture itself.
  */
 export function TerminalView({
@@ -47,15 +47,14 @@ export function TerminalView({
   useEffect(() => {
     const element = container.current;
     if (!element) return;
-    const dark = window.matchMedia('(prefers-color-scheme: dark)');
-    const colors = () => (dark.matches ? TERMINAL_COLORS.dark : TERMINAL_COLORS.light);
+    const started = themeNow().mode;
     const terminal = new Terminal({
       fontFamily: FONTS.mono,
       fontSize: 13,
       lineHeight: 1.2,
       cursorBlink: true,
       scrollback: 5000,
-      theme: colors(),
+      theme: terminalColors(started),
     });
     const fit = new FitAddon();
     terminal.loadAddon(fit);
@@ -70,10 +69,9 @@ export function TerminalView({
     };
     const resizes = new ResizeObserver(fitAndReport);
     resizes.observe(element);
-    const followTheme = () => {
-      terminal.options.theme = colors();
-    };
-    dark.addEventListener('change', followTheme);
+    const stopFollowing = watchTheme(() => {
+      terminal.options.theme = terminalColors(started);
+    });
 
     const typing = terminal.onData((data) => api.writeToClaude(runId, data));
     const stopOutput = api.onClaudeOutput((output) => {
@@ -105,7 +103,7 @@ export function TerminalView({
       element.removeEventListener('paste', pastePicture, true);
       stopOutput();
       typing.dispose();
-      dark.removeEventListener('change', followTheme);
+      stopFollowing();
       resizes.disconnect();
       view.current = null;
       terminal.dispose();

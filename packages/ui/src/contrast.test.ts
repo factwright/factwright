@@ -1,14 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { CONTROL_CONTRAST, contrastRatio, TEXT_CONTRAST } from './contrast.ts';
-import {
-  DARK,
-  LIGHT,
-  type Palette,
-  TERMINAL_COLORS,
-  type TerminalColors,
-  TONE_COLORS,
-  TONES,
-} from './tokens.ts';
+import { THEMES } from './themes.ts';
+import { type Palette, type TerminalColors, TONES } from './tokens.ts';
 
 /** The colored text Claude Code writes in either theme. */
 const TERMINAL_HUES: readonly (keyof TerminalColors)[] = [
@@ -27,10 +20,14 @@ const TERMINAL_HUES: readonly (keyof TerminalColors)[] = [
 ];
 
 /** How Claude Code's ANSI themes use the grays: main text, secondary text, and the message bar. */
-describe.each([
-  ['light', TERMINAL_COLORS.light, ['black', 'brightBlack'], 'white'],
-  ['dark', TERMINAL_COLORS.dark, ['brightWhite', 'white'], 'brightBlack'],
-] as const)("Claude's panel in %s", (_name, colors, text, bar) => {
+const TERMINAL_ROLES = {
+  light: { text: ['black', 'brightBlack'], bar: 'white' },
+  dark: { text: ['brightWhite', 'white'], bar: 'brightBlack' },
+} as const;
+
+describe.each(
+  THEMES.map((theme) => [theme.name, theme.terminal, TERMINAL_ROLES[theme.mode]] as const),
+)("Claude's panel in %s", (_name, colors, { text, bar }) => {
   it.each(['foreground', ...text, ...TERMINAL_HUES] as const)(
     '%s text meets WCAG AA on the background',
     (color) => {
@@ -105,23 +102,24 @@ function textPairs(p: Palette): [string, string, string][] {
   ];
 }
 
-describe.each([
-  ['light', LIGHT, 'light'],
-  ['dark', DARK, 'dark'],
-] as const)('the %s theme', (_name, palette, mode) => {
-  it.each(textPairs(palette))('%s meets WCAG AA for text', (_pair, fg, bg) => {
-    expect(contrastRatio(fg, bg)).toBeGreaterThanOrEqual(TEXT_CONTRAST);
-  });
+describe.each(THEMES.map((theme) => [theme.name, theme] as const))(
+  'the %s theme',
+  (_name, theme) => {
+    const palette = theme.colors;
+    it.each(textPairs(palette))('%s meets WCAG AA for text', (_pair, fg, bg) => {
+      expect(contrastRatio(fg, bg)).toBeGreaterThanOrEqual(TEXT_CONTRAST);
+    });
 
-  it.each(TONES)('the %s tone meets WCAG AA for text', (tone) => {
-    const { fg, bg } = TONE_COLORS[tone][mode];
-    expect(contrastRatio(fg, bg)).toBeGreaterThanOrEqual(TEXT_CONTRAST);
-  });
+    it.each(TONES)('the %s tone meets WCAG AA for text', (tone) => {
+      const { fg, bg } = theme.tones[tone];
+      expect(contrastRatio(fg, bg)).toBeGreaterThanOrEqual(TEXT_CONTRAST);
+    });
 
-  it.each([
-    ['surface', palette.surface],
-    ['bg', palette.bg],
-  ])('control borders stand out from %s', (_where, bg) => {
-    expect(contrastRatio(palette.controlBorder, bg)).toBeGreaterThanOrEqual(CONTROL_CONTRAST);
-  });
-});
+    it.each([
+      ['surface', palette.surface],
+      ['bg', palette.bg],
+    ])('control borders stand out from %s', (_where, bg) => {
+      expect(contrastRatio(palette.controlBorder, bg)).toBeGreaterThanOrEqual(CONTROL_CONTRAST);
+    });
+  },
+);

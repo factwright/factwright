@@ -26,8 +26,17 @@ import {
   NotebookPen,
   X,
 } from 'lucide-react';
-import { type KeyboardEvent, type ReactNode, useEffect, useId, useRef, useState } from 'react';
+import {
+  type CSSProperties,
+  type KeyboardEvent,
+  type ReactNode,
+  useEffect,
+  useId,
+  useRef,
+  useState,
+} from 'react';
 import type { EditResult, FactwrightApi, JobChanges } from '../../shared/api.ts';
+import { usePref } from '../prefs.ts';
 import { ApplicationSection } from './ApplicationSection.tsx';
 import { AskSection } from './AskSection.tsx';
 import { focusNext, PassedBox, SetAsideBox } from './Decide.tsx';
@@ -38,6 +47,7 @@ import { SavedSection } from './JobFiles.tsx';
 import { JobNotes, notesSummary } from './JobNotes.tsx';
 import styles from './JobPanel.module.css';
 import { ArchiveFooter, HistorySection, ProgressSection } from './JobTracking.tsx';
+import { isPanelWidth, PanelResizer } from './PanelResizer.tsx';
 import { PanelSection } from './PanelSection.tsx';
 import { PeopleSection } from './PeopleSection.tsx';
 import { ResumesSection } from './ResumesSection.tsx';
@@ -157,6 +167,9 @@ export function JobPanel({
     requestAnimationFrame(() => editButton.current?.focus());
   };
   const panel = useRef<HTMLElement>(null);
+  const frame = useRef<HTMLDivElement>(null);
+  // How wide the user left the details beside the list, for every job, kept for next time.
+  const [width, setWidth] = usePref<number | null>('panel.width', null, isPanelWidth);
   const panelId = useId();
   const jobId = row?.job.id;
   // When what had the keyboard's focus goes away, such as the row a job was picked from once
@@ -288,147 +301,154 @@ export function JobPanel({
   ];
 
   return (
-    <aside
-      ref={panel}
-      className={`${styles.panel} ${expanded ? styles.expanded : ''}`}
-      aria-label="Job details"
-      tabIndex={-1}
-      onKeyDown={onEscape}
+    <div
+      ref={frame}
+      className={`${styles.frame} ${expanded ? styles.alone : ''}`}
+      style={width === null ? undefined : ({ '--panel-width': `${width}px` } as CSSProperties)}
     >
-      <div className={styles.inner}>
-        <header className={styles.head}>
-          <div className={styles.headRow}>
-            <div className={styles.title}>
-              <p className={styles.company}>{job.company}</p>
-              <h2 className={styles.role}>{job.role || 'Company outreach'}</h2>
-            </div>
-            <div className={styles.tools}>
-              {expanded && navigation && navigation.count > 1 && (
-                <span className={styles.stepper}>
-                  <IconButton
-                    label="Previous job"
-                    variant="quiet"
-                    size="sm"
-                    icon={<ChevronLeft size={16} aria-hidden="true" />}
-                    // Not disabled outright, so the keyboard's focus stays at the list's end.
-                    aria-disabled={navigation.index <= 1}
-                    onClick={() => navigation.index > 1 && navigation.onStep(-1)}
-                  />
-                  <span className={styles.position}>
-                    {navigation.index} of {navigation.count}
+      {!expanded && <PanelResizer frame={frame} onWidth={setWidth} onOtherKey={onEscape} />}
+      <aside
+        ref={panel}
+        className={`${styles.panel} ${expanded ? styles.expanded : ''}`}
+        aria-label="Job details"
+        tabIndex={-1}
+        onKeyDown={onEscape}
+      >
+        <div className={styles.inner}>
+          <header className={styles.head}>
+            <div className={styles.headRow}>
+              <div className={styles.title}>
+                <p className={styles.company}>{job.company}</p>
+                <h2 className={styles.role}>{job.role || 'Company outreach'}</h2>
+              </div>
+              <div className={styles.tools}>
+                {expanded && navigation && navigation.count > 1 && (
+                  <span className={styles.stepper}>
+                    <IconButton
+                      label="Previous job"
+                      variant="quiet"
+                      size="sm"
+                      icon={<ChevronLeft size={16} aria-hidden="true" />}
+                      // Not disabled outright, so the keyboard's focus stays at the list's end.
+                      aria-disabled={navigation.index <= 1}
+                      onClick={() => navigation.index > 1 && navigation.onStep(-1)}
+                    />
+                    <span className={styles.position}>
+                      {navigation.index} of {navigation.count}
+                    </span>
+                    <IconButton
+                      label="Next job"
+                      variant="quiet"
+                      size="sm"
+                      icon={<ChevronRight size={16} aria-hidden="true" />}
+                      aria-disabled={navigation.index >= navigation.count}
+                      onClick={() => navigation.index < navigation.count && navigation.onStep(1)}
+                    />
                   </span>
+                )}
+                {onExpand && (
                   <IconButton
-                    label="Next job"
+                    label={expanded ? 'Show beside the list' : 'Expand'}
                     variant="quiet"
-                    size="sm"
-                    icon={<ChevronRight size={16} aria-hidden="true" />}
-                    aria-disabled={navigation.index >= navigation.count}
-                    onClick={() => navigation.index < navigation.count && navigation.onStep(1)}
+                    icon={
+                      expanded ? (
+                        <Minimize2 size={15} aria-hidden="true" />
+                      ) : (
+                        <Maximize2 size={15} aria-hidden="true" />
+                      )
+                    }
+                    onClick={() => onExpand(!expanded)}
                   />
-                </span>
-              )}
-              {onExpand && (
+                )}
                 <IconButton
-                  label={expanded ? 'Show beside the list' : 'Expand'}
+                  label="Close details"
                   variant="quiet"
-                  icon={
-                    expanded ? (
-                      <Minimize2 size={15} aria-hidden="true" />
-                    ) : (
-                      <Maximize2 size={15} aria-hidden="true" />
-                    )
-                  }
-                  onClick={() => onExpand(!expanded)}
+                  icon={<X size={16} aria-hidden="true" />}
+                  onClick={onClose}
                 />
-              )}
-              <IconButton
-                label="Close details"
-                variant="quiet"
-                icon={<X size={16} aria-hidden="true" />}
-                onClick={onClose}
-              />
+              </div>
             </div>
-          </div>
-          <p className={styles.where}>
-            {meta}
-            {meta && job.link && ' · '}
-            {job.link && (
-              <a className={styles.link} href={job.link} target="_blank" rel="noreferrer">
-                Posting
-                <ArrowUpRight size={13} aria-hidden="true" />
-              </a>
-            )}
-            {(meta || job.link) && ' · '}
-            <button
-              ref={editButton}
-              type="button"
-              className={styles.editDetails}
-              aria-expanded={editing === job.id}
-              onClick={() => setEditing(editing === job.id ? null : job.id)}
-            >
-              Edit details
-            </button>
-          </p>
-          <div className={styles.badges}>
-            <StatusSelect
-              status={progress.status}
-              label={`Status for ${job.company}`}
-              onChange={changeStatus}
-            />
-            <FitBadge score={progress.score} tier={progress.tier} />
-            {kinds.length > 1 && row.kind && (
-              <Select
-                className={styles.kind}
-                aria-label={`Kind of job for ${job.company}`}
-                value={decided ?? ''}
-                onChange={(event) => change({ kind: event.target.value })}
+            <p className={styles.where}>
+              {meta}
+              {meta && job.link && ' · '}
+              {job.link && (
+                <a className={styles.link} href={job.link} target="_blank" rel="noreferrer">
+                  Posting
+                  <ArrowUpRight size={13} aria-hidden="true" />
+                </a>
+              )}
+              {(meta || job.link) && ' · '}
+              <button
+                ref={editButton}
+                type="button"
+                className={styles.editDetails}
+                aria-expanded={editing === job.id}
+                onClick={() => setEditing(editing === job.id ? null : job.id)}
               >
-                {!decided && <option value="">{row.kind.name}, until a fit check</option>}
-                {kinds.map((kind) => (
-                  <option key={kind.id} value={kind.id}>
-                    {kind.name}
-                  </option>
-                ))}
-              </Select>
-            )}
-          </div>
-          {problem?.jobId === job.id && (
-            <p className={styles.problem} role="alert">
-              {problem.message}
+                Edit details
+              </button>
             </p>
-          )}
-        </header>
+            <div className={styles.badges}>
+              <StatusSelect
+                status={progress.status}
+                label={`Status for ${job.company}`}
+                onChange={changeStatus}
+              />
+              <FitBadge score={progress.score} tier={progress.tier} />
+              {kinds.length > 1 && row.kind && (
+                <Select
+                  className={styles.kind}
+                  aria-label={`Kind of job for ${job.company}`}
+                  value={decided ?? ''}
+                  onChange={(event) => change({ kind: event.target.value })}
+                >
+                  {!decided && <option value="">{row.kind.name}, until a fit check</option>}
+                  {kinds.map((kind) => (
+                    <option key={kind.id} value={kind.id}>
+                      {kind.name}
+                    </option>
+                  ))}
+                </Select>
+              )}
+            </div>
+            {problem?.jobId === job.id && (
+              <p className={styles.problem} role="alert">
+                {problem.message}
+              </p>
+            )}
+          </header>
 
-        {editing === job.id && (
-          <EditDetails key={job.id} job={job} api={api} onClose={stopEditing} />
-        )}
-        {upTop}
-        <FitArea
-          job={job}
-          progress={progress}
-          run={run}
-          today={today}
-          api={api}
-          targets={targets}
-        />
-        {/* The same two columns either way, side by side only when expanded, so expanding
-            never loses what's being typed. */}
-        <div className={styles.columns}>
-          <section className={styles.column} aria-labelledby={`${panelId}-claude`}>
-            <h3 id={`${panelId}-claude`} className={styles.columnHeading}>
-              From your Claude
-            </h3>
-            {fromClaude}
-          </section>
-          <section className={styles.column} aria-labelledby={`${panelId}-progress`}>
-            <h3 id={`${panelId}-progress`} className={styles.columnHeading}>
-              Your progress
-            </h3>
-            {yourProgress}
-          </section>
+          {editing === job.id && (
+            <EditDetails key={job.id} job={job} api={api} onClose={stopEditing} />
+          )}
+          {upTop}
+          <FitArea
+            job={job}
+            progress={progress}
+            run={run}
+            today={today}
+            api={api}
+            targets={targets}
+          />
+          {/* The same two columns either way, side by side only when expanded, so expanding
+              never loses what's being typed. */}
+          <div className={styles.columns}>
+            <section className={styles.column} aria-labelledby={`${panelId}-claude`}>
+              <h3 id={`${panelId}-claude`} className={styles.columnHeading}>
+                From your Claude
+              </h3>
+              {fromClaude}
+            </section>
+            <section className={styles.column} aria-labelledby={`${panelId}-progress`}>
+              <h3 id={`${panelId}-progress`} className={styles.columnHeading}>
+                Your progress
+              </h3>
+              {yourProgress}
+            </section>
+          </div>
+          <ArchiveFooter job={job} api={api} onMerge={onMerge && (() => onMerge())} />
         </div>
-        <ArchiveFooter job={job} api={api} onMerge={onMerge && (() => onMerge())} />
-      </div>
-    </aside>
+      </aside>
+    </div>
   );
 }

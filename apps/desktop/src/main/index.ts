@@ -22,6 +22,7 @@ import { TemplatePreviews } from './about/previews.ts';
 import { PrivateAnswers } from './about/private.ts';
 import { ProfileRequests } from './about/profile-requests.ts';
 import { AboutStore } from './about/store.ts';
+import { loadTheme } from './appearance.ts';
 import { AnalyzeNew } from './claude/analyze-new.ts';
 import { loadAtOnce } from './claude/at-once.ts';
 import { Desk, fromRun } from './claude/desk.ts';
@@ -37,7 +38,7 @@ import { answerAsk, type FillDeps } from './extension/fill.ts';
 import { JobInbox } from './extension/inbox.ts';
 import { helperName, registerSaveHelper, runProgram } from './extension/register.ts';
 import { createSaveHelper } from './extension/save-helper.ts';
-import { registerIpc } from './ipc.ts';
+import { registerAppearance, registerIpc } from './ipc.ts';
 import { Revisions } from './jobs/revisions.ts';
 import { JobsService } from './jobs/service.ts';
 import { Tracker } from './jobs/tracker.ts';
@@ -69,7 +70,7 @@ import { Claims } from './sync/claims.ts';
 import { NO_KEYCHAIN } from './sync/secrets.ts';
 import { factwrightTools } from './tools/index.ts';
 import { UpdateWatcher } from './updates.ts';
-import { createMainWindow, DEV_ICON } from './window.ts';
+import { createMainWindow, DEV_ICON, showTheme, themeChosen } from './window.ts';
 
 /**
  * Settings for development and tests, from the environment. An installed copy ignores them, so
@@ -240,6 +241,10 @@ function start(home: string, profile: ProfileFolder, stopped: ProfileFolder | nu
 
     // The open profile's folder, which holds its job hunt, its sync and its settings.
     const dataDir = app.getPath('userData');
+    // Before the window opens, so it opens in the theme chosen, and can ask which that is.
+    const isAppPage = (url: string) => url.startsWith(devUrl ?? `${APP_ORIGIN}/`);
+    showTheme(await loadTheme(dataDir));
+    registerAppearance({ isAppPage, dataDir, chosen: themeChosen, show: showTheme });
     // The tracker sits beside the workspace, not in it, so Claude's file tools can't reach it.
     // Claude reaches it only through Factwright's tools.
     const tracker = new Tracker(join(dataDir, 'tracker.db'));
@@ -613,7 +618,7 @@ function start(home: string, profile: ProfileFolder, stopped: ProfileFolder | nu
       powerMonitor.on('unlock-screen', () => updates.lookAgain());
     }
     registerIpc({
-      isAppPage: (url) => url.startsWith(devUrl ?? `${APP_ORIGIN}/`),
+      isAppPage,
       about,
       kept,
       templates,
