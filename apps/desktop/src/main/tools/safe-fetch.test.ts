@@ -4,7 +4,14 @@ import { brotliCompressSync, deflateSync, gzipSync } from 'node:zlib';
 import { describe, expect, it } from 'vitest';
 import { readAnswers } from '../../shared/about.ts';
 import { browserSearches } from '../../shared/browser-searches.ts';
-import { decoded, isPrivateAddress, linkProblem } from './safe-fetch.ts';
+import {
+  decoded,
+  FetchRefused,
+  fetchPublic,
+  isPrivateAddress,
+  linkProblem,
+  postProblem,
+} from './safe-fetch.ts';
 
 /** A site's answer, as the fetcher gets it. */
 function answer(body: Buffer, encoding?: string): IncomingMessage {
@@ -78,6 +85,17 @@ describe('linkProblem', () => {
     expect(linkProblem(new URL('https://notlinkedin.com/jobs'))).toBeNull();
   });
 
+  it.each([
+    'https://www.indeed.com./jobs',
+    'https://www.governmentjobs.com./careers',
+    'https://jobs.chronicle.com./jobs',
+    'https://www.linkedin.com./jobs',
+    'https://localhost./x',
+    'https://printer.local./x',
+  ])('sees through a final dot in %s', (address) => {
+    expect(linkProblem(new URL(address))).not.toBeNull();
+  });
+
   it('refuses links with a sign-in in them', () => {
     // Built rather than written out, so the secret scan doesn't take it for a real one.
     const url = new URL('https://acme.example/jobs');
@@ -145,5 +163,52 @@ describe('sites the tools don’t read', () => {
     'https://www.chronicle.com/a',
   ])('reads %s, which only looks like one', (link) => {
     expect(linkProblem(new URL(link))).toBeNull();
+  });
+});
+
+describe('the one POST the tools send', () => {
+  const SEARCH = 'https://osu.wd1.myworkdayjobs.com/wday/cxs/osu/OSUCareers/jobs';
+
+  it('goes only to a company’s Workday site’s own job search', () => {
+    expect(postProblem(new URL(SEARCH), '{}')).toBeNull();
+    expect(
+      postProblem(new URL('https://a-b.wd108.myworkdayjobs.com/wday/cxs/a-b/Site_1/jobs'), '{}'),
+    ).toBeNull();
+  });
+
+  it.each([
+    'https://evil.example/wday/cxs/osu/OSUCareers/jobs',
+    'https://osu.wd1.myworkdayjobs.com.evil.example/wday/cxs/osu/OSUCareers/jobs',
+    'https://wd1.myworkdayjobs.com/wday/cxs/osu/OSUCareers/jobs',
+    'https://a.b.wd1.myworkdayjobs.com/wday/cxs/osu/OSUCareers/jobs',
+    'https://www.workday.com/wday/cxs/osu/OSUCareers/jobs',
+    'https://osu.wd1.myworkdaysite.com/wday/cxs/osu/OSUCareers/jobs',
+    'https://osu.wd1.myworkdayjobs.com/',
+    'https://osu.wd1.myworkdayjobs.com/OSUCareers/login',
+    'https://osu.wd1.myworkdayjobs.com/wday/cxs/osu/OSUCareers/jobs/1',
+    'https://osu.wd1.myworkdayjobs.com/wday/authgwy/osu/login',
+    'https://osu.wd1.myworkdayjobs.com/wday/cxs/osu/OSUCareers/jobs?x=1',
+  ])('never to %s', async (address) => {
+    expect(postProblem(new URL(address), '{}')).toContain('only to a company’s Workday site');
+    await expect(fetchPublic(address, true, 1_000, 1_000, undefined, '{}')).rejects.toBeInstanceOf(
+      FetchRefused,
+    );
+  });
+
+  it('sends only a little', () => {
+    expect(postProblem(new URL(SEARCH), 'x'.repeat(1_001))).toContain('too long');
+  });
+
+  it('turns away what any request is turned away for, first', async () => {
+    await expect(
+      fetchPublic(
+        'http://osu.wd1.myworkdayjobs.com/wday/cxs/osu/OSUCareers/jobs',
+        true,
+        1_000,
+        1_000,
+        undefined,
+        '{}',
+      ),
+    ).rejects.toBeInstanceOf(FetchRefused);
   });
 });

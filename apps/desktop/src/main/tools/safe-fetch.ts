@@ -10,9 +10,24 @@ const MAX_BYTES = 5_000_000;
 /** How long a fetch may take, redirects and all, unless the caller gives less time. */
 const TIME_LIMIT_MS = 20_000;
 const MAX_REDIRECTS = 5;
+/** The most a POST may send: a job's title, and which page of the answers. */
+const MAX_POST_BYTES = 1_000;
+/** A company's own site on Workday, and where on it the site's own job search answers. */
+const WORKDAY_SITE = /^[a-z0-9-]{1,63}\.wd\d{1,3}\.myworkdayjobs\.com$/;
+const WORKDAY_SEARCH = /^\/wday\/cxs\/[a-z0-9-]{1,63}\/[\w-]{1,100}\/jobs$/;
 
 /** A fetch the app won't make, with the reason in plain words. */
 export class FetchRefused extends Error {}
+
+/** A site's answer that wasn't a page, such as a 404, with its status. */
+export class FetchAnswered extends Error {
+  readonly status: number;
+
+  constructor(host: string, status: number) {
+    super(`${host} answered ${status}`);
+    this.status = status;
+  }
+}
 
 function ipv4Parts(address: string): number[] | null {
   const parts = address.split('.').map(Number);
@@ -86,7 +101,9 @@ const OFF_LIMITS: readonly (readonly [RegExp, string])[] = [
 export function linkProblem(url: URL): string | null {
   if (url.protocol !== 'https:') return 'Only https links work.';
   if (url.username || url.password) return 'Links with a sign-in in them are off limits.';
-  const host = url.hostname.replace(/^\[|\]$/g, '').toLowerCase();
+  const name = url.hostname.replace(/^\[|\]$/g, '').toLowerCase();
+  // A name can end in a dot and mean the same site, so "indeed.com." is still Indeed.
+  const host = name.endsWith('.') ? name.slice(0, -1) : name;
   if (isIP(host)) return 'Links to a bare network address are off limits. Use the site’s name.';
   if (!host.includes('.') || /\.(localhost|local|internal|lan|home\.arpa)$/.test(host)) {
     return 'Links to this computer or a home network are off limits.';
@@ -99,6 +116,17 @@ export function linkProblem(url: URL): string | null {
     return `Factwright doesn’t read ${barred}: it turns software away, or its terms forbid it. Find the job on the employer’s own site, use a posting the user saved from their browser, or ask the user to paste it.`;
   }
   return null;
+}
+
+/**
+ * Why a POST can't be sent, or null when it can. The tools send only one: a search on a company's
+ * Workday site, which takes it no other way, for a job's title. Everything else they read, they GET.
+ */
+export function postProblem(url: URL, body: string): string | null {
+  const search =
+    WORKDAY_SITE.test(url.hostname) && WORKDAY_SEARCH.test(url.pathname) && !url.search;
+  if (!search) return 'Factwright sends a POST only to a company’s Workday site’s own job search.';
+  return body.length > MAX_POST_BYTES ? 'That search is too long to send.' : null;
 }
 
 /**
@@ -119,23 +147,28 @@ export function decoded(response: IncomingMessage): NodeJS.ReadableStream | null
   }
 }
 
-/** One GET, without following redirects, given up at the deadline. */
-function get(
+/** One request, a GET unless it has something to send, without following redirects, given up at the deadline. */
+function send(
   url: URL,
   json: boolean,
   deadline: number,
   maxBytes: number,
+  sending?: string,
 ): Promise<{ status: number; location?: string; body: string }> {
   return new Promise((resolve, reject) => {
     const outgoing = request(
       url,
       {
-        method: 'GET',
+        method: sending === undefined ? 'GET' : 'POST',
         lookup: publicLookup,
         headers: {
           'user-agent': 'Mozilla/5.0 (Factwright; saves job postings for the user)',
           accept: json ? 'application/json' : 'text/html,application/xhtml+xml,*/*;q=0.8',
           'accept-encoding': 'gzip, deflate',
+          ...(sending !== undefined && {
+            'content-type': 'application/json',
+            'content-length': Buffer.byteLength(sending),
+          }),
         },
       },
       (response) => {
@@ -181,14 +214,15 @@ function get(
       Math.max(0, deadline - Date.now()),
     );
     outgoing.on('error', fail);
-    outgoing.end();
+    outgoing.end(sending);
   });
 }
 
 /**
  * Fetches a public https page or API, following up to five redirects and checking each one,
  * within a time and size limit, telling `onRedirect` each address a redirect sends it to before
- * it goes there. JSON answers come back parsed.
+ * it goes there. JSON answers come back parsed. With `sending`, it's the tools' one POST, which
+ * postProblem checks, and which follows no redirect.
  */
 export async function fetchPublic(
   address: string,
@@ -196,21 +230,23 @@ export async function fetchPublic(
   limitMs = TIME_LIMIT_MS,
   maxBytes = MAX_BYTES,
   onRedirect?: (url: string) => void,
+  sending?: string,
 ): Promise<unknown> {
   const deadline = Date.now() + Math.min(limitMs, TIME_LIMIT_MS);
   let url = new URL(address);
   for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
-    const problem = linkProblem(url);
+    const problem = linkProblem(url) ?? (sending === undefined ? null : postProblem(url, sending));
     if (problem) throw new FetchRefused(problem);
     if (hop > 0) onRedirect?.(url.href);
-    const answer = await get(url, json, deadline, maxBytes);
+    const answer = await send(url, json, deadline, maxBytes, sending);
     if (answer.location !== undefined) {
+      if (sending !== undefined) throw new FetchAnswered(url.hostname, answer.status);
       if (!answer.location) throw new Error(`${url.hostname} sent a redirect without an address`);
       url = new URL(answer.location, url);
       continue;
     }
     if (answer.status < 200 || answer.status >= 300) {
-      throw new Error(`${url.hostname} answered ${answer.status}`);
+      throw new FetchAnswered(url.hostname, answer.status);
     }
     return json ? JSON.parse(answer.body) : answer.body;
   }

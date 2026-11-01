@@ -155,6 +155,9 @@ const STREET_OR_POSTAL = new RegExp(
   'iu',
 );
 
+/** Whether words about a place read like a street or a postal code. */
+export const readsLikeStreet = (words: string) => STREET_OR_POSTAL.test(words);
+
 /** Throws when an answer about where the user lives looks like a street or a postal code. */
 function noStreet(input: Record<string, unknown>, keys: readonly string[]) {
   for (const key of keys) {

@@ -22,6 +22,15 @@ Notable changes to Factwright, newest first. The format follows [Keep a Changelo
 - A page in the app's window can't reach the web, whatever it does. A click on a link with Option or Alt held used to have the window download it itself. Now it opens in your browser, like any other link.
 
 ### Changed
+- **Find jobs reads what employers have open today, on far more systems.** A search hit is often closed, but it names an employer who hires for that work, so your Claude now reads that employer's own list.
+  - It reads a company's board on Recruitee, Workable, JazzHR, Paylocity, Workday and iCIMS, as well as Greenhouse, Lever, Ashby and Gem. Those are where hospitals, schools, banks and shops post. Big employers have thousands of jobs, so it lists only those with the titles you're after.
+  - SmartRecruiters and Oracle stay out, by their terms and documents, so a web search finds those employers' jobs instead.
+  - Workday comes from each employer's own job search, the one its careers page uses, once its robots.txt allows it. That search gets the job titles you're looking for and nothing else, one employer at a time. It isn't a documented service, so should it stop answering, Workday comes from the sitemap the employer's site publishes. iCIMS always does. Some big employers' Workday sitemaps stop at 100 jobs, and the list says when it may be partial.
+  - It reads a company's own careers site too: its robots.txt first, whose rules it follows, then its sitemap, then the job data on its postings. Each page shows on the task's card.
+  - It can search USAJOBS for federal jobs, and Workable's public job search across small and mid-size employers. USAJOBS gets only dates, as Factwright searches its feed on your computer. Workable gets the job titles and the place, and nothing else.
+  - For each kind of job, `searches/plan.md` keeps a list of employers with the link to each board and what the last read found, for you to read and change, so the next search can say what's new.
+  - The search report and its method say which source found what, so a poor source shows.
+  - The privacy policy lists these sources, and what the two searches get. It takes effect November 1, 2026.
 - **Find jobs reaches far more jobs, in any field.**
   - Company job boards now means the systems employers of every kind post to, such as Workday, iCIMS and Greenhouse, not mostly startups'.
   - Before searching, your Claude works out the job titles and places to try for your field, and keeps them in `searches/plan.md`.
@@ -31,7 +40,7 @@ Notable changes to Factwright, newest first. The format follows [Keep a Changelo
   - A first search starts on company job boards, and on Hacker News too for software, data and product work. Find jobs says Hacker News is mostly software jobs, and that a web search sees only some of LinkedIn's and Indeed's listings.
 - **Fit scores suit more kinds of work.** Stack is now Skills: the tools, methods, licenses and skills your facts prove. A job's industry counts only when the posting asks for it. In a job search, a fact you haven't confirmed yet counts in full, and the job says so, because finding a job claims nothing about you. Analyze job still counts it for half. A job that needs a license you don't have, or years in a field you've never worked in, is a long shot.
 - **Pay by the hour.** A search's focus takes pay as "$40 an hour", and a search counts an hourly wage as 2,080 hours a year.
-- Reading a posting's page now gives when it was posted and when it closes, when the page says, says when a Workday posting has closed, and reads iCIMS postings in full.
+- Reading a posting's page now gives when it was posted and when it closes, when the page says, says when a Workday posting has closed, and reads iCIMS postings in full. A posting on Recruitee or Workable reads from the system's public feed, without asking. A page whose job data is only a teaser, as USAJOBS's is, gives the page's text too.
 - Factwright's tools no longer try to read Indeed, GovernmentJobs or The Chronicle's job site, which turn software away or forbid it, as with LinkedIn. Their jobs can still show in search results, and you can save a posting from your own browser.
 - A run uses fewer requests of your plan: no prompt suggestions, and no session title.
 - The privacy policy has a part on ideas and the roadmap: what a suggestion keeps, that an email left with one is deleted once the idea is closed, that a vote is kept only as a one-way hash, and that your IP address only limits how often one address can suggest or vote, and isn't kept. It takes effect October 27, 2026.
