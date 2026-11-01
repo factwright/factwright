@@ -151,7 +151,8 @@ export const TEMPLATE_READS = ['list_templates', 'read_template'];
  * The tools that reach only fixed public job addresses: the applicant systems' postings and
  * boards, Hacker News's and USAJOBS's feeds, and Workable's job search. They send nothing but a
  * board's name, a posting's ID, a month, or to Workday's and Workable's searches a job's title and
- * place, never to a site a link names, so Claude may call them without asking too. save_posting otherwise saves only
+ * place. A link can name only a board, on those systems' own sites, so Claude may call them without
+ * asking too, and job_board's reads go on the task's card. save_posting otherwise saves only
  * what was read already.
  */
 export const PUBLIC_API_TOOLS = [
@@ -717,6 +718,7 @@ export function factwrightTools(deps: ToolDeps): McpTool[] {
             ...(deps.fetch && { fetch: deps.fetch }),
             ...(deps.now && { now: deps.now }),
             ...(call?.keep && { keep: call.keep }),
+            ...(call?.read && { onRead: call.read }),
           },
           titlesInput(input),
         ),

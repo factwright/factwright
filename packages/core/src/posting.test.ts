@@ -3,6 +3,8 @@ import {
   decodeEntities,
   htmlToText,
   jobPostingData,
+  jobPostingFields,
+  onFeedSite,
   postingRequests,
   postingSource,
   readPosting,
@@ -361,6 +363,30 @@ describe('reading a posting on Recruitee or Workable', () => {
     expect(postingSource(link).kind).toBe('page');
   });
 
+  it('reads a Recruitee link by its language too', () => {
+    expect(postingSource('https://bunq.recruitee.com/l/en/o/data-scientist-3')).toEqual({
+      kind: 'recruitee',
+      board: 'bunq',
+      id: 'data-scientist-3',
+    });
+  });
+
+  it('knows the feeds’ own sites', () => {
+    for (const site of [
+      'https://boards-api.greenhouse.io/x',
+      'https://api.lever.co/x',
+      'https://api.ashbyhq.com/x',
+      'https://api.gem.com/x',
+      'https://acme.recruitee.com/x',
+      'https://apply.workable.com/x',
+    ]) {
+      expect(onFeedSite(site), site).toBe(true);
+    }
+    for (const site of ['https://evil.example/x', 'https://greenhouse.io.evil.example/x']) {
+      expect(onFeedSite(site), site).toBe(false);
+    }
+  });
+
   it('takes a name that could change where its feed’s request goes as no feed at all', () => {
     for (const link of [
       'https://bunq.recruitee.com/o/..%2F..%2Fadmin',
@@ -379,6 +405,41 @@ describe('reading a posting on Recruitee or Workable', () => {
       expect(readPosting(recruitee, answer)).toBeNull();
       expect(readPosting(workable, answer)).toBeNull();
     }
+  });
+});
+
+describe('job data built to break a reader', () => {
+  const page = (more: unknown) =>
+    `<script type="application/ld+json">${JSON.stringify({
+      '@type': 'JobPosting',
+      title: 'Nurse',
+      description: 'Care for patients.',
+      ...(more as object),
+    })}</script>`;
+
+  it.each([
+    [{ baseSalary: { value: { minValue: { toString: 1 } } } }],
+    [{ baseSalary: { value: { minValue: [[[]]], maxValue: { valueOf: 1 } } } }],
+    [{ baseSalary: { value: { value: { toString: 1 } } } }],
+    [{ baseSalary: 'a lot' }],
+  ])('leaves out what isn’t an amount: %j', (more) => {
+    const data = jobPostingFields(page(more));
+    expect(data?.title).toBe('Nurse');
+    expect(data?.pay ?? '').not.toContain('[object');
+  });
+
+  it('reads an amount as it should', () => {
+    const value = { minValue: 40, maxValue: '50', unitText: 'HOUR' };
+    expect(jobPostingFields(page({ baseSalary: { currency: 'USD', value } }))?.pay).toBe(
+      '40–50 USD HOUR',
+    );
+    expect(
+      jobPostingData(page({ baseSalary: { currency: 'USD', value: { value: 45 } } })),
+    ).toContain('Pay: 45 USD');
+  });
+
+  it('spells out a title a site escaped twice', () => {
+    expect(jobPostingFields(page({ title: 'Sales &amp; Service' }))?.title).toBe('Sales & Service');
   });
 });
 

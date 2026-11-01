@@ -101,7 +101,9 @@ const OFF_LIMITS: readonly (readonly [RegExp, string])[] = [
 export function linkProblem(url: URL): string | null {
   if (url.protocol !== 'https:') return 'Only https links work.';
   if (url.username || url.password) return 'Links with a sign-in in them are off limits.';
-  const host = url.hostname.replace(/^\[|\]$/g, '').toLowerCase();
+  const name = url.hostname.replace(/^\[|\]$/g, '').toLowerCase();
+  // A name can end in a dot and mean the same site, so "indeed.com." is still Indeed.
+  const host = name.endsWith('.') ? name.slice(0, -1) : name;
   if (isIP(host)) return 'Links to a bare network address are off limits. Use the site’s name.';
   if (!host.includes('.') || /\.(localhost|local|internal|lan|home\.arpa)$/.test(host)) {
     return 'Links to this computer or a home network are off limits.';
@@ -117,8 +119,8 @@ export function linkProblem(url: URL): string | null {
 }
 
 /**
- * Why a POST can't be sent, or null when it can. The app sends only one: a search on a company's
- * Workday site, which takes it no other way, for a job's title. Everything else it reads, it GETs.
+ * Why a POST can't be sent, or null when it can. The tools send only one: a search on a company's
+ * Workday site, which takes it no other way, for a job's title. Everything else they read, they GET.
  */
 export function postProblem(url: URL, body: string): string | null {
   const search =
@@ -219,7 +221,7 @@ function send(
 /**
  * Fetches a public https page or API, following up to five redirects and checking each one,
  * within a time and size limit, telling `onRedirect` each address a redirect sends it to before
- * it goes there. JSON answers come back parsed. With `sending`, it's the app's one POST, which
+ * it goes there. JSON answers come back parsed. With `sending`, it's the tools' one POST, which
  * postProblem checks, and which follows no redirect.
  */
 export async function fetchPublic(

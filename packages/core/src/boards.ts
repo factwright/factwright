@@ -62,6 +62,14 @@ const BOARD_NAMES: Readonly<Record<BoardSource['kind'], string>> = {
   icims: 'iCIMS',
 };
 
+/**
+ * Whether a board's name can go in a request as it is. Most systems' names are checked as they're
+ * read, but these older four take what a link gives, and a name such as ".." would change the
+ * address, even encoded. job matching goes by them all the same, so they're checked before reading.
+ */
+export const boardNameIsSafe = ({ board }: BoardSource) =>
+  /^[\p{L}\p{N} ._-]{1,100}$/u.test(board) && !/^\.+$/.test(board);
+
 /** The applicant system's name, such as "Greenhouse". */
 export const boardSystem = (source: BoardSource) => BOARD_NAMES[source.kind];
 
@@ -210,12 +218,19 @@ export function boardPostingId(address: string): string | null {
       const query = url.searchParams.get('gh_jid') ?? url.searchParams.get('token');
       return query ?? url.pathname.match(/\/jobs\/(\d+)/)?.[1] ?? null;
     }
-    case 'recruitee':
-      return parts[0] === 'o' ? (parts[1] ?? null) : null;
+    case 'recruitee': {
+      // A posting's own link, as ".../o/nurse", or one by its language, as ".../l/en/o/nurse".
+      const at = parts.indexOf('o');
+      return at === 0 || at === 2 ? (parts[at + 1] ?? null) : null;
+    }
     case 'workable':
       return workablePostingId(address);
-    case 'jazzhr':
-      return parts[0] === 'apply' ? (parts[1] ?? null) : null;
+    case 'jazzhr': {
+      // ".../apply/<id>/<title>", and on some boards ".../apply/jobs/details/<id>".
+      if (parts[0] !== 'apply') return null;
+      if (parts[1] !== 'jobs') return parts[1] ?? null;
+      return parts[2] === 'details' ? (parts[3] ?? null) : null;
+    }
     case 'paylocity':
       return null;
     case 'workday':
@@ -235,7 +250,7 @@ export function boardPostingId(address: string): string | null {
 function workdayPostingPart(
   parts: readonly string[],
 ): { place: string | null; words: string; id: string } | null {
-  const job = parts.indexOf('job');
+  const job = parts.findIndex((part) => part === 'job' || part === 'details');
   if (job < 0) return null;
   const after = parts.slice(job + 1);
   const ends = after.indexOf('apply');
@@ -248,7 +263,7 @@ function workdayPostingPart(
   return { place: own.length > 1 ? (own.at(-2) ?? null) : null, words: posting.slice(0, mark), id };
 }
 
-/** A Paylocity posting's number, in a link to the posting, which doesn't name the company's board. */
+/** A Paylocity posting's number, in a link to it or its form, which don't name the company's board. */
 export function paylocityJobId(address: string): string | null {
   let url: URL;
   try {
@@ -257,10 +272,10 @@ export function paylocityJobId(address: string): string | null {
     return null;
   }
   if (url.hostname.toLowerCase() !== 'recruiting.paylocity.com') return null;
-  const [one, two, three, id] = segments(url);
-  return one?.toLowerCase() === 'recruiting' &&
-    two?.toLowerCase() === 'jobs' &&
-    three?.toLowerCase() === 'details' &&
+  const [one, two, three, id] = segments(url).map((part) => part.toLowerCase());
+  return one === 'recruiting' &&
+    two === 'jobs' &&
+    (three === 'details' || three === 'apply') &&
     id &&
     /^\d{1,12}$/.test(id)
     ? id
@@ -273,12 +288,12 @@ export const paylocityJobPage = (id: string) =>
 
 /** The company's board a Paylocity posting's page links to, or null for one that has closed. */
 export function paylocityBoardOf(html: string): BoardSource | null {
-  const marker = '/Recruiting/Jobs/All/';
-  const at = html.indexOf(marker);
-  if (at < 0) return null;
-  const board = html.slice(at + marker.length, at + marker.length + 36);
-  return GUID.test(board) ? { kind: 'paylocity', board } : null;
+  const board = /\/recruiting\/jobs\/all\/([0-9a-f-]{36})/i.exec(html)?.[1];
+  return board && GUID.test(board) ? { kind: 'paylocity', board } : null;
 }
+
+/** Whether a Paylocity page says the posting's gone, as its page for that does. */
+export const paylocitySaysGone = (html: string) => /\bjob not found\b/i.test(html);
 
 /**
  * A Workable posting's ID, its shortcode, which names it across Workable, the same on its
@@ -300,6 +315,37 @@ export function workablePostingId(address: string): string | null {
   const at = parts.indexOf('j');
   const id = at === 0 || at === 1 ? parts[at + 1] : undefined;
   return id && /^[A-Za-z0-9]{1,40}$/.test(id) ? id : null;
+}
+
+/**
+ * Whether an answer is a board's own list, with nothing on it, rather than an error, a page in the
+ * way, or a redesign. Only that says a board has no jobs, or that a posting has closed.
+ */
+export function boardAnswerEmpty(source: BoardSource, answer: unknown): boolean {
+  const none = (rows: unknown) => Array.isArray(rows) && rows.length === 0;
+  switch (source.kind) {
+    case 'greenhouse':
+    case 'ashby':
+    case 'workable':
+      return none(field(answer, 'jobs'));
+    case 'lever':
+    case 'gem':
+      return none(answer);
+    case 'recruitee':
+      return none(field(answer, 'offers'));
+    case 'jazzhr':
+      // Its pages name their parts for Resumator, its old name, empty boards' too.
+      return (
+        typeof answer === 'string' &&
+        answer.includes('resumator') &&
+        !answer.includes('list-group-item-heading')
+      );
+    case 'paylocity':
+      return typeof answer === 'string' && none(field(pageData(answer), 'Jobs'));
+    case 'workday':
+    case 'icims':
+      return false;
+  }
 }
 
 /**
@@ -389,22 +435,37 @@ function payRange(from: unknown, to: unknown, currency: unknown, period: unknown
 export function job(
   found: Partial<Omit<BoardJob, 'title' | 'link'>> & { title: string | null; link: string | null },
 ): BoardJob | null {
-  if (!found.title || !found.link) return null;
+  const title = listLine(found.title);
+  const link = httpsLink(found.link);
+  if (!title || !link) return null;
+  const company = listLine(found.company);
+  const note = listLine(found.note);
   return {
     id: found.id ?? null,
-    title: found.title,
-    location: found.location ?? null,
-    workplace: found.workplace ?? null,
-    team: found.team ?? null,
-    pay: found.pay ?? null,
-    link: found.link,
+    title,
+    location: listLine(found.location),
+    workplace: listLine(found.workplace),
+    team: listLine(found.team),
+    pay: listLine(found.pay),
+    link,
     posted: found.posted ?? null,
     text: found.text ?? '',
-    ...(found.company && { company: found.company }),
+    ...(company && { company }),
     ...(found.closes && { closes: found.closes }),
     ...(found.changed && { changed: found.changed }),
-    ...(found.note && { note: found.note }),
+    ...(note && { note }),
   };
+}
+
+/** A link as https, or null for anything else a feed could put there. */
+function httpsLink(address: string | null): string | null {
+  if (!address) return null;
+  try {
+    const url = new URL(address);
+    return url.protocol === 'https:' && !url.username && !url.password ? url.href : null;
+  } catch {
+    return null;
+  }
 }
 
 /** Words for a line of a list, such as a title, which a hostile feed could fill with anything. */
@@ -540,18 +601,18 @@ export function readWorkdaySearch(
     const url = linkOn(source.site ?? '', `https://${source.site}/${source.board}${path}`);
     const posting = url && workdayPostingPart(segments(url));
     if (!url || !posting) return [];
-    const words = listLine(text(field(each, 'locationsText')));
+    const words = text(field(each, 'locationsText'));
     // It gives "5 Locations" for a job in several, and the link names the first.
     const others = Number(words?.match(/^(\d{1,4}) Locations$/)?.[1] ?? 0);
     const first = posting.place && linkWords(posting.place);
     return (
       job({
         id: posting.id,
-        title: listLine(text(field(each, 'title'))),
+        title: text(field(each, 'title')),
         location: others > 1 && first ? `${first}, and ${others - 1} more` : words,
         workplace: workplace(field(each, 'remoteType')),
         link: url.href,
-        note: listLine(text(field(each, 'postedOn'))) ?? undefined,
+        note: text(field(each, 'postedOn')) ?? undefined,
       }) ?? []
     );
   });
@@ -680,8 +741,8 @@ export function readBoard(source: BoardSource, answer: unknown): BoardJob[] {
         return (
           job({
             id: slug,
-            title: listLine(text(field(each, 'title'))),
-            location: listLine(text(field(each, 'location'))),
+            title: text(field(each, 'title')),
+            location: text(field(each, 'location')),
             workplace:
               field(each, 'remote') === true
                 ? 'Remote'
@@ -690,7 +751,7 @@ export function readBoard(source: BoardSource, answer: unknown): BoardJob[] {
                   : field(each, 'on_site') === true
                     ? 'On-site'
                     : null,
-            team: listLine(text(field(each, 'department'))),
+            team: text(field(each, 'department')),
             pay: payRange(
               field(salary, 'min'),
               field(salary, 'max'),
@@ -718,10 +779,10 @@ export function readBoard(source: BoardSource, answer: unknown): BoardJob[] {
         return (
           job({
             id: code,
-            title: listLine(text(field(each, 'title'))),
+            title: text(field(each, 'title')),
             location: listLine(place),
             workplace: field(each, 'telecommuting') === true ? 'Remote' : null,
-            team: listLine(text(field(each, 'department'))),
+            team: text(field(each, 'department')),
             link:
               code &&
               `https://apply.workable.com/${encodeURIComponent(source.board)}/j/${encodeURIComponent(code)}/`,
@@ -747,11 +808,11 @@ export function readBoard(source: BoardSource, answer: unknown): BoardJob[] {
         return (
           job({
             id: posting,
-            title: listLine(text(field(each, 'JobTitle'))),
+            title: text(field(each, 'JobTitle')),
             company,
             location: listLine(city || text(field(each, 'LocationName'))),
             workplace: field(each, 'IsRemote') === true ? 'Remote' : null,
-            team: listLine(text(field(each, 'HiringDepartment'))),
+            team: text(field(each, 'HiringDepartment')),
             link: paylocityJobPage(posting),
             posted: day(field(each, 'PublishedDate')),
             text: htmlToText(text(field(each, 'Description')) ?? ''),

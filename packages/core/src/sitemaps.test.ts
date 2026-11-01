@@ -112,10 +112,10 @@ describe('robotsAllow', () => {
     expect(robotsAllow(ukg, '/ACME/JobBoardView/')).toBe(false);
   });
 
-  it('reads rules built to take long as asking it to stay out, and leaves a huge link unread', () => {
+  it('reads rules past any real file’s as asking it to stay out, and leaves a huge link unread', () => {
     for (const hostile of [
-      rules(...Array.from({ length: 301 }, (_, i) => `Disallow: /${i}`)),
-      rules(...Array.from({ length: 10 }, (_, i) => `Allow: /${'*a'.repeat(150)}${i}`)),
+      rules(...Array.from({ length: 1_001 }, (_, i) => `Disallow: /${i}`)),
+      rules(...Array.from({ length: 10 }, (_, i) => `Allow: /${'*a'.repeat(300)}${i}`)),
       rules(`Allow: /${'a'.repeat(1_001)}`),
     ]) {
       expect(robotsAllow(hostile, '/jobs/1')).toBe(false);
@@ -123,13 +123,45 @@ describe('robotsAllow', () => {
     expect(robotsAllow(NO_ROBOTS, `/${'a'.repeat(1_000)}`)).toBe(false);
   });
 
+  it('follows a file as long as real ones are', () => {
+    const long = rules(...Array.from({ length: 450 }, (_, i) => `Disallow: /private/${i}/`));
+    expect(robotsAllow(long, '/jobs/1')).toBe(true);
+    expect(robotsAllow(long, '/private/449/x')).toBe(false);
+  });
+
+  it.each([
+    // RFC 9309's own examples, and what real files hold. Rule, path, whether it's barred.
+    ['Disallow: /foo/bar/ツ', '/foo/bar/%E3%83%84', true],
+    ['Disallow: /foo/bar/%E3%83%84', '/foo/bar/%E3%83%84', true],
+    ['Disallow: /foo/bar/%62%61%7A', '/foo/bar/baz', true],
+    ['Disallow: /foo/bar/baz', '/foo/bar/%62%61%7A', true],
+    ['Disallow: /~admin/', '/%7Eadmin/x', true],
+    ['Disallow: /%7Eadmin/', '/~admin/x', true],
+    ['Disallow: /a%2Fb', '/a/b', false],
+    ['Disallow: /a%2fb', '/a%2Fb', true],
+    [
+      'Disallow: /for-providers/Create New Resource',
+      '/for-providers/Create%20New%20Resource',
+      true,
+    ],
+    ['Disallow: /stellen/münchen/', '/stellen/m%C3%BCnchen/1', true],
+  ])('%s, for %s', (rule, path, barred) => {
+    expect(robotsAllow(rules(rule), path)).toBe(!barred);
+  });
+
+  it('lets in a path a rule allows, however it’s written', () => {
+    const robots = rules('Disallow: /', 'Allow: /stellen/münchen/');
+    expect(robotsAllow(robots, '/stellen/m%C3%BCnchen/1')).toBe(true);
+    expect(robotsAllow(robots, '/stellen/berlin/1')).toBe(false);
+  });
+
   it('takes no longer for the longest rules it follows', () => {
     const hostile = rules(
-      ...Array.from({ length: 300 }, (_, i) => `Disallow: /${'*a'.repeat(3)}b${i}`),
+      ...Array.from({ length: 1_000 }, (_, i) => `Disallow: /${'*a'.repeat(2)}b${i}`),
     );
     expect(robotsAllow(hostile, '/jobs/1')).toBe(true);
     const started = Date.now();
-    for (let i = 0; i < 50; i++) robotsAllow(hostile, `/${'a'.repeat(990)}`);
+    for (let i = 0; i < 15; i++) robotsAllow(hostile, `/${'a'.repeat(990)}`);
     expect(Date.now() - started).toBeLessThan(2_000);
   });
 });
@@ -167,6 +199,13 @@ describe('readSitemap', () => {
       index: true,
       links: [{ link: 'https://acme.example/jobs.xml', changed: '2026-11-01' }],
     });
+  });
+
+  it('leaves out a link too long to be real', () => {
+    const long = `https://a.example/${'a'.repeat(2_100)}`;
+    expect(readSitemap(`<loc>${long}</loc><loc>https://a.example/1</loc>`).links).toEqual([
+      { link: 'https://a.example/1', changed: null },
+    ]);
   });
 
   it('finds nothing in an answer that isn’t a sitemap, or stops short', () => {

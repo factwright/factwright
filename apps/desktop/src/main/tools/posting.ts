@@ -5,6 +5,7 @@ import {
   JOB_EXTRAS,
   localDate,
   normalizeUrl,
+  onFeedSite,
   type Posting,
   postingRequests,
   postingSource,
@@ -107,6 +108,18 @@ async function readFrom(url: string, fetch: Fetch, feedsOnly: boolean): Promise<
   return readPosting(page, await fetch(page.url, false));
 }
 
+/**
+ * Stops a read of an applicant system's feed that a redirect would take off that system's own sites,
+ * as that read needs no OK from the user because it reaches nowhere else.
+ */
+const staysOnFeeds = (deps: FetchDeps): FetchDeps => ({
+  ...deps,
+  onRedirect: (to) => {
+    if (!onFeedSite(to)) throw new Error(`it sent the request on to ${new URL(to).hostname}`);
+    deps.onRedirect?.(to);
+  },
+});
+
 /** Whether a link is to one posting on an applicant system with a public feed for postings. */
 export const isFeedPosting = (url: string) => postingSource(url).kind !== 'page';
 
@@ -168,7 +181,8 @@ export async function readLink(
   if (!linkProblem(parsed)) deps.onRead?.(parsed.href);
   let page: Posting | null;
   try {
-    const fetch = fetchInTime({ ...deps, ...(deps.onRead && { onRedirect: deps.onRead }) });
+    const fetching = { ...deps, ...(deps.onRead && { onRedirect: deps.onRead }) };
+    const fetch = fetchInTime(deps.feedsOnly ? staysOnFeeds(fetching) : fetching);
     page = await readFrom(parsed.href, fetch, deps.feedsOnly);
   } catch (error) {
     return error instanceof FetchRefused
@@ -343,7 +357,7 @@ export async function savePosting(
       return `Nothing read from ${parsed.href} yet. Read it with read_page first, then save it.`;
     }
     try {
-      posting = await readFrom(parsed.href, fetchInTime(deps), true);
+      posting = await readFrom(parsed.href, fetchInTime(staysOnFeeds(deps)), true);
     } catch (error) {
       return error instanceof FetchRefused
         ? `Not saved: ${reasonOf(error)}`

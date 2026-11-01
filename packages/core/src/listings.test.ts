@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   isRemotePlace,
+  placeFits,
   readUsajobs,
   readWorkableSearch,
   usajobsRequest,
@@ -160,6 +161,9 @@ describe('workableSearchRequest', () => {
     expect(workableSearchRequest('PMO', 'remote', 'a=b')).toBe(
       'https://jobs.workable.com/api/v1/jobs?query=PMO&workplace=remote&pageToken=a%3Db',
     );
+    expect(workableSearchRequest('PMO', 'Remote, United States')).toBe(
+      'https://jobs.workable.com/api/v1/jobs?query=PMO&workplace=remote&location=United%20States',
+    );
   });
 
   it.each([
@@ -171,6 +175,30 @@ describe('workableSearchRequest', () => {
     ['', false],
   ])('%s is remote: %s', (place, remote) => {
     expect(isRemotePlace(place)).toBe(remote);
+  });
+});
+
+describe('placeFits', () => {
+  it.each([
+    ['Columbus, Ohio', 'Columbus, Ohio', true],
+    ['Columbus, OH', 'Columbus, Ohio', true],
+    ['Columbus Ohio', 'Columbus, Ohio', true],
+    ['columbus', 'Columbus, Ohio', true],
+    ['Columbus, Georgia', 'Columbus, Ohio', false],
+    ['OH', 'Kaneohe, Hawaii', false],
+    ['OH', 'Columbus, Ohio', true],
+    ['Washington DC', 'Washington, District of Columbia', true],
+    ['Washington, DC', 'Washington, District of Columbia', true],
+    ['Austin TX', 'Austin, Texas', true],
+    ['Columbus, Ohio', 'Columbus, Georgia; Cleveland, Ohio', false],
+    ['Columbus, Ohio', 'Cleveland, Ohio; Columbus, Ohio', true],
+    ['remote', 'Anywhere in the U.S. (remote job)', true],
+    ['remote, United States', 'Anywhere in the U.S. (remote job)', true],
+    ['remote', 'Columbus, Ohio', false],
+    ['', 'Columbus, Ohio', true],
+    ['London', 'Columbus, Ohio', false],
+  ])('%s, for %s', (place, places, fits) => {
+    expect(placeFits(place, places)).toBe(fits);
   });
 });
 

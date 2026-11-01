@@ -1,4 +1,5 @@
 import { type BoardJob, job, listLine } from './boards.ts';
+import { US_STATES } from './countries.ts';
 import { htmlToText } from './posting.ts';
 
 /*
@@ -134,17 +135,46 @@ export function readUsajobs(
 /** Whether a place asks for remote work rather than somewhere. */
 export const isRemotePlace = (place: string) => /^(fully )?remote\b/i.test(place.trim());
 
+/** Where remote work is asked for from, as "United States" in "remote, United States". */
+const remoteFrom = (place: string) =>
+  place
+    .trim()
+    .replace(/^(fully )?remote\b/i, '')
+    .replace(/^[\s,:-]+/, '');
+
+const placeWords = (text: string) => text.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? [];
+
+/**
+ * Whether a listing's places, between ";" marks, fit the place asked for: remote, or one place with
+ * all its words, whole, so "OH" isn't in "Kaneohe", and a state's letters stand for its name, so
+ * "Columbus, OH" and "Columbus Ohio" fit "Columbus, Ohio", and "Columbus, Georgia" doesn't.
+ */
+export function placeFits(place: string, places: string): boolean {
+  if (!place.trim()) return true;
+  if (isRemotePlace(place)) return /\bremote\b/i.test(places);
+  const wanted = placeWords(place).map((word) => {
+    const state = word.length === 2 ? US_STATES[word.toUpperCase()] : undefined;
+    return { word, state: state ? placeWords(state) : null };
+  });
+  return places.split(';').some((each) => {
+    const have = new Set(placeWords(each));
+    return wanted.every(
+      ({ word, state }) => have.has(word) || state?.every((part) => have.has(part)),
+    );
+  });
+}
+
 /**
  * Where Workable's public job search lists jobs for a title and a place. Those are all it's sent.
  * For remote work, its own filter for that takes the place's.
  */
 export function workableSearchRequest(title: string, place: string, next?: string): string {
   const part = encodeURIComponent;
-  const where = isRemotePlace(place)
-    ? '&workplace=remote'
-    : place
-      ? `&location=${part(place)}`
-      : '';
+  const from = isRemotePlace(place) ? remoteFrom(place) : place;
+  const where = [
+    isRemotePlace(place) ? '&workplace=remote' : '',
+    from ? `&location=${part(from)}` : '',
+  ].join('');
   const page = next ? `&pageToken=${part(next)}` : '';
   return `https://jobs.workable.com/api/v1/jobs?query=${part(title)}${where}${page}`;
 }

@@ -83,6 +83,17 @@ describe('linkProblem', () => {
     expect(linkProblem(new URL('https://notlinkedin.com/jobs'))).toBeNull();
   });
 
+  it.each([
+    'https://www.indeed.com./jobs',
+    'https://www.governmentjobs.com./careers',
+    'https://jobs.chronicle.com./jobs',
+    'https://www.linkedin.com./jobs',
+    'https://localhost./x',
+    'https://printer.local./x',
+  ])('sees through a final dot in %s', (address) => {
+    expect(linkProblem(new URL(address))).not.toBeNull();
+  });
+
   it('refuses links with a sign-in in them', () => {
     // Built rather than written out, so the secret scan doesn't take it for a real one.
     const url = new URL('https://acme.example/jobs');

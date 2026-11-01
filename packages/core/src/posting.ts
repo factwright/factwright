@@ -144,6 +144,13 @@ export function htmlToText(html: string): string {
     .trim();
 }
 
+/** The sites of the applicant systems' public feeds for postings. */
+const FEED_HOSTS =
+  /(^|\.)(greenhouse\.io|lever\.co|ashbyhq\.com|gem\.com|recruitee\.com|workable\.com)$/;
+
+/** Whether a feed for postings is still on an applicant system's own site, after a redirect. */
+export const onFeedSite = (address: string) => FEED_HOSTS.test(new URL(address).hostname);
+
 /** Which source to read a posting from, by its address. */
 export function postingSource(address: string): PostingSource {
   const url = new URL(address);
@@ -171,7 +178,7 @@ export function postingSource(address: string): PostingSource {
   const ashby = on(host === 'jobs.ashbyhq.com', /^\/([^/]+)\/([0-9a-f-]{36})/i);
   if (ashby?.[1] && ashby[2]) return { kind: 'ashby', board: ashby[1], id: ashby[2] };
   const recruiteeHost = /^([a-z0-9-]{1,63})\.recruitee\.com$/.exec(host)?.[1];
-  const recruitee = on(Boolean(recruiteeHost), /^\/o\/([\w-]{1,200})(?:[/?#]|$)/);
+  const recruitee = on(Boolean(recruiteeHost), /^\/(?:l\/[\w-]{1,20}\/)?o\/([\w-]{1,200})(?:\/|$)/);
   if (recruiteeHost && recruitee?.[1]) {
     return { kind: 'recruitee', board: recruiteeHost, id: recruitee[1] };
   }
@@ -551,11 +558,14 @@ export function jobPostingFields(html: string): JobPostingFields | null {
       .filter(Boolean)
       .join('; ');
     const salary = field(field(job, 'baseSalary'), 'value');
-    const amount = [field(salary, 'minValue'), field(salary, 'maxValue')]
-      .filter((value) => value !== undefined && value !== null)
+    // A page can put anything here, so only a number or some words count as an amount.
+    const money = (value: unknown) =>
+      typeof value === 'number' || typeof value === 'string' ? String(value) : null;
+    const amount = [money(field(salary, 'minValue')), money(field(salary, 'maxValue'))]
+      .filter(Boolean)
       .join('–');
     const pay = salary
-      ? `${amount || String(field(salary, 'value') ?? '')} ${text(field(field(job, 'baseSalary'), 'currency')) ?? ''} ${text(field(salary, 'unitText')) ?? ''}`
+      ? `${amount || (money(field(salary, 'value')) ?? '')} ${text(field(field(job, 'baseSalary'), 'currency')) ?? ''} ${text(field(salary, 'unitText')) ?? ''}`
           .replace(/\s+/g, ' ')
           .trim()
       : null;

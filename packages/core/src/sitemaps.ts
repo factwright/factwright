@@ -10,18 +10,21 @@ import { decodeEntities } from './posting.ts';
 const AGENT = 'factwright';
 /**
  * How long a rule can be, how many rules a site's robots.txt can have for Factwright, and how many
- * "*"s in all, so a file built to take long can't make every link slow to check. No real one comes
- * near these. One past them can't be followed in full, so it's read as asking software to stay out.
+ * "*"s in all, so a file built to take long can't make every link slow to check. The largest real
+ * ones have a few hundred rules. One past these can't be followed in full, so it's read as asking
+ * software to stay out.
  */
 const MAX_RULE = 1_000;
-const MAX_RULES = 300;
-const MAX_STARS = 1_000;
+const MAX_RULES = 1_000;
+const MAX_STARS = 2_000;
 /** A link's path and query longer than this goes unread. No real posting's comes near it. */
 const MAX_PATH = 1_000;
 /** The most sitemaps a robots.txt can name that are kept. */
 const MAX_NAMED = 100;
 /** The most links read from one sitemap, which the sitemaps protocol puts at 50,000. */
 const MAX_LINKS = 100_000;
+/** A link longer than this is left out of a sitemap's list. No real posting's comes near it. */
+const MAX_LINK = 2_000;
 
 interface RobotsRule {
   allow: boolean;
@@ -51,10 +54,31 @@ interface RobotsGroup {
   crawlDelay: number | null;
 }
 
+/**
+ * A path as RFC 9309 compares them: a percent-encoded character that needs no encoding spelled out,
+ * as "%7E" is "~", any other in capitals, and whatever else a link can't hold percent-encoded, as "ツ"
+ * is "%E3%83%84" and a space is "%20". It takes one pass, and leaves "*" and "$" as they are.
+ */
+function comparablePath(path: string): string {
+  return path
+    .replace(/%([0-9a-fA-F]{2})/g, (_, hex: string) => {
+      const char = String.fromCharCode(Number.parseInt(hex, 16));
+      return /[A-Za-z0-9._~-]/.test(char) ? char : `%${hex.toUpperCase()}`;
+    })
+    .replace(/[^\x21-\x7e]+/gu, (chars) => {
+      try {
+        return encodeURIComponent(chars);
+      } catch {
+        // A surrogate on its own, which no link can hold, so no link fits it.
+        return '%EF%BF%BD';
+      }
+    });
+}
+
 function robotsRule(allow: boolean, written: string): RobotsRule {
   const toEnd = written.endsWith('$');
-  const parts = (toEnd ? written.slice(0, -1) : written).split('*');
-  return { allow, length: written.length, parts, toEnd };
+  const path = comparablePath(toEnd ? written.slice(0, -1) : written);
+  return { allow, length: path.length + (toEnd ? 1 : 0), parts: path.split('*'), toEnd };
 }
 
 /** Everything off limits, as a rule. */
@@ -139,10 +163,11 @@ function fitsRule({ parts, toEnd }: RobotsRule, path: string): boolean {
  */
 export function robotsAllow(robots: Robots, path: string): boolean {
   if (path.length > MAX_PATH) return false;
+  const comparable = comparablePath(path);
   let longest = -1;
   let allowed = true;
   for (const rule of robots.rules) {
-    if (rule.length < longest || !fitsRule(rule, path)) continue;
+    if (rule.length < longest || !fitsRule(rule, comparable)) continue;
     if (rule.length > longest || rule.allow) allowed = rule.allow;
     longest = rule.length;
   }
@@ -181,7 +206,7 @@ export function readSitemap(xml: string): Sitemap {
     const from = rest.indexOf('<lastmod>');
     const to = from < 0 ? -1 : rest.indexOf('</lastmod>', from);
     const changed = to < 0 ? '' : tagText(rest.slice(from + 9, to));
-    const link = tagText(xml.slice(open + 5, close));
+    const link = close - open > MAX_LINK ? '' : tagText(xml.slice(open + 5, close));
     if (link) {
       links.push({
         link,
