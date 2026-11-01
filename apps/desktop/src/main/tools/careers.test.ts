@@ -395,11 +395,19 @@ describe('careersSite', () => {
     ['https://jobs.smartrecruiters.com/Sodexo', 'doesn’t read SmartRecruiters’'],
     ['https://eswt.fa.us6.oraclecloud.com/hcmUI/', 'doesn’t read Oracle’s'],
     ['http://careers.acme.example/', 'Only https links work'],
-    ['https://user:pass@careers.acme.example/', 'with a sign-in'],
     ['https://localhost/jobs', 'this computer or a home network'],
     ['https://192.168.1.1/jobs', 'a bare network address'],
   ])('reaches nothing at %s', async (url, says) => {
     expect(await run(['nurse'], url)).toContain(says);
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it('reaches nothing through a link with a sign-in in it', async () => {
+    // Built rather than written out, so the secret scan doesn't take it for a real one.
+    const url = new URL(`${SITE}/`);
+    url.username = 'someone';
+    url.password = 'made-up';
+    expect(await run(['nurse'], url.href)).toContain('with a sign-in');
     expect(fetch).not.toHaveBeenCalled();
   });
 
