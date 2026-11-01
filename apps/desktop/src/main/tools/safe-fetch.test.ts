@@ -139,7 +139,7 @@ describe('sites the tools don’t read', () => {
   });
 });
 
-describe('the one POST the app sends', () => {
+describe('the one POST the tools send', () => {
   const SEARCH = 'https://osu.wd1.myworkdayjobs.com/wday/cxs/osu/OSUCareers/jobs';
 
   it('goes only to a company’s Workday site’s own job search', () => {

@@ -30,7 +30,7 @@ export interface FetchDeps {
   /**
    * Fetches a public page or API within a time limit, in milliseconds, and a size limit, in
    * bytes, when it's given, telling `onRedirect` each address a redirect sends it to before it
-   * goes there. With `sending`, it's the one POST the app sends. Tests pass their own.
+   * goes there. With `sending`, it's the one POST the tools send. Tests pass their own.
    */
   fetch?: (
     url: string,

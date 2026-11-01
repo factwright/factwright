@@ -62,16 +62,17 @@ One web search brings about 10 results, most of them closed, and the same work g
 | Healthcare | The employers' systems above, where most hospitals post, and each hospital's own jobs site |
 | Nonprofits | `idealist.org` |
 
-**Read before you search.** Where a tool can read an employer's list, use it rather than searching for that employer. It's all the employer has open today, with no stale results:
-- **An employer on Greenhouse, Lever, Ashby, Gem, Recruitee, Workable, JazzHR, Paylocity, Workday or iCIMS:** call `job_board` with its board's link and `titles`, the plan's titles for this kind.
+**Read before you search.** Where a tool can read an employer's list, use it rather than searching for that employer. It's what the employer has open today, with no stale results. Call it once for each employer in a search, as calling again reads the same things:
+- **An employer on Greenhouse, Lever, Ashby, Gem, Recruitee, Workable, JazzHR, Paylocity, Workday or iCIMS:** call `job_board` with its board's link and `titles`, the plan's titles for this kind, the main ones first.
   - It lists only the jobs with those titles, and saves the rest in the file.
   - Greenhouse, Lever, Ashby, Gem, Recruitee and Workable save each posting in full. JazzHR, Paylocity, Workday and iCIMS list only what names it, so step 3 reads the ones that pass.
-  - Workday's own search gets the first 6 titles, so put the main ones first. Those titles are all it's sent, so never put anything about the user in them. It finds jobs by what they say too, which go in the file but not the list. So if a list comes back short, read the file for jobs with other titles.
-  - iCIMS lists what its sitemap names, by the words in each link, as does Workday when its search doesn't answer. When it says the list may be partial, also search that employer's name and the titles with its own host as `allowed_domains`.
-- **An employer with a careers site of its own:** call `careers_site` with its link and `titles`. It follows the site's robots.txt, and reads up to 12 postings a call. When it says it can't, because the site's robots.txt keeps it out, or its links don't name the job, search that employer instead, and don't try again.
+  - Workday's own search gets the first 6 titles. Those titles are all it's sent, so never put anything about the user in them. It finds jobs by what they say too, which go in the file but not the list. So if a list comes back short, read the file for jobs with other titles.
+  - iCIMS lists what its sitemap names, by the words in each link, as does Workday when its search doesn't answer.
+  - When it says "This may not be every open job", that employer has more than it read: search its name and the titles, once, with its own host as `allowed_domains`.
+- **An employer with a careers site of its own:** call `careers_site` with its link and `titles`. It follows the site's robots.txt, and reads up to 12 postings a call. Of the links it didn't read, read those whose words look like a fit with `read_page`, within step 3's limit. When it says it can't read the site, because its robots.txt keeps it out, or its links don't name the job, search that employer instead.
 - **An employer on SmartRecruiters or Oracle:** search it, by its name and the titles, with its own host as `allowed_domains`, such as `acme.fa.us2.oraclecloud.com`. Their terms and documents keep software from reading their whole boards, so no tool does, and web search is the way to their jobs.
-- **Federal work, or an open search across small employers:** call `job_listings` once for each place:
-  - `usajobs`, with every title at once, as each call takes half a minute. Only for someone who could take a federal job.
+- **Federal work, or an open search across small employers:** call `job_listings` for each city in the plan, or for remote work, and their country:
+  - `usajobs`, with every title at once, as each call can take half a minute. Only for someone who could take a federal job.
   - `workable`, with up to 5 main titles. It lists small and mid-size employers across every field, in many countries.
 
 **Then search for what the boards can't show:**
@@ -81,7 +82,7 @@ One web search brings about 10 results, most of them closed, and the same work g
 - **For remote work, searches come first,** as they name the employers: one title at a time, such as `PMO manager remote`, then read the boards of the employers they name.
 - A result is a lead, not a job. What web search finds can be months old, and most of it may have closed, which step 3 sorts out.
 
-**Keep it in proportion.** For each place in the input, for each kind of job, read up to 15 employers' boards or sites, call `job_listings` up to 2 times, and run up to about 15 searches. Stop sooner once 2 boards or searches in a row bring nothing new, or about 40 listings have passed the filters, and go on to step 2. Say what you left unread in `method`.
+**Keep it in proportion.** For each source in the input, such as company job boards, and each kind of job: read up to 15 employers' boards or sites, call `job_listings` up to 4 times in all, and run up to about 15 searches, employers included. Read the plan's employers whatever the last one found, and drop a title from the searches once it brings nothing new. Stop sooner once about 40 listings have passed the filters, and go on to step 2. Say what you left unread in `method`.
 
 ## 1. Collect
 - Folder, lowercase with hyphens, which the tools save into:
@@ -98,9 +99,10 @@ One web search brings about 10 results, most of them closed, and the same work g
     - The search results are the source: a mix of postings, and results pages whose snippets name a few jobs. Save their titles, companies, links and snippets in `listings.md` in the folder.
     - Each job is then looked for on the employer's own site in step 3.
   - **Company job boards:** read the plan's employers' boards and sites, as step 0 says, each into its own file in the folder. Then search the plan's titles and places with its domains, and save those results in `listings.md`, with each one's employer. Check each opening in step 3.
-  - **A company's board on any of the systems step 0 names:** call `job_board` with the board's link, and `titles` when it's a big employer's and the search is for some kinds of job. It saves the board as one file and lists its jobs.
+  - **A company's board on any of the systems step 0 names:** call `job_board` with the board's link and `titles`: the plan's, or with no plan, criteria.md's roles. It saves the board as one file and lists its jobs.
   - **A company's name:** find its careers page or job board with a plain web search, then read it as a link.
-  - **Anything else** (a careers page, a job site's public listings): read it with `read_page`, reading only what the source needs. Never sign in anywhere for a search.
+  - **A company's own careers page:** call `careers_site` with its link and `titles`, as above. Where that can't read it, read the page with `read_page`.
+  - **Anything else** (a job site's public listings): read it with `read_page`, reading only what the source needs. Never sign in anywhere for a search.
 - Count as you go, each job once by its link, for the funnel: listings in the source → pass the location filter → pass every filter → still open or not known to have closed → ranked. Keep count by source too, for the report: each board, site or listing search by name, and web search as one, with how many it read, how many passed, and how many were ranked.
 
 ## 2. Filter
@@ -126,12 +128,12 @@ For each listing that passed:
   - A job it lists only among the user's other jobs at the company is another job, unless you can tell it's the same posting, such as by its link or a title written another way. Then give its id too.
 - Confirm it's still open, and get the fine print on where it's worked, pay, schedule, and what kind of employer it is:
   - **A job a board already listed:** its listing says it's open today. For its fine print, read what `job_board` saved, where it saved the posting in full. Otherwise read the job's link with `read_page`. Note related roles as "also: <role>".
-  - **A posting from a search, on any system `job_board` reads:** call `job_board` with the posting's link and the plan's titles. It says whether the posting is still open, and lists what else the employer has with those titles. Where it can't tell, as a sitemap can leave jobs out, it says so: read the posting.
+  - **A posting from a search, on any system `job_board` reads:** where this search has read that employer's board, look for it there. Otherwise call `job_board` with the posting's link and `titles`, the plan's or criteria.md's roles, and don't call it again for that employer. It says whether the posting is still open, and lists what else the employer has with those titles. Where it can't tell, it says so: read the posting.
   - **Anywhere else:** a web search often finds the posting on an applicant system. Otherwise, read the posting with `read_page`. It gives `Posted:` and `Closes:` lines when the page has them, and says when a Workday posting has closed.
     - **Closed:** the tool says it has closed, it answered 404 or 410, the page says it's closed or filled, or its closing date has passed. Leave it out, and count it as closed in `skipped` and the funnel.
     - **Old:** posted more than 60 days ago with no closing date. It may still be open, as some employers keep hiring for the same job, so say how old it is in its flags.
   - **When a posting has closed,** it still names an employer who hires for this work, which is often the best thing a search finds. Read what it has open now, once for each employer, and add it to the plan's list:
-    - on any system `job_board` reads, the same call lists what's open now, by the plan's titles
+    - on any system `job_board` reads, that one call lists what's open now, by those titles
     - on a careers site of its own, `careers_site`
     - anywhere else, search that employer's name and the titles, with its own host as `allowed_domains`
 
@@ -140,7 +142,7 @@ For each listing that passed:
   - **A listing from LinkedIn or Indeed:** look for it on the employer's own site, by searching the company and the title with the employers' systems as `allowed_domains`, then read it as above.
   - **Never opened:** LinkedIn, Indeed, `governmentjobs.com` and `jobs.chronicle.com`. Their terms forbid software reading them, or they refuse it. What search results show of them can still be listed.
   - When the posting and the source disagree, the posting wins. Note the conflict in its flags.
-- **Stop at about 15 more searches and 40 pages read in this step,** the best fits first. Anything left is a job you can't confirm.
+- **Stop at about 15 more searches, 10 more boards and 40 pages read in this step,** the best fits first. Anything left is a job you can't confirm.
 - **A job you can't confirm stays in the ranking.** It may be the one they want, and they can check it in a click. This covers a page that's refused, comes back empty or times out, and a listing you can't find on the employer's site. Score it from what you know, with parts that add up to at most 61, and start its flags with "Couldn't confirm it's still open", and why, or its `note` for a long shot. Give its link as `posting` only when the link is to that one job, not a results page. A listing that shows too little to score, such as a title with no employer, stays out, counted in `skipped`.
 - Score with the criteria.md rubric, against facts/ only. With more than one kind of job, score the role against the job's kind, and keep which kind it is. An older criteria.md may call the Skills row Stack, and say "domain included" in its Work row: read them as the rubric below does.
   - Without a rubric, use: work 40 (how much of the job's core work the facts prove, its industry counting only when the posting asks for it) · role 25 (how well the level and shape fit what the user wants) · skills 20 (overlap with the tools, methods, licenses and skills the facts prove) · reqs 15 (full marks unless a hard requirement isn't met: years, degree, license or certification).
@@ -152,6 +154,7 @@ For each listing that passed:
 - Tiers: **Strong** ≥ 75 · **Good** 62–74 · **Worth a look** 50–61. Below 50 goes to long shots.
 - With more than ~15 jobs to verify, split this step across subagents, ~8 jobs each, all at once. Give each one:
   - `searches/criteria.md`, all of `facts/`, and the search's folder
+  - its share of this step's limits, and which employers' boards were read already
   - its jobs: company, role, link and HN id, and with more than one kind of job, each job's kind, to score its role against
   - to call `find_job` for each job first, flag the ones the user has seen before, and return the id it names for each as `job`
   - all of this step's rules for checking and scoring a job

@@ -726,7 +726,7 @@ export function factwrightTools(deps: ToolDeps): McpTool[] {
     {
       name: 'careers_site',
       description:
-        'Reads a company’s own careers site, one not on a system job_board reads: its robots.txt first, whose rules it follows, then its sitemap, then the JobPosting data on up to 12 postings whose links have the titles you give. Saves them word for word as one file in a job search’s folder, and lists them with the links it didn’t get to. The user sees each page it reads. Never for job boards that collect other employers’ jobs. It says when a site’s robots.txt keeps it out, or its links don’t name the job.',
+        'Reads a company’s own careers site, one not on a system job_board reads: its robots.txt first, whose rules it follows, then its sitemap, then the JobPosting data on up to 12 postings whose links have the titles you give. Saves them word for word as one file in a job search’s folder, and lists them with the links it didn’t read, which are in the file, for read_page. Calling again for the same titles reads the same ones. The user sees each page it reads. Never for job boards that collect other employers’ jobs. It says when a site’s robots.txt keeps it out, or its links don’t name the job.',
       inputSchema: {
         type: 'object',
         properties: {
