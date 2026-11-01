@@ -48,7 +48,7 @@ The app passes the rest with each run:
   - `build_resume`: a job's resume, or a starting resume, built as a PDF or Word file, with how it fits the pages
   - `build_cover_letter`: a job's cover letter, built as a PDF or Word file in its resume's template, with how it fits one page
   - `build_projects_page`: a job's Projects page, built as a PDF or Word file in its resume's template, with how it fits one page
-  - `job_board`: the open jobs on a company's board on Greenhouse, Lever, Ashby, Gem, Recruitee, Workable, JazzHR, Paylocity, Workday or iCIMS, narrowed by job title, and whether a posting is still open
+  - `job_board`: the open jobs on a company's board on Greenhouse, Lever, Ashby, Gem, Recruitee, Workable, JazzHR, Paylocity, Workday or iCIMS, narrowed by job title, and whether a posting is still open. SmartRecruiters and Oracle stay out, by their terms and documents
   - `careers_site`: a company's own careers site, through its sitemap and the job data on its pages, once its robots.txt allows it
   - `job_listings`: public listings across employers, from USAJOBS's feed and Workable's job search, for job titles and a place
   - `hn_jobs`: every post in Hacker News's "Who is hiring?" thread, saved word for word
