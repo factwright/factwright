@@ -100,7 +100,15 @@ describe('who has each part’s tool', () => {
         .sort(),
     ).toEqual(['about_you', 'requested_changes', 'save_contact']);
     for (const part of PROFILE_PARTS) {
-      for (const name of ['read_page', 'read_posting', 'job_board', 'hn_jobs', 'save_about_you']) {
+      for (const name of [
+        'read_page',
+        'read_posting',
+        'job_board',
+        'careers_site',
+        'job_listings',
+        'hn_jobs',
+        'save_about_you',
+      ]) {
         expect(runHasTool(`part:${part}`, name), `${part}: ${name}`).toBe(false);
       }
     }

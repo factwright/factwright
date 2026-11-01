@@ -10,6 +10,7 @@ import type { TemplateLibrary } from '../resume/templates.ts';
 import { aboutYouChanges, aboutYouText, SAVABLE_ANSWERS } from './about.ts';
 import { MAX_ANSWER, pastAnswers, saveAnswer } from './answers.ts';
 import { saveCallDoc } from './calls.ts';
+import { careersSite } from './careers.ts';
 import { requestedChanges } from './changes.ts';
 import {
   correctFact,
@@ -45,7 +46,7 @@ import {
 import { buildProjectsPage } from './projects.ts';
 import { buildResume } from './resume.ts';
 import { revisionFindings } from './revision.ts';
-import { hnJobs, jobBoard } from './search.ts';
+import { hnJobs, jobBoard, jobListings } from './search.ts';
 import { listTemplates, readTemplateFile, saveTemplate } from './templates.ts';
 
 export interface ToolDeps {
@@ -76,9 +77,27 @@ const SEARCH_FOLDER = {
   description: 'The job search’s folder name under searches/, such as 2026-11-hn-whos-hiring.',
 };
 
+/** The most titles one call narrows by, and the longest title. */
+const MAX_TITLES = 30;
+const MAX_TITLE = 100;
+
+/** Job titles to narrow a list by, or none. */
+function titlesInput(input: Record<string, unknown>): string[] {
+  const value = input.titles;
+  if (value === undefined || value === null) return [];
+  const list = Array.isArray(value) ? value : [value];
+  if (
+    list.length > MAX_TITLES ||
+    list.some((title) => typeof title !== 'string' || title.length > MAX_TITLE)
+  ) {
+    throw new Error(`Give up to ${MAX_TITLES} titles, each of ${MAX_TITLE} characters or fewer.`);
+  }
+  return list.map((title: string) => title.trim()).filter(Boolean);
+}
+
 /** What Factwright's tools tell Claude about themselves when it connects. */
 export const TOOLS_INSTRUCTIONS =
-  'Factwright’s tools work on the user’s job hunt: the jobs on file with everything saved for each, their status, notes and calls, what the user sent on applications and asked about a job, what they told Factwright about themselves, reading postings and web pages and saving postings word for word, reading whole job boards and Hacker News’s hiring thread, building resumes and cover letters, the resume templates, the job hunt’s logs of fit checks, salary checks and unmasked listings, and saving to the fact bank what the user answers when you ask them. Use them to read the tracker and the web, and to save answers, prep sheets and thank-you notes for calls, facts from the user’s answers, templates, rows in the logs, and resume and cover letter files.';
+  'Factwright’s tools work on the user’s job hunt: the jobs on file with everything saved for each, their status, notes and calls, what the user sent on applications and asked about a job, what they told Factwright about themselves, reading postings and web pages and saving postings word for word, reading whole job boards, careers sites, public job listings and Hacker News’s hiring thread, building resumes and cover letters, the resume templates, the job hunt’s logs of fit checks, salary checks and unmasked listings, and saving to the fact bank what the user answers when you ask them. Use them to read the tracker and the web, and to save answers, prep sheets and thank-you notes for calls, facts from the user’s answers, templates, rows in the logs, and resume and cover letter files.';
 
 /** The tools that never reach past this computer, so Claude may call them without asking. */
 export const LOCAL_TOOLS = [
@@ -129,18 +148,25 @@ export const TEMPLATE_TOOLS = ['save_template'];
 export const TEMPLATE_READS = ['list_templates', 'read_template'];
 
 /**
- * The tools that reach only fixed public job APIs: the applicant systems' postings and boards,
- * and Hacker News's. They send nothing but a board's name, a posting's ID or a month, never to
- * a site a link names, so Claude may call them without asking too. save_posting otherwise saves
- * only what was read already.
+ * The tools that reach only fixed public job addresses: the applicant systems' postings and
+ * boards, Hacker News's and USAJOBS's feeds, and Workable's job search. They send nothing but a
+ * board's name, a posting's ID, a month, or to that search a job's title and place, never to a
+ * site a link names, so Claude may call them without asking too. save_posting otherwise saves only
+ * what was read already.
  */
-export const PUBLIC_API_TOOLS = ['read_posting', 'save_posting', 'job_board', 'hn_jobs'];
+export const PUBLIC_API_TOOLS = [
+  'read_posting',
+  'save_posting',
+  'job_board',
+  'hn_jobs',
+  'job_listings',
+];
 
 /**
- * The tool that reads any public page: never LinkedIn's, nor anything on this computer or the
- * user's network. The task's card lists each page it read.
+ * The tools that read any public site: never LinkedIn's, nor anything on this computer or the
+ * user's network. The task's card lists each page they read.
  */
-export const WEB_TOOLS = ['read_page'];
+export const WEB_TOOLS = ['read_page', 'careers_site'];
 
 /**
  * What a run started with Update with Claude saves with, for each part: only that part's own tools,
@@ -362,7 +388,7 @@ export function factwrightTools(deps: ToolDeps): McpTool[] {
     {
       name: 'read_posting',
       description:
-        'Reads a job posting on Greenhouse, Lever, Ashby or Gem straight from the applicant system’s public feed, without asking the user. Then save it with save_posting. For a posting anywhere else, use read_page.',
+        'Reads a job posting on Greenhouse, Lever, Ashby, Gem, SmartRecruiters, Recruitee, Workable or Oracle straight from the applicant system’s public feed, without asking the user. Then save it with save_posting. For a posting anywhere else, use read_page.',
       inputSchema: {
         type: 'object',
         properties: { url: { type: 'string', description: 'The posting’s https link.' } },
@@ -380,7 +406,7 @@ export function factwrightTools(deps: ToolDeps): McpTool[] {
     {
       name: 'read_page',
       description:
-        'Reads any public web page as plain text: a posting on another site, a careers page, a company’s about or team page. Never LinkedIn’s. Read only what the task needs: the user sees each page you read. Use read_posting for postings on Greenhouse, Lever, Ashby or Gem. It gives Posted and Closes lines for a posting whose page has them. A posting read this way can then be saved with save_posting.',
+        'Reads any public web page as plain text: a posting on another site, a careers page, a company’s about or team page. Never LinkedIn’s. Read only what the task needs: the user sees each page you read. Use read_posting for postings on Greenhouse, Lever, Ashby, Gem, SmartRecruiters, Recruitee, Workable or Oracle. It gives Posted and Closes lines for a posting whose page has them. A posting read this way can then be saved with save_posting.',
       inputSchema: {
         type: 'object',
         properties: { url: { type: 'string', description: 'The page’s https link.' } },
@@ -622,7 +648,7 @@ export function factwrightTools(deps: ToolDeps): McpTool[] {
     {
       name: 'save_posting',
       description:
-        'Saves a job posting word for word as posting.md in the job’s folder, so it survives the link going dead: the posting the user saved from their browser for that link, which job_details names, LinkedIn’s included; what read_page or read_posting read from that link in this run; or a posting on Greenhouse, Lever, Ashby or Gem read from its feed. It reaches no other site. Use it for every posting with a link. A posting already saved in the folder is kept, unless the folder is another job’s, which it says. If it says the page needs a sign-in, ask the user to paste the posting.',
+        'Saves a job posting word for word as posting.md in the job’s folder, so it survives the link going dead: the posting the user saved from their browser for that link, which job_details names, LinkedIn’s included; what read_page or read_posting read from that link in this run; or a posting on Greenhouse, Lever, Ashby, Gem, SmartRecruiters, Recruitee, Workable or Oracle read from its feed. It reaches no other site. Use it for every posting with a link. A posting already saved in the folder is kept, unless the folder is another job’s, which it says. If it says the page needs a sign-in, ask the user to paste the posting.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -660,16 +686,22 @@ export function factwrightTools(deps: ToolDeps): McpTool[] {
     {
       name: 'job_board',
       description:
-        'Reads every open job on a company’s board on Greenhouse, Lever, Ashby or Gem, and saves them word for word as one file in a job search’s folder. Lists each job with where, pay, when it was posted, its link, and the line it starts on in the file. Give a link to the board, or to any posting on it: for a posting, it also says whether it’s still open. Use it to see all a company is hiring for, and to check that a job is still open.',
+        'Reads a company’s board on Greenhouse, Lever, Ashby, Gem, SmartRecruiters, Recruitee, Workable, JazzHR, Paylocity, Oracle, Workday or iCIMS, and saves what it gives as one file in a job search’s folder. Lists each job with where, pay and when it was posted when the system says, its link, and the line it starts on in the file. Give a link to the board, or to any posting on it: for a posting, it also says whether it’s still open. Give titles to list only the jobs that fit, which a big employer needs: they stay on this computer. Greenhouse, Lever, Ashby, Gem, Recruitee and Workable save each posting word for word. The rest save what lists it, so confirm a job and read its full text with read_page or read_posting. Workday and iCIMS come from their sitemaps, by the words in each link, and it says when that list may be partial. Use it to see all a company is hiring for, and to check that a job is still open.',
       inputSchema: {
         type: 'object',
         properties: {
           url: {
             type: 'string',
             description:
-              'A link to the company’s board or one of its postings, such as https://jobs.ashbyhq.com/acme.',
+              'A link to the company’s board or one of its postings, such as https://jobs.ashbyhq.com/acme or https://acme.wd1.myworkdayjobs.com/Careers.',
           },
           folder: SEARCH_FOLDER,
+          titles: {
+            type: 'array',
+            items: { type: 'string' },
+            description:
+              'Job titles to narrow the list to, such as ["registered nurse", "RN", "charge nurse"]. A job fits when its title has all the words of one of them, in any order. Without it, every job is listed.',
+          },
         },
         required: ['url', 'folder'],
         additionalProperties: false,
@@ -677,12 +709,99 @@ export function factwrightTools(deps: ToolDeps): McpTool[] {
       // It reads a public API and saves what it read, replacing the last copy.
       annotations: { readOnlyHint: false, idempotentHint: true, openWorldHint: true },
       run: async (input, call) =>
-        jobBoard(textInput(input, 'url', true) ?? '', textInput(input, 'folder', true) ?? '', {
-          workspace: deps.workspace,
-          ...(deps.fetch && { fetch: deps.fetch }),
-          ...(deps.now && { now: deps.now }),
-          ...(call?.keep && { keep: call.keep }),
-        }),
+        jobBoard(
+          textInput(input, 'url', true) ?? '',
+          textInput(input, 'folder', true) ?? '',
+          {
+            workspace: deps.workspace,
+            ...(deps.fetch && { fetch: deps.fetch }),
+            ...(deps.now && { now: deps.now }),
+            ...(call?.keep && { keep: call.keep }),
+          },
+          titlesInput(input),
+        ),
+    },
+    {
+      name: 'careers_site',
+      description:
+        'Reads a company’s own careers site, one not on a system job_board reads: its robots.txt first, whose rules it follows, then its sitemap, then the JobPosting data on up to 12 postings whose links have the titles you give. Saves them word for word as one file in a job search’s folder, and lists them with the links it didn’t get to. The user sees each page it reads. Never for job boards that collect other employers’ jobs. It says when a site’s robots.txt keeps it out, or its links don’t name the job.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          url: {
+            type: 'string',
+            description: 'Any link on the careers site, such as https://careers.acme.com/jobs.',
+          },
+          titles: {
+            type: 'array',
+            items: { type: 'string' },
+            description:
+              'The job titles to look for in the site’s links, such as ["registered nurse", "RN"]. A link fits when it has all the words of one of them, in any order.',
+          },
+          folder: SEARCH_FOLDER,
+        },
+        required: ['url', 'titles', 'folder'],
+        additionalProperties: false,
+      },
+      // It reads public pages and saves what it read, replacing the last copy.
+      annotations: { readOnlyHint: false, idempotentHint: true, openWorldHint: true },
+      run: async (input, call) =>
+        careersSite(
+          textInput(input, 'url', true) ?? '',
+          titlesInput(input),
+          textInput(input, 'folder', true) ?? '',
+          {
+            workspace: deps.workspace,
+            ...(deps.fetch && { fetch: deps.fetch }),
+            ...(deps.now && { now: deps.now }),
+            ...(call?.keep && { keep: call.keep }),
+            ...(call?.read && { onRead: call.read }),
+          },
+        ),
+    },
+    {
+      name: 'job_listings',
+      description:
+        'Searches a public source of jobs across many employers, for job titles and a place, and saves what it finds as one file in a job search’s folder. usajobs is federal jobs: its feed is read here, a week at a time, and only days go to it, so give every title in one call, as each call takes half a minute. workable is Workable’s own job search across its employers, which gets each title, up to 5, and the place, and nothing else. Lists each job with who’s hiring, where, pay, when it was posted, and its link.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          source: { type: 'string', enum: ['usajobs', 'workable'], description: 'Which source.' },
+          titles: {
+            type: 'array',
+            items: { type: 'string' },
+            description:
+              'Job titles, such as ["registered nurse", "RN"]. Nothing about the user. A job fits when its title has all the words of one of them, in any order.',
+          },
+          place: {
+            type: 'string',
+            description:
+              'A city and state, such as Columbus, Ohio, or remote. Never a street or a postal code. Without it, anywhere.',
+          },
+          folder: SEARCH_FOLDER,
+        },
+        required: ['source', 'titles', 'folder'],
+        additionalProperties: false,
+      },
+      annotations: { readOnlyHint: false, idempotentHint: true, openWorldHint: true },
+      run: async (input, call) => {
+        const source = textInput(input, 'source', true);
+        if (source !== 'usajobs' && source !== 'workable') {
+          throw new Error('The source is usajobs or workable.');
+        }
+        return jobListings(
+          source,
+          titlesInput(input),
+          textInput(input, 'place', false) ?? '',
+          textInput(input, 'folder', true) ?? '',
+          {
+            workspace: deps.workspace,
+            ...(deps.fetch && { fetch: deps.fetch }),
+            ...(deps.now && { now: deps.now }),
+            ...(call?.keep && { keep: call.keep }),
+          },
+        );
+      },
     },
     {
       name: 'hn_jobs',

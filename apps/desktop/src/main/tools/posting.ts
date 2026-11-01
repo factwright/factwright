@@ -43,7 +43,7 @@ export interface FetchDeps {
   onRedirect?: ((url: string) => void) | undefined;
 }
 
-type Fetch = (url: string, json: boolean, maxBytes?: number) => Promise<unknown>;
+export type Fetch = (url: string, json: boolean, maxBytes?: number) => Promise<unknown>;
 
 /** A fetch that gives up once the tool's time is spent, however many requests it took. */
 export function fetchInTime(deps: FetchDeps): Fetch {
@@ -98,7 +98,7 @@ async function readFrom(url: string, fetch: Fetch, feedsOnly: boolean): Promise<
   return readPosting(page, await fetch(page.url, false));
 }
 
-/** Whether a link is to one posting on Greenhouse, Lever, Ashby or Gem. */
+/** Whether a link is to one posting on an applicant system with a public feed for postings. */
 export const isFeedPosting = (url: string) => postingSource(url).kind !== 'page';
 
 /** How long what was read stays on hand for saving, and how many reads at most. */
@@ -137,8 +137,8 @@ export interface ReadDeps extends FetchDeps {
 
 /**
  * Reads a posting or a page as plain text for Claude, and keeps it on hand for save_posting.
- * With `feedsOnly`, as read_posting, it reads only postings on Greenhouse, Lever, Ashby and Gem,
- * through their public feeds and never the page the link names, so it needs no OK from the user.
+ * With `feedsOnly`, as read_posting, it reads only postings on the applicant systems with public
+ * feeds for them, and never the page the link names, so it needs no OK from the user.
  * Otherwise, as read_page, it reads any public page.
  */
 export async function readLink(
@@ -152,7 +152,7 @@ export async function readLink(
     return `“${url}” isn’t a link.`;
   }
   if (deps.feedsOnly && !isFeedPosting(parsed.href)) {
-    return `${parsed.href} isn’t a posting on Greenhouse, Lever, Ashby or Gem. Read it with read_page, or use job_board for a company’s whole board.`;
+    return `${parsed.href} isn’t a posting on Greenhouse, Lever, Ashby, Gem, SmartRecruiters, Recruitee, Workable or Oracle. Read it with read_page, or use job_board for a company’s whole board.`;
   }
   // Each page a request goes to is noted for the task's card before it goes, so one that fails,
   // or redirects somewhere else, is noted too. One the fetch turns away outright never goes.
@@ -286,9 +286,8 @@ export async function savedFromBrowser(
 /**
  * Saves a job posting word for word as posting.md in the job's folder, so it survives the link
  * going dead. It saves the posting the user saved from their browser for the link, what read_page
- * or read_posting read from the link in this run, or reads a posting on Greenhouse, Lever, Ashby
- * or Gem from its public feed. It never reaches another
- * site, so it needs no OK from the user. A posting already saved there is kept, since it's the
+ * or read_posting read from the link in this run, or reads a posting on an applicant system with a
+ * public feed for postings. It never reaches another site, so it needs no OK from the user. A posting already saved there is kept, since it's the
  * one the user saw, unless the folder is another job's, which it says. Says, in words for Claude,
  * what happened.
  */

@@ -1192,7 +1192,7 @@ describe('read_posting', () => {
 
   it('sends any other link to read_page, without fetching it', async () => {
     expect(await tool('read_posting').run({ url: 'https://acme.example/jobs/staff' })).toBe(
-      'https://acme.example/jobs/staff isn’t a posting on Greenhouse, Lever, Ashby or Gem. Read it with read_page, or use job_board for a company’s whole board.',
+      'https://acme.example/jobs/staff isn’t a posting on Greenhouse, Lever, Ashby, Gem, SmartRecruiters, Recruitee, Workable or Oracle. Read it with read_page, or use job_board for a company’s whole board.',
     );
     expect(fetch).not.toHaveBeenCalled();
   });

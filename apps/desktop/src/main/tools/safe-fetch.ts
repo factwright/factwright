@@ -14,6 +14,16 @@ const MAX_REDIRECTS = 5;
 /** A fetch the app won't make, with the reason in plain words. */
 export class FetchRefused extends Error {}
 
+/** A site's answer that wasn't a page, such as a 404, with its status. */
+export class FetchAnswered extends Error {
+  readonly status: number;
+
+  constructor(host: string, status: number) {
+    super(`${host} answered ${status}`);
+    this.status = status;
+  }
+}
+
 function ipv4Parts(address: string): number[] | null {
   const parts = address.split('.').map(Number);
   return parts.length === 4 &&
@@ -210,7 +220,7 @@ export async function fetchPublic(
       continue;
     }
     if (answer.status < 200 || answer.status >= 300) {
-      throw new Error(`${url.hostname} answered ${answer.status}`);
+      throw new FetchAnswered(url.hostname, answer.status);
     }
     return json ? JSON.parse(answer.body) : answer.body;
   }
