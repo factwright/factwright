@@ -171,9 +171,9 @@ export function postingSource(address: string): PostingSource {
   const ashby = on(host === 'jobs.ashbyhq.com', /^\/([^/]+)\/([0-9a-f-]{36})/i);
   if (ashby?.[1] && ashby[2]) return { kind: 'ashby', board: ashby[1], id: ashby[2] };
   const recruiteeHost = /^([a-z0-9-]{1,63})\.recruitee\.com$/.exec(host)?.[1];
-  const recruitee = on(Boolean(recruiteeHost), /^\/o\/([^/]+)/);
+  const recruitee = on(Boolean(recruiteeHost), /^\/o\/([\w-]{1,200})(?:[/?#]|$)/);
   if (recruiteeHost && recruitee?.[1]) {
-    return { kind: 'recruitee', board: recruiteeHost, id: decodeURIComponent(recruitee[1]) };
+    return { kind: 'recruitee', board: recruiteeHost, id: recruitee[1] };
   }
   const workable = on(host === 'apply.workable.com', /^\/([\w-]{1,100})\/j\/([A-Za-z0-9]{1,40})/);
   if (workable?.[1] && workable[2] && workable[1] !== 'j') {

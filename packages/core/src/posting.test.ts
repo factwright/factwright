@@ -361,15 +361,15 @@ describe('reading a posting on Recruitee or Workable', () => {
     expect(postingSource(link).kind).toBe('page');
   });
 
-  it('never lets a link change where its feed’s request goes', () => {
-    const encoded = postingSource('https://apply.workable.com/seeq/j/ABC');
-    expect(postingRequests(encoded)[0]?.url).toBe(
-      'https://apply.workable.com/api/v2/accounts/seeq/jobs/ABC',
-    );
-    const slug = postingSource('https://bunq.recruitee.com/o/..%2F..%2Fadmin');
-    expect(postingRequests(slug)[0]?.url).toBe(
-      'https://bunq.recruitee.com/api/offers/..%2F..%2Fadmin',
-    );
+  it('takes a name that could change where its feed’s request goes as no feed at all', () => {
+    for (const link of [
+      'https://bunq.recruitee.com/o/..%2F..%2Fadmin',
+      'https://bunq.recruitee.com/o/%E0%A4%A',
+      'https://apply.workable.com/seeq/j/AB%2F..%2FCD',
+      'https://apply.workable.com/..%2Fadmin/j/ABC',
+    ]) {
+      expect(postingSource(link).kind, link).toBe('page');
+    }
   });
 
   it('finds nothing in an empty or hostile answer', () => {

@@ -236,6 +236,8 @@ async function readWholeBoard(source: BoardSource, fetch: Fetch): Promise<BoardR
   return { jobs: readBoard(source, answer), partial: null };
 }
 
+const PAYLOCITY_HOST = 'recruiting.paylocity.com';
+
 /** The applicant systems job_board reads, for saying so. */
 const BOARD_SYSTEMS =
   'Greenhouse, Lever, Ashby, Gem, Recruitee, Workable, JazzHR, Paylocity, Workday or iCIMS';
@@ -278,17 +280,18 @@ export async function jobBoard(
     ? `the ${boardSystem(source)} board “${boardName(source)}”`
     : 'the Paylocity board';
   try {
+    // One time limit for it all, as a request's host is the board's, once that's known.
+    let host = source ? new URL(boardRequest(source)).hostname : PAYLOCITY_HOST;
+    const fetch = fetchInTime({ ...deps, onRedirect: (to) => staysOn(host)(to) });
     if (!source) {
       // A Paylocity posting's link names no company, but its page links to the company's board.
-      const fetch = fetchInTime({ ...deps, onRedirect: staysOn('recruiting.paylocity.com') });
       source = paylocityBoardOf(String(await fetch(paylocityJobPage(paylocityJob ?? ''), false)));
       if (!source) {
         return `The Paylocity posting at ${url} has closed, and its page no longer says which company it was.`;
       }
       board = `the Paylocity board “${source.board}”`;
+      host = PAYLOCITY_HOST;
     }
-    const host = new URL(boardRequest(source)).hostname;
-    const fetch = fetchInTime({ ...deps, onRedirect: staysOn(host) });
     read = await readWholeBoard(source, fetch);
   } catch (error) {
     if (error instanceof FetchRefused) return `Not read: ${reasonOf(error)}`;
