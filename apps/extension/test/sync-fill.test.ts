@@ -920,7 +920,13 @@ describe('what you did in a position, through sync', () => {
   it('knows a job’s kind from the job search that found it, as the app does', async () => {
     const { desktop, keys, client, engine } = await account();
     desktop.write('about-me/history.json', HISTORY);
-    desktop.write('about-me/kinds-of-job.json', KINDS);
+    desktop.write(
+      'about-me/kinds-of-job.json',
+      JSON.stringify({
+        first: { id: 'pmo', name: 'PMO' },
+        others: [{ id: 'strategy', name: 'Strategy', targetPay: '$210,000' }],
+      }),
+    );
     desktop.write('base/big-company-leader.json', saying(['Ran the PMO.']));
     desktop.write('base/strategy/big-company-leader.json', saying(['Set the strategy.']));
     desktop.write(
@@ -947,6 +953,7 @@ describe('what you did in a position, through sync', () => {
       url: SEARCHED,
       company: 'Harbor & Pine',
       role: 'Account Executive',
+      fields: [...ASK.fields, asked('What are your salary expectations?')],
     };
     const app = await answerAsk(form, desktop.deps);
     const synced = ok(await fillFor(client, keys).ask(form));
@@ -957,6 +964,8 @@ describe('what you did in a position, through sync', () => {
       'Set the strategy.',
       'From your Strategy starting resume',
     ]);
+    // Its pay box takes that kind's target too.
+    expect(synced.replies[2]?.text).toBe('$210,000');
   });
 
   it('leaves out your newest resume’s words, as the app does', async () => {

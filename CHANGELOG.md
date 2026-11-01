@@ -21,6 +21,7 @@ Notable changes to Factwright, newest first. The format follows [Keep a Changelo
 - The privacy policy has a part on ideas and the roadmap: what a suggestion keeps, that an email left with one is deleted once the idea is closed, that a vote is kept only as a one-way hash, and that your IP address only limits how often one address can suggest or vote, and isn't kept. It takes effect October 27, 2026.
 
 ### Fixed
+- Filling through sync takes a job's kind of job from the job search that found it, as the app does, so a form's pay box fills with that kind's target pay.
 - When your Claude Code is too old and Homebrew or WinGet installed it, Factwright gives the command that updates it, `brew upgrade claude-code` or `winget upgrade Anthropic.ClaudeCode`, with a button to copy it. On those installs, `claude update`, which it gave before, only names that command.
 
 ## 0.18.1 - 2026-10-27
