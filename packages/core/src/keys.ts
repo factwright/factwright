@@ -17,7 +17,7 @@ export function slug(text: string): string {
  * /\(.*?\)/g would take it. It's read in one pass, where that pattern reads to the end of the
  * line again for each "(" left open.
  */
-function withoutParentheticals(text: string): string {
+export function withoutParentheticals(text: string): string {
   return text.replace(/[^\n\r\u2028\u2029]+/g, (line) => {
     let kept = '';
     let at = 0;

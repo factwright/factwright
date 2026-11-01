@@ -97,16 +97,16 @@ const choosing = (field: PageField) => field.control === 'choice' || field.contr
 /**
  * The answers a field's menu offers: Factwright's answer for it, and any others on file it gave
  * with it, as the panel would fill them, each in the form's own words for the options it would
- * pick. None for a field that's left for you, a file, a box to tick, or a password. None for an
- * equal-opportunity question either, which keeps the panel's rules: Fill picks your answer among
- * its options, as you set it in Profile, and a menu that showed only where you set one would tell
- * the site you had.
+ * pick. None for a field that's left for you with nothing on file, a file, a box to tick, or a
+ * password. None for an equal-opportunity question either, which keeps the panel's rules: Fill
+ * picks your answer among its options, as you set it in Profile, and a menu that showed only where
+ * you set one would tell the site you had.
  */
 export function menuAnswers(field: PageField, reply: FieldReply | undefined): Offered[] {
-  if (!reply || reply.source === 'you' || reply.file || isEqualOpportunity(reply.kind)) return [];
+  if (!reply || reply.file || isEqualOpportunity(reply.kind)) return [];
   if (field.control === 'check' || field.control === 'file' || field.type === 'password') return [];
   const asked: FieldReply[] = [
-    reply,
+    ...(reply.source === 'you' ? [] : [reply]),
     ...(reply.others ?? []).map((other) => ({ kind: reply.kind, ...other })),
   ];
   const offered = asked.flatMap((each): Offered[] => {

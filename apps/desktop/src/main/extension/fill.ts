@@ -42,7 +42,7 @@ import type { AboutYou, AnswerChanges } from '../../shared/about.ts';
 import type { EditResult, JobChanges, RecordedAnswers, UndoneResult } from '../../shared/api.ts';
 import { kindsOf } from '../../shared/kinds.ts';
 import type { RunRequestAnswer } from '../../shared/runs.ts';
-import { resumeOnFile } from '../about/from-resume.ts';
+import { resumeOnFile, startingOnDisk } from '../about/from-resume.ts';
 
 /**
  * What Factwright answers the extension with as it fills an application form on this
@@ -166,7 +166,11 @@ async function fill(
   const about = deps.about.answers();
   const docs = job ? deps.jobs.docs(job.id) : null;
   const letter = readLetterText(docs?.letter);
-  const resume = await resumeOnFile(deps.workspace, job?.folder ?? null);
+  const kinds = kindsOf(about);
+  const [resume, starting] = await Promise.all([
+    resumeOnFile(deps.workspace, job?.folder ?? null),
+    startingOnDisk(deps.workspace, job, kinds),
+  ]);
   const [cv, coverLetter] = job
     ? await Promise.all([offer(deps, job, 'resume'), offer(deps, job, 'cover-letter')])
     : [null, null];
@@ -177,8 +181,9 @@ async function fill(
     authorization: about.authorization,
     start: about.start,
     relocate: about.relocate,
-    pay: payAskFor(job, kindsOf(about)),
+    pay: payAskFor(job, kinds),
     resume,
+    starting,
     history: deps.about.history(),
     job: job ? onFileJob(job) : null,
     sent: sentBefore(jobs),

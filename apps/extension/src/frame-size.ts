@@ -14,9 +14,12 @@ export const MENU_ROW = 56;
 export const MENU_SAVE = 92;
 export const MENU_FOOT = 8;
 
-/** The rows a menu has room for, and the most answers it holds, which scroll. */
+/**
+ * The rows a menu has room for, and the most answers it holds, which scroll: enough for what you
+ * did in a job, from its own resume, Profile and each kind of job's starting resume.
+ */
 export const MENU_ROWS_SHOWN = 2;
-export const MENU_ROWS = 4;
+export const MENU_ROWS = 8;
 
 /** The menu's height, with answers or without, and with an offer to save or without. */
 export const menuHeight = (answers: boolean, save: boolean): number =>

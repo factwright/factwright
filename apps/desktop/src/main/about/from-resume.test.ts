@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { resumeDetails } from '@factwright/core';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { contactFromResume, newestResume, resumeOnFile } from './from-resume.ts';
+import { contactFromResume, newestResume, resumeOnFile, startingOnDisk } from './from-resume.ts';
 
 let workspace: string;
 
@@ -71,6 +71,58 @@ describe('what the resumes say of you', () => {
       from: 'newest',
       name: 'Ana Base',
     });
+  });
+
+  it('reads the starting resumes of the job’s kind of job, a file at a time by its name', async () => {
+    const said = (text: string) => ({
+      ...resume('Ana Ruiz'),
+      experience: [
+        {
+          title: 'Senior Product Manager',
+          company: 'Tidewater Analytics',
+          start: '2021',
+          end: 'Present',
+          bullet_groups: [{ bullets: [{ text }] }],
+        },
+      ],
+    });
+    write(join(workspace, 'base', 'startup-leader.json'), said('First kind, startups.'), 9);
+    write(join(workspace, 'base', 'big-company-leader.json'), said('First kind, big ones.'), 1);
+    write(
+      join(workspace, 'base', 'big-company-leader (Sam’s Mac, Oct 12).json'),
+      said('Sync’s copy of one two devices changed.'),
+      5,
+    );
+    write(join(workspace, 'base', 'broken.json'), '{"name": ', 9);
+    write(join(workspace, 'base', 'strategy', 'startup-leader.json'), said('Strategy’s.'), 2);
+    const kinds = [
+      { id: 'pmo', name: 'PMO' },
+      { id: 'strategy', name: 'Strategy' },
+    ];
+    const linesIn = async (job: { kind: string | null; kindFound: string | null } | null) =>
+      (await startingOnDisk(workspace, job, kinds)).map(({ kind, ofJob, positions }) => [
+        kind,
+        ofJob,
+        positions.flatMap(({ lines }) => lines),
+      ]);
+    expect(await linesIn({ kind: 'pmo', kindFound: null })).toEqual([
+      ['PMO', true, ['First kind, big ones.', 'First kind, startups.']],
+    ]);
+    expect(await linesIn({ kind: null, kindFound: 'strategy' })).toEqual([
+      ['Strategy', true, ['Strategy’s.']],
+    ]);
+    // Nothing says which, so it's each kind's, and none of them the job's.
+    expect(await linesIn(null)).toEqual([
+      ['PMO', false, ['First kind, big ones.', 'First kind, startups.']],
+      ['Strategy', false, ['Strategy’s.']],
+    ]);
+    // A kind with no starting resumes yet says nothing.
+    expect(
+      await startingOnDisk(workspace, { kind: 'data', kindFound: null }, [
+        ...kinds,
+        { id: 'data', name: 'Data' },
+      ]),
+    ).toEqual([{ kind: 'Data', ofJob: true, positions: [] }]);
   });
 
   it('says where you work now, your schools, skills and other sections', () => {
