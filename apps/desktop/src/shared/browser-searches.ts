@@ -1,5 +1,6 @@
 import type { AboutYou } from './about.ts';
 import { kindsOf } from './kinds.ts';
+import { joinPlaces } from './places.ts';
 
 /** Where each site keeps its own search. */
 const LINKEDIN = 'https://www.linkedin.com/jobs/search/';
@@ -9,6 +10,14 @@ const GOVERNMENT_JOBS = 'https://www.governmentjobs.com/jobs';
 /** How many of a kind's job titles, and how many cities, get searches of their own. */
 export const MOST_TITLES = 5;
 export const MOST_CITIES = 3;
+
+/**
+ * How much of a title or place goes in an address, so that it stays under the 2,081 characters
+ * Windows opens, even where each letter takes nine to encode.
+ */
+const MOST_IN_ADDRESS = 100;
+
+const UNITED_STATES = 'United States';
 
 /** One site a search opens on, and its address there. */
 export interface SearchLink {
@@ -53,30 +62,38 @@ function distinct(texts: readonly string[]): string[] {
   return [...kept.values()];
 }
 
-/**
- * A time zone, which Profile says "Remote from" can be: "Central European time", "EST". ET, CT, MT
- * and PT are left out, as they're also places, such as Hartford, CT.
- */
-const TIME_ZONE = /\b(?:time|timezones?|hours?|utc|gmt|[ecmp][sd]t|ces?t|bst)\b/i;
 /** The words before the area: "anywhere in the", "remote from". */
 const LEAD_IN =
-  /^(?:remote(?:ly)?\b[\s,:-]*)?(?:(?:anywhere|from|in|within|across)\s+)*(?:the\s+)?/i;
-/** After the first area, and anything else that isn't one: "or Canada", "only". */
-const AFTER_AREA = /\s+(?:or|and)\s.*$|\s*[/&;(].*$|\s+only\b.*$|[\s.,:!]+$/i;
-const NO_AREA = /^(?:anywhere|everywhere|world|worldwide|global|globally)?$/i;
-const UNITED_STATES = /^(?:u\.?\s?s\.?(?:\s?a\.?)?|united states(?: of america)?|america)$/i;
+  /^(?:remote(?:ly)?\b[\s,:(-]*)?(?:(?:anywhere|any|from|in|within|across|near)[\s,:-]+)*(?:the\s+)?/i;
+/** The United States, however it's said, whatever follows: "US only", "USA, no sponsorship". */
+const THE_US =
+  /^(?:continental\s+)?(?:u\.?\s?s\.?(?:\s?a\.?)?|united states(?: of america)?|america)(?![\p{L}\p{N}])/iu;
+/**
+ * A time zone, which Profile says "Remote from" can be: "Central European time", "EST". ET, CT, MT
+ * and PT count only on their own, as they're also places, such as Hartford, CT.
+ */
+const TIME_ZONE =
+  /\b(?:time|timezones?|hours?|utc|gmt|[ecmp][sd]t|ces?t|bst|eest|eet|ist|jst|kst|sgt|aest|aedt)\b|^(?:eastern|central|mountain|pacific|et|ct|mt|pt)$/i;
+/** What's after the first area: "or Canada", "/Canada", "only". In lowercase, as OR is Oregon. */
+const AFTER_AREA = /\s+or\s.*$|\s*[/&;(].*$|[\s-]+(?:only|based)\b.*$/;
+const NO_AREA =
+  /^(?:any|anywhere|everywhere|world|worldwide|global|globally|international|internationally)?$/i;
+/** What a place doesn't have, so it's a sentence, whose words aren't for a location box. */
+const NOT_A_PLACE =
+  /\d|(?:^|[\s,])(?:i|my|we|and|but|not|no|except|with|without|can|need|must|if|home)(?=[\s,]|$)/i;
 
 /**
- * The area a site's location box can look in, from what "Remote from" says, or nothing when it
- * names no place: "anywhere in the US" looks in the United States, and a time zone looks nowhere
- * in particular.
+ * The area a site's location box can look in, from what "Remote from" says, or nothing unless it
+ * reads as a place: "anywhere in the US" looks in the United States, and a time zone or a sentence
+ * looks with no location at all.
  */
 export function remoteArea(remoteFrom: string): string {
-  const said = oneLine(remoteFrom);
+  const said = oneLine(remoteFrom).replace(LEAD_IN, '');
+  if (THE_US.test(said)) return UNITED_STATES;
   if (TIME_ZONE.test(said)) return '';
-  const area = said.replace(LEAD_IN, '').replace(AFTER_AREA, '');
-  if (NO_AREA.test(area)) return '';
-  return UNITED_STATES.test(area) ? 'United States' : area;
+  const area = said.replace(AFTER_AREA, '').replace(/[\s.,:;!?)-]+$/, '');
+  const placeLike = area.length <= 60 && area.split(' ').length <= 4 && !NOT_A_PLACE.test(area);
+  return placeLike && !NO_AREA.test(area) ? area : '';
 }
 
 /** The places to look, remote first, and whether it has cities past as many as get searches. */
@@ -84,7 +101,7 @@ function placesFor({ workplaces, remoteFrom, places }: AboutYou): {
   places: Place[];
   cut: boolean;
 } {
-  const named = distinct(places);
+  const named = joinPlaces(distinct(places));
   // "Remote" typed as a city means the same as picking it.
   const isRemote = (place: string) => /^remote\b/i.test(place);
   const cities = named.filter((place) => !isRemote(place));
@@ -104,8 +121,11 @@ function placesFor({ workplaces, remoteFrom, places }: AboutYou): {
  * %20, which reads as a space in any address, where + does so only as a form sends it.
  */
 function address(page: string, words: Readonly<Record<string, string>>): string {
-  const kept = Object.entries(words).filter(([, value]) => value);
-  return `${page}?${new URLSearchParams(kept).toString().replaceAll('+', '%20')}`;
+  const query = new URLSearchParams();
+  for (const [word, value] of Object.entries(words)) {
+    if (value) query.set(word, value.slice(0, MOST_IN_ADDRESS));
+  }
+  return `${page}?${query.toString().replaceAll('+', '%20')}`;
 }
 
 function linksFor(title: string, place: Place, publicWork: boolean): SearchLink[] {
@@ -123,17 +143,17 @@ function linksFor(title: string, place: Place, publicWork: boolean): SearchLink[
     },
     {
       site: 'Indeed',
-      // It takes Remote as a place. Posted in the past 7 days.
+      // It takes Remote as a place, across its site, in place of an area. Posted in the past 7 days.
       url: address(INDEED, { q: title, l: remote ? 'Remote' : location, fromage: '7' }),
     },
   ];
   if (publicWork) {
     links.push({
       site: 'GovernmentJobs',
-      // Its location box takes cities and states, and it has no filter for remote work.
+      // It has no filter for remote work, and looks across the country with no location.
       url: address(GOVERNMENT_JOBS, {
         keyword: remote ? `${title} remote` : title,
-        location: remote ? '' : location,
+        location: location === UNITED_STATES ? '' : location,
       }),
     });
   }

@@ -29,7 +29,7 @@ import {
 } from '../shared/runs.ts';
 import styles from './App.module.css';
 import { AppearanceDialog } from './AppearanceDialog.tsx';
-import { GetStarted } from './about/GetStarted.tsx';
+import { GetStarted, STEPS } from './about/GetStarted.tsx';
 import { ProfilePage } from './about/ProfilePage.tsx';
 import { needsGettingStarted, useProfile } from './about/useProfile.ts';
 import {
@@ -119,6 +119,13 @@ const keptView = () =>
   viewNow(readPref<JobView | null>('jobs.view', null, isView));
 
 /** The app's window: the top bar, the sidebar, the jobs and their details, and Claude's panel. */
+/** Puts focus back on the page the user is on, once what held it has gone. */
+const focusCurrentPage = () =>
+  requestAnimationFrame(() => {
+    if (document.activeElement !== document.body) return;
+    document.querySelector<HTMLElement>('nav[aria-label="Main"] [aria-current="page"]')?.focus();
+  });
+
 export function App({ api }: { api: FactwrightApi }) {
   const { status, recheck } = useClaudeStatus(api);
   const setup = useSetupCheck(api);
@@ -904,8 +911,17 @@ export function App({ api }: { api: FactwrightApi }) {
           kinds={kinds}
           fields={profile ? kindsOf(profile.answers).flatMap((kind) => kind.fields) : []}
           searches={profile ? browserSearches(profile.answers) : []}
+          profileName={gettingStarted ? 'Get started' : 'Profile'}
           onOpenExtension={() => setExtensionOver(true)}
-          onOpenProfile={() => setPicked('profile')}
+          onOpenProfile={() => {
+            // Getting started goes to the step that asks for titles, which is open from then on.
+            if (profile && gettingStarted) {
+              const step = STEPS.indexOf('What you want');
+              about.update({ step, reached: Math.max(profile.answers.reached, step) });
+            }
+            setPicked('profile');
+            focusCurrentPage();
+          }}
           onStart={(sources) => startRun({ skill: SEARCH_SKILL, sources })}
           onClose={() => setDialog(null)}
         />
@@ -977,14 +993,8 @@ export function App({ api }: { api: FactwrightApi }) {
           onChanged={profiles.reload}
           onClose={() => {
             setDialog(null);
-            // Removing down to one profile takes away what opened the dialog, so focus goes back
-            // to the page the user is on.
-            requestAnimationFrame(() => {
-              if (document.activeElement !== document.body) return;
-              document
-                .querySelector<HTMLElement>('nav[aria-label="Main"] [aria-current="page"]')
-                ?.focus();
-            });
+            // Removing down to one profile takes away what opened the dialog.
+            focusCurrentPage();
           }}
         />
       )}

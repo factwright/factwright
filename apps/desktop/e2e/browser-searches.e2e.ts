@@ -1,19 +1,28 @@
 import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { createServer } from 'node:http';
+import type { AddressInfo } from 'node:net';
 import { join } from 'node:path';
 import { expect, test } from '@playwright/test';
 import { type Opened, openApp } from './app.ts';
 import { newDataFolder } from './workspace.ts';
 
-/** What the app's main process noted: links it sent to the browser, and what it asked for. */
+/** The links the app's main process sent to the browser. */
 interface Noted {
   opened: string[];
-  asked: string[];
 }
 
 let dataDir: string;
 let opened: Opened;
 
+// A site of the test's own, to see what the window can reach.
+const heard: string[] = [];
+const site = createServer((request, response) => {
+  heard.push(request.url ?? '');
+  response.end('A page');
+});
+
 test.beforeAll(async () => {
+  await new Promise<void>((listening) => site.listen(0, '127.0.0.1', listening));
   dataDir = newDataFolder();
   const about = join(dataDir, 'workspace', 'about-me');
   mkdirSync(about);
@@ -34,30 +43,32 @@ test.beforeAll(async () => {
 test.afterAll(async () => {
   await opened?.app.close();
   rmSync(dataDir, { recursive: true, force: true });
+  await new Promise((closed) => site.close(closed));
 });
 
 // These sites are never opened from code, here or anywhere: the test goes by each link's text, and
 // stops at the point the app would hand it to the browser.
 test('opens a ready-made search in the user’s own browser, and fetches none itself', async () => {
   const { app, window } = opened;
-  await app.evaluate(({ BrowserWindow, shell }) => {
+  // Should the app ever ask for one of these sites, it goes no further, and the test says so.
+  const asked: string[] = [];
+  await window.route(/linkedin\.com|indeed\.com|governmentjobs\.com/i, (route) => {
+    asked.push(route.request().url());
+    return route.abort();
+  });
+  await app.evaluate(({ BrowserWindow, session, shell }) => {
     const noted = globalThis as unknown as Noted;
     noted.opened = [];
-    noted.asked = [];
     // The browser stays closed: a link that leaves the app lands here.
     shell.openExternal = async (url: string) => {
       noted.opened.push(url);
     };
-    const main = BrowserWindow.getAllWindows()[0];
-    main?.webContents.session.webRequest.onBeforeRequest((details, done) => {
-      noted.asked.push(details.url);
-      done({});
-    });
+    // Should a download ever get this far, no window asks where to save it.
+    session.defaultSession.on('will-download', (event) => event.preventDefault());
     // As small as the window goes.
-    main?.setSize(900, 600);
+    BrowserWindow.getAllWindows()[0]?.setSize(900, 600);
   });
   const sentToBrowser = () => app.evaluate(() => (globalThis as unknown as Noted).opened);
-  const asked = () => app.evaluate(() => (globalThis as unknown as Noted).asked);
   const page = window.url();
 
   await window.getByRole('button', { name: 'Find jobs' }).click();
@@ -83,6 +94,8 @@ test('opens a ready-made search in the user’s own browser, and fetches none it
 
   // Each goes where any outside link goes, with its address as it reads.
   const inTheCity = dialog.getByRole('list', { name: 'Columbus, OH' });
+  const onSite = (name: string) =>
+    inTheCity.getByRole('link', { name: `Registered Nurse, Columbus, OH, on ${name}` });
   const addresses: [string, string][] = [
     [
       'LinkedIn',
@@ -94,28 +107,82 @@ test('opens a ready-made search in the user’s own browser, and fetches none it
       'https://www.governmentjobs.com/jobs?keyword=Registered%20Nurse&location=Columbus%2C%20OH',
     ],
   ];
-  for (const [site] of addresses) {
-    await inTheCity
-      .getByRole('link', { name: `Registered Nurse, Columbus, OH, on ${site}` })
-      .click();
-  }
+  for (const [name] of addresses) await onSite(name).click();
   await expect.poll(sentToBrowser).toEqual(addresses.map(([, address]) => address));
+
+  // With Alt or Option held, which means "download this" to Chromium, it goes the same way.
+  const indeed = addresses[1]?.[1] ?? '';
+  await onSite('Indeed').click({ modifiers: ['Alt'] });
+  await onSite('Indeed').focus();
+  await window.keyboard.press('Alt+Enter');
+  await expect
+    .poll(sentToBrowser)
+    .toEqual([...addresses.map(([, address]) => address), indeed, indeed]);
 
   // The app stays as it was: its own page, one window, the dialog still open.
   expect(window.url()).toBe(page);
   expect(await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().length)).toBe(1);
   await expect(fold).toBeVisible();
+  expect(asked).toEqual([]);
 
-  // The Browser extension window opens over it, and closing it comes back here.
-  await dialog.getByRole('button', { name: 'browser extension' }).click();
+  // The Browser extension window opens over it, and either way of closing it comes back here, with
+  // the focus on what opened it.
+  const opener = dialog.getByRole('button', { name: 'browser extension' });
   const extension = window.getByRole('dialog', { name: 'Browser extension' });
-  await expect(extension).toBeVisible();
-  await extension.getByRole('button', { name: 'Close' }).click();
-  await expect(extension).toHaveCount(0);
-  await expect(inTheCity).toBeVisible();
+  const focused = () => window.evaluate('document.activeElement?.textContent');
+  for (const way of ['Close', 'Done']) {
+    await opener.click();
+    await expect(extension).toBeVisible();
+    await extension.getByRole('button', { name: way }).click();
+    await expect(extension).toHaveCount(0);
+    await expect(inTheCity).toBeVisible();
+    await expect.poll(focused).toBe('browser extension');
+  }
 
-  // The app fetched none of these. The list is real: the page's own fetch shows up in it.
-  await window.evaluate('fetch(location.href).then(() => true, () => false)');
-  await expect.poll(asked).toContain(page);
-  expect((await asked()).filter((url) => /linkedin|indeed|governmentjobs/i.test(url))).toEqual([]);
+  // Last, as this leaves the page's clicks stopped. With nothing in the page to catch it, Alt and a
+  // click tells Chromium to download a link, which the content security policy doesn't cover, and
+  // the window still can't reach the web. The test's own site shows that, once it's heard from the
+  // test itself, so it's listening.
+  const { port } = site.address() as AddressInfo;
+  await window.evaluate(`(() => {
+    window.addEventListener('click', (event) => event.stopImmediatePropagation(), true);
+    const link = document.createElement('a');
+    link.href = 'http://127.0.0.1:${port}/from-the-window';
+    link.textContent = 'A link to download';
+    document.querySelector('dialog[open] form').prepend(link);
+  })()`);
+  await dialog
+    .getByRole('link', { name: 'A link to download' })
+    .click({ modifiers: ['Alt'], noWaitAfter: true });
+  await window.waitForTimeout(1000);
+  await fetch(`http://127.0.0.1:${port}/from-the-test`);
+  expect(heard).toEqual(['/from-the-test']);
+});
+
+test('takes someone with no titles to where they add them', async () => {
+  // The made-up jobs open on the jobs, with nobody having got started yet.
+  const folder = newDataFolder();
+  const { app, window } = await openApp(folder);
+  try {
+    await window.getByRole('button', { name: 'Find jobs' }).click();
+    const dialog = window.getByRole('dialog', { name: 'Find jobs' });
+    const fold = dialog.getByRole('button', { name: /^Look on LinkedIn and Indeed yourself/ });
+    await expect(fold).toContainText('Needs your job titles');
+    await fold.click();
+    await expect(dialog.getByRole('list')).toHaveCount(0);
+    await expect(dialog.getByText(/^Add the job titles you want in/)).toBeVisible();
+    await dialog.getByRole('button', { name: 'Get started' }).click();
+    await expect(dialog).toHaveCount(0);
+    // The step that asks for them, which wasn't open yet, with focus on the page the user is on.
+    await expect(window.getByRole('heading', { name: 'What you want' })).toBeVisible();
+    await expect(
+      window.getByRole('button', { name: /What you want/ }).and(window.locator('[aria-current]')),
+    ).toBeVisible();
+    await expect
+      .poll(() => window.evaluate('document.activeElement?.textContent?.trim()'))
+      .toBe('Get started');
+  } finally {
+    await app.close();
+    rmSync(folder, { recursive: true, force: true });
+  }
 });

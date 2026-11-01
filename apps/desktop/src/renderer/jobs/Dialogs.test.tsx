@@ -854,6 +854,26 @@ describe('FindJobsDialog', () => {
       expect(onClose).toHaveBeenCalled();
     });
 
+    it('say Get started, as the sidebar does, for someone still getting started', async () => {
+      const onOpenProfile = vi.fn();
+      render(
+        <FindJobs
+          api={focusApi()}
+          today="2026-10-12"
+          profileName="Get started"
+          onOpenProfile={onOpenProfile}
+          onStart={() => {}}
+          onClose={() => {}}
+        />,
+      );
+      await unfold();
+      expect(screen.getByText(/^Add the job titles you want in/).textContent).toContain(
+        'in Get started, under What you want',
+      );
+      await userEvent.click(screen.getByRole('button', { name: 'Get started' }));
+      expect(onOpenProfile).toHaveBeenCalledOnce();
+    });
+
     it('say when they’re for the first few titles and cities', async () => {
       const { unmount } = render(
         <FindJobs

@@ -83,6 +83,20 @@ export function isSafeExternalUrl(url: string): boolean {
 }
 
 /**
+ * What the window's own session may ask for: the app's own pages and, during development, the
+ * screens' dev server, but nothing else on the web. Links go to the user's own browser instead.
+ */
+export function windowMayLoad(url: string, devUrl?: string): boolean {
+  try {
+    const { protocol, host } = new URL(url);
+    if (!['http:', 'https:', 'ws:', 'wss:'].includes(protocol)) return true;
+    return devUrl !== undefined && host === new URL(devUrl).host;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * A name the window may suggest for a file it saves, such as "job-search-journey.csv" or a call's
  * calendar file: letters, digits, spaces and ".-_()", ending in .csv, .txt or .ics, with no
  * folders. Anything else is null.

@@ -15,15 +15,16 @@ export interface TagInputProps extends FieldControl {
   maxLength?: number;
   /** Takes the focus when it appears, as when it's the next thing to fill in. */
   autoFocus?: boolean;
+  /**
+   * The entries in what's typed or pasted, for when one can hold a comma, as "Columbus, OH" does.
+   * A comma then doesn't add what's typed, and Enter does. Without this, every comma ends an entry.
+   */
+  splitEntries?: (text: string) => string[];
   className?: string;
 }
 
-/** Entries from text, split on commas and new lines, without blanks. */
-const entriesIn = (text: string, maxLength: number) =>
-  text
-    .split(/[,\n]/)
-    .map((each) => each.trim().slice(0, maxLength))
-    .filter(Boolean);
+/** Entries from text, split on commas and new lines. */
+const onCommasAndLines = (text: string) => text.split(/[,\n]/);
 
 /**
  * A short list typed one entry at a time, such as job titles or cities. Enter or a comma adds
@@ -37,6 +38,7 @@ export function TagInput({
   max = 30,
   maxLength = 120,
   autoFocus,
+  splitEntries,
   className,
   ...control
 }: TagInputProps) {
@@ -44,7 +46,10 @@ export function TagInput({
 
   const add = (text: string) => {
     const next = [...value];
-    for (const entry of entriesIn(text, maxLength)) {
+    const entries = (splitEntries ?? onCommasAndLines)(text)
+      .map((each) => each.trim().slice(0, maxLength))
+      .filter(Boolean);
+    for (const entry of entries) {
       const known = next.some((each) => each.toLowerCase() === entry.toLowerCase());
       if (!known && next.length < max) next.push(entry);
     }
@@ -53,7 +58,7 @@ export function TagInput({
   };
 
   const onKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
-    if ((event.key === 'Enter' || event.key === ',') && draft.trim()) {
+    if ((event.key === 'Enter' || (event.key === ',' && !splitEntries)) && draft.trim()) {
       event.preventDefault();
       add(draft);
     } else if (event.key === 'Backspace' && !draft && value.length > 0) {

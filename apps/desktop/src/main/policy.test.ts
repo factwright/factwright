@@ -20,6 +20,7 @@ import {
   SEVERAL_ASK_NOTHING,
   SEVERAL_PERMITS_NOTHING,
   saveableFileName,
+  windowMayLoad,
 } from './policy.ts';
 
 describe('parseTerminalSize', () => {
@@ -68,6 +69,35 @@ describe('isSafeExternalUrl', () => {
       expect(isSafeExternalUrl(url)).toBe(false);
     },
   );
+});
+
+describe('windowMayLoad', () => {
+  it.each(['app://factwright/index.html', 'data:text/plain,hi', 'blob:app://factwright/1'])(
+    'lets the window load %s',
+    (url) => {
+      expect(windowMayLoad(url)).toBe(true);
+    },
+  );
+
+  it.each([
+    'https://www.linkedin.com/jobs/search/?keywords=Nurse',
+    'https://www.indeed.com/jobs?q=Nurse',
+    'https://www.governmentjobs.com/jobs?keyword=Nurse',
+    'https://factwright.com/',
+    'http://127.0.0.1:8787/',
+    'wss://example.com/',
+    'not a url',
+  ])('keeps the window from %s', (url) => {
+    expect(windowMayLoad(url)).toBe(false);
+  });
+
+  it('lets it reach only the dev server during development, by its address and socket', () => {
+    const dev = 'http://localhost:5173/';
+    expect(windowMayLoad('http://localhost:5173/src/main.tsx', dev)).toBe(true);
+    expect(windowMayLoad('ws://localhost:5173/', dev)).toBe(true);
+    expect(windowMayLoad('http://localhost:5174/', dev)).toBe(false);
+    expect(windowMayLoad('https://www.linkedin.com/jobs/', dev)).toBe(false);
+  });
 });
 
 describe('resolveInside', () => {

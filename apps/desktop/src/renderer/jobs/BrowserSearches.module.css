@@ -37,6 +37,7 @@
   margin: 0 0 calc(var(--fw-space-1) * -1);
   font-size: var(--fw-text-sm);
   font-weight: 650;
+  overflow-wrap: anywhere;
 }
 
 .place {
@@ -49,6 +50,7 @@
   margin: 0;
   color: var(--fw-muted);
   font-size: var(--fw-text-sm);
+  overflow-wrap: anywhere;
 }
 
 .searches {

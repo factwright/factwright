@@ -107,6 +107,7 @@ export function FindJobsDialog({
   kinds = [],
   fields = [],
   searches = [],
+  profileName = 'Profile',
   onOpenExtension,
   onOpenProfile,
   onStart,
@@ -120,9 +121,11 @@ export function FindJobsDialog({
   fields?: readonly Field[];
   /** Each kind of job's ready-made searches, to open in the user's own browser. */
   searches?: readonly KindSearches[];
+  /** What the sidebar calls the place to add job titles: Profile, or Get started until then. */
+  profileName?: string;
   /** Shows the Browser extension window over this one. */
   onOpenExtension: () => void;
-  /** Goes to Profile, once this has closed. */
+  /** Goes where job titles are added, once this has closed. */
   onOpenProfile: () => void;
   onStart: (sources: SearchSources) => void;
   onClose: () => void;
@@ -239,6 +242,7 @@ export function FindJobsDialog({
                   {site === 'indeed' && (
                     <BrowserSearches
                       kinds={searches.filter((each) => !kind || each.id === kind)}
+                      profileName={profileName}
                       onOpenExtension={onOpenExtension}
                       onOpenProfile={() => {
                         close();

@@ -142,11 +142,41 @@ describe('browserSearches', () => {
     expect(linkOn(searches[1], 'GovernmentJobs')).toBe(
       'https://www.governmentjobs.com/jobs?keyword=Public%20Health%20Nurse&location=Columbus%2C%20OH',
     );
+    // It looks across the country with no location, and in an area with one.
+    const remoteFrom = (from: string) =>
+      linkOn(
+        searchesFor({
+          roles: ['Nurse'],
+          workplaces: ['remote'],
+          remoteFrom: from,
+          companies: ['public'],
+        })[0],
+        'GovernmentJobs',
+      );
+    expect(remoteFrom('anywhere in the US')).toBe(
+      'https://www.governmentjobs.com/jobs?keyword=Nurse%20remote',
+    );
+    expect(remoteFrom('Ohio')).toBe(
+      'https://www.governmentjobs.com/jobs?keyword=Nurse%20remote&location=Ohio',
+    );
     expect(
       searchesFor({ roles: ['Nurse'], companies: ['startup', 'established'] })[0]?.links.map(
         (link) => link.site,
       ),
     ).toEqual(['LinkedIn', 'Indeed']);
+  });
+
+  it('puts cities back with their states, as a comma used to split them in Profile', () => {
+    const searches = searchesFor({
+      roles: ['Nurse'],
+      workplaces: ['onsite'],
+      places: ['Chicago', 'IL', 'Dublin', 'OH', 'Tulsa', 'OK', 'Denver', 'CO'],
+    });
+    expect(searches.map(({ where }) => where)).toEqual(['Chicago, IL', 'Dublin, OH', 'Tulsa, OK']);
+    expect(linkOn(searches[1], 'LinkedIn')).toContain('location=Dublin%2C%20OH');
+    expect(
+      browserSearches(readAnswers({ roles: ['Nurse'], places: ['Chicago', 'IL'] }))[0]?.cut,
+    ).toBe(false);
   });
 
   it('keeps to the first few titles and cities, and says so', () => {
@@ -278,13 +308,23 @@ describe('browserSearches', () => {
       ]);
     });
 
-    it('stays well under what a browser takes, at the longest Profile keeps', () => {
+    it('stays under what Windows opens, at the longest Profile keeps, in any letters', () => {
       const [search] = searchesFor({
-        roles: ['é'.repeat(120)],
-        places: ['é'.repeat(120)],
+        roles: ['日'.repeat(120)],
+        places: ['日'.repeat(120)],
         companies: ['public'],
       });
-      for (const { url } of search?.links ?? []) expect(url.length).toBeLessThan(2000);
+      // What it shows stays whole, and only the address is cut.
+      expect(search?.title).toHaveLength(120);
+      expect(search?.links).toHaveLength(3);
+      for (const { url } of search?.links ?? []) expect(url.length).toBeLessThan(2081);
+      const [remote] = searchesFor({
+        roles: ['日'.repeat(120)],
+        workplaces: ['remote'],
+        remoteFrom: '日'.repeat(60),
+      });
+      expect(remote?.where).toBe(`Remote, ${'日'.repeat(60)}`);
+      for (const { url } of remote?.links ?? []) expect(url.length).toBeLessThan(2081);
     });
   });
 });
@@ -298,38 +338,88 @@ describe('remoteArea', () => {
     ['USA', 'United States'],
     ['U.S.A.', 'United States'],
     ['US only', 'United States'],
+    ['US, only', 'United States'],
+    ['US-based', 'United States'],
     ['United States', 'United States'],
     ['the United States of America', 'United States'],
+    ['Continental US', 'United States'],
     ['from the US', 'United States'],
+    ['Anywhere, US', 'United States'],
+    ['any US state', 'United States'],
     ['Remote in the US', 'United States'],
+    ['Remote (US)', 'United States'],
     ['US or Canada', 'United States'],
+    ['US, or Canada', 'United States'],
     ['US/Canada', 'United States'],
     ['US & Canada', 'United States'],
+    ['US and Canada', 'United States'],
+    ['US time zones', 'United States'],
+    ['US except California', 'United States'],
+    // What follows the US never leaves the app with it.
+    ['US, I need sponsorship', 'United States'],
     ['Canada', 'Canada'],
+    ['Remote (Canada)', 'Canada'],
+    ['Canada (no Quebec)', 'Canada'],
+    ['Canada or the US', 'Canada'],
     ['anywhere in Europe', 'Europe'],
     ['North America', 'North America'],
-    ['UK and Ireland', 'UK'],
+    ['UK & Ireland', 'UK'],
     ['Ohio', 'Ohio'],
+    ['near Chicago', 'Chicago'],
     ['Hartford, CT', 'Hartford, CT'],
     ['Helena, MT.', 'Helena, MT'],
+    ['Portland, OR area', 'Portland, OR area'],
+    ['Portland, or Seattle', 'Portland'],
     ['the Netherlands', 'Netherlands'],
     ['Inland Empire', 'Inland Empire'],
-    ['Central European time', ''],
-    ['US time zones', ''],
-    ['EST', ''],
-    ['CET', ''],
-    ['CEST', ''],
-    ['within 3 hours of PST', ''],
-    ['UTC+2', ''],
-    ['GMT+1', ''],
-    ['anywhere', ''],
-    ['Anywhere!', ''],
-    ['worldwide', ''],
-    ['anywhere in the world', ''],
-    ['Remote', ''],
-    ['', ''],
-    ['   ', ''],
+    ['Central Europe', 'Central Europe'],
+    ['Pacific Northwest', 'Pacific Northwest'],
+    ['Hawai’i', 'Hawai’i'],
+    ['東京', '東京'],
   ])('reads %j as %j', (said, area) => {
     expect(remoteArea(said)).toBe(area);
+  });
+
+  it.each([
+    // Time zones.
+    'Central European time',
+    'EST',
+    'CET',
+    'CEST',
+    'IST',
+    'AEST',
+    'within 3 hours of PST',
+    'UTC+2',
+    'GMT+1',
+    'Eastern',
+    'Pacific',
+    'ET',
+    'PT',
+    // Nowhere in particular.
+    'anywhere',
+    'Anywhere!',
+    'worldwide',
+    'anywhere in the world',
+    'Remote',
+    '',
+    '   ',
+    // Sentences, which aren't for a location box, as some would tell a site more than a place.
+    'I can only work from Texas',
+    'Anywhere but Texas',
+    'Not California',
+    'I am a US citizen living in Germany',
+    'Germany, but willing to move',
+    'from home',
+    // A list it can't read, rather than half of it.
+    'North and South America',
+    'Bosnia and Herzegovina',
+    // A street, or anything else with a number in it.
+    '123 Main St, Denver',
+    'within 50 miles',
+    // Too long to be a place.
+    'San Francisco Bay Area in California',
+    'x'.repeat(61),
+  ])('looks with no location for %j', (said) => {
+    expect(remoteArea(said)).toBe('');
   });
 });

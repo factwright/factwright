@@ -43,18 +43,21 @@ function Searches({ kind: { name, searches } }: { kind: KindSearches }) {
  */
 export function BrowserSearches({
   kinds,
+  profileName,
   onOpenExtension,
   onOpenProfile,
 }: {
   /** The kinds of job the dialog is looking for, each with its searches. */
   kinds: readonly KindSearches[];
+  /** What the sidebar calls the place to add job titles: Profile, or Get started until then. */
+  profileName: string;
   onOpenExtension: () => void;
   onOpenProfile: () => void;
 }) {
   const count = kinds.reduce((all, kind) => all + kind.searches.length, 0);
   const profile = (
     <button type="button" className={styles.link} onClick={onOpenProfile}>
-      Profile
+      {profileName}
     </button>
   );
   return (
