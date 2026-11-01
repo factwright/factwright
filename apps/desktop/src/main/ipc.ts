@@ -91,6 +91,7 @@ import type { TemplateLibrary } from './resume/templates.ts';
 import type { SyncAccount } from './sync/account.ts';
 import type { FetchDeps } from './tools/posting.ts';
 import type { UpdateWatcher } from './updates.ts';
+import type { WhatsNewDue } from './whats-new.ts';
 
 /** The most the window may send to Claude Code at once: a long paste, but not a flood. */
 const MAX_INPUT_LENGTH = 100_000;
@@ -181,6 +182,8 @@ export interface IpcDeps {
   runChanges: RunChanges;
   /** Keeps an installed copy up to date, or null for one that doesn't update itself. */
   updates: UpdateWatcher | null;
+  /** Whether what's new is due, or null in quiet mode, unless a test asked for it. */
+  whatsNew: WhatsNewDue | null;
   /** The profiles on this computer: each person's own job hunt, one open at a time. */
   profiles: Profiles;
   /** Reminders before calls, which the user can turn off. */
@@ -284,6 +287,7 @@ export function registerIpc({
   dataDir,
   runChanges,
   updates,
+  whatsNew,
   profiles,
   reminders,
   opener,
@@ -326,6 +330,9 @@ export function registerIpc({
   // Where an update stands, and restarting into one that's downloaded.
   answer('updates:status', (): UpdateStatus => updates?.current() ?? { state: 'none' });
   answer('updates:install', () => updates?.install() ?? false);
+  // What's new in the version just installed, once.
+  answer('updates:whats-new', () => whatsNew?.current() ?? null);
+  answer('updates:whats-new-seen', () => whatsNew?.seen());
 
   // Which model Claude runs on, for everything and for each task. A change applies from the next
   // start, or the next task that needs another model.

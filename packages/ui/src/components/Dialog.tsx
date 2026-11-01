@@ -8,6 +8,8 @@ export interface DialogProps {
   title: string;
   /** A line under the title, saying what the dialog is for. */
   description?: string;
+  /** The ID of what's inside that says what the dialog is for, where a line wouldn't hold it. */
+  describedBy?: string;
   /**
    * A line above the title, such as which of several the dialog shows, with ways to the others.
    * It isn't part of the dialog's name.
@@ -26,7 +28,15 @@ export interface DialogProps {
  * dialog, so focus stays inside it and returns where it was when it closes. It starts on the
  * element marked data-autofocus, if there is one.
  */
-export function Dialog({ title, description, above, onClose, size = 'md', children }: DialogProps) {
+export function Dialog({
+  title,
+  description,
+  describedBy,
+  above,
+  onClose,
+  size = 'md',
+  children,
+}: DialogProps) {
   const dialog = useRef<HTMLDialogElement>(null);
   const titleId = useId();
   const descriptionId = useId();
@@ -41,7 +51,7 @@ export function Dialog({ title, description, above, onClose, size = 'md', childr
       ref={dialog}
       className={cx(styles.dialog, styles[size])}
       aria-labelledby={titleId}
-      aria-describedby={description ? descriptionId : undefined}
+      aria-describedby={description ? descriptionId : describedBy}
       onClose={onClose}
       // Escape closes this dialog only, not anything behind it that also listens for it.
       onKeyDown={(event) => {
