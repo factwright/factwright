@@ -24,9 +24,10 @@ Notable changes to Factwright, newest first. The format follows [Keep a Changelo
   - A posting that has closed leads to what that employer has open now.
   - A job it can't confirm is still open now stays in New, saying so, rather than vanishing into a report.
   - A first search starts on company job boards, and on Hacker News too for software, data and product work. Find jobs says Hacker News is mostly software jobs, and that a web search sees only some of LinkedIn's and Indeed's listings.
-- **Fit scores suit more kinds of work.** Stack is now Skills: the tools, methods, licenses and skills your facts prove. A job's industry counts only when the posting asks for it. In a job search, a fact you haven't confirmed yet counts in full, and the job says so, because finding a job claims nothing about you. Analyze job still counts it for half. A criteria file Factwright wrote updates to this the next time it opens.
+- **Fit scores suit more kinds of work.** Stack is now Skills: the tools, methods, licenses and skills your facts prove. A job's industry counts only when the posting asks for it. In a job search, a fact you haven't confirmed yet counts in full, and the job says so, because finding a job claims nothing about you. Analyze job still counts it for half. A job that needs a license you don't have, or years in a field you've never worked in, is a long shot.
 - **Pay by the hour.** A search's focus takes pay as "$40 an hour", and a search counts an hourly wage as 2,080 hours a year.
-- Reading a posting's page now gives when it was posted and when it closes, when the page says, and reads iCIMS postings in full.
+- Reading a posting's page now gives when it was posted and when it closes, when the page says, says when a Workday posting has closed, and reads iCIMS postings in full.
+- Factwright's tools no longer try to read Indeed, GovernmentJobs or The Chronicle's job site, which turn software away or forbid it, as with LinkedIn. Their jobs can still show in search results, and you can save a posting from your own browser.
 - A run uses fewer requests of your plan: no prompt suggestions, and no session title.
 - The privacy policy has a part on ideas and the roadmap: what a suggestion keeps, that an email left with one is deleted once the idea is closed, that a vote is kept only as a one-way hash, and that your IP address only limits how often one address can suggest or vote, and isn't kept. It takes effect October 27, 2026.
 

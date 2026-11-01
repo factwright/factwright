@@ -20,7 +20,7 @@ const PLACES: Readonly<Record<SearchSite, { name: string; about: string }>> = {
   boards: {
     name: 'Company job boards',
     about:
-      'Openings on the systems employers post to, in any field, such as Workday, iCIMS and Greenhouse. Your Claude finds them through web search, and checks each is still open.',
+      'Openings on the systems employers post to, in any field, such as Workday, iCIMS and Greenhouse. Your Claude finds them through web search, and checks each is still open where it can.',
   },
   linkedin: {
     name: 'LinkedIn',
@@ -38,9 +38,6 @@ const PLACES: Readonly<Record<SearchSite, { name: string; about: string }>> = {
       'The monthly thread where hundreds of startups post, mostly for software jobs. Your Claude reads all of it.',
   },
 };
-
-/** The places in the order the dialog offers them, with the one that reaches every field first. */
-const OFFERED = Object.keys(PLACES) as SearchSite[];
 
 const MONTH_NAME = new Intl.DateTimeFormat('en-US', {
   month: 'long',
@@ -194,7 +191,7 @@ export function FindJobsDialog({
           )}
           <fieldset className={styles.places}>
             <legend className={styles.legend}>Where to look</legend>
-            {OFFERED.map((site) => {
+            {SEARCH_SITES.map((site) => {
               const picked = sites.includes(site);
               const { name, about } = PLACES[site];
               return (

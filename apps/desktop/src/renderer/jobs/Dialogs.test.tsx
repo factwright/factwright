@@ -534,7 +534,7 @@ describe('FindJobsDialog', () => {
     expect(results.violations).toEqual([]);
     await userEvent.click(within(dialog).getByRole('button', { name: 'Search 4 places' }));
     expect(onStart).toHaveBeenCalledWith({
-      sites: ['hn', 'linkedin', 'boards'],
+      sites: ['boards', 'linkedin', 'hn'],
       month: '2026-09',
       company: 'Acme',
     });

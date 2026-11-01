@@ -72,6 +72,16 @@ export const publicLookup: LookupFunction = (hostname, options, callback) => {
   });
 };
 
+/**
+ * Sites whose terms forbid software reading them, or that turn it away, by their hosts. Search
+ * results can still name their jobs, and the user can save a posting from their own browser.
+ */
+const OFF_LIMITS: readonly (readonly [RegExp, string])[] = [
+  [/(^|\.)indeed\.(com|[a-z]{2}|co\.[a-z]{2}|com\.[a-z]{2})$/, 'Indeed'],
+  [/(^|\.)governmentjobs\.com$/, 'GovernmentJobs'],
+  [/^jobs\.chronicle\.com$/, 'The Chronicle’s job site'],
+];
+
 /** Why a link can't be fetched, or null when it can. The address itself is checked on connecting. */
 export function linkProblem(url: URL): string | null {
   if (url.protocol !== 'https:') return 'Only https links work.';
@@ -83,6 +93,10 @@ export function linkProblem(url: URL): string | null {
   }
   if (isLinkedIn(url.href)) {
     return 'Factwright never reads LinkedIn: its terms forbid software reading it. Find the job on the employer’s own site, use a posting the user saved from their browser, or ask the user to paste it.';
+  }
+  const barred = OFF_LIMITS.find(([site]) => site.test(host))?.[1];
+  if (barred) {
+    return `Factwright doesn’t read ${barred}: it turns software away, or its terms forbid it. Find the job on the employer’s own site, use a posting the user saved from their browser, or ask the user to paste it.`;
   }
   return null;
 }

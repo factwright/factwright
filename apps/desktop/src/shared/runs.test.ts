@@ -91,8 +91,8 @@ describe('defaultSearchSites', () => {
 
   it('adds Hacker News for the fields its thread has jobs for', () => {
     for (const field of ['software', 'data', 'product'] as const) {
-      expect(defaultSearchSites([field])).toEqual(['hn', 'boards']);
+      expect(defaultSearchSites([field])).toEqual(['boards', 'hn']);
     }
-    expect(defaultSearchSites(['finance', 'software'])).toEqual(['hn', 'boards']);
+    expect(defaultSearchSites(['finance', 'software'])).toEqual(['boards', 'hn']);
   });
 });

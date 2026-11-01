@@ -6,7 +6,7 @@ argument-hint: "[for <kind of job>, focus <id>:] [places, between · marks: HN o
 
 # Job search
 
-The input names the places to search, between " · " marks, as the app's Find jobs dialog types them, such as `HN 2026-11 · LinkedIn · Acme Robotics`:
+The input names the places to search, between " · " marks, as the app's Find jobs dialog types them, such as `LinkedIn · HN 2026-11 · Acme Robotics`:
 - **HN**, or **HN** with a month as YYYY-MM: Hacker News's "Who is hiring?" thread, the newest unless a month is named.
 - **LinkedIn** and **Indeed:** their listings that fit `searches/criteria.md`, as far as web search can see them.
 - **company job boards:** openings that fit `searches/criteria.md` on the systems employers post to, whatever the field: hospitals, schools, governments, shops and startups alike, found through web search.
@@ -53,7 +53,7 @@ One web search brings about 10 results, and the same work goes by different titl
 
 | Who | Domains |
 |---|---|
-| Employers' own systems, for every field | `myworkdayjobs.com`, `icims.com`, `greenhouse.io`, `jobs.lever.co`, `jobs.ashbyhq.com`, `jobs.gem.com`, `jobs.smartrecruiters.com`, `oraclecloud.com`, `taleo.net`, `paylocity.com`, `applytojob.com`, `workforcenow.adp.com`, `ultipro.com`, `bamboohr.com`, `rippling.com`, `workable.com`, `recruitee.com`, `teamtailor.com` |
+| Employers' own systems, for every field | `myworkdayjobs.com`, `myworkdaysite.com`, `icims.com`, `greenhouse.io`, `jobs.lever.co`, `jobs.ashbyhq.com`, `jobs.gem.com`, `jobs.smartrecruiters.com`, `oraclecloud.com`, `taleo.net`, `paylocity.com`, `applytojob.com`, `workforcenow.adp.com`, `ultipro.com`, `bamboohr.com`, `rippling.com`, `workable.com`, `recruitee.com`, `teamtailor.com` |
 | Schools and universities | `schoolspring.com`, `applitrack.com`, `k12jobspot.com`, `edjoin.org`, `higheredjobs.com`, `insidehighered.com`, `jobs.chronicle.com` |
 | Government | `usajobs.gov`, `governmentjobs.com`, and the state's own jobs site |
 | Healthcare | The employers' systems above, where most hospitals post, and each hospital's own jobs site |
@@ -111,27 +111,29 @@ For each listing that passed:
   - A job it lists only among the user's other jobs at the company is another job, unless you can tell it's the same posting, such as by its link or a title written another way. Then give its id too.
 - Confirm it's still open, and get the fine print on where it's worked, pay, schedule, and what kind of employer it is:
   - **A posting on Greenhouse, Lever, Ashby or Gem:** call `job_board` with the posting's link. It says whether the posting is still open, and saves its full text along with the company's other openings. Note related roles as "also: <role>".
-  - **Anywhere else:** read the posting with `read_page`, which reads Workday's and iCIMS's postings too. It gives `Posted:` and `Closes:` lines when the page has them, and says when Workday's posting has closed.
+  - **Anywhere else:** a web search often finds the posting on an applicant system. Otherwise, read the posting with `read_page`, which reads Workday's and iCIMS's postings too. It gives `Posted:` and `Closes:` lines when the page has them, and says when Workday's posting has closed.
     - **Closed:** the tool says it has closed, it answered 404 or 410, the page says it's closed or filled, or its closing date has passed. Leave it out, and count it as closed in `skipped` and the funnel.
     - **Old:** posted more than 60 days ago with no closing date. It may still be open, as some employers keep hiring for the same job, so say how old it is in its flags.
-  - **When a posting has closed,** it still names an employer who hires for this work, which is often the best thing a search finds. On Greenhouse, Lever, Ashby or Gem, the board `job_board` saved lists what's open now. Elsewhere, search that employer's name and the titles again, with its own host as `allowed_domains`, such as `acme.wd1.myworkdayjobs.com`. Any job that turns up and passes the filters is a listing too.
+  - **When a posting has closed,** it still names an employer who hires for this work, which is often the best thing a search finds. On Greenhouse, Lever, Ashby or Gem, the board `job_board` saved lists what's open now. Elsewhere, search that employer's name and the titles again, with its own host as `allowed_domains`, such as `acme.wd1.myworkdayjobs.com`. Any job that turns up and passes the filters is a listing too. Do this once for each employer, and take what turns up as it is, without searching on from it.
+  - **A post in this month's HN thread** that gives only an email, or a page with nothing to read, is its own posting: score it in full from the post, as open.
   - **A listing from LinkedIn or Indeed:** look for it on the employer's own site, by searching the company and the title with the employers' systems as `allowed_domains`, then read it as above.
   - **Never opened:** LinkedIn, Indeed, `governmentjobs.com` and `jobs.chronicle.com`. Their terms forbid software reading them, or they refuse it. What search results show of them can still be listed.
   - When the posting and the source disagree, the posting wins. Note the conflict in its flags.
-- **A job you can't confirm stays in the ranking.** It may be the one they want, and they can check it in a click. This covers a page that's refused, comes back empty or times out, and a listing you can't find on the employer's site. Score it from what you know, with parts that add up to at most 61, and start its flags with "Couldn't confirm it's still open", and why. Give its link as `posting` only when the link is to that one job, not a results page. A listing that shows too little to score, such as a title with no employer, stays out, counted in `skipped`.
-- Score with the criteria.md rubric, against facts/ only. With more than one kind of job, score the role against the job's kind, and keep which kind it is. A Stack row in an older criteria.md means the same as Skills.
+- **Stop searching at about 30 more searches in this step,** the best fits first. Anything left is a job you can't confirm.
+- **A job you can't confirm stays in the ranking.** It may be the one they want, and they can check it in a click. This covers a page that's refused, comes back empty or times out, and a listing you can't find on the employer's site. Score it from what you know, with parts that add up to at most 61, and start its flags with "Couldn't confirm it's still open", and why, or its `note` for a long shot. Give its link as `posting` only when the link is to that one job, not a results page. A listing that shows too little to score, such as a title with no employer, stays out, counted in `skipped`.
+- Score with the criteria.md rubric, against facts/ only. With more than one kind of job, score the role against the job's kind, and keep which kind it is. An older criteria.md may call the Skills row Stack, and say "domain included" in its Work row: read them as the rubric below does.
   - Without a rubric, use: work 40 (how much of the job's core work the facts prove, its industry counting only when the posting asks for it) · role 25 (how well the level and shape fit what the user wants) · skills 20 (overlap with the tools, methods, licenses and skills the facts prove) · reqs 15 (full marks unless a hard requirement isn't met: years, degree, license or certification).
   - Respect status and ownership tags: built ≠ live, and led-team ≠ solo.
   - A claim tagged `unconfirmed` counts in full here, since finding a job claims nothing about the user, and anything that goes out still asks first. When a score leans on them, add "Scored on facts you haven't confirmed" to its flags.
   - A job that requires a license they don't have, or years in a field they've never worked in, is a long shot, whatever else adds up.
   - Pay never changes a score.
-- Several postings from one employer that differ only by unit or site, as a hospital's do, are separate jobs. Rank up to 3 that fit best, and note the rest as "also: <role>".
+- Several postings from one employer that differ only by unit or site, as a hospital's do, are separate jobs, so name the unit or site in each one's `role`. Rank up to 3 that fit best, and note the rest as "also: <role>".
 - Tiers: **Strong** ≥ 75 · **Good** 62–74 · **Worth a look** 50–61. Below 50 goes to long shots.
 - With more than ~15 jobs to verify, split this step across subagents, ~8 jobs each, all at once. Give each one:
   - `searches/criteria.md`, all of `facts/`, and the search's folder
   - its jobs: company, role, link and HN id, and with more than one kind of job, each job's kind, to score its role against
   - to call `find_job` for each job first, flag the ones the user has seen before, and return the id it names for each as `job`
-  - this step's rules for a job that's closed, old or can't be confirmed, and for a claim tagged `unconfirmed`
+  - all of this step's rules for checking and scoring a job
   - the jobs.json fields to return for each one, `kind` included
 - Write `why` and `gaps` concretely, each tied to a fact, in the user's terms. Never stretch a fit. Gaps are gaps.
 

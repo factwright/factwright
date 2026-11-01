@@ -58,7 +58,7 @@ export const SEARCH_SKILL = 'job-search';
  * Claude finds LinkedIn's and Indeed's through web search and reads each job on the employer's
  * own site. It never opens LinkedIn.
  */
-export const SEARCH_SITES = ['hn', 'linkedin', 'indeed', 'boards'] as const;
+export const SEARCH_SITES = ['boards', 'linkedin', 'indeed', 'hn'] as const;
 
 export type SearchSite = (typeof SEARCH_SITES)[number];
 

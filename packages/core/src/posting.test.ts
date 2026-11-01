@@ -174,6 +174,18 @@ describe('a Workday posting’s page', () => {
   const script = (available: string) =>
     `<script>window.workday = { siteId: "Careers", postingAvailable: ${available}, }</script>`;
 
+  it('reads the posting’s own page rather than its page for applying, which can say it’s closed', () => {
+    const address = (url: string) => postingRequests({ kind: 'page', url })[0]?.url;
+    const posting = 'https://acme.wd1.myworkdayjobs.com/Careers/job/Nurse_R1';
+    expect(address(`${posting}/apply`)).toBe(posting);
+    expect(address(`${posting}/apply/applyManually?source=x`)).toBe(`${posting}?source=x`);
+    expect(address(posting)).toBe(posting);
+    expect(
+      address('https://wd5.myworkdaysite.com/recruiting/acme/Careers/job/Nurse_R1/apply'),
+    ).toBe('https://wd5.myworkdaysite.com/recruiting/acme/Careers/job/Nurse_R1');
+    expect(address('https://acme.example/jobs/1/apply')).toBe('https://acme.example/jobs/1/apply');
+  });
+
   it('says the posting has closed when the page says so', () => {
     expect(readPosting(source, script('false'))).toEqual({
       text: '',

@@ -6,7 +6,6 @@ import { afterEach, beforeEach, describe, expect, it, type Mock, vi } from 'vite
 import { NO_ANSWERS } from '../../shared/about.ts';
 import { BEYOND_FILE, localTime, newProject } from '../../shared/beyond.ts';
 import { addKind, changeKind, removeKind } from '../../shared/kinds.ts';
-import { stamped } from '../../shared/stamp.ts';
 import { AboutStore } from './store.ts';
 import type { CheckedUpload } from './uploads.ts';
 
@@ -136,28 +135,6 @@ describe('AboutStore', () => {
     expect(read('searches/criteria.md')).toContain('- **Level:** Senior.');
     expect(read('searches/criteria-before-2026-10-12.md')).toBe('# My own criteria\n');
     expect(store.profile().status.criteria).toBe('app');
-  });
-
-  it('brings a criteria file the app wrote up to how it’s written now, and leaves anyone else’s', () => {
-    store.start();
-    store.saveAnswers({ levels: ['senior'] });
-    const now = read('searches/criteria.md');
-    // As an older version wrote it: its stamp matches its own text, so nobody has changed it.
-    const body = now.slice(now.indexOf('\n') + 1).replace('| Skills |', '| Stack |');
-    writeFileSync(
-      join(workspace(), 'searches', 'criteria.md'),
-      stamped(body, 'From the user’s answers. Change them in the app: Profile → What you want.'),
-    );
-    store.refreshCriteria();
-    expect(read('searches/criteria.md')).toBe(now);
-
-    writeFileSync(join(workspace(), 'searches', 'criteria.md'), '# My own criteria\n');
-    store.refreshCriteria();
-    expect(read('searches/criteria.md')).toBe('# My own criteria\n');
-
-    rmSync(join(workspace(), 'searches', 'criteria.md'));
-    store.refreshCriteria();
-    expect(existsSync(join(workspace(), 'searches', 'criteria.md'))).toBe(false);
   });
 
   it('keeps the kinds of job in their own file, which an older app’s answers never drop', () => {

@@ -99,3 +99,24 @@ describe('decoded', () => {
     expect(decoded(answer(brotliCompressSync(page), encoding))).toBeNull();
   });
 });
+
+describe('sites the tools don’t read', () => {
+  it.each([
+    ['https://www.indeed.com/viewjob?jk=1', 'Indeed'],
+    ['https://uk.indeed.com/jobs?q=nurse', 'Indeed'],
+    ['https://www.indeed.co.uk/jobs', 'Indeed'],
+    ['https://www.governmentjobs.com/careers/dc/jobs/1', 'GovernmentJobs'],
+    ['https://jobs.chronicle.com/job/1', 'The Chronicle’s job site'],
+  ])('refuses %s, saying where to look instead', (link, name) => {
+    expect(linkProblem(new URL(link))).toContain(`Factwright doesn’t read ${name}`);
+    expect(linkProblem(new URL(link))).toContain('the employer’s own site');
+  });
+
+  it.each([
+    'https://notindeed.com/jobs',
+    'https://indeed.example/jobs',
+    'https://www.chronicle.com/a',
+  ])('reads %s, which only looks like one', (link) => {
+    expect(linkProblem(new URL(link))).toBeNull();
+  });
+});

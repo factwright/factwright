@@ -755,7 +755,7 @@ test('finds jobs where the user picks, and keeps each search’s jobs together',
   await dialog.getByRole('button', { name: 'Search 2 places' }).click();
   await expect(claudePanel().getByRole('status')).toHaveText('Done');
   // The app types the places picked, in its own words.
-  expect(await terminalText(window)).toContain('/factwright:job-search HN · LinkedIn');
+  expect(await terminalText(window)).toContain('/factwright:job-search LinkedIn · HN');
   // A search reads a lot and weighs it lightly, so it thinks at high.
   expect(await terminalText(window)).toContain('opus · high effort');
   await closeRun();

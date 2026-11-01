@@ -212,6 +212,8 @@ export function postingRequests(source: PostingSource): PostingRequest[] {
  * in full, with its JobPosting data.
  */
 function pageAddress(address: string): string {
+  // Workday's page for applying can say a posting's closed when it isn't, so read the posting's.
+  if (onWorkday(address)) return address.replace(/\/apply(\/[^?#]*)?(?=[?#]|$)/i, '');
   const url = new URL(address);
   if (!/(^|\.)icims\.com$/i.test(url.hostname) || !url.pathname.startsWith('/jobs/')) {
     return address;
@@ -247,7 +249,8 @@ export interface Posting {
  */
 const WORKDAY_CLOSED = /\bpostingAvailable\s*:\s*false\b/;
 
-const onWorkday = (address: string) => /(^|\.)myworkdayjobs\.com$/i.test(new URL(address).hostname);
+const onWorkday = (address: string) =>
+  /(^|\.)myworkday(jobs|site)\.com$/i.test(new URL(address).hostname);
 
 /**
  * Reads a posting from what its source answered: the API's JSON, or the page's HTML. A page
