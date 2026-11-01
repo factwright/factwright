@@ -179,6 +179,19 @@ describe('browserSearches', () => {
     ).toBe(false);
   });
 
+  it('leaves apart two cities told one at a time, as only a state’s two letters join', () => {
+    expect(
+      searchesFor({ roles: ['Nurse'], places: ['San Francisco', 'New York'] }).map(
+        ({ where }) => where,
+      ),
+    ).toEqual(['San Francisco', 'New York']);
+  });
+
+  it('has one search for a city told both ways', () => {
+    const searches = searchesFor({ roles: ['Nurse'], places: ['Chicago', 'IL', 'Chicago, IL'] });
+    expect(searches.map(({ where }) => where)).toEqual(['Chicago, IL']);
+  });
+
   it('keeps to the first few titles and cities, and says so', () => {
     const [kept] = browserSearches(
       readAnswers({
@@ -368,7 +381,20 @@ describe('remoteArea', () => {
     ['near Chicago', 'Chicago'],
     ['Hartford, CT', 'Hartford, CT'],
     ['Helena, MT.', 'Helena, MT'],
-    ['Portland, OR area', 'Portland, OR area'],
+    ['Portland, OR area', 'Portland, OR'],
+    ['Portland, OR or Seattle, WA', 'Portland, OR'],
+    ['Salem, OR metro', 'Salem, OR'],
+    ['Chicago area', 'Chicago'],
+    ['based in Texas', 'Texas'],
+    ['Germany-based', 'Germany'],
+    ['Germany, visa required', 'Germany'],
+    ['Germany, but willing to move', 'Germany'],
+    ['Canada, work permit', 'Canada'],
+    ['Columbus, Ohio', 'Columbus, Ohio'],
+    ['Paris, France', 'Paris, France'],
+    ['ohio', 'ohio'],
+    ['anywhere in europe', 'europe'],
+    ['Rio de Janeiro', 'Rio de Janeiro'],
     ['Portland, or Seattle', 'Portland'],
     ['the Netherlands', 'Netherlands'],
     ['Inland Empire', 'Inland Empire'],
@@ -391,16 +417,29 @@ describe('remoteArea', () => {
     'within 3 hours of PST',
     'UTC+2',
     'GMT+1',
+    'AKST',
+    'NZST',
     'Eastern',
     'Pacific',
     'ET',
     'PT',
+    'Eastern or Central',
+    'ET or CT',
     // Nowhere in particular.
     'anywhere',
     'Anywhere!',
     'worldwide',
     'anywhere in the world',
+    'Nationwide',
+    'Flexible',
+    'Wherever',
+    'TBD',
+    'None',
+    'all',
+    'N/A',
     'Remote',
+    'remote-first',
+    'Remote First',
     '',
     '   ',
     // Sentences, which aren't for a location box, as some would tell a site more than a place.
@@ -408,8 +447,15 @@ describe('remoteArea', () => {
     'Anywhere but Texas',
     'Not California',
     'I am a US citizen living in Germany',
-    'Germany, but willing to move',
+    'US citizen living in Germany',
     'from home',
+    'near me',
+    'Visa required',
+    "I'm in Texas",
+    'I’m in Texas',
+    'Live in Ohio',
+    'Prefer Texas',
+    'somewhere warm',
     // A list it can't read, rather than half of it.
     'North and South America',
     'Bosnia and Herzegovina',

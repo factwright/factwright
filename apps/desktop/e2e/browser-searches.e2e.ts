@@ -50,7 +50,8 @@ test.afterAll(async () => {
 // stops at the point the app would hand it to the browser.
 test('opens a ready-made search in the user’s own browser, and fetches none itself', async () => {
   const { app, window } = opened;
-  // Should the app ever ask for one of these sites, it goes no further, and the test says so.
+  // Should a click ever send the page to one of these sites, it goes no further, and the test says
+  // so. A download doesn't come through here, so none is asked for from these sites below.
   const asked: string[] = [];
   await window.route(/linkedin\.com|indeed\.com|governmentjobs\.com/i, (route) => {
     asked.push(route.request().url());
@@ -110,15 +111,20 @@ test('opens a ready-made search in the user’s own browser, and fetches none it
   for (const [name] of addresses) await onSite(name).click();
   await expect.poll(sentToBrowser).toEqual(addresses.map(([, address]) => address));
 
-  // With Alt or Option held, which means "download this" to Chromium, it goes the same way.
-  const indeed = addresses[1]?.[1] ?? '';
+  // With Alt or Option held, which means "download this" to Chromium, it goes the same way. This
+  // link's address is the test's own, so that nothing can reach the site from a build without what
+  // keeps it from doing that, as the test doesn't build the app.
+  const { port } = site.address() as AddressInfo;
+  const held = `https://127.0.0.1:${port}/with-alt-held`;
+  await window.evaluate(
+    `document.querySelector('a[aria-label="Registered Nurse, Columbus, OH, on Indeed"]').href = '${held}'`,
+  );
   await onSite('Indeed').click({ modifiers: ['Alt'] });
   await onSite('Indeed').focus();
   await window.keyboard.press('Alt+Enter');
   await expect
     .poll(sentToBrowser)
-    .toEqual([...addresses.map(([, address]) => address), indeed, indeed]);
-
+    .toEqual([...addresses.map(([, address]) => address), held, held]);
   // The app stays as it was: its own page, one window, the dialog still open.
   expect(window.url()).toBe(page);
   expect(await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().length)).toBe(1);
@@ -141,9 +147,8 @@ test('opens a ready-made search in the user’s own browser, and fetches none it
 
   // Last, as this leaves the page's clicks stopped. With nothing in the page to catch it, Alt and a
   // click tells Chromium to download a link, which the content security policy doesn't cover, and
-  // the window still can't reach the web. The test's own site shows that, once it's heard from the
+  // the page still can't reach the web. The test's own site shows that, once it's heard from the
   // test itself, so it's listening.
-  const { port } = site.address() as AddressInfo;
   await window.evaluate(`(() => {
     window.addEventListener('click', (event) => event.stopImmediatePropagation(), true);
     const link = document.createElement('a');

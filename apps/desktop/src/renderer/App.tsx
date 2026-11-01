@@ -120,7 +120,6 @@ const keptView = () =>
   readPref<JobView | null>(VIEW_PREF, null, isView) ??
   viewNow(readPref<JobView | null>('jobs.view', null, isView));
 
-/** The app's window: the top bar, the sidebar, the jobs and their details, and Claude's panel. */
 /** Puts focus back on the page the user is on, once what held it has gone. */
 const focusCurrentPage = () =>
   requestAnimationFrame(() => {
@@ -128,6 +127,7 @@ const focusCurrentPage = () =>
     document.querySelector<HTMLElement>('nav[aria-label="Main"] [aria-current="page"]')?.focus();
   });
 
+/** The app's window: the top bar, the sidebar, the jobs and their details, and Claude's panel. */
 export function App({ api }: { api: FactwrightApi }) {
   const { status, recheck } = useClaudeStatus(api);
   const setup = useSetupCheck(api);

@@ -19,7 +19,7 @@ Notable changes to Factwright, newest first. The format follows [Keep a Changelo
 - Prompt suggestions and auto mode are off in a run, and helpers work only in your workspace.
 - The terminal in Claude's panel drops a `!` that would start Claude Code's shell mode, as far as it can tell from the keys. To run a command of your own, use your own terminal.
 - Factwright now needs Claude Code 2.1.295 or newer, since Claude Code's changelog says that version fixed `--tools` and `--restricted` not applying to built-in tools that register after launch. With an older one, Factwright says it needs an update, and what to run.
-- The app's window can't reach the web at all, whatever a page in it does. A click on a link with Option or Alt held used to have the window download it itself. Now it opens in your browser, like any other link.
+- A page in the app's window can't reach the web, whatever it does. A click on a link with Option or Alt held used to have the window download it itself. Now it opens in your browser, like any other link.
 
 ### Changed
 - **Find jobs reaches far more jobs, in any field.**

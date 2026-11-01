@@ -1,6 +1,6 @@
 import type { AboutYou } from './about.ts';
 import { kindsOf } from './kinds.ts';
-import { joinPlaces } from './places.ts';
+import { isRegion, placesIn, savedPlaces } from './places.ts';
 
 /** Where each site keeps its own search. */
 const LINKEDIN = 'https://www.linkedin.com/jobs/search/';
@@ -62,38 +62,54 @@ function distinct(texts: readonly string[]): string[] {
   return [...kept.values()];
 }
 
-/** The words before the area: "anywhere in the", "remote from". */
+/** The words before the area: "anywhere in the", "remote from", "based in". */
 const LEAD_IN =
-  /^(?:remote(?:ly)?\b[\s,:(-]*)?(?:(?:anywhere|any|from|in|within|across|near)[\s,:-]+)*(?:the\s+)?/i;
+  /^(?:remote(?:ly)?\b[\s,:(-]*)?(?:(?:anywhere|any|from|in|within|across|near|based)[\s,:-]+)*(?:the\s+)?/i;
 /** The United States, however it's said, whatever follows: "US only", "USA, no sponsorship". */
 const THE_US =
-  /^(?:continental\s+)?(?:u\.?\s?s\.?(?:\s?a\.?)?|united states(?: of america)?|america)(?![\p{L}\p{N}])/iu;
-/**
- * A time zone, which Profile says "Remote from" can be: "Central European time", "EST". ET, CT, MT
- * and PT count only on their own, as they're also places, such as Hartford, CT.
- */
+  /^(?:continental\s+)?(?:u\.?\s?s\.?(?:\s?a\.?)?|united states(?: of america)?|america)(?![\p{L}\p{N}])(?!\s+citizen)/iu;
+/** A time zone, which Profile says "Remote from" can be: "Central European time", "EST". */
 const TIME_ZONE =
-  /\b(?:time|timezones?|hours?|utc|gmt|[ecmp][sd]t|ces?t|bst|eest|eet|ist|jst|kst|sgt|aest|aedt)\b|^(?:eastern|central|mountain|pacific|et|ct|mt|pt)$/i;
+  /\b(?:time|timezones?|hours?|utc|gmt|[ecmp][sd]t|ces?t|bst|eest|eet|wet|ist|jst|kst|sgt|hst|akst|aest|aedt|nzst)\b/i;
+/** A time zone that's also part of a place's name, as ET and CT are: only when it's all there is. */
+const LONE_ZONE = /^(?:eastern|central|mountain|pacific|et|ct|mt|pt)$/i;
 /** What's after the first area: "or Canada", "/Canada", "only". In lowercase, as OR is Oregon. */
-const AFTER_AREA = /\s+or\s.*$|\s*[/&;(].*$|[\s-]+(?:only|based)\b.*$/;
+const AFTER_AREA = /\s+or\s.*$|\s*[/&;(].*$|[\s-]+(?:only|based|area|metro|region)\b.*$/;
 const NO_AREA =
-  /^(?:any|anywhere|everywhere|world|worldwide|global|globally|international|internationally)?$/i;
-/** What a place doesn't have, so it's a sentence, whose words aren't for a location box. */
+  /^(?:all|any|anywhere|everywhere|flexible|global|globally|international|internationally|nationwide|none|tbd|wherever|world|worldwide)$/i;
+/** What a place doesn't say, so it's a sentence, whose words aren't for a location box. */
 const NOT_A_PLACE =
-  /\d|(?:^|[\s,])(?:i|my|we|and|but|not|no|except|with|without|can|need|must|if|home)(?=[\s,]|$)/i;
+  /\d|(?:^|[\s,])(?:i|i['’]m|my|we|and|but|not|no|except|with|without|can|need|must|if|home|prefer|preferred|live|living|currently|visa|permit|citizen|first)(?=[\s,]|$)/i;
+/** The words a place's name can have in lowercase, as "Rio de Janeiro" does. */
+const SMALL_WORD = /^(?:of|de|del|la|le|da|do|the)$/;
+
+/** Whether what's left of "Remote from" reads as a place, as a few words that start in capitals. */
+function readsAsPlace(area: string): boolean {
+  const words = area.split(' ');
+  return (
+    area.length > 1 &&
+    area.length <= 60 &&
+    words.length <= 4 &&
+    !NOT_A_PLACE.test(area) &&
+    !NO_AREA.test(area) &&
+    !LONE_ZONE.test(area) &&
+    (isRegion(area) || words.every((word) => !/^\p{Ll}/u.test(word) || SMALL_WORD.test(word)))
+  );
+}
 
 /**
  * The area a site's location box can look in, from what "Remote from" says, or nothing unless it
  * reads as a place: "anywhere in the US" looks in the United States, and a time zone or a sentence
- * looks with no location at all.
+ * looks with no location at all. It's free text, and this goes to a site, so what it can't read
+ * stays here, and only a poorer search comes of that.
  */
 export function remoteArea(remoteFrom: string): string {
   const said = oneLine(remoteFrom).replace(LEAD_IN, '');
   if (THE_US.test(said)) return UNITED_STATES;
   if (TIME_ZONE.test(said)) return '';
-  const area = said.replace(AFTER_AREA, '').replace(/[\s.,:;!?)-]+$/, '');
-  const placeLike = area.length <= 60 && area.split(' ').length <= 4 && !NOT_A_PLACE.test(area);
-  return placeLike && !NO_AREA.test(area) ? area : '';
+  // Only what names one place, so what follows a comma goes unless it's the place's state.
+  const [area = ''] = placesIn(said.replace(AFTER_AREA, '').replace(/[\s.,:;!?)-]+$/, ''));
+  return readsAsPlace(area) ? area : '';
 }
 
 /** The places to look, remote first, and whether it has cities past as many as get searches. */
@@ -101,7 +117,7 @@ function placesFor({ workplaces, remoteFrom, places }: AboutYou): {
   places: Place[];
   cut: boolean;
 } {
-  const named = joinPlaces(distinct(places));
+  const named = distinct(savedPlaces(distinct(places)));
   // "Remote" typed as a city means the same as picking it.
   const isRemote = (place: string) => /^remote\b/i.test(place);
   const cities = named.filter((place) => !isRemote(place));

@@ -83,8 +83,8 @@ export function isSafeExternalUrl(url: string): boolean {
 }
 
 /**
- * What the window's own session may ask for: the app's own pages and, during development, the
- * screens' dev server, but nothing else on the web. Links go to the user's own browser instead.
+ * What a page in the window may ask for: the app's own pages and, during development, the screens'
+ * dev server, but nothing else on the web. Links go to the user's own browser instead.
  */
 export function windowMayLoad(url: string, devUrl?: string): boolean {
   try {

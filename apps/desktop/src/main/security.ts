@@ -21,13 +21,15 @@ export function denyPermissions(session: Session): void {
 }
 
 /**
- * Keeps the window's session off the web, whatever the page does. The content security policy
- * covers what a page loads, but not a link Chromium is told to download, as it is by the download
- * attribute or a click with Alt held. The app's own requests don't use this session.
+ * Keeps a page in the window off the web, whatever it does. The content security policy covers what
+ * a page loads, but not a link Chromium is told to download, as it is by a click with Alt held.
+ * This goes by the page, so it leaves alone what the session itself asks for, such as a dictionary
+ * for the spell checker.
  */
 export function keepOffTheWeb(session: Session, devUrl?: string): void {
   session.webRequest.onBeforeRequest((details, callback) => {
-    callback({ cancel: !windowMayLoad(details.url, devUrl) });
+    const fromAPage = details.webContentsId !== undefined;
+    callback({ cancel: fromAPage && !windowMayLoad(details.url, devUrl) });
   });
 }
 
