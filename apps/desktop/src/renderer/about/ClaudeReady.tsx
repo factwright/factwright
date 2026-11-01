@@ -111,6 +111,8 @@ export function ClaudeReady({
   // so the command comes after the step's words, on a line of its own, as a profile's sign-in does.
   const claude = typedClaude(status);
   const byPath = claude !== 'claude';
+  // A package manager's own update command is long too, and doesn't start Claude Code.
+  const update = status.state === 'too-old' ? status.update : undefined;
   const steps =
     status.state === 'missing'
       ? {
@@ -180,9 +182,10 @@ export function ClaudeReady({
                 <>
                   Open {terminal}. {openTerminal}
                 </>,
-                byPath ? (
+                byPath || update ? (
                   <>
-                    Run this: <Command text={`${claude} update`} api={api} long="update" />
+                    Run this:{' '}
+                    <Command text={update ?? `${claude} update`} api={api} long="update" />
                   </>
                 ) : (
                   <>
@@ -226,7 +229,7 @@ export function ClaudeReady({
             <li key={index}>{item}</li>
           ))}
         </ol>
-        {byPath && (
+        {byPath && !update && (
           <p className={styles.quiet}>
             {status.state === 'missing'
               ? 'Claude Code’s installer doesn’t always add it to your PATH, so this starts it where the installer puts it.'

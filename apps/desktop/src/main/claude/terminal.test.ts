@@ -7,13 +7,15 @@ import {
   mkdtempSync,
   readFileSync,
   rmSync,
+  symlinkSync,
   writeFileSync,
 } from 'node:fs';
+import { realpath } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { basename, delimiter, join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { signInCommand } from '../../shared/claude-commands.ts';
-import { type FindDeps, installedClaude } from './find.ts';
+import { type FindDeps, installedClaude, packageManagerUpdate } from './find.ts';
 
 // The commands the window shows for a Claude Code that's off PATH, run as the user runs them: in
 // a new terminal window, after Claude Code's own installer put it in .local/bin in a home folder
@@ -94,6 +96,8 @@ let standIn: string;
 let log: string;
 /** The terminal's PATH: an empty folder, and on Windows the system's own. */
 let path: string;
+/** Homebrew's link to a cask's claude, in a folder of Homebrew's own beside its brew, off PATH. */
+let brewedClaude: string;
 
 beforeAll(() => {
   root = mkdtempSync(join(tmpdir(), 'factwright-terminal-'));
@@ -123,6 +127,16 @@ beforeAll(() => {
       chmodSync(join(bin, name), 0o755);
     }
     path = join(root, 'empty');
+    const brewFolder = join(root, "Sam's brew");
+    const cask = join(brewFolder, 'Caskroom', 'claude-code', '2.0.12');
+    mkdirSync(cask, { recursive: true });
+    mkdirSync(join(brewFolder, 'bin'));
+    writeFileSync(join(cask, 'claude'), '');
+    const brew = join(brewFolder, 'bin', 'brew');
+    writeFileSync(brew, `#!/bin/sh\nexec '${process.execPath}' '${standIn}' "$@"\n`);
+    chmodSync(brew, 0o755);
+    brewedClaude = join(brewFolder, 'bin', 'claude');
+    symlinkSync(join(cask, 'claude'), brewedClaude);
   }
 }, 300_000);
 
@@ -169,6 +183,7 @@ const system = (platform: NodeJS.Platform): FindDeps => ({
   env: {},
   home: platform === 'win32' ? 'C:\\Users\\someone' : '/Users/someone',
   isFile: async () => false,
+  realPath: (each) => realpath(each),
   runShell: async () => '',
 });
 
@@ -208,6 +223,17 @@ describe.each(TERMINALS.map((terminal) => [terminal.name, terminal] as const))(
       if (WINDOWS) expect(result.stdout.trim()).toBe(process.version);
       else expect(starts()).toEqual([{ args: ['--version'], folder: null }]);
     });
+
+    it.runIf(terminal.platform === 'darwin')(
+      'updates a Homebrew cask with the command the window shows, off PATH',
+      async () => {
+        const command = await packageManagerUpdate(brewedClaude, false, system('darwin'));
+        const result = run(terminal, command as string);
+        expect(result.stderr).toBe('');
+        expect(result.status).toBe(0);
+        expect(starts()).toEqual([{ args: ['upgrade', 'claude-code'], folder: null }]);
+      },
+    );
 
     it('signs in an added profile with its own folder, quoted for the terminal', () => {
       const folder = join(root, 'Profiles', "Sam O'Neil’s $HOME", 'claude');

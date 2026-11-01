@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process';
-import { stat } from 'node:fs/promises';
+import { realpath, stat } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { posix, win32 } from 'node:path';
 import { promisify } from 'node:util';
@@ -11,6 +11,8 @@ export interface FindDeps {
   env: NodeJS.ProcessEnv;
   home: string;
   isFile: (path: string) => Promise<boolean>;
+  /** Where a path really leads, past any links. */
+  realPath: (path: string) => Promise<string>;
   /** Runs the shell with these arguments and resolves with what it prints, or rejects. */
   runShell: (shell: string, args: readonly string[]) => Promise<string>;
 }
@@ -66,6 +68,31 @@ export function installedClaude(deps: FindDeps): string {
   return claudeByPath(deps.platform, nativeSpot(deps), deps.home);
 }
 
+/**
+ * What the user types to update the Claude Code at `path` when Homebrew or WinGet installed it:
+ * for those, `claude update` only names this command. Null for any other, which `claude update`
+ * updates, or points the way. It tells them apart as Claude Code does, by where the program really
+ * is. Homebrew's `brew` is beside its link to `claude`, so a terminal that doesn't find `claude` by
+ * name doesn't find `brew` either, and it goes by its whole path too.
+ */
+export async function packageManagerUpdate(
+  path: string,
+  byName: boolean,
+  deps: FindDeps,
+): Promise<string | null> {
+  const real = await deps.realPath(path).catch(() => path);
+  // A cask lives in <Homebrew's folder>/Caskroom/<its name>/<its version>. Only a plain name goes
+  // into a command for the user to run.
+  const cask = /^(.+)\/Caskroom\/(\w[\w.@-]*)\//.exec(real);
+  if (cask) {
+    const brew = byName ? 'brew' : claudeByPath(deps.platform, `${cask[1]}/bin/brew`, deps.home);
+    return `${brew} upgrade ${cask[2]}`;
+  }
+  return /[/\\]Microsoft[/\\]WinGet[/\\](?:Packages|Links)[/\\]/i.test(real)
+    ? 'winget upgrade Anthropic.ClaudeCode'
+    : null;
+}
+
 /** FindDeps for the computer the app runs on, from Node's own modules. */
 export function nodeFindDeps(): FindDeps {
   return {
@@ -77,6 +104,7 @@ export function nodeFindDeps(): FindDeps {
       const stats = await stat(path).catch(() => null);
       return stats?.isFile() ?? false;
     },
+    realPath: (path) => realpath(path),
     runShell: async (shell, args) => {
       // Interactive shells ignore SIGTERM, so one that runs too long is killed outright.
       const { stdout } = await execFileAsync(shell, args, {
