@@ -1129,7 +1129,13 @@ try {
       (await workdayPanel.getByText('From the job’s resume').count()) >= 1,
     'its Role Description takes what the job’s own resume says you did there, in plain lines, and the panel says so',
   );
-  await shoot(workdayPanel, 'fill-10b-workday-description-panel');
+  // The panel's list of what it filled, opened to see each answer and where it came from.
+  if (SHOTS) {
+    const filled = workdayPanel.locator('details.group summary').first();
+    await filled.click();
+    await shoot(workdayPanel, 'fill-10b-workday-description-panel');
+    await filled.click();
+  }
   // Its menu offers what else is on file for the position: the starting resume's words and
   // Profile's. Each goes in the box only once you pick it.
   await workday.bringToFront();
@@ -1180,6 +1186,29 @@ try {
       (await typedIn('workExperience-225--roleDescription')) === STARTING_LINES.join('\n'),
     'each new part’s Role Description takes the starting resume’s words for that job, or else Profile’s, and what you picked stays',
   );
+  // A box that takes fewer characters than the words run to gets what fits, and says so.
+  await workday.locator('[aria-labelledby="Work-Experience-2-panel"] textarea').evaluate((box) => {
+    (box as HTMLTextAreaElement).maxLength = 20;
+    (box as HTMLTextAreaElement).value = '';
+  });
+  await workdayPanel.getByRole('button', { name: 'Fill again', exact: true }).click();
+  await workdayPanel.getByText('cut to fit 20 characters', { exact: false }).waitFor({
+    timeout: 40_000,
+    state: 'attached',
+  });
+  await workdayPanel.getByText(/^Filled \d+ of \d+ fields/).waitFor({ timeout: 40_000 });
+  check(
+    (await describedIn('Work-Experience-2-panel')) === 'Ran discovery for' &&
+      (await describedIn('Work-Experience-3-panel')) === 'Shipped the first forecasting product.' &&
+      (await typedIn('workExperience-225--roleDescription')) === STARTING_LINES.join('\n'),
+    'a box with a limit takes the words that fit, the panel says it cut them, and Fill again leaves what’s in the others',
+  );
+  if (SHOTS) {
+    const filled = workdayPanel.locator('details.group summary').first();
+    await filled.click();
+    await shoot(workdayPanel, 'fill-11b-workday-description-cut-panel');
+    await filled.click();
+  }
   await workdayPanel
     .getByRole('button', { name: 'Add 1 for your other school', exact: true })
     .click();
@@ -1189,7 +1218,6 @@ try {
     'and for your other school',
   );
   await shoot(workday, 'fill-11-workday-my-experience');
-  await shoot(workdayPanel, 'fill-11b-workday-my-experience-panel');
 
   await nextPage('Application Questions');
   await fillThisPage();
