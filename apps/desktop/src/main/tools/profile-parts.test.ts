@@ -65,6 +65,8 @@ beforeEach(() => {
     workspace: root,
     printer: {} as ResumePrinter,
     templates: new TemplateLibrary({ workspace: root }),
+    // Midday, so it's this date wherever the tests run.
+    now: () => new Date('2026-11-01T12:00:00'),
   });
 });
 
