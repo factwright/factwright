@@ -61,7 +61,7 @@ export function readLetterText(json: string | null | undefined): LetterText | nu
 }
 
 /** Text with its **bold** marks taken out, as it reads pasted into a form. */
-const unmarked = (text: string) => text.replace(/\*\*(.+?)\*\*/g, '$1');
+export const unmarked = (text: string) => text.replace(/\*\*(.+?)\*\*/g, '$1');
 
 /**
  * The letter as plain text, for an application form with a box for one: the greeting, each

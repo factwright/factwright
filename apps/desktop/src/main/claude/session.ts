@@ -9,11 +9,17 @@ import type { FiledFacts } from '../../shared/facts.ts';
 import { type PlanLevels, planLevels } from '../../shared/levels.ts';
 import type { Model } from '../../shared/models.ts';
 import type { RunChanges as RunChangesView } from '../../shared/run-changes.ts';
-import type { RunScope } from '../../shared/runs.ts';
+import { partOf, type RunScope } from '../../shared/runs.ts';
+import type { BoundProfileChanges } from '../about/profile-requests.ts';
 import type { BoundRevision } from '../jobs/revisions.ts';
 import type { BoundChanges } from '../jobs/versions.ts';
 import { workspaceDir } from '../jobs/workspace.ts';
-import { asksNothing, asksNothingAfter, permitsNothing } from '../policy.ts';
+import {
+  asksNothing,
+  asksNothingAfter,
+  permitsNothing,
+  UPDATE_PERMITS_NOTHING,
+} from '../policy.ts';
 import { RunActivity, turnEnd } from './activity.ts';
 import { claudeCommand } from './command.ts';
 import { findClaude, nodeFindDeps } from './find.ts';
@@ -22,6 +28,7 @@ import { keepBefore, type TaskChanges } from './run-changes.ts';
 import type { PermissionAsker, QuestionAsker, RunServer } from './run-server.ts';
 import { FIRST_RUN_SCREENS, ScreenWatch, TRUST_QUESTION } from './screen.ts';
 import { RUN_TOKEN_VARIABLE, sessionSettings, toolsConfig } from './settings.ts';
+import { ShellGuard } from './shell-guard.ts';
 import { RunSignals } from './signals.ts';
 import { claudeStatus, nodeStatusDeps } from './status.ts';
 
@@ -137,7 +144,7 @@ export interface RunOptions {
   /** The revision it's started for, which its calls to revision_findings read. */
   revision?: BoundRevision | undefined;
   /** The changes the user asked for, which its calls to requested_changes read. */
-  changes?: BoundChanges | undefined;
+  changes?: BoundChanges | BoundProfileChanges | undefined;
   /** The jobs it analyzes, by their IDs, which its tool calls know as its own. */
   jobs?: readonly string[] | undefined;
 }
@@ -293,7 +300,8 @@ export async function openRun(
       onFiled: events.filed,
       ask: deps.ask,
       noQuestions: () => quiet.reason,
-      noPermits: () => quiet.permits,
+      // A run on a part of Profile stays to that part, whatever it's asked next.
+      noPermits: () => (partOf(scope) ? UPDATE_PERMITS_NOTHING : quiet.permits),
       permit: deps.permit,
       // A call the user answered in the app is one the run no longer waits on them for.
       onAnswered: (call) => signals.answered(call),
@@ -321,6 +329,7 @@ export async function openRun(
 
   let stopping = false;
   let closed = false;
+  const shell = new ShellGuard();
   let exited = () => {};
   const done = new Promise<void>((resolve) => {
     exited = resolve;
@@ -345,7 +354,8 @@ export async function openRun(
   return {
     write: (data) => {
       if (closed) return;
-      terminal.write(data);
+      const kept = shell.pass(data);
+      if (kept) terminal.write(kept);
       // Enter answers a screen of Claude Code's own, which may bring the next.
       if (data.includes('\r') && !heard) {
         firstRun.answered();
@@ -354,13 +364,17 @@ export async function openRun(
     },
     send: (text) => {
       if (closed) return;
+      const kept = shell.pass(text);
+      if (!kept.trim()) return;
       // A prompt the user sends starts another task, which asks nothing only if it's a quick
       // resume's, as its hook says too.
       signals.prompted();
-      terminal.write(text);
+      terminal.write(kept);
       // Typed together, Claude Code could read the Enter as part of a paste rather than a send.
       setTimeout(() => {
-        if (!closed) terminal.write('\r');
+        if (closed) return;
+        shell.pass('\r');
+        terminal.write('\r');
       }, 150);
     },
     resize: (next) => {

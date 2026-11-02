@@ -27,4 +27,14 @@ describe('claudeCommand', () => {
       verbatim: true,
     });
   });
+
+  it('keeps the tool list whole for cmd.exe, which would split on its commas and "="', () => {
+    const claude = 'C:\\Users\\someone\\AppData\\Roaming\\npm\\claude.cmd';
+    expect(claudeCommand(claude, ['--tools=Read,Grep'], 'win32').args).toEqual([
+      '/d',
+      '/s',
+      '/c',
+      `""${claude}" "--tools=Read,Grep""`,
+    ]);
+  });
 });

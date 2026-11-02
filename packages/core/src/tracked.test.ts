@@ -351,6 +351,17 @@ describe('jobList', () => {
     });
   });
 
+  it('keeps the role on file where the workspace names none, and yours over both', () => {
+    const row = trackedRow(STORED_JOB);
+    const list = (role: string, stored = row) =>
+      jobList([stored], new Map([['acme--staff', { ...found, role }]]), NOTHING_KEPT)[0]?.role;
+    expect(list('')).toBe(row.role);
+    expect(list('Principal Engineer')).toBe('Principal Engineer');
+    const yours = trackedRow({ ...STORED_JOB, own_role: 'Your title' });
+    expect(list('', yours)).toBe('Your title');
+    expect(list('Principal Engineer', yours)).toBe('Your title');
+  });
+
   it('keeps a job whose files are gone only while something about it is tracked', () => {
     const untracked = trackedRow({
       ...STORED_JOB,

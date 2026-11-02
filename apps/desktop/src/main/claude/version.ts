@@ -1,5 +1,9 @@
-/** The oldest Claude Code the app's flags were tested with, on 2026-10-10. */
-export const MIN_VERSION = '2.1.270';
+/**
+ * The oldest Claude Code the app accepts. By Claude Code's changelog, 2.1.295 fixed `--tools` and
+ * `--restricted` not applying to built-in tools that register after launch. The app's flags,
+ * settings and skills were last tested with it on 2026-10-31.
+ */
+export const MIN_VERSION = '2.1.295';
 
 /** What the installed Claude Code's version means for the app. */
 export type VersionCheck =

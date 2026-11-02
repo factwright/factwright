@@ -17,7 +17,7 @@ describe('checkVersion', () => {
     expect(checkVersion(`${version} (Claude Code)`)).toEqual({ status: 'ok', version });
   });
 
-  it.each(['2.1.269', '2.0.999', '1.9.400'])('flags %s as too old', (version) => {
+  it.each(['2.1.294', '2.0.999', '1.9.400'])('flags %s as too old', (version) => {
     expect(checkVersion(`${version} (Claude Code)`)).toEqual({ status: 'too-old', version });
   });
 

@@ -15,6 +15,7 @@ import {
   KINDS_FILE,
   type KindTarget,
   keptLength,
+  kindNamed,
   kindTargetsIn,
   letterPlainText,
   localDate,
@@ -35,11 +36,14 @@ import {
   type SavedForm,
   SENT_STATUSES,
   type SentUndo,
+  type StartingOnFile,
   type StoredRow,
   savedFormFile,
   savedFormJson,
   sentAnswersOf,
   sentBefore,
+  startingFolders,
+  startingOnFile,
   trackedRow,
   uploadName,
   type WorkHistory,
@@ -74,6 +78,8 @@ import { type Made, rowChange } from './save.ts';
 import {
   decoded,
   fileContents,
+  inTurns,
+  kindFoundIn,
   notesDetails,
   notesPath,
   nothingSynced,
@@ -83,6 +89,8 @@ import {
   resumePaths,
   type Synced,
   type SyncedFile,
+  searchPaths,
+  startingPaths,
   syncedJobs,
 } from './synced.ts';
 
@@ -112,7 +120,7 @@ interface Read {
   /** The jobs the app lists only from job searches' files, which a fill doesn't read. */
   others: Job[];
   profile: ProfileForForms;
-  /** Each kind of job you want, with your target pay for it. */
+  /** Each kind of job you want, with the titles you want in it and your target pay for it. */
   targets: KindTarget[];
   history: WorkHistory;
   /** Files' contents fetched, by their IDs, each once, or null for one the store hasn't. */
@@ -326,6 +334,23 @@ export class SyncFill {
     return text ? { ...job, ...notesDetails(read.synced, job.folder, text) } : job;
   }
 
+  /**
+   * A job, with the kind of job the job search that found it gave it, as the app knows it, for one
+   * you haven't put under a kind, and whose fit check didn't name one, which only then needs the job
+   * searches' files read. With one kind of job, there's nothing to tell.
+   */
+  private async withSearchKind(read: Read, job: Job): Promise<Job> {
+    const kinds = read.targets;
+    if (kinds.length < 2 || kindNamed(job.kind, kinds) || job.kindFound) return job;
+    const paths = searchPaths(read.synced);
+    const texts = new Map(read.notes);
+    await inTurns(paths, async (path) => {
+      const text = await this.text(read, path);
+      if (text) texts.set(path, text);
+    });
+    return { ...job, kindFound: kindFoundIn(read.synced, job, texts) };
+  }
+
   /** A job by its ID, among all the jobs read. */
   private jobOf = (read: Read, id: string) =>
     read.jobs.find((job) => job.id === id) ?? read.others.find((job) => job.id === id) ?? null;
@@ -350,9 +375,15 @@ export class SyncFill {
   }
 
   /** A resume.json that holds up, with a name on it, as the app takes one, or null. */
-  private async resumeAt(read: Read, path: string, from: ResumeOnFile['from']) {
+  private async resumeData(read: Read, path: string) {
     const checked = readResume(json(await this.text(read, path)));
-    return checked.ok && checked.resume.name.trim() ? resumeDetails(checked.resume, from) : null;
+    return checked.ok && checked.resume.name.trim() ? checked.resume : null;
+  }
+
+  /** What a resume.json says of you, as the app takes one, or null. */
+  private async resumeAt(read: Read, path: string, from: ResumeOnFile['from']) {
+    const resume = await this.resumeData(read, path);
+    return resume ? resumeDetails(resume, from) : null;
   }
 
   /** The job's own resume, or else your newest, as the app finds them, or null for none yet. */
@@ -366,6 +397,24 @@ export class SyncFill {
       if (newest) return newest;
     }
     return null;
+  }
+
+  /**
+   * What your starting resumes say you did in each position, as the app finds them: those of the
+   * job's kind of job, or of each kind while that isn't known.
+   */
+  private starting(read: Read, job: Job | null): Promise<StartingOnFile[]> {
+    return Promise.all(
+      startingFolders(job, read.targets).map(async (starting) => {
+        const resumes = await Promise.all(
+          startingPaths(read.synced, starting.folder).map((path) => this.resumeData(read, path)),
+        );
+        return startingOnFile(
+          starting,
+          resumes.filter((each) => each !== null),
+        );
+      }),
+    );
   }
 
   /**
@@ -404,12 +453,14 @@ export class SyncFill {
     const found =
       formJob(read.jobs, ask.url, ask.company, ask.role) ??
       formJob(read.others, ask.url, ask.company, ask.role);
-    const job = found && (await this.withNotes(read, found));
+    const noted = found && (await this.withNotes(read, found));
+    const job = noted && (await this.withSearchKind(read, noted));
     const folder = job?.folder ?? null;
-    const [answers, letterJson, resume] = await Promise.all([
+    const [answers, letterJson, resume, starting] = await Promise.all([
       folder ? this.text(read, `applications/${folder}/answers.md`) : null,
       folder ? this.text(read, `applications/${folder}/cover-letter.json`) : null,
       this.resume(read, folder),
+      this.starting(read, job),
     ]);
     const files = job ? await this.offers(read, job) : { resume: null, 'cover-letter': null };
     const letter = readLetterText(letterJson);
@@ -420,6 +471,7 @@ export class SyncFill {
       // Never synced: Profile keeps them on the computer Factwright's on.
       kept: NO_PRIVATE,
       resume,
+      starting,
       history: read.history,
       job: job ? onFileJob(job) : null,
       sent: sentBefore(read.jobs),

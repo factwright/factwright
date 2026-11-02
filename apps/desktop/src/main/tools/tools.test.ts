@@ -76,6 +76,10 @@ const about = {
     history = readHistory(saved);
     return history;
   },
+  notes: () => '',
+  confidential: () => [] as string[],
+  changeConfidential: () => [] as string[],
+  criteriaIsOwn: () => false,
 };
 
 const tool = (name: string) => {
@@ -184,7 +188,18 @@ it('gives revision_findings only to the run started for the revision', async () 
 it('marks the tools that stay on this computer, which Claude may call without asking', () => {
   const local = tools.filter(({ annotations }) => annotations?.openWorldHint === false);
   expect(local.map((each) => each.name).sort()).toEqual(
-    [...LOCAL_TOOLS, ...FACT_TOOLS, ...PROFILE_TOOLS, ...TEMPLATE_TOOLS].sort(),
+    [
+      ...LOCAL_TOOLS,
+      ...FACT_TOOLS,
+      ...PROFILE_TOOLS,
+      ...TEMPLATE_TOOLS,
+      // Each part of Profile's own, which only a run on that part has.
+      'keep_names_private',
+      'save_beyond_work',
+      'save_why_leaving',
+      'save_resume_choices',
+      'save_what_you_want',
+    ].sort(),
   );
 });
 
@@ -210,7 +225,7 @@ describe('search_focus', () => {
         'The user set it in Find jobs for this search alone. It’s binding for this run, on top of `searches/criteria.md`, whose deal-breakers still apply. Leave criteria.md as it is. Drop each listing that doesn’t fit it, and count those as “outside this search’s focus” in the funnel, with a few examples.',
         '',
         "- **Kind of company:** Early startup (Up to Series A, under about 50 people), or Growing startup (Series B and on, about 50 to 500 people). Tell by the company's stage and size, from the posting, its site or news of its funding. When you can't tell, keep the job and say so in its flags.",
-        '- **Pay:** $150,000 to $200,000 a year. Leave out a job whose listed pay is all below $150,000 or all above $200,000. Keep a job that lists no pay, and say so in its flags.',
+        '- **Pay:** $150,000 to $200,000 a year. Leave out a job whose listed pay is all below $150,000 or all above $200,000. An hourly wage counts as 2,080 hours a year. Keep a job that lists no pay, and say so in its flags.',
         '- **Where:** Remote, as the posting says.',
         '- **Only these industries:** Healthcare.',
         '- **Leave out these industries:** Crypto.',
@@ -1174,7 +1189,7 @@ describe('read_posting', () => {
 
   it('sends any other link to read_page, without fetching it', async () => {
     expect(await tool('read_posting').run({ url: 'https://acme.example/jobs/staff' })).toBe(
-      'https://acme.example/jobs/staff isn’t a posting on Greenhouse, Lever, Ashby or Gem. Read it with read_page, or use job_board for a company’s whole board.',
+      'https://acme.example/jobs/staff isn’t a posting on Greenhouse, Lever, Ashby, Gem, Recruitee or Workable. Read it with read_page, or use job_board for a company’s whole board.',
     );
     expect(fetch).not.toHaveBeenCalled();
   });
@@ -1205,6 +1220,14 @@ describe('read_page', () => {
     fetch.mockResolvedValue('<html><body></body></html>');
     expect(await tool('read_page').run({ url: 'https://acme.example/blank' })).toBe(
       'https://acme.example/blank had no text to read, so it probably needs a browser or a sign-in.',
+    );
+    fetch.mockResolvedValue('<script>window.workday = { postingAvailable: false }</script>');
+    expect(
+      await tool('read_page').run({
+        url: 'https://acme.wd1.myworkdayjobs.com/Careers/job/Nurse_R1',
+      }),
+    ).toBe(
+      'https://acme.wd1.myworkdayjobs.com/Careers/job/Nurse_R1 has closed: Workday says it’s no longer available.',
     );
     fetch.mockRejectedValue(new Error('acme.example answered 404'));
     expect(await tool('read_page').run({ url: 'https://acme.example/gone' })).toBe(

@@ -24,7 +24,7 @@ Input: the company (name or link), plus the job posting or `job <id>` if there i
 
 ## 2. Research
 Search first. `read_page` reads a team or about page. Read only the best ones.
-- Search snippets for LinkedIn profiles: `site:linkedin.com/in "<Company>" "<title>"`. They give name, title, and location, but they go stale, so mark those titles "per search, verify".
+- Search snippets for LinkedIn profiles: a web search for `"<Company>" "<title>"` with `allowed_domains` of `linkedin.com`. They give name, title, and location, but they go stale, so mark those titles "per search, verify".
 - The company's own team, about, and leadership pages; blog authors; conference talks and podcasts; GitHub org members; press releases; founders' posts on Hacker News.
 - Job posts that name a poster or a hiring team.
 

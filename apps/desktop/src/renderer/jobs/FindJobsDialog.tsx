@@ -1,36 +1,43 @@
 import { isFocused, type KindName, NO_FOCUS, type SearchFocus } from '@factwright/core';
 import { Button, Dialog, DialogActions, Input, SegmentedControl, Select } from '@factwright/ui';
-import { type FormEvent, useId, useState } from 'react';
+import { type FormEvent, Fragment, useId, useState } from 'react';
+import type { Field } from '../../shared/about.ts';
 import type { FactwrightApi } from '../../shared/api.ts';
+import type { KindSearches } from '../../shared/browser-searches.ts';
 import {
   COMMAND_LINE_MARKS,
+  defaultSearchSites,
   SEARCH_SITES,
   type SearchSite,
   type SearchSources,
   searchCompany,
 } from '../../shared/runs.ts';
 import { usePref } from '../prefs.ts';
+import { BrowserSearches } from './BrowserSearches.tsx';
 import styles from './FindJobsDialog.module.css';
 import { FocusSection } from './SearchFocus.tsx';
 
 /** Each place to look, as the dialog offers it. */
 const PLACES: Readonly<Record<SearchSite, { name: string; about: string }>> = {
-  hn: {
-    name: 'Hacker News: Who is hiring?',
-    about: 'The monthly thread where hundreds of startups post. Your Claude reads all of it.',
+  boards: {
+    name: 'Company job boards',
+    about:
+      'Openings on the systems employers post to, in any field, such as Workday, iCIMS and Greenhouse. Your Claude finds them through web search, and checks each is still open where it can.',
   },
   linkedin: {
     name: 'LinkedIn',
     about:
-      'Postings found through a web search, each read on the employer’s own site. Factwright never opens LinkedIn or signs in.',
+      'What a web search can see of its listings, which isn’t all of them, checked on the employer’s own site where it can be. Factwright never opens LinkedIn or signs in.',
   },
   indeed: {
     name: 'Indeed',
-    about: 'Listings found through a web search, each read on the employer’s own site.',
+    about:
+      'What a web search can see of its listings, which isn’t all of them, checked on the employer’s own site where it can be.',
   },
-  boards: {
-    name: 'Company job boards',
-    about: 'Openings on Greenhouse, Lever, Ashby and Gem, straight from the companies hiring.',
+  hn: {
+    name: 'Hacker News: Who is hiring?',
+    about:
+      'The monthly thread where hundreds of startups post, mostly for software jobs. Your Claude reads all of it.',
   },
 };
 
@@ -92,11 +99,17 @@ const isText = (value: unknown): value is string => typeof value === 'string';
  * together later. With more than one kind of job, it looks for one kind or every kind. The
  * places and the kind picked are kept for next time. A focus is for this search alone, so it
  * starts empty each time: the app keeps it for the search to read, and the search names it.
+ * Under LinkedIn and Indeed, ready-made searches for the user to open in their own browser.
  */
 export function FindJobsDialog({
   api,
   today,
   kinds = [],
+  fields = [],
+  searches = [],
+  profileName = 'Profile',
+  onOpenExtension,
+  onOpenProfile,
   onStart,
   onClose,
 }: {
@@ -104,10 +117,24 @@ export function FindJobsDialog({
   today: string;
   /** The user's kinds of job, when they want more than one. */
   kinds?: readonly KindName[];
+  /** The kinds of work the user wants, which pick where to look until they've chosen. */
+  fields?: readonly Field[];
+  /** Each kind of job's ready-made searches, to open in the user's own browser. */
+  searches?: readonly KindSearches[];
+  /** What the sidebar calls the place to add job titles: Profile, or Get started until then. */
+  profileName?: string;
+  /** Shows the Browser extension window over this one. */
+  onOpenExtension: () => void;
+  /** Goes where job titles are added, once this has closed. */
+  onOpenProfile: () => void;
   onStart: (sources: SearchSources) => void;
   onClose: () => void;
 }) {
-  const [sites, setSites] = usePref<SearchSite[]>('search.sites', ['hn'], isSites);
+  const [sites, setSites] = usePref<SearchSite[]>(
+    'search.sites',
+    defaultSearchSites(fields),
+    isSites,
+  );
   const [kept, setKind] = usePref<string>('search.kind', '', isText);
   // A kind since removed, or none at all, looks for every kind.
   const kind = kinds.length > 1 && kinds.some((each) => each.id === kept) ? kept : '';
@@ -183,34 +210,47 @@ export function FindJobsDialog({
               const picked = sites.includes(site);
               const { name, about } = PLACES[site];
               return (
-                <div key={site} className={`${styles.place} ${picked ? styles.picked : ''}`}>
-                  <label className={styles.pick}>
-                    <input
-                      type="checkbox"
-                      checked={picked}
-                      onChange={(event) => toggle(site, event.target.checked)}
+                <Fragment key={site}>
+                  <div className={`${styles.place} ${picked ? styles.picked : ''}`}>
+                    <label className={styles.pick}>
+                      <input
+                        type="checkbox"
+                        checked={picked}
+                        onChange={(event) => toggle(site, event.target.checked)}
+                      />
+                      <span className={styles.text}>
+                        <span className={styles.name}>{name}</span>
+                        <span className={styles.about}>{about}</span>
+                      </span>
+                    </label>
+                    {site === 'hn' && picked && (
+                      <Select
+                        className={styles.month}
+                        aria-label="Which month’s thread"
+                        value={month}
+                        onChange={(event) => setMonth(event.target.value)}
+                      >
+                        <option value="">The newest thread</option>
+                        {recentMonths(today).map(({ value, label }) => (
+                          <option key={value} value={value}>
+                            {label}
+                          </option>
+                        ))}
+                      </Select>
+                    )}
+                  </div>
+                  {site === 'indeed' && (
+                    <BrowserSearches
+                      kinds={searches.filter((each) => !kind || each.id === kind)}
+                      profileName={profileName}
+                      onOpenExtension={onOpenExtension}
+                      onOpenProfile={() => {
+                        close();
+                        onOpenProfile();
+                      }}
                     />
-                    <span className={styles.text}>
-                      <span className={styles.name}>{name}</span>
-                      <span className={styles.about}>{about}</span>
-                    </span>
-                  </label>
-                  {site === 'hn' && picked && (
-                    <Select
-                      className={styles.month}
-                      aria-label="Which month’s thread"
-                      value={month}
-                      onChange={(event) => setMonth(event.target.value)}
-                    >
-                      <option value="">The newest thread</option>
-                      {recentMonths(today).map(({ value, label }) => (
-                        <option key={value} value={value}>
-                          {label}
-                        </option>
-                      ))}
-                    </Select>
                   )}
-                </div>
+                </Fragment>
               );
             })}
             <div className={`${styles.place} ${naming ? styles.picked : ''}`}>

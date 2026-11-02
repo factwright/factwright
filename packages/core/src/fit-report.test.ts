@@ -208,3 +208,20 @@ describe('a write-up made to keep the app busy', () => {
     expect(jobNotesSentiment('- **Sentiment:**   ')).toBeNull();
   });
 });
+
+describe('the skills part of a score', () => {
+  it('reads Skills as the part older write-ups call Stack, in the verdict and the score', () => {
+    const older = parseFitReport(REPORT);
+    const newer = parseFitReport(
+      REPORT.replace('stack 14/20', 'skills 14/20').replace('**Stack 14/20**', '**Skills 14/20**'),
+    );
+    expect(newer?.parts?.find((part) => part.key === 'stack')).toEqual(
+      older?.parts?.find((part) => part.key === 'stack'),
+    );
+    expect(newer?.parts?.find((part) => part.key === 'stack')).toMatchObject({
+      points: 14,
+      max: 20,
+      why: 'Go and TypeScript match; Rust would be new',
+    });
+  });
+});

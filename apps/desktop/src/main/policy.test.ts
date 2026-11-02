@@ -20,6 +20,7 @@ import {
   SEVERAL_ASK_NOTHING,
   SEVERAL_PERMITS_NOTHING,
   saveableFileName,
+  windowMayLoad,
 } from './policy.ts';
 
 describe('parseTerminalSize', () => {
@@ -68,6 +69,35 @@ describe('isSafeExternalUrl', () => {
       expect(isSafeExternalUrl(url)).toBe(false);
     },
   );
+});
+
+describe('windowMayLoad', () => {
+  it.each(['app://factwright/index.html', 'data:text/plain,hi', 'blob:app://factwright/1'])(
+    'lets the window load %s',
+    (url) => {
+      expect(windowMayLoad(url)).toBe(true);
+    },
+  );
+
+  it.each([
+    'https://www.linkedin.com/jobs/search/?keywords=Nurse',
+    'https://www.indeed.com/jobs?q=Nurse',
+    'https://www.governmentjobs.com/jobs?keyword=Nurse',
+    'https://factwright.com/',
+    'http://127.0.0.1:8787/',
+    'wss://example.com/',
+    'not a url',
+  ])('keeps the window from %s', (url) => {
+    expect(windowMayLoad(url)).toBe(false);
+  });
+
+  it('lets it reach only the dev server during development, by its address and socket', () => {
+    const dev = 'http://localhost:5173/';
+    expect(windowMayLoad('http://localhost:5173/src/main.tsx', dev)).toBe(true);
+    expect(windowMayLoad('ws://localhost:5173/', dev)).toBe(true);
+    expect(windowMayLoad('http://localhost:5174/', dev)).toBe(false);
+    expect(windowMayLoad('https://www.linkedin.com/jobs/', dev)).toBe(false);
+  });
 });
 
 describe('resolveInside', () => {
@@ -355,7 +385,7 @@ describe('parseRunTask', () => {
     ).toEqual({
       skill: 'job-search',
       // In the order a search goes through them.
-      sources: { sites: ['hn', 'indeed'], month: '2026-10', company: 'Acme Robotics' },
+      sources: { sites: ['indeed', 'hn'], month: '2026-10', company: 'Acme Robotics' },
     });
     expect(
       parseRunTask({
@@ -595,6 +625,57 @@ describe('analyzing several jobs', () => {
       SEVERAL_PERMITS_NOTHING,
     );
     expect(asksNothingAfter(SEVERAL_ASK_NOTHING, back)).toBe(SEVERAL_ASK_NOTHING);
+  });
+});
+
+describe('a task on a part of Profile', () => {
+  const request = '0123456789abcdef';
+
+  it('takes a part by its name, a kind of job by its id for that part alone, and a request', () => {
+    expect(parseRunTask({ skill: 'update-profile', part: 'wants', request })).toEqual({
+      skill: 'update-profile',
+      part: 'wants',
+      request,
+    });
+    expect(
+      parseRunTask({ skill: 'update-profile', part: 'kind', kind: 'design', request }),
+    ).toEqual({
+      skill: 'update-profile',
+      part: 'kind',
+      kind: 'design',
+      request,
+    });
+  });
+
+  it.each([
+    { skill: 'update-profile', request },
+    { skill: 'update-profile', part: 'wants' },
+    { skill: 'update-profile', part: 'wants', request: 'Typed into the prompt' },
+    { skill: 'update-profile', part: 'street', request },
+    { skill: 'update-profile', part: 'about', request },
+    { skill: 'update-profile', part: 'applications', request },
+    { skill: 'update-profile', part: 'shared', request },
+    { skill: 'update-profile', part: 'kind', request },
+    { skill: 'update-profile', part: 'kind', kind: 'Not An Id!', request },
+    { skill: 'update-profile', part: 'wants', kind: 'design', request },
+    { skill: 'update-profile', part: 'wants', changes: 'Typed into the prompt', request },
+    { skill: 'update-profile', part: 'wants', jobId: 'acme--staff', request },
+    { skill: 'work-history', part: 'wants', request },
+  ])('refuses %j', (value) => {
+    expect(parseRunTask(value)).toBeNull();
+  });
+
+  it('types only the app’s own word for the part, and a kind of job’s id', () => {
+    expect(runPrompt({ skill: 'update-profile', part: 'leaving', request })).toBe(
+      '/factwright:update-profile leaving',
+    );
+    expect(
+      runPrompt({ skill: 'update-profile', part: 'kind', kind: 'project-manager', request }),
+    ).toBe('/factwright:update-profile kind project-manager');
+  });
+
+  it('asks the user its own questions, as any task does', () => {
+    expect(asksNothing(runPrompt({ skill: 'update-profile', part: 'wants', request }))).toBeNull();
   });
 });
 

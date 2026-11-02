@@ -23,7 +23,7 @@ describe('ClaudeCard', () => {
   it.each([
     [{ state: 'signed-out', version: '2.1.296' }, 'Not signed in', 'claude auth login'],
     [
-      { state: 'too-old', version: '2.0.12', minimum: '2.1.270' },
+      { state: 'too-old', version: '2.0.12', minimum: '2.1.295' },
       'Needs an update',
       'claude update',
     ],
@@ -62,7 +62,7 @@ describe('ClaudeCard', () => {
     expect((await axe.run(container)).violations).toEqual([]);
 
     for (const [status, command] of [
-      [{ state: 'too-old', version: '2.0.12', minimum: '2.1.270', claude }, `${claude} update`],
+      [{ state: 'too-old', version: '2.0.12', minimum: '2.1.295', claude }, `${claude} update`],
       [{ state: 'unknown', claude }, `${claude} --version`],
     ] as [ClaudeStatusView, string][]) {
       copy.mockClear();
@@ -73,6 +73,24 @@ describe('ClaudeCard', () => {
       screen.getByRole('button', { name: 'Copy the command' }).click();
       await waitFor(() => expect(copy).toHaveBeenCalledWith(command));
     }
+  });
+
+  it('updates with a package manager’s own command, and offers to copy it', async () => {
+    const update = 'winget upgrade Anthropic.ClaudeCode';
+    const copy = vi.fn(async () => ({ ok: true as const }));
+    const { container } = render(
+      <ClaudeCard
+        status={{ state: 'too-old', version: '2.0.12', minimum: '2.1.295', update }}
+        onRecheck={vi.fn()}
+        copy={copy}
+        terminal="PowerShell"
+      />,
+    );
+    expect(container.textContent).toContain(`In PowerShell, run ${update}.`);
+    expect(container.textContent).not.toContain('claude update');
+    screen.getByRole('button', { name: 'Copy the command' }).click();
+    await waitFor(() => expect(copy).toHaveBeenCalledWith(update));
+    expect((await axe.run(container)).violations).toEqual([]);
   });
 
   it('offers no copy for plain claude, which is short to type', () => {

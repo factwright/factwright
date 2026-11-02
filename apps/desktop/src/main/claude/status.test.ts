@@ -14,12 +14,14 @@ function deps(
   found: string | null,
   outputs: Record<string, string>,
   typed: string | null = null,
+  update: string | null = null,
 ): StatusDeps {
   return {
     find: async () => found,
     run: async (_claude, args) => outputs[args.join(' ')] ?? '',
     inTerminal: vi.fn(async () => typed),
     installed: () => NATIVE,
+    update: vi.fn(async () => update),
   };
 }
 
@@ -55,7 +57,7 @@ describe('claudeStatus', () => {
     const status = await claudeStatus(
       deps(CLAUDE, { '--version': '2.0.12 (Claude Code)', 'auth status --json': SIGNED_IN }),
     );
-    expect(status).toEqual({ state: 'too-old', version: '2.0.12', minimum: '2.1.270' });
+    expect(status).toEqual({ state: 'too-old', version: '2.0.12', minimum: '2.1.295' });
   });
 
   it('says when claude is signed out', async () => {
@@ -81,13 +83,39 @@ describe('claudeStatus', () => {
     expect(await claudeStatus(offPath({ '--version': '2.0.12 (Claude Code)' }))).toEqual({
       state: 'too-old',
       version: '2.0.12',
-      minimum: '2.1.270',
+      minimum: '2.1.295',
       claude: NATIVE,
     });
     expect(await claudeStatus(offPath({ '--version': 'oops' }))).toEqual({
       state: 'unknown',
       claude: NATIVE,
     });
+  });
+
+  it('says what updates a claude too old that a package manager installed', async () => {
+    const update = 'brew upgrade claude-code';
+    const outputs = { '--version': '2.0.12 (Claude Code)' };
+    const tooOld = { state: 'too-old', version: '2.0.12', minimum: '2.1.295', update };
+    const onPath = deps(CLAUDE, outputs, null, update);
+    expect(await claudeStatus(onPath)).toEqual(tooOld);
+    expect(onPath.update).toHaveBeenCalledWith(CLAUDE, true);
+    const offPath = deps(CLAUDE, outputs, NATIVE, update);
+    expect(await claudeStatus(offPath)).toEqual({ ...tooOld, claude: NATIVE });
+    expect(offPath.update).toHaveBeenCalledWith(CLAUDE, false);
+  });
+
+  it('asks about a package manager only for a claude that’s too old', async () => {
+    const signedOut = deps(
+      CLAUDE,
+      {
+        '--version': '2.1.303 (Claude Code)',
+        'auth status --json': JSON.stringify({ loggedIn: false }),
+      },
+      null,
+      'brew upgrade claude-code',
+    );
+    expect(await claudeStatus(signedOut)).toEqual({ state: 'signed-out', version: '2.1.303' });
+    expect(signedOut.update).not.toHaveBeenCalled();
   });
 
   it('never asks how a terminal finds a claude that’s ready, as the window shows no command', async () => {

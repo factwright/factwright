@@ -1,4 +1,5 @@
 import { localDate } from '@factwright/core';
+import { SYSTEM_THEME } from '@factwright/ui';
 import {
   type RunProgress,
   type RunStep,
@@ -45,6 +46,7 @@ import { sampleTracker } from './jobs/sample-tracker.ts';
 import { sampleProfiles } from './profiles/sample-profiles.ts';
 import { sampleChanges } from './sample-changes.ts';
 import { sampleSync } from './sync/sample-sync.ts';
+import { themeNow } from './theme.ts';
 
 const READY: ClaudeStatus = {
   state: 'ready',
@@ -79,9 +81,15 @@ const SETUP_CHECKS: Readonly<Record<string, SetupCheck>> = {
 const SAMPLES: Readonly<Record<string, ClaudeStatus>> = {
   ready: READY,
   'signed-out': { state: 'signed-out', version: '2.1.296' },
-  'too-old': { state: 'too-old', version: '2.0.12', minimum: '2.1.270' },
+  'too-old': { state: 'too-old', version: '2.0.12', minimum: '2.1.295' },
   missing: { state: 'missing' },
   unknown: { state: 'unknown' },
+};
+
+/** What updates a Claude Code that's too old, for ?installed: a package manager's own command. */
+const PACKAGE_UPDATES: Readonly<Record<string, string>> = {
+  homebrew: 'brew upgrade claude-code',
+  winget: 'winget upgrade Anthropic.ClaudeCode',
 };
 
 /**
@@ -183,10 +191,13 @@ function sampleRun(dark: boolean) {
               `${color('34', '✻')} ${color(secondary, 'Reading the newest “Who is hiring?” thread…')}\r\n`,
             ],
     taskDone: (task: RunTask) => [
-      `\r\n${color(main, `⏺ Done. ${'jobId' in task ? 'The job’s panel shows what changed.' : 'The jobs that fit are under New.'}`)}\r\n\r\n${color(secondary, '❯')} `,
+      `\r\n${color(main, `⏺ Done. ${'part' in task ? PART_SAID : 'jobId' in task ? 'The job’s panel shows what changed.' : 'The jobs that fit are under New.'}`)}\r\n\r\n${color(secondary, '❯')} `,
     ],
   };
 }
+
+/** What a made-up change to a part of Profile says once it's done. */
+const PART_SAID = 'I saved what you asked for, and nothing else.';
 
 /** Claude Code's line for a call that needs the user's OK, as its terminal prompt names it. */
 function permissionCall(ask: PermissionAsk): string {
@@ -449,7 +460,8 @@ const noted = (round: QuestionRound, reply: RoundReply): [string, string][] =>
  * Sample answers for checking the screens in a browser. The query string picks Claude's status,
  * such as ?claude=signed-out&platform=win32, and ?claude=checking never answers. With
  * ?path=off, a new terminal doesn't find Claude Code by name, as after its installer on Windows,
- * so the steps start it by its whole path, as they do while it's missing. ?plan picks the
+ * so the steps start it by its whole path, as they do while it's missing. With ?installed=homebrew
+ * or winget, ?claude=too-old updates it with that package manager's own command. ?plan picks the
  * plan Claude is ready on: pro, team, or api for an API key. ?jobs picks the jobs: none, failed
  * or loading. ?profile picks how far the user's profile has come: new, started or done.
  * ?profiles picks how many profiles there are: two, three with an added one open (added), or two
@@ -530,7 +542,9 @@ export function sampleApi(): FactwrightApi {
   let analyzesNew = true;
   // ?end=question has a run stop to ask in its own words, and ?end=rate_limit end in that error.
   const ending = query.get('end');
-  const dark = () => window.matchMedia('(prefers-color-scheme: dark)').matches;
+  const dark = () => themeNow().mode === 'dark';
+  // ?theme=nord picks how the app looks, as Appearance would. It lasts until a reload.
+  let theme = query.get('theme') ?? SYSTEM_THEME;
 
   // The made-up runs, side by side, a tab each, and the tasks waiting in line, as many at once
   // as the app runs them.
@@ -637,7 +651,13 @@ export function sampleApi(): FactwrightApi {
   };
   const finish = (sample: Sample) => {
     if (sample.task) tracker.madeBy(sample.task);
-    ended(sample, { said: 'Done. The job’s panel shows what changed.', error: null });
+    ended(sample, {
+      said:
+        sample.task && 'part' in sample.task
+          ? `Done. ${PART_SAID}`
+          : 'Done. The job’s panel shows what changed.',
+      error: null,
+    });
     changes.done(sample.record, sample.task);
     done(sample);
   };
@@ -1039,7 +1059,13 @@ export function sampleApi(): FactwrightApi {
           : '~/.local/bin/claude';
       const byPath =
         status.state !== 'ready' && (status.state === 'missing' || query.get('path') === 'off');
-      return Promise.resolve(byPath ? { ...status, claude: typed } : status);
+      const update =
+        status.state === 'too-old' ? PACKAGE_UPDATES[query.get('installed') ?? ''] : undefined;
+      return Promise.resolve({
+        ...status,
+        ...(byPath && { claude: typed }),
+        ...(update && { update }),
+      });
     },
     setupCheck: async () => SETUP_CHECKS[query.get('setup') ?? 'passed'] ?? null,
     // Checking again takes a moment, then passes, as it would once Factwright is updated.
@@ -1241,8 +1267,17 @@ export function sampleApi(): FactwrightApi {
           : { state: 'none' },
     onUpdateChanged: () => () => {},
     installUpdate: async () => true,
+    // ?whats-new=0.19.0 opens as if just updated to that version, with ?profile=done or any other
+    // that's past Get started, and shows its notes at each reload.
+    whatsNewDue: async () => query.get('whats-new'),
+    whatsNewSeen: async () => {},
     ...sampleSaveHelper(query.get('helper'), query.get('platform') ?? 'darwin'),
     // Which model Claude runs on, kept until the page reloads.
+    theme: async () => theme,
+    setTheme: async (chosen) => {
+      theme = chosen;
+      return chosen;
+    },
     claudeModels: async () => models,
     setClaudeModels: async (chosen) => {
       models = chosen;

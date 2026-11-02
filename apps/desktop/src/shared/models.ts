@@ -37,6 +37,7 @@ export const RECOMMENDED_MODELS: Readonly<Record<ModelTask, Model>> = {
   'add-facts': 'opus',
   'make-template': 'opus',
   'work-history': 'opus',
+  'update-profile': 'opus',
 };
 
 /**
@@ -58,6 +59,7 @@ export const PRO_MODELS: Readonly<Record<ModelTask, Model>> = {
   'add-facts': 'opus',
   'make-template': 'opus',
   'work-history': 'opus',
+  'update-profile': 'opus',
 };
 
 /**

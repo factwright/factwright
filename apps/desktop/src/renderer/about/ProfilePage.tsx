@@ -23,9 +23,11 @@ import { labelIn, PAGE_SHAPE_CHOICES } from '../../shared/beyond.ts';
 import { hasKinds, kindsOf } from '../../shared/kinds.ts';
 import { templateName } from '../../shared/looks.ts';
 import type { StartingResume, TemplateInfo } from '../../shared/profile.ts';
+import type { ProfilePart } from '../../shared/profile-parts.ts';
 import type { ProfileEntry } from '../../shared/profiles.ts';
 import { type RunTask, TEMPLATE_SKILL } from '../../shared/runs.ts';
 import { ResumePreview } from '../jobs/ResumePreview.tsx';
+import type { RunControls } from '../jobs/RunActions.tsx';
 import { ProfilesLine } from '../profiles/ProfilesLine.tsx';
 import { OpenXRay } from '../xray/OpenXRay.tsx';
 import type { XRayFile } from '../xray/useXRay.ts';
@@ -51,6 +53,7 @@ import {
 import { TemplatesStep } from './steps/TemplatesStep.tsx';
 import { WantsStep } from './steps/WantsStep.tsx';
 import { WordsStep } from './steps/WordsStep.tsx';
+import { UpdateWithClaude } from './UpdateWithClaude.tsx';
 import type { ProfileState } from './useProfile.ts';
 
 type Editing =
@@ -235,7 +238,8 @@ const asJobFile = (path: string, format: 'pdf' | 'docx'): JobFile => ({
 /**
  * Everything Factwright knows about the user, and how far it's come: their fact bank, their
  * starting resumes, what they want, their templates, and what they've shared. Each part can be
- * changed here, and Claude can be sent to carry on.
+ * changed here, and most have Update with Claude, whether they're empty or full, for the user to say
+ * what to change in their own words. Claude can be sent to carry on too.
  */
 export function ProfilePage({
   state,
@@ -243,6 +247,7 @@ export function ProfilePage({
   busy,
   ready,
   onRun,
+  run: claude,
   onOpenFacts,
   profiles,
 }: {
@@ -256,6 +261,8 @@ export function ProfilePage({
   /** Whether Claude Code is ready to run. */
   ready: boolean;
   onRun: (task: RunTask) => void;
+  /** Claude's runs, for Update with Claude, which waits in line, or nothing until it's ready. */
+  run: RunControls | undefined;
   /** Opens the fact bank, to read and change each fact. */
   onOpenFacts: () => void;
   /** The profiles on this computer, to add one for someone else or manage them. */
@@ -302,6 +309,12 @@ export function ProfilePage({
       {label}
     </Button>
   );
+
+  // Update with Claude on a part: there whether it's empty or full, and in line behind another.
+  const update = (
+    part: ProfilePart,
+    more: { kind?: string; name?: string; quiet?: boolean } = {},
+  ) => <UpdateWithClaude part={part} api={api} run={claude} onBefore={state.flush} {...more} />;
 
   const fresh =
     status.unread.length + (status.notesChanged ? 1 : 0) + (status.beyondChanged ? 1 : 0);
@@ -383,6 +396,7 @@ export function ProfilePage({
                 { skill: 'add-facts', mode: 'interview' },
                 unconfirmed > 0 && !inProgress,
               )}
+              {update('facts')}
               {fresh > 0 && runButton('Add what’s new', { skill: 'add-facts', mode: 'new' })}
             </>
           }
@@ -419,12 +433,14 @@ export function ProfilePage({
         <Card
           title="Starting resumes"
           actions={
-            claims > 0
-              ? runButton(
+            <>
+              {claims > 0 &&
+                runButton(
                   status.starting.length > 0 && !missing ? 'Build them again' : 'Build them',
                   { skill: 'get-started', mode: 'resumes' },
-                )
-              : undefined
+                )}
+              {update('resumes')}
+            </>
           }
         >
           {status.starting.length === 0 ? (
@@ -452,9 +468,12 @@ export function ProfilePage({
         <Card
           title="What you want"
           actions={
-            <Button size="sm" onClick={() => setEditing('wants')}>
-              Change
-            </Button>
+            <>
+              {update('wants')}
+              <Button size="sm" onClick={() => setEditing('wants')}>
+                Change
+              </Button>
+            </>
           }
         >
           {kinds ? (
@@ -462,8 +481,11 @@ export function ProfilePage({
               <ul className={styles.kinds}>
                 {kinds.map((kind) => (
                   <li key={kind.id}>
-                    <span className={styles.kindName}>{kind.name}</span>
-                    <span className={styles.quiet}>{workSummary(kind) || 'Nothing yet'}</span>
+                    <span className={styles.kindSaid}>
+                      <span className={styles.kindName}>{kind.name}</span>
+                      <span className={styles.quiet}>{workSummary(kind) || 'Nothing yet'}</span>
+                    </span>
+                    {update('kind', { kind: kind.id, name: kind.name, quiet: true })}
                   </li>
                 ))}
               </ul>
@@ -490,9 +512,12 @@ export function ProfilePage({
         <Card
           title="Resume templates"
           actions={
-            <Button size="sm" onClick={() => setEditing('templates')}>
-              Change
-            </Button>
+            <>
+              {update('templates')}
+              <Button size="sm" onClick={() => setEditing('templates')}>
+                Change
+              </Button>
+            </>
           }
         >
           <p>{looksSummary(answers, profile.templates) ?? 'None picked yet.'}</p>
@@ -559,6 +584,7 @@ export function ProfilePage({
               {status.beyondChanged &&
                 claims > 0 &&
                 runButton('Add to your fact bank', { skill: 'add-facts', mode: 'new' })}
+              {update('beyond')}
               <Button size="sm" onClick={() => setEditing('beyond')}>
                 Change
               </Button>
@@ -631,14 +657,15 @@ export function ProfilePage({
           {applicationsSummary(answers.applications) && (
             <p>{applicationsSummary(answers.applications)}</p>
           )}
-          {answers.applications.leaving.trim() && (
+          <div className={styles.leavingLine}>
             <p className={styles.leaving}>
-              Why you’re leaving: {answers.applications.leaving.trim()}
+              Why you’re leaving: {answers.applications.leaving.trim() || 'not said yet.'}
             </p>
-          )}
+            {update('leaving', { quiet: true })}
+          </div>
           <p className={styles.quiet}>
-            The browser extension fills forms with these. Equal-opportunity answers stay on this
-            computer.
+            The browser extension fills forms with these. Your street, postal code and
+            equal-opportunity answers stay on this computer, and your Claude never sees them.
           </p>
         </Card>
 
@@ -647,11 +674,9 @@ export function ProfilePage({
           wide
           actions={
             <>
-              {runButton(
-                hasHistory(history) ? 'Update with Claude' : 'Fill in with Claude',
-                { skill: 'work-history' },
-                !hasHistory(history),
-              )}
+              {!hasHistory(history) &&
+                runButton('Fill in with Claude', { skill: 'work-history' }, true)}
+              {update('history')}
               <Button size="sm" onClick={() => setEditing('history')}>
                 Change
               </Button>

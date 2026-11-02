@@ -158,6 +158,16 @@ describe('ExtensionDialog', () => {
     expect(screen.queryByText(/macOS/)).toBeNull();
   });
 
+  it('closes as its Close button does, so focus goes back to what opened it', async () => {
+    const onClose = vi.fn();
+    const close = vi.spyOn(HTMLDialogElement.prototype, 'close');
+    render(<ExtensionDialog api={sampled()} onClose={onClose} />);
+    await userEvent.click(screen.getByRole('button', { name: 'Done' }));
+    expect(close).toHaveBeenCalledOnce();
+    expect(onClose).toHaveBeenCalledOnce();
+    close.mockRestore();
+  });
+
   it('says so when it can’t look for the browsers', async () => {
     const api = {
       saveHelperStatus: vi.fn(async (): Promise<SaveHelperView> => {

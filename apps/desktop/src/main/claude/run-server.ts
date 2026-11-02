@@ -1,13 +1,15 @@
 import { timingSafeEqual } from 'node:crypto';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import type { AddressInfo } from 'node:net';
+import { HELPER_TOOLS } from '../../shared/activity.ts';
 import type { FiledFacts } from '../../shared/facts.ts';
 import type { PermissionAnswer, PermissionAsk } from '../../shared/permission-asks.ts';
 import type { QuestionRound, RoundReply } from '../../shared/rounds.ts';
 import type { RunScope } from '../../shared/runs.ts';
+import type { BoundProfileChanges } from '../about/profile-requests.ts';
 import type { BoundRevision } from '../jobs/revisions.ts';
 import type { BoundChanges } from '../jobs/versions.ts';
-import { TOOLS_INSTRUCTIONS } from '../tools/index.ts';
+import { runHasTool, TOOLS_INSTRUCTIONS } from '../tools/index.ts';
 import { answerMcp, type McpAnswer, type McpTool, newCall, type ToolCall } from '../tools/mcp.ts';
 import { type AskContext, permissionAskFrom, permissionReply, toolKey } from './permission-asks.ts';
 import { hookReply, roundFrom } from './rounds.ts';
@@ -134,7 +136,7 @@ export interface ListenOptions {
   /** The revision the run was started for, which only its own tool calls can read. */
   revision?: BoundRevision;
   /** The changes the user asked for, which only the run's own tool calls can read. */
-  changes?: BoundChanges;
+  changes?: BoundChanges | BoundProfileChanges;
   /** Asks the user Claude's questions in the app's dialog. Without it, the terminal asks them. */
   ask?: QuestionAsker;
   /**
@@ -169,6 +171,36 @@ const isPermissionRequest = (event: unknown) =>
   typeof event === 'object' &&
   event !== null &&
   (event as Record<string, unknown>).hook_event_name === 'PermissionRequest';
+
+/**
+ * Whether a hook is Claude about to start a helper anywhere but the workspace, which is where the
+ * user's job hunt is, and what the run's rules are written for.
+ */
+const startsHelperElsewhere = (event: unknown) => {
+  if (typeof event !== 'object' || event === null) return false;
+  const {
+    hook_event_name: name,
+    tool_name: tool,
+    tool_input: input,
+  } = event as Record<string, unknown>;
+  return (
+    name === 'PreToolUse' &&
+    typeof tool === 'string' &&
+    HELPER_TOOLS.includes(tool) &&
+    typeof input === 'object' &&
+    input !== null &&
+    ((input as Record<string, unknown>).isolation ?? null) !== null
+  );
+};
+
+/** The hook's answer to a helper started anywhere but the workspace: it doesn't start. */
+const HELPER_STAYS = {
+  hookSpecificOutput: {
+    hookEventName: 'PreToolUse',
+    permissionDecision: 'deny',
+    permissionDecisionReason: 'Helpers work in the workspace: start this one without isolation.',
+  },
+};
 
 /** Why the run's task asks nothing, if it doesn't. One the app can't tell lets the question be. */
 function noQuestionsFor(listener: RunListeners): string | null {
@@ -299,6 +331,13 @@ export class RunServer {
       // A call starting waits only for what's kept before it runs, such as a file it changes.
       if (request.url === '/activity') {
         const event = parseJson(body);
+        // A call that never starts is nothing to follow, so the window hears nothing of it.
+        if (startsHelperElsewhere(event)) {
+          response
+            .writeHead(200, { 'Content-Type': 'application/json' })
+            .end(JSON.stringify(HELPER_STAYS));
+          return;
+        }
         let reply: unknown = null;
         try {
           reply = listener.before?.(event) ?? null;
@@ -485,7 +524,8 @@ export class RunServer {
     try {
       answer = await answerMcp(
         parseJson(body),
-        this.options.tools,
+        // A tool a run doesn't have is one it doesn't see, and can't call.
+        this.options.tools.filter((tool) => runHasTool(call.scope, tool.name)),
         { name: 'factwright', version: this.options.version, instructions: TOOLS_INSTRUCTIONS },
         call,
       );

@@ -30,6 +30,7 @@ const TASKS: readonly { task: ModelTask; label: string }[] = [
   { task: 'add-facts', label: 'Fact bank interviews' },
   { task: 'make-template', label: 'Making templates' },
   { task: 'work-history', label: 'Work history' },
+  { task: 'update-profile', label: 'Updating your Profile' },
 ];
 
 type SettingsApi = Pick<

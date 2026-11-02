@@ -4,6 +4,7 @@ import { homedir } from 'node:os';
 import { basename, extname, join } from 'node:path';
 import { ASK_ID, localDate } from '@factwright/core';
 import { isRequestId } from '@factwright/sync';
+import { isThemeChoice, type ThemeChoice } from '@factwright/ui/themes';
 import {
   app,
   BrowserWindow,
@@ -38,7 +39,9 @@ import { DOC_KINDS, type DocKind, parseChangesRequest } from '../shared/versions
 import { registerAboutIpc } from './about/ipc.ts';
 import type { TemplatePreviews } from './about/previews.ts';
 import type { PrivateAnswers } from './about/private.ts';
+import type { ProfileRequests } from './about/profile-requests.ts';
 import type { AboutStore } from './about/store.ts';
+import { saveTheme } from './appearance.ts';
 import type { AnalyzeNew } from './claude/analyze-new.ts';
 import { saveAtOnce } from './claude/at-once.ts';
 import type { Desk } from './claude/desk.ts';
@@ -88,6 +91,7 @@ import type { TemplateLibrary } from './resume/templates.ts';
 import type { SyncAccount } from './sync/account.ts';
 import type { FetchDeps } from './tools/posting.ts';
 import type { UpdateWatcher } from './updates.ts';
+import type { WhatsNewDue } from './whats-new.ts';
 
 /** The most the window may send to Claude Code at once: a long paste, but not a flood. */
 const MAX_INPUT_LENGTH = 100_000;
@@ -168,6 +172,8 @@ export interface IpcDeps {
   revisions: Pick<Revisions, 'prepare' | 'state'>;
   /** The versions of jobs' resumes, cover letters and Projects pages. */
   versions: Pick<Versions, 'keep' | 'use' | 'remove' | 'prepareChanges' | 'list'>;
+  /** What the user asked to change in a part of Profile, waiting for its run. */
+  profileRequests: ProfileRequests;
   workspace: string;
   sync: SyncAccount;
   /** The app's own data folder, which holds Claude's settings. */
@@ -176,6 +182,8 @@ export interface IpcDeps {
   runChanges: RunChanges;
   /** Keeps an installed copy up to date, or null for one that doesn't update itself. */
   updates: UpdateWatcher | null;
+  /** Whether what's new is due, or null in quiet mode, unless a test asked for it. */
+  whatsNew: WhatsNewDue | null;
   /** The profiles on this computer: each person's own job hunt, one open at a time. */
   profiles: Profiles;
   /** Reminders before calls, which the user can turn off. */
@@ -224,6 +232,41 @@ const sameFile = (a: string, b: string) => {
   }
 };
 
+/** Answers a request from the app's own page. One from anywhere else is refused. */
+const answerer =
+  (isAppPage: IpcDeps['isAppPage']) =>
+  (channel: string, reply: (...args: unknown[]) => unknown) => {
+    ipcMain.handle(channel, (event, ...args: unknown[]) => {
+      if (!isAppPage(event.senderFrame?.url ?? '')) {
+        throw new Error('Refused a request from a page outside the app.');
+      }
+      return reply(...args);
+    });
+  };
+
+/**
+ * How the app looks, for this profile on this computer. It's set up on its own, ahead of the
+ * rest, since the window asks for its theme as soon as it loads, before it draws anything.
+ */
+export function registerAppearance({
+  isAppPage,
+  dataDir,
+  chosen,
+  show,
+}: Pick<IpcDeps, 'isAppPage' | 'dataDir'> & {
+  chosen: () => ThemeChoice;
+  show: (choice: ThemeChoice) => void;
+}): void {
+  const answer = answerer(isAppPage);
+  answer('appearance:theme', chosen);
+  answer('appearance:set-theme', async (value) => {
+    if (!isThemeChoice(value)) throw new Error('Refused a theme Factwright doesn’t have.');
+    show(value);
+    await saveTheme(dataDir, value);
+    return value;
+  });
+}
+
 /** Answers the window's requests, after checking each one came from the app's own page. */
 export function registerIpc({
   isAppPage,
@@ -238,11 +281,13 @@ export function registerIpc({
   jobs,
   revisions,
   versions,
+  profileRequests,
   workspace,
   sync,
   dataDir,
   runChanges,
   updates,
+  whatsNew,
   profiles,
   reminders,
   opener,
@@ -256,13 +301,7 @@ export function registerIpc({
   const fromApp = (event: IpcMainEvent | IpcMainInvokeEvent) =>
     isAppPage(event.senderFrame?.url ?? '');
 
-  /** A request that expects an answer. Ones from outside the app are refused. */
-  const answer = (channel: string, reply: (...args: unknown[]) => unknown) => {
-    ipcMain.handle(channel, (event, ...args: unknown[]) => {
-      if (!fromApp(event)) throw new Error('Refused a request from a page outside the app.');
-      return reply(...args);
-    });
-  };
+  const answer = answerer(isAppPage);
 
   // Claude Code's first-run screens, which signing in with `claude auth login` leaves showing, are
   // marked done as pressing Enter through them would. Only for a Claude account: one signed in
@@ -291,6 +330,9 @@ export function registerIpc({
   // Where an update stands, and restarting into one that's downloaded.
   answer('updates:status', (): UpdateStatus => updates?.current() ?? { state: 'none' });
   answer('updates:install', () => updates?.install() ?? false);
+  // What's new in the version just installed, once.
+  answer('updates:whats-new', () => whatsNew?.current() ?? null);
+  answer('updates:whats-new-seen', () => whatsNew?.seen());
 
   // Which model Claude runs on, for everything and for each task. A change applies from the next
   // start, or the next task that needs another model.
@@ -793,5 +835,5 @@ export function registerIpc({
   });
   answer('helper:files-and-folders', () => saveHelper.openFilesAndFolders());
 
-  registerAboutIpc(answer, { about, previews, templates, kept, workspace });
+  registerAboutIpc(answer, { about, previews, templates, kept, workspace, profileRequests });
 }

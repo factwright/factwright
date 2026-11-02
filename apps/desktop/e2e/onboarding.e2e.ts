@@ -253,6 +253,8 @@ test('takes a second kind of job, with its own titles, and searches for it alone
   await window.getByRole('button', { name: 'Find jobs' }).click();
   const find = window.getByRole('dialog', { name: 'Find jobs' });
   await find.locator('label').filter({ hasText: 'Project manager' }).click();
+  // Someone in software starts on HN and company job boards. This test needs one.
+  await find.getByRole('checkbox', { name: /^Company job boards/ }).uncheck();
   await find.getByRole('button', { name: 'Search', exact: true }).click();
   const panel = window.locator('section[aria-label="Claude"]');
   await expect(panel.getByRole('status')).toHaveText('Done');

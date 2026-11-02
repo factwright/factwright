@@ -221,6 +221,7 @@ body.frame main {
 
 .menu .answer .text {
   display: -webkit-box;
+  white-space: pre-line;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;

@@ -4,6 +4,8 @@ export type PostingSource =
   | { kind: 'lever'; company: string; id: string }
   | { kind: 'gem'; board: string; id: string }
   | { kind: 'ashby'; board: string; id: string }
+  | { kind: 'recruitee'; board: string; id: string }
+  | { kind: 'workable'; board: string; id: string }
   | { kind: 'page'; url: string };
 
 /** A request for one source: the address, and whether it answers in JSON. */
@@ -142,6 +144,13 @@ export function htmlToText(html: string): string {
     .trim();
 }
 
+/** The sites of the applicant systems' public feeds for postings. */
+const FEED_HOSTS =
+  /(^|\.)(greenhouse\.io|lever\.co|ashbyhq\.com|gem\.com|recruitee\.com|workable\.com)$/;
+
+/** Whether a feed for postings is still on an applicant system's own site, after a redirect. */
+export const onFeedSite = (address: string) => FEED_HOSTS.test(new URL(address).hostname);
+
 /** Which source to read a posting from, by its address. */
 export function postingSource(address: string): PostingSource {
   const url = new URL(address);
@@ -168,6 +177,18 @@ export function postingSource(address: string): PostingSource {
   if (gem?.[1] && gem[2]) return { kind: 'gem', board: gem[1], id: gem[2] };
   const ashby = on(host === 'jobs.ashbyhq.com', /^\/([^/]+)\/([0-9a-f-]{36})/i);
   if (ashby?.[1] && ashby[2]) return { kind: 'ashby', board: ashby[1], id: ashby[2] };
+  const recruiteeHost = /^([a-z0-9-]{1,63})\.recruitee\.com$/.exec(host)?.[1];
+  const recruitee = on(Boolean(recruiteeHost), /^\/(?:l\/[\w-]{1,20}\/)?o\/([\w-]{1,200})(?:\/|$)/);
+  if (recruiteeHost && recruitee?.[1]) {
+    return { kind: 'recruitee', board: recruiteeHost, id: recruitee[1] };
+  }
+  const workable = on(
+    host === 'apply.workable.com',
+    /^\/([\w-]{1,100})\/j\/([A-Za-z0-9]{1,40})(?:\/|$)/,
+  );
+  if (workable?.[1] && workable[2] && workable[1] !== 'j') {
+    return { kind: 'workable', board: workable[1], id: workable[2] };
+  }
   return { kind: 'page', url: url.href };
 }
 
@@ -201,9 +222,53 @@ export function postingRequests(source: PostingSource): PostingRequest[] {
           json: true,
         },
       ];
+    case 'recruitee':
+      return [
+        {
+          url: `https://${part(source.board)}.recruitee.com/api/offers/${part(source.id)}`,
+          json: true,
+        },
+      ];
+    case 'workable':
+      return [
+        {
+          url: `https://apply.workable.com/api/v2/accounts/${part(source.board)}/jobs/${part(source.id)}`,
+          json: true,
+        },
+      ];
     case 'page':
-      return [{ url: source.url, json: false }];
+      return [{ url: pageAddress(source.url), json: false }];
   }
+}
+
+/**
+ * A Workday posting's own link, from a link to its page for applying, which can say a posting has
+ * closed when it hasn't. It looks at each part of the path once, so a long link takes as long as
+ * it is long.
+ */
+function withoutApply(address: string): string {
+  const end = address.search(/[?#]/);
+  const path = end < 0 ? address : address.slice(0, end);
+  const parts = path.split('/');
+  // The parts before these are the scheme, the gap after it, and the host.
+  const at = parts.findIndex((part, index) => index > 2 && part.toLowerCase() === 'apply');
+  return at < 0 ? address : parts.slice(0, at).join('/') + address.slice(path.length);
+}
+
+/**
+ * Where to read a page. An iCIMS posting's page is little more than a frame that loads the posting
+ * later, so reading it gets next to nothing. Asked for the frame's own view, it gives the posting
+ * in full, with its JobPosting data.
+ */
+function pageAddress(address: string): string {
+  if (onWorkday(address)) return withoutApply(address);
+  const url = new URL(address);
+  if (!/(^|\.)icims\.com$/i.test(url.hostname) || !url.pathname.startsWith('/jobs/')) {
+    return address;
+  }
+  if (/[?&]in_iframe=/.test(url.search)) return address;
+  const base = url.hash ? url.href.slice(0, -url.hash.length) : url.href;
+  return `${base}${url.search ? '&' : '?'}in_iframe=1${url.hash}`;
 }
 
 type Json = Record<string, unknown>;
@@ -222,7 +287,21 @@ const lines = (...parts: (string | null | undefined)[]) =>
 export interface Posting {
   text: string;
   via: string;
+  /** The page itself says the posting has closed, so it has no text. */
+  closed?: true;
 }
+
+/**
+ * A Workday posting's page holds only its job data and a script that says whether it's open. Once
+ * it has closed, the page still answers as usual, with this in place of the job data.
+ */
+const WORKDAY_CLOSED = /\bpostingAvailable\s*:\s*false\b/;
+
+const onWorkday = (address: string) =>
+  /(^|\.)myworkday(jobs|site)\.com$/i.test(new URL(address).hostname);
+
+/** Job data shorter than this, in characters, may be a teaser for what's on the page. */
+const FULL_JOB_DATA = 1500;
 
 /**
  * Reads a posting from what its source answered: the API's JSON, or the page's HTML. A page
@@ -303,16 +382,63 @@ export function readPosting(source: PostingSource, answer: unknown): Posting | n
         via: 'Ashby API',
       };
     }
+    case 'recruitee': {
+      const offer = field(answer, 'offer');
+      const description = text(field(offer, 'description'));
+      if (!description) return null;
+      return {
+        text: lines(
+          text(field(offer, 'title')),
+          text(field(offer, 'location')),
+          '',
+          htmlToText(description),
+          '',
+          htmlToText(text(field(offer, 'requirements')) ?? ''),
+        ),
+        via: 'Recruitee API',
+      };
+    }
+    case 'workable': {
+      const description = text(field(answer, 'description'));
+      if (!description) return null;
+      const place = field(answer, 'location');
+      return {
+        text: lines(
+          text(field(answer, 'title')),
+          [text(field(place, 'city')), text(field(place, 'region')), text(field(place, 'country'))]
+            .filter(Boolean)
+            .join(', ') || null,
+          field(answer, 'remote') === true ? 'Remote' : null,
+          '',
+          htmlToText(description),
+          '',
+          htmlToText(text(field(answer, 'requirements')) ?? ''),
+          '',
+          htmlToText(text(field(answer, 'benefits')) ?? ''),
+        ),
+        via: 'Workable API',
+      };
+    }
     case 'page': {
       if (typeof answer !== 'string') return null;
+      if (onWorkday(source.url) && WORKDAY_CLOSED.test(answer)) {
+        return { text: '', via: 'Workday', closed: true };
+      }
       const data = jobPostingData(answer);
-      if (data) return { text: data, via: 'the page’s JobPosting data' };
-      const main =
+      if (data && data.length >= FULL_JOB_DATA) {
+        return { text: data, via: 'the page’s JobPosting data' };
+      }
+      const main = htmlToText(
         element(answer, 'main') ??
-        element(answer, 'article') ??
-        element(answer, 'body', true) ??
-        answer;
-      return { text: htmlToText(main), via: 'the web page' };
+          element(answer, 'article') ??
+          element(answer, 'body', true) ??
+          answer,
+      );
+      if (!data) return { text: main, via: 'the web page' };
+      // Some job data holds only a teaser, as USAJOBS's does, with the posting on the page itself.
+      return main.length > data.length
+        ? { text: lines(data, '', main), via: 'the page’s JobPosting data and its text' }
+        : { text: data, via: 'the page’s JobPosting data' };
     }
   }
 }
@@ -362,8 +488,46 @@ function jsonLdScripts(html: string): string[] {
   return found;
 }
 
+/** A date in a page's job data, without its time: "2026-07-01T04:00:00Z" reads as 2026-07-01. */
+function day(value: unknown): string | null {
+  const date = text(value)?.trim();
+  if (!date) return null;
+  return /^\d{4}-\d{2}-\d{2}/.test(date) ? date.slice(0, 10) : date.slice(0, 40);
+}
+
+/** What a page's schema.org JobPosting data says. */
+export interface JobPostingFields {
+  title: string | null;
+  company: string | null;
+  /** "Remote", or the places it names. */
+  where: string | null;
+  pay: string | null;
+  posted: string | null;
+  closes: string | null;
+  /** The posting, as plain text. */
+  text: string;
+}
+
 /** Most job pages embed schema.org JobPosting data, which reads cleaner than the page. */
 export function jobPostingData(html: string): string | null {
+  const job = jobPostingFields(html);
+  return (
+    job &&
+    lines(
+      job.title,
+      job.company,
+      job.where,
+      job.pay ? `Pay: ${job.pay}` : null,
+      job.posted ? `Posted: ${job.posted}` : null,
+      job.closes ? `Closes: ${job.closes}` : null,
+      '',
+      job.text,
+    )
+  );
+}
+
+/** What a page's JobPosting data says, for the first with a description. Null for a page with none. */
+export function jobPostingFields(html: string): JobPostingFields | null {
   for (const raw of jsonLdScripts(html)) {
     let data: unknown;
     try {
@@ -394,23 +558,30 @@ export function jobPostingData(html: string): string | null {
       .filter(Boolean)
       .join('; ');
     const salary = field(field(job, 'baseSalary'), 'value');
-    const amount = [field(salary, 'minValue'), field(salary, 'maxValue')]
-      .filter((value) => value !== undefined && value !== null)
+    // A page can put anything here, so only a number or some words count as an amount.
+    const money = (value: unknown) =>
+      typeof value === 'number' || typeof value === 'string' ? String(value) : null;
+    const amount = [money(field(salary, 'minValue')), money(field(salary, 'maxValue'))]
+      .filter(Boolean)
       .join('–');
     const pay = salary
-      ? `Pay: ${amount || String(field(salary, 'value') ?? '')} ${text(field(field(job, 'baseSalary'), 'currency')) ?? ''} ${text(field(salary, 'unitText')) ?? ''}`
+      ? `${amount || (money(field(salary, 'value')) ?? '')} ${text(field(field(job, 'baseSalary'), 'currency')) ?? ''} ${text(field(salary, 'unitText')) ?? ''}`
           .replace(/\s+/g, ' ')
           .trim()
       : null;
     const remote = field(job, 'jobLocationType') === 'TELECOMMUTE';
-    return lines(
-      text(field(job, 'title')),
-      text(field(field(job, 'hiringOrganization'), 'name')),
-      remote ? 'Remote' : places || null,
+    const title = text(field(job, 'title'));
+    const company = text(field(field(job, 'hiringOrganization'), 'name'));
+    return {
+      // Some sites escape these twice, so "Sales &amp; Service" would show as it's written.
+      title: title && decodeEntities(title),
+      company: company && decodeEntities(company),
+      where: remote ? 'Remote' : places || null,
       pay,
-      '',
-      htmlToText(decodeEntities(description)),
-    );
+      posted: day(field(job, 'datePosted')),
+      closes: day(field(job, 'validThrough')),
+      text: htmlToText(decodeEntities(description)),
+    };
   }
   return null;
 }

@@ -1,19 +1,25 @@
 import { oneLine } from '../../shared/revision.ts';
+import type { BoundProfileChanges } from '../about/profile-requests.ts';
 import type { BoundChanges } from '../jobs/versions.ts';
+import { type PartAbout, profileChangesText } from './profile-parts.ts';
 
 const WHAT = { resume: 'resume', letter: 'cover letter' } as const;
 
 const DATA = { resume: 'resume.json', letter: 'cover-letter.json' } as const;
 
 /**
- * The changes the user asked for in a job's resume or cover letter, for the run started to make
- * them, or why there are none. The user typed them in the app, and they reach the run here, never
- * as words typed into it.
+ * The changes the user asked for in a job's resume or cover letter, or a part of Profile, for the
+ * run started to make them, or why there are none. The user typed them in the app, and they reach
+ * the run here, never as words typed into it.
  */
-export function requestedChanges(changes: BoundChanges | undefined): string {
+export function requestedChanges(
+  changes: BoundChanges | BoundProfileChanges | undefined,
+  about: PartAbout,
+): string {
   if (!changes) {
-    return 'This run wasn’t started with Request changes, so there are no changes to make. Use job_details for the job’s files.';
+    return 'This run wasn’t started with Request changes or Update with Claude, so there are no changes to make. Use job_details for a job’s files, and about_you for the user’s Profile.';
   }
+  if ('part' in changes) return profileChangesText(changes, about);
   const what = WHAT[changes.kind];
   return [
     `# Changes to the ${what} in applications/${oneLine(changes.folder)}/`,

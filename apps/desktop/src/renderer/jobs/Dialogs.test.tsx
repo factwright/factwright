@@ -3,9 +3,12 @@ import { localDate } from '@factwright/core';
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import axe from 'axe-core';
-import { useState } from 'react';
-import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import { type ComponentProps, useState } from 'react';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { readAnswers } from '../../shared/about.ts';
 import type { FactwrightApi, SaveFocusResult } from '../../shared/api.ts';
+import { browserSearches } from '../../shared/browser-searches.ts';
+import { kindsOf } from '../../shared/kinds.ts';
 import { AddJobDialog } from './AddJobDialog.tsx';
 import { FiltersPanel } from './FiltersPanel.tsx';
 import { FindJobsDialog } from './FindJobsDialog.tsx';
@@ -34,6 +37,8 @@ beforeAll(() => {
     this.open = false;
     this.dispatchEvent(new Event('close'));
   };
+  // Nor does it scroll anything.
+  Element.prototype.scrollIntoView ??= () => {};
 });
 
 afterEach(() => {
@@ -468,11 +473,61 @@ describe('WithdrawDialog', () => {
 const focusApi = (saved: SaveFocusResult = { ok: true, id: '2026-10-12-a3f9' }) =>
   ({ saveSearchFocus: vi.fn(async () => saved) }) satisfies Pick<FactwrightApi, 'saveSearchFocus'>;
 
+/** Find jobs, with its ways to other windows doing nothing unless a test gives its own. */
+const FindJobs = (
+  props: Omit<ComponentProps<typeof FindJobsDialog>, 'onOpenExtension' | 'onOpenProfile'> &
+    Partial<ComponentProps<typeof FindJobsDialog>>,
+) => <FindJobsDialog onOpenExtension={() => {}} onOpenProfile={() => {}} {...props} />;
+
 describe('FindJobsDialog', () => {
-  it('starts on HN, and searches every place picked, with the month and a company', async () => {
+  // Most of these start from someone who last searched HN. Where a first search starts is below.
+  beforeEach(() => {
+    localStorage.setItem('factwright.search.sites', '["hn"]');
+  });
+
+  it('starts a first search on company job boards alone for a field HN has few jobs for', () => {
+    localStorage.removeItem('factwright.search.sites');
+    render(
+      <FindJobs
+        api={focusApi()}
+        fields={['healthcare']}
+        today="2026-10-12"
+        onStart={() => {}}
+        onClose={() => {}}
+      />,
+    );
+    const picked = (name: RegExp) =>
+      screen.getByRole<HTMLInputElement>('checkbox', { name }).checked;
+    expect(picked(/^Company job boards/)).toBe(true);
+    expect(picked(/^Hacker News/)).toBe(false);
+    expect(screen.getByRole('button', { name: 'Search' })).toBeTruthy();
+    // It offers them first, since they reach every field, and says what HN is mostly for.
+    expect(screen.getAllByRole('checkbox')[0]).toBe(
+      screen.getByRole('checkbox', { name: /^Company job boards/ }),
+    );
+    expect(
+      screen.getByRole('checkbox', { name: /^Hacker News/ }).closest('label')?.textContent,
+    ).toContain('mostly for software jobs');
+  });
+
+  it('adds HN to a first search for software, data and product', () => {
+    localStorage.removeItem('factwright.search.sites');
+    render(
+      <FindJobs
+        api={focusApi()}
+        fields={['software']}
+        today="2026-10-12"
+        onStart={() => {}}
+        onClose={() => {}}
+      />,
+    );
+    expect(screen.getByRole('button', { name: 'Search 2 places' })).toBeTruthy();
+  });
+
+  it('searches every place picked, with the month and a company', async () => {
     const onStart = vi.fn();
     const { container } = render(
-      <FindJobsDialog api={focusApi()} today="2026-10-12" onStart={onStart} onClose={() => {}} />,
+      <FindJobs api={focusApi()} today="2026-10-12" onStart={onStart} onClose={() => {}} />,
     );
     const dialog = screen.getByRole('dialog', { name: 'Find jobs' });
     expect(
@@ -490,16 +545,14 @@ describe('FindJobsDialog', () => {
     expect(results.violations).toEqual([]);
     await userEvent.click(within(dialog).getByRole('button', { name: 'Search 4 places' }));
     expect(onStart).toHaveBeenCalledWith({
-      sites: ['hn', 'linkedin', 'boards'],
+      sites: ['boards', 'linkedin', 'hn'],
       month: '2026-09',
       company: 'Acme',
     });
   });
 
   it('says how to name a company, and won’t search until it can', async () => {
-    render(
-      <FindJobsDialog api={focusApi()} today="2026-10-12" onStart={() => {}} onClose={() => {}} />,
-    );
+    render(<FindJobs api={focusApi()} today="2026-10-12" onStart={() => {}} onClose={() => {}} />);
     await userEvent.click(screen.getByRole('checkbox', { name: /^Hacker News/ }));
     expect(screen.getByRole<HTMLButtonElement>('button', { name: 'Search' }).disabled).toBe(true);
     await userEvent.click(screen.getByRole('checkbox', { name: /^A company/ }));
@@ -530,7 +583,7 @@ describe('FindJobsDialog', () => {
     ];
     const onStart = vi.fn();
     const { container, unmount } = render(
-      <FindJobsDialog
+      <FindJobs
         api={focusApi()}
         today="2026-10-12"
         kinds={kinds}
@@ -550,7 +603,7 @@ describe('FindJobsDialog', () => {
     unmount();
     // Kept for next time, while the kind is still there.
     render(
-      <FindJobsDialog
+      <FindJobs
         api={focusApi()}
         today="2026-10-12"
         kinds={kinds}
@@ -563,9 +616,7 @@ describe('FindJobsDialog', () => {
     ).toBe(true);
     cleanup();
     // With one kind of job, there's nothing to pick.
-    render(
-      <FindJobsDialog api={focusApi()} today="2026-10-12" onStart={onStart} onClose={() => {}} />,
-    );
+    render(<FindJobs api={focusApi()} today="2026-10-12" onStart={onStart} onClose={() => {}} />);
     expect(screen.queryByRole('group', { name: 'Look for' })).toBeNull();
     await userEvent.click(screen.getByRole('button', { name: 'Search' }));
     expect(onStart).toHaveBeenLastCalledWith({ sites: ['hn'] });
@@ -575,7 +626,7 @@ describe('FindJobsDialog', () => {
     const onStart = vi.fn();
     const api = focusApi();
     const { container } = render(
-      <FindJobsDialog api={api} today="2026-10-12" onStart={onStart} onClose={() => {}} />,
+      <FindJobs api={api} today="2026-10-12" onStart={onStart} onClose={() => {}} />,
     );
     const toggle = screen.getByRole('button', { name: /^Focus for this search/ });
     expect(toggle.textContent).toContain('Optional');
@@ -614,7 +665,7 @@ describe('FindJobsDialog', () => {
   it('says when pay doesn’t read, and why a focus couldn’t be kept', async () => {
     const onStart = vi.fn();
     render(
-      <FindJobsDialog
+      <FindJobs
         api={focusApi({ ok: false, message: 'That change couldn’t be saved.' })}
         today="2026-10-12"
         onStart={onStart}
@@ -625,7 +676,7 @@ describe('FindJobsDialog', () => {
     await userEvent.type(screen.getByRole('textbox', { name: 'Pay a year, from' }), '200k');
     await userEvent.type(screen.getByRole('textbox', { name: 'to' }), '150k');
     expect(screen.getByRole('alert').textContent).toBe(
-      'Type pay as a yearly amount, such as 150,000 or 150k, with the lower one first.',
+      'Type pay as a yearly amount, such as 150,000 or 150k, or by the hour, such as $40 an hour, with the lower one first.',
     );
     expect(screen.getByRole<HTMLButtonElement>('button', { name: 'Search' }).disabled).toBe(true);
     await userEvent.clear(screen.getByRole('textbox', { name: 'to' }));
@@ -636,17 +687,218 @@ describe('FindJobsDialog', () => {
 
   it('remembers the places picked for next time', async () => {
     const { unmount } = render(
-      <FindJobsDialog api={focusApi()} today="2026-10-12" onStart={() => {}} onClose={() => {}} />,
+      <FindJobs api={focusApi()} today="2026-10-12" onStart={() => {}} onClose={() => {}} />,
     );
     await userEvent.click(screen.getByRole('checkbox', { name: /^Indeed/ }));
     unmount();
-    render(
-      <FindJobsDialog api={focusApi()} today="2026-10-12" onStart={() => {}} onClose={() => {}} />,
-    );
+    render(<FindJobs api={focusApi()} today="2026-10-12" onStart={() => {}} onClose={() => {}} />);
     expect((screen.getByRole('checkbox', { name: /^Indeed/ }) as HTMLInputElement).checked).toBe(
       true,
     );
     expect(screen.getByRole('button', { name: 'Search 2 places' })).toBeTruthy();
+  });
+
+  describe('ready-made searches to open in the browser', () => {
+    const remote = readAnswers({
+      roles: ['Staff Engineer', 'Platform Engineer'],
+      workplaces: ['remote'],
+      remoteFrom: 'anywhere in the US',
+    });
+    const unfold = () =>
+      userEvent.click(
+        screen.getByRole('button', { name: /^Look on LinkedIn and Indeed yourself/ }),
+      );
+
+    it('are folded under LinkedIn and Indeed, saying how many, and don’t change the places', async () => {
+      const onStart = vi.fn();
+      const { container } = render(
+        <FindJobs
+          api={focusApi()}
+          today="2026-10-12"
+          searches={browserSearches(remote)}
+          onStart={onStart}
+          onClose={() => {}}
+        />,
+      );
+      const toggle = screen.getByRole('button', { name: /^Look on LinkedIn and Indeed yourself/ });
+      expect(toggle.getAttribute('aria-expanded')).toBe('false');
+      expect(toggle.textContent).toContain('2 ready-made searches');
+      expect(screen.queryByRole('link')).toBeNull();
+      // Right after the two places a web search sees only some of.
+      const places = [
+        ...screen.getByRole('group', { name: 'Where to look' }).querySelectorAll('input, button'),
+      ];
+      const indeed = screen.getByRole('checkbox', { name: /^Indeed/ });
+      expect(places.indexOf(toggle)).toBe(places.indexOf(indeed) + 1);
+      await unfold();
+      const list = screen.getByRole('list', { name: 'Remote, United States' });
+      expect(
+        within(list)
+          .getAllByRole('listitem')
+          .map((row) => row.textContent),
+      ).toEqual(['Staff EngineerLinkedInIndeed', 'Platform EngineerLinkedInIndeed']);
+      const link = within(list).getByRole<HTMLAnchorElement>('link', {
+        name: 'Staff Engineer, Remote, United States, on LinkedIn',
+      });
+      // A link in a new window is how the app sends an address to the user's own browser.
+      expect(link.getAttribute('target')).toBe('_blank');
+      expect(link.getAttribute('rel')).toBe('noreferrer');
+      expect(link.getAttribute('href')).toBe(
+        'https://www.linkedin.com/jobs/search/?keywords=Staff%20Engineer&location=United%20States&f_WT=2&f_TPR=r604800',
+      );
+      expect(
+        within(list)
+          .getByRole('link', { name: 'Platform Engineer, Remote, United States, on Indeed' })
+          .getAttribute('href'),
+      ).toBe('https://www.indeed.com/jobs?q=Platform%20Engineer&l=Remote&fromage=7');
+      const results = await axe.run(container, { rules: { 'color-contrast': { enabled: false } } });
+      expect(results.violations).toEqual([]);
+      // The plain checkboxes search as ever, whatever's unfolded.
+      await userEvent.click(screen.getByRole('button', { name: 'Search' }));
+      expect(onStart).toHaveBeenCalledWith({ sites: ['hn'] });
+    });
+
+    it('point to the Browser extension window, leaving this one open', async () => {
+      const onOpenExtension = vi.fn();
+      const onClose = vi.fn();
+      render(
+        <FindJobs
+          api={focusApi()}
+          today="2026-10-12"
+          searches={browserSearches(remote)}
+          onOpenExtension={onOpenExtension}
+          onStart={() => {}}
+          onClose={onClose}
+        />,
+      );
+      await unfold();
+      const line = screen.getByText(/saves a job from those pages/);
+      await userEvent.click(within(line).getByRole('button', { name: 'browser extension' }));
+      expect(onOpenExtension).toHaveBeenCalledOnce();
+      expect(onClose).not.toHaveBeenCalled();
+    });
+
+    it('follow the kind picked, with each kind’s name while looking for every kind', async () => {
+      const answers = readAnswers({
+        ...remote,
+        firstKind: { id: 'developer', name: 'Developer' },
+        otherKinds: [
+          { id: 'project-manager', name: 'Project manager', roles: ['Program Manager'] },
+          { id: 'teacher', name: 'Teacher' },
+        ],
+      });
+      const { container } = render(
+        <FindJobs
+          api={focusApi()}
+          today="2026-10-12"
+          kinds={kindsOf(answers).map(({ id, name }) => ({ id, name }))}
+          searches={browserSearches(answers)}
+          onStart={() => {}}
+          onClose={() => {}}
+        />,
+      );
+      expect(
+        screen.getByRole('button', { name: /^Look on LinkedIn and Indeed yourself/ }).textContent,
+      ).toContain('3 ready-made searches');
+      await unfold();
+      expect(screen.getByRole('heading', { name: 'Developer' })).toBeTruthy();
+      expect(
+        within(screen.getByRole('list', { name: 'Project manager: Remote, United States' }))
+          .getAllByRole('listitem')
+          .map((row) => row.textContent),
+      ).toEqual(['Program ManagerLinkedInIndeed']);
+      // A kind with no titles says what to do, among the others that have some.
+      expect(screen.getByRole('heading', { name: 'Teacher' })).toBeTruthy();
+      expect(screen.getByText(/^No job titles yet\./)).toBeTruthy();
+      const results = await axe.run(container, { rules: { 'color-contrast': { enabled: false } } });
+      expect(results.violations).toEqual([]);
+      await userEvent.click(screen.getByRole('radio', { name: 'Project manager' }));
+      expect(
+        screen.getByRole('list', { name: 'Project manager: Remote, United States' }),
+      ).toBeTruthy();
+      expect(screen.queryByRole('heading', { name: 'Developer' })).toBeNull();
+      expect(screen.queryByRole('heading', { name: 'Project manager' })).toBeNull();
+      expect(screen.queryByRole('link', { name: /Staff Engineer/ })).toBeNull();
+      expect(screen.getByRole('link', { name: /^Program Manager.*on LinkedIn$/ })).toBeTruthy();
+      // The kind with none says what to do, with no empty list.
+      await userEvent.click(screen.getByRole('radio', { name: 'Teacher' }));
+      expect(screen.queryByRole('list')).toBeNull();
+      expect(screen.getByText(/^Add the job titles you want in/)).toBeTruthy();
+    });
+
+    it('say to add titles in Profile for someone with none, and go there', async () => {
+      const onOpenProfile = vi.fn();
+      const onClose = vi.fn();
+      const { container } = render(
+        <FindJobs
+          api={focusApi()}
+          today="2026-10-12"
+          searches={browserSearches(readAnswers({ workplaces: ['remote'] }))}
+          onOpenProfile={onOpenProfile}
+          onStart={() => {}}
+          onClose={onClose}
+        />,
+      );
+      const toggle = screen.getByRole('button', { name: /^Look on LinkedIn and Indeed yourself/ });
+      expect(toggle.textContent).toContain('Needs your job titles');
+      await unfold();
+      expect(screen.queryByRole('list')).toBeNull();
+      expect(screen.queryByRole('link')).toBeNull();
+      expect(screen.getByText(/^Add the job titles you want in/).textContent).toContain(
+        'under What you want',
+      );
+      const results = await axe.run(container, { rules: { 'color-contrast': { enabled: false } } });
+      expect(results.violations).toEqual([]);
+      await userEvent.click(screen.getByRole('button', { name: 'Profile' }));
+      expect(onOpenProfile).toHaveBeenCalledOnce();
+      expect(onClose).toHaveBeenCalled();
+    });
+
+    it('say Get started, as the sidebar does, for someone still getting started', async () => {
+      const onOpenProfile = vi.fn();
+      render(
+        <FindJobs
+          api={focusApi()}
+          today="2026-10-12"
+          profileName="Get started"
+          onOpenProfile={onOpenProfile}
+          onStart={() => {}}
+          onClose={() => {}}
+        />,
+      );
+      await unfold();
+      expect(screen.getByText(/^Add the job titles you want in/).textContent).toContain(
+        'in Get started, under What you want',
+      );
+      await userEvent.click(screen.getByRole('button', { name: 'Get started' }));
+      expect(onOpenProfile).toHaveBeenCalledOnce();
+    });
+
+    it('say when they’re for the first few titles and cities', async () => {
+      const { unmount } = render(
+        <FindJobs
+          api={focusApi()}
+          today="2026-10-12"
+          searches={browserSearches(readAnswers({ roles: ['A', 'B', 'C', 'D', 'E', 'F'] }))}
+          onStart={() => {}}
+          onClose={() => {}}
+        />,
+      );
+      await unfold();
+      expect(screen.getByText('These are for your first 5 job titles and 3 cities.')).toBeTruthy();
+      unmount();
+      render(
+        <FindJobs
+          api={focusApi()}
+          today="2026-10-12"
+          searches={browserSearches(remote)}
+          onStart={() => {}}
+          onClose={() => {}}
+        />,
+      );
+      await unfold();
+      expect(screen.queryByText(/^These are for your first/)).toBeNull();
+    });
   });
 });
 
