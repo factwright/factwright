@@ -29,18 +29,16 @@ import { huntCall, type McpTool, type ToolCall } from './mcp.ts';
 import { mergeJob } from './merge.ts';
 import { type FetchDeps, ReadCache, readLink, savePosting } from './posting.ts';
 import {
-  APPLICATIONS_SCHEMA,
-  addToNotes,
   BEYOND_SCHEMA,
   CHOICES_SCHEMA,
-  CONTACT_SCHEMA,
   keepNamesPrivate,
+  LEAVING_SCHEMA,
+  noStreet,
   type PartAbout,
   saveBeyondWork,
-  saveContact,
-  saveForApplications,
   saveResumeChoices,
   saveWhatYouWant,
+  saveWhyLeaving,
   WANTS_SCHEMA,
 } from './profile-parts.ts';
 import { buildProjectsPage } from './projects.ts';
@@ -174,34 +172,29 @@ export const WEB_TOOLS = ['read_page', 'careers_site'];
  * so a run on one part can't save another. Those in PART_ONLY no other run has.
  */
 export const PART_TOOLS: Readonly<Record<ProfilePart, readonly string[]>> = {
-  about: ['save_contact'],
   wants: ['save_what_you_want'],
   kind: ['save_what_you_want'],
-  applications: ['save_for_applications'],
-  leaving: ['save_for_applications'],
+  leaving: ['save_why_leaving'],
   beyond: ['save_beyond_work', 'keep_names_private'],
   history: ['save_work_history', 'keep_names_private'],
   resumes: ['list_templates', 'build_resume', 'keep_names_private'],
   templates: ['save_resume_choices', ...TEMPLATE_READS, ...TEMPLATE_TOOLS],
   facts: [...FACT_TOOLS, 'keep_names_private'],
-  shared: ['add_to_notes', 'keep_names_private'],
 };
 
 /** The tools only a run on a part of Profile has, as each is for what the user asked in it. */
 const PART_ONLY = [
-  'save_contact',
   'save_what_you_want',
-  'save_for_applications',
+  'save_why_leaving',
   'save_beyond_work',
   'save_resume_choices',
-  'add_to_notes',
   'keep_names_private',
 ];
 
 /**
  * Whether a run has a tool, which it sees and can call: a run on a part of Profile has that part's
- * alone, and no other run has a part's own. A run that reads the web can't change the user's name,
- * and one changing their email has nothing to do with the rest.
+ * alone, and no other run has a part's own. A run that reads the web can't change the job titles
+ * the user wants, and one changing their templates has nothing to do with the rest.
  */
 export function runHasTool(scope: RunScope, tool: string): boolean {
   const part = partOf(scope);
@@ -1208,6 +1201,7 @@ export function factwrightTools(deps: ToolDeps): McpTool[] {
       // It changes the user's profile on this computer, which the task's card lists, with Undo.
       annotations: { readOnlyHint: false, idempotentHint: true, openWorldHint: false },
       run: async (input, call) => {
+        noStreet(input, ['location']);
         const current = deps.about.answers();
         const read = aboutYouChanges(input, current);
         if (!read) {
@@ -1291,14 +1285,6 @@ export function factwrightTools(deps: ToolDeps): McpTool[] {
       run: async (input, call) => saveHistory(input, deps.about, call?.keep),
     },
     {
-      name: 'save_contact',
-      description:
-        'Saves the user’s name and contact details in Profile’s About you, as they asked in this run’s requested_changes: only what they asked to change. A blank clears a detail, but never their name. Only a run on About you has it.',
-      inputSchema: CONTACT_SCHEMA,
-      annotations: SAVES_PART,
-      run: async (input, call) => saveContact(input, deps.about, call),
-    },
-    {
       name: 'save_what_you_want',
       description:
         'Saves what the user wants in Profile, as they asked in this run’s requested_changes: only what they asked to change. Each list is whole, in place of what’s there, so to add one give the ones there too. Titles, kinds of work, levels and pay are each kind of job’s own: when they want more than one kind, give kind. Add, rename and remove kinds of job here too. A run on one kind of job changes only that kind’s own answers and name. Only a run on What you want, or one kind of job, has it.',
@@ -1307,12 +1293,12 @@ export function factwrightTools(deps: ToolDeps): McpTool[] {
       run: async (input, call) => saveWhatYouWant(input, deps.about, call),
     },
     {
-      name: 'save_for_applications',
+      name: 'save_why_leaving',
       description:
-        'Saves what application forms ask that a resume doesn’t say, in Profile’s For applications, as the user asked in this run’s requested_changes: only what they asked to change. It never takes their street, postal code or equal-opportunity answers, which stay on this computer. A run on why they’re leaving changes that alone. Only a run on For applications, or why they’re leaving, has it.',
-      inputSchema: APPLICATIONS_SCHEMA,
+        'Saves what forms get when they ask why the user’s leaving, as they asked in this run’s requested_changes. It takes that answer alone: the rest of Profile’s For applications is the user’s to change, in its Change. It never takes their street, postal code or equal-opportunity answers, which stay on this computer, so leave those out of the answer too. Only a run on why they’re leaving has it.',
+      inputSchema: LEAVING_SCHEMA,
       annotations: SAVES_PART,
-      run: async (input, call) => saveForApplications(input, deps.about, call),
+      run: async (input, call) => saveWhyLeaving(input, deps.about, call),
     },
     {
       name: 'save_beyond_work',
@@ -1333,7 +1319,7 @@ export function factwrightTools(deps: ToolDeps): McpTool[] {
     {
       name: 'keep_names_private',
       description:
-        'Adds names to the user’s list of names that must never reach an employer: customers, coworkers, internal project names, codenames and internal tools. Every resume is checked against it. Give each name as they said it. A run on What you’ve shared can take names off too, when they ask.',
+        'Adds names to the user’s list of names that must never reach an employer: customers, coworkers, internal project names, codenames and internal tools. Every resume is checked against it. Give each name as they said it. Taking one off stays with the user, in What you’ve shared.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -1342,31 +1328,12 @@ export function factwrightTools(deps: ToolDeps): McpTool[] {
             items: { type: 'string' },
             description: 'Names to add, each as they said it.',
           },
-          remove: {
-            type: 'array',
-            items: { type: 'string' },
-            description: 'Names to take off. Only a run on What you’ve shared can.',
-          },
         },
+        required: ['add'],
         additionalProperties: false,
       },
       annotations: { readOnlyHint: false, idempotentHint: true, openWorldHint: false },
       run: async (input, call) => keepNamesPrivate(input, deps.about, call),
-    },
-    {
-      name: 'add_to_notes',
-      description:
-        'Adds a paragraph to the user’s notes, which later runs read as their own words, when they asked for that in this run’s requested_changes. Give the words exactly as they typed them for this run, or answered you in it: it takes nothing else. It never changes what’s there. Only a run on What you’ve shared has it.',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          text: { type: 'string', description: 'What to add, in the user’s own words.' },
-        },
-        required: ['text'],
-        additionalProperties: false,
-      },
-      annotations: { readOnlyHint: false, openWorldHint: false },
-      run: async (input, call) => addToNotes(input, deps.about, call),
     },
   ];
 }

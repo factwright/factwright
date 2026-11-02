@@ -14,37 +14,33 @@ export const PROFILE_SKILL = 'update-profile';
 
 /**
  * The parts of Profile a run can update, each on its own: a card of Profile's, and what a card
- * shows that has a button of its own, one kind of job and why the user's leaving.
+ * shows that has a button of its own, one kind of job and why the user's leaving. About you and the
+ * rest of For applications are a few details, quicker typed than asked for, and What you've shared
+ * is the user's own files and words, so those stay with them.
  */
 export const PROFILE_PARTS = [
-  'about',
   'wants',
   'kind',
-  'applications',
   'leaving',
   'beyond',
   'history',
   'resumes',
   'templates',
   'facts',
-  'shared',
 ] as const;
 
 export type ProfilePart = (typeof PROFILE_PARTS)[number];
 
 /** Each part, as its card names it. One kind of job goes by the kind's own name. */
 export const PART_NAMES: Readonly<Record<ProfilePart, string>> = {
-  about: 'About you',
   wants: 'What you want',
   kind: 'A kind of job',
-  applications: 'For applications',
   leaving: 'Why you’re leaving',
   beyond: 'Beyond work',
   history: 'Work history and education',
   resumes: 'Starting resumes',
   templates: 'Resume templates',
   facts: 'Your fact bank',
-  shared: 'What you’ve shared',
 };
 
 /** A task's part as its tab names it: its card's name, or a kind of job by its id, in words. */

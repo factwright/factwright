@@ -632,9 +632,9 @@ describe('a task on a part of Profile', () => {
   const request = '0123456789abcdef';
 
   it('takes a part by its name, a kind of job by its id for that part alone, and a request', () => {
-    expect(parseRunTask({ skill: 'update-profile', part: 'about', request })).toEqual({
+    expect(parseRunTask({ skill: 'update-profile', part: 'wants', request })).toEqual({
       skill: 'update-profile',
-      part: 'about',
+      part: 'wants',
       request,
     });
     expect(
@@ -649,22 +649,25 @@ describe('a task on a part of Profile', () => {
 
   it.each([
     { skill: 'update-profile', request },
-    { skill: 'update-profile', part: 'about' },
-    { skill: 'update-profile', part: 'about', request: 'Typed into the prompt' },
+    { skill: 'update-profile', part: 'wants' },
+    { skill: 'update-profile', part: 'wants', request: 'Typed into the prompt' },
     { skill: 'update-profile', part: 'street', request },
+    { skill: 'update-profile', part: 'about', request },
+    { skill: 'update-profile', part: 'applications', request },
+    { skill: 'update-profile', part: 'shared', request },
     { skill: 'update-profile', part: 'kind', request },
     { skill: 'update-profile', part: 'kind', kind: 'Not An Id!', request },
-    { skill: 'update-profile', part: 'about', kind: 'design', request },
-    { skill: 'update-profile', part: 'about', changes: 'Typed into the prompt', request },
-    { skill: 'update-profile', part: 'about', jobId: 'acme--staff', request },
-    { skill: 'work-history', part: 'about', request },
+    { skill: 'update-profile', part: 'wants', kind: 'design', request },
+    { skill: 'update-profile', part: 'wants', changes: 'Typed into the prompt', request },
+    { skill: 'update-profile', part: 'wants', jobId: 'acme--staff', request },
+    { skill: 'work-history', part: 'wants', request },
   ])('refuses %j', (value) => {
     expect(parseRunTask(value)).toBeNull();
   });
 
   it('types only the app’s own word for the part, and a kind of job’s id', () => {
-    expect(runPrompt({ skill: 'update-profile', part: 'applications', request })).toBe(
-      '/factwright:update-profile applications',
+    expect(runPrompt({ skill: 'update-profile', part: 'leaving', request })).toBe(
+      '/factwright:update-profile leaving',
     );
     expect(
       runPrompt({ skill: 'update-profile', part: 'kind', kind: 'project-manager', request }),
@@ -672,7 +675,7 @@ describe('a task on a part of Profile', () => {
   });
 
   it('asks the user its own questions, as any task does', () => {
-    expect(asksNothing(runPrompt({ skill: 'update-profile', part: 'about', request }))).toBeNull();
+    expect(asksNothing(runPrompt({ skill: 'update-profile', part: 'wants', request }))).toBeNull();
   });
 });
 

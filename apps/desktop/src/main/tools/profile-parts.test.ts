@@ -65,6 +65,8 @@ beforeEach(() => {
     workspace: root,
     printer: {} as ResumePrinter,
     templates: new TemplateLibrary({ workspace: root }),
+    // Midday, so it's this date wherever the tests run.
+    now: () => new Date('2026-11-01T12:00:00'),
   });
 });
 
@@ -74,14 +76,11 @@ afterEach(() => {
 
 describe('who has each part’s tool', () => {
   it.each([
-    ['save_contact', 'about'],
     ['save_what_you_want', 'wants'],
     ['save_what_you_want', 'kind'],
-    ['save_for_applications', 'applications'],
-    ['save_for_applications', 'leaving'],
+    ['save_why_leaving', 'leaving'],
     ['save_beyond_work', 'beyond'],
     ['save_resume_choices', 'templates'],
-    ['add_to_notes', 'shared'],
   ] as const)('%s is only for a run on its part: %s', (name, part) => {
     expect(runHasTool(`part:${part}`, name)).toBe(true);
     for (const scope of ['hunt', 'profile', 'history', 'revise', 'template'] as const) {
@@ -95,10 +94,10 @@ describe('who has each part’s tool', () => {
   it('a run on a part has nothing but that part’s, and what the user asked', () => {
     expect(
       tools
-        .filter((tool) => runHasTool('part:about', tool.name))
+        .filter((tool) => runHasTool('part:leaving', tool.name))
         .map((tool) => tool.name)
         .sort(),
-    ).toEqual(['about_you', 'requested_changes', 'save_contact']);
+    ).toEqual(['about_you', 'requested_changes', 'save_why_leaving']);
     for (const part of PROFILE_PARTS) {
       for (const name of [
         'read_page',
@@ -119,40 +118,6 @@ describe('who has each part’s tool', () => {
     for (const part of PROFILE_PARTS) {
       for (const name of PART_TOOLS[part]) expect(names, part).toContain(name);
     }
-  });
-});
-
-describe('save_contact', () => {
-  it('saves only the details given, name included, and keeps the file for Undo', async () => {
-    const text = await run(
-      'save_contact',
-      { name: ' Sam Rivera ', email: 'sam@example.com' },
-      callFor('about'),
-    );
-    expect(text).toBe('Saved to the user’s Profile: Name: Sam Rivera; Email: sam@example.com.');
-    expect(about.answers().you).toMatchObject({
-      name: 'Sam Rivera',
-      email: 'sam@example.com',
-      location: 'Denver, CO',
-    });
-    expect(kept.some((path) => path.endsWith(join('about-me', 'answers.json')))).toBe(true);
-  });
-
-  it('clears a detail, but never the name', async () => {
-    await run('save_contact', { location: '' }, callFor('about'));
-    expect(about.answers().you.location).toBe('');
-    await expect(run('save_contact', { name: '  ' }, callFor('about'))).rejects.toThrow(
-      'their name can’t be blank',
-    );
-    expect(about.answers().you.name).toBe('Alex Rivera');
-  });
-
-  it('refuses what isn’t a contact detail, with nothing saved', async () => {
-    await expect(
-      run('save_contact', { email: 'a@b.c', targetPay: '$1' }, callFor('about')),
-    ).rejects.toThrow('targetPay isn’t part of About you');
-    expect(about.answers().you.email).toBe('alex@example.com');
-    await expect(run('save_contact', {}, callFor('about'))).rejects.toThrow('Give what to change');
   });
 });
 
@@ -268,23 +233,31 @@ describe('save_what_you_want', () => {
   });
 });
 
-describe('save_for_applications', () => {
-  it('saves a field at a time, over what’s there', async () => {
-    about.saveAnswers({
-      applications: { ...about.answers().applications, city: 'Denver', pronouns: 'she/her' },
-    });
+describe('save_why_leaving', () => {
+  it('changes that answer alone, over what’s there', async () => {
+    about.saveAnswers({ applications: { ...about.answers().applications, city: 'Denver' } });
     const text = await run(
-      'save_for_applications',
-      { city: 'Austin', countries: ['United States'], sponsorship: 'no' },
-      callFor('applications'),
+      'save_why_leaving',
+      { leaving: 'I want a bigger scale.' },
+      callFor('leaving'),
     );
-    expect(text).toContain('City: Austin');
+    expect(text).toContain('Why they’re leaving: I want a bigger scale.');
     expect(about.answers().applications).toMatchObject({
-      city: 'Austin',
-      pronouns: 'she/her',
-      countries: ['United States'],
-      sponsorship: 'no',
+      city: 'Denver',
+      leaving: 'I want a bigger scale.',
     });
+    expect(kept.some((path) => path.endsWith(join('about-me', 'answers.json')))).toBe(true);
+  });
+
+  it.each(['city', 'howHeard'])('takes nothing else: turns away %s', async (key) => {
+    await expect(
+      run(
+        'save_why_leaving',
+        { leaving: 'I want a bigger scale.', [key]: 'Something else' },
+        callFor('leaving'),
+      ),
+    ).rejects.toThrow(`${key} isn’t part of why they’re leaving`);
+    expect(about.answers().applications.leaving).toBe('');
   });
 
   it.each([
@@ -303,12 +276,12 @@ describe('save_for_applications', () => {
   ])('turns away %s, which stays on this computer, and saves nothing', async (key) => {
     await expect(
       run(
-        'save_for_applications',
-        { city: 'Austin', [key]: 'Something private' },
-        callFor('applications'),
+        'save_why_leaving',
+        { leaving: 'I want a bigger scale.', [key]: 'Something private' },
+        callFor('leaving'),
       ),
     ).rejects.toThrow('stay on this computer');
-    expect(about.answers().applications.city).toBe('');
+    expect(about.answers().applications.leaving).toBe('');
     expect(readFileSync(join(root, 'about-me', 'answers.json'), 'utf8')).not.toContain(
       'Something private',
     );
@@ -316,24 +289,14 @@ describe('save_for_applications', () => {
 
   it('refuses what doesn’t hold up', async () => {
     await expect(
-      run('save_for_applications', { sponsorship: 'maybe' }, callFor('applications')),
+      run('save_why_leaving', { leaving: 'x'.repeat(1001) }, callFor('leaving')),
     ).rejects.toThrow('Not saved');
-    await expect(
-      run('save_for_applications', { leaving: 'x'.repeat(1001) }, callFor('applications')),
-    ).rejects.toThrow('Not saved');
-  });
-
-  it('in a run on why they’re leaving, changes that alone', async () => {
-    const text = await run(
-      'save_for_applications',
-      { leaving: 'I want a bigger scale.' },
-      callFor('leaving'),
+    await expect(run('save_why_leaving', { leaving: 12 }, callFor('leaving'))).rejects.toThrow(
+      'Not saved',
     );
-    expect(text).toContain('Why they’re leaving: I want a bigger scale.');
-    expect(about.answers().applications.leaving).toBe('I want a bigger scale.');
-    await expect(
-      run('save_for_applications', { city: 'Austin' }, callFor('leaving')),
-    ).rejects.toThrow('city isn’t part of why they’re leaving');
+    await expect(run('save_why_leaving', {}, callFor('leaving'))).rejects.toThrow(
+      'Give what to change',
+    );
   });
 });
 
@@ -476,7 +439,7 @@ describe('save_resume_choices', () => {
 
 describe('keep_names_private', () => {
   it('takes a # off a name, which would make its line a comment nothing checks', async () => {
-    await run('keep_names_private', { add: ['# Secret Co'] }, callFor('shared'));
+    await run('keep_names_private', { add: ['# Secret Co'] }, callFor('facts'));
     expect(about.confidential()).toEqual(['Secret Co']);
   });
 
@@ -490,18 +453,18 @@ describe('keep_names_private', () => {
     expect(kept.some((path) => path.endsWith(join('guide', 'confidential-terms.txt')))).toBe(true);
   });
 
-  it('takes a name off only for a run on What you’ve shared', async () => {
+  it('takes no name off, which stays with the user', async () => {
     about.changeConfidential({ add: ['Bluebird'], remove: [] });
-    await expect(
-      run('keep_names_private', { remove: ['Bluebird'] }, callFor('resumes')),
-    ).rejects.toThrow('only a run on What you’ve shared');
+    for (const part of ['beyond', 'history', 'resumes', 'facts'] as const) {
+      await expect(
+        run('keep_names_private', { remove: ['Bluebird'] }, callFor(part)),
+      ).rejects.toThrow('remove isn’t part of the names to keep private');
+    }
     expect(about.confidential()).toEqual(['Bluebird']);
-    await run('keep_names_private', { remove: ['Bluebird'] }, callFor('shared'));
-    expect(about.confidential()).toEqual([]);
   });
 
   it('is no tool of a run with no reason to hear a name', () => {
-    for (const part of ['about', 'wants', 'applications', 'templates'] as const) {
+    for (const part of ['wants', 'kind', 'leaving', 'templates'] as const) {
       expect(runHasTool(`part:${part}`, 'keep_names_private'), part).toBe(false);
     }
   });
@@ -530,24 +493,21 @@ describe('a street or a postal code', () => {
     ['Hauptstraße 12, Berlin'],
     ['Calle Mayor 5, Madrid'],
     ['12 rue de la Paix, Paris'],
-  ])('isn’t saved as where they live: %s', async (location) => {
-    await expect(run('save_contact', { location }, callFor('about'))).rejects.toThrow(
+  ])('isn’t saved as where they live, or where they’d work from: %s', async (place) => {
+    await expect(run('save_about_you', { location: place }, newCall('hunt'))).rejects.toThrow(
       'stay on this computer',
     );
     expect(about.answers().you.location).toBe('Denver, CO');
     await expect(
-      run('save_for_applications', { city: location }, callFor('applications')),
+      run('save_what_you_want', { remoteFrom: place }, callFor('wants')),
     ).rejects.toThrow('stay on this computer');
-    expect(about.answers().applications.city).toBe('');
+    expect(about.answers().remoteFrom).toBe('');
   });
 
   it('leaves alone what isn’t about where they live', async () => {
-    await run(
-      'save_for_applications',
-      { preferredName: 'Lane', howHeard: 'Wall Street Journal, 2024' },
-      callFor('applications'),
-    );
-    expect(about.answers().applications.howHeard).toBe('Wall Street Journal, 2024');
+    const words = 'An office near Wall Street, since 2024';
+    await run('save_what_you_want', { mustHaves: words }, callFor('wants'));
+    expect(about.answers().mustHaves).toBe(words);
   });
 
   it('isn’t saved as a remote place, or a city they’d work in', async () => {
@@ -577,32 +537,11 @@ describe('a street or a postal code', () => {
     'District 1, Ho Chi Minh City',
     '100 Mile House, BC',
     '29 Palms, CA',
-  ])('leaves a place alone: %s', async (location) => {
-    await run('save_contact', { location }, callFor('about'));
-    expect(about.answers().you.location).toBe(location);
-  });
-});
-
-describe('add_to_notes', () => {
-  it('adds what the user typed, as they typed it, after what’s there', async () => {
-    about.saveNotes('What I do now: lead a team.');
-    const call = callFor('shared', 'Add to my notes: I mentor two juniors.');
-    expect(await run('add_to_notes', { text: 'I mentor two juniors.' }, call)).toBe(
-      'Added to the user’s notes: “I mentor two juniors.”.',
-    );
-    expect(about.notes()).toBe('What I do now: lead a team.\n\nI mentor two juniors.\n');
-    expect(kept.some((path) => path.endsWith(join('about-me', 'notes.md')))).toBe(true);
-  });
-
-  it('takes nothing the user didn’t say, such as what a file told Claude', async () => {
-    const call = callFor('shared', 'Add that I mentor two juniors.');
-    await expect(run('add_to_notes', { text: 'I led a team of forty.' }, call)).rejects.toThrow(
-      'the user’s own words',
-    );
-    await expect(run('add_to_notes', { text: 'They mentor two juniors.' }, call)).rejects.toThrow(
-      'the user’s own words',
-    );
-    expect(about.notes()).toBe('');
+  ])('leaves a place alone: %s', async (place) => {
+    await run('save_about_you', { location: place }, newCall('hunt'));
+    expect(about.answers().you.location).toBe(place);
+    await run('save_what_you_want', { remoteFrom: place }, callFor('wants'));
+    expect(about.answers().remoteFrom).toBe(place);
   });
 });
 

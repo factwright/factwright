@@ -44,22 +44,22 @@ describe('UpdateWithClaude', () => {
     const run = controls();
     const requests = api();
     const flush = vi.fn(async () => {});
-    render(<UpdateWithClaude part="about" api={requests} run={run} onBefore={flush} />);
-    const dialog = await open('About you');
+    render(<UpdateWithClaude part="wants" api={requests} run={run} onBefore={flush} />);
+    const dialog = await open('What you want');
     await userEvent.type(
       within(dialog).getByRole('textbox', { name: 'What should your Claude change?' }),
-      'Use my new email',
+      'Add staff roles',
     );
     await userEvent.click(within(dialog).getByRole('button', { name: 'Make the changes' }));
     await waitFor(() => expect(run.start).toHaveBeenCalled());
     expect(requests.requestProfileChanges).toHaveBeenCalledWith({
-      part: 'about',
-      changes: 'Use my new email',
+      part: 'wants',
+      changes: 'Add staff roles',
     });
     // Nothing the user typed is in the task, and what they'd typed elsewhere saved first.
     expect(run.start).toHaveBeenCalledWith({
       skill: 'update-profile',
-      part: 'about',
+      part: 'wants',
       request: REQUEST,
     });
     expect(flush).toHaveBeenCalled();
@@ -67,8 +67,8 @@ describe('UpdateWithClaude', () => {
   });
 
   it('asks nothing of Claude without words', async () => {
-    render(<UpdateWithClaude part="about" api={api()} run={controls()} />);
-    const dialog = await open('About you');
+    render(<UpdateWithClaude part="wants" api={api()} run={controls()} />);
+    const dialog = await open('What you want');
     const make = within(dialog).getByRole('button', { name: 'Make the changes' });
     expect((make as HTMLButtonElement).disabled).toBe(true);
     await userEvent.type(within(dialog).getByRole('textbox'), '   ');
@@ -105,18 +105,13 @@ describe('UpdateWithClaude', () => {
     });
   });
 
-  it('says plainly what stays out of Claude’s reach', async () => {
-    render(<UpdateWithClaude part="applications" api={api()} run={controls()} />);
-    const dialog = await open('For applications');
-    expect(dialog.textContent).toContain(
-      'Your street, postal code and equal-opportunity answers stay on this computer, and your Claude never sees them.',
-    );
-  });
-
   it.each([
-    ['about', 'About you', 'Your street and postal code stay on this computer'],
+    [
+      'leaving',
+      'Why you’re leaving',
+      'Your street, postal code and equal-opportunity answers stay on this computer',
+    ],
     ['facts', 'Your fact bank', 'Removing a fact stays with you'],
-    ['shared', 'What you’ve shared', 'Adding or removing a file stays with you'],
     ['resumes', 'Starting resumes', 'Facts still waiting to be verified stay off them'],
     ['templates', 'Resume templates', 'To copy the look of a resume you like, add it in Change.'],
   ] as const)('says what’s left out of %s', async (part, name, words) => {
@@ -132,8 +127,8 @@ describe('UpdateWithClaude', () => {
           ({ ok: false, message: 'That kind of job isn’t in your Profile anymore.' }) as const,
       ),
     };
-    render(<UpdateWithClaude part="about" api={requests} run={run} />);
-    const dialog = await open('About you');
+    render(<UpdateWithClaude part="wants" api={requests} run={run} />);
+    const dialog = await open('What you want');
     await userEvent.type(within(dialog).getByRole('textbox'), 'Change it');
     await userEvent.click(within(dialog).getByRole('button', { name: 'Make the changes' }));
     expect((await within(dialog).findByRole('alert')).textContent).toContain('anymore');
@@ -142,18 +137,18 @@ describe('UpdateWithClaude', () => {
   });
 
   it('stays there, unable to start, saying why, until Claude Code is ready', () => {
-    render(<UpdateWithClaude part="about" api={api()} run={undefined} />);
-    const button = screen.getByRole('button', { name: 'Update with Claude: About you' });
+    render(<UpdateWithClaude part="wants" api={api()} run={undefined} />);
+    const button = screen.getByRole('button', { name: 'Update with Claude: What you want' });
     expect((button as HTMLButtonElement).disabled).toBe(true);
     expect(button.getAttribute('title')).toBe('Your Claude needs to be ready first.');
   });
 
   it('says so, keeping the words, when Claude Code stops being ready while it’s open', async () => {
     const requests = api();
-    const { rerender } = render(<UpdateWithClaude part="about" api={requests} run={controls()} />);
-    const dialog = await open('About you');
+    const { rerender } = render(<UpdateWithClaude part="wants" api={requests} run={controls()} />);
+    const dialog = await open('What you want');
     await userEvent.type(within(dialog).getByRole('textbox'), 'Change it');
-    rerender(<UpdateWithClaude part="about" api={requests} run={undefined} />);
+    rerender(<UpdateWithClaude part="wants" api={requests} run={undefined} />);
     await userEvent.click(within(dialog).getByRole('button', { name: 'Make the changes' }));
     expect((await within(dialog).findByRole('alert')).textContent).toContain('isn’t ready');
     expect(requests.requestProfileChanges).not.toHaveBeenCalled();
@@ -168,8 +163,8 @@ describe('UpdateWithClaude', () => {
       new Promise<void>((resolve) => {
         saved = resolve;
       });
-    render(<UpdateWithClaude part="about" api={requests} run={run} onBefore={flush} />);
-    const dialog = await open('About you');
+    render(<UpdateWithClaude part="wants" api={requests} run={run} onBefore={flush} />);
+    const dialog = await open('What you want');
     await userEvent.type(within(dialog).getByRole('textbox'), 'Change it');
     await userEvent.click(within(dialog).getByRole('button', { name: 'Make the changes' }));
     await userEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }));
@@ -180,12 +175,12 @@ describe('UpdateWithClaude', () => {
   });
 
   it('says Claude is on it, or in line, for that part and no other', () => {
-    const about: RunTask = { skill: 'update-profile', part: 'about', request: REQUEST };
+    const beyond: RunTask = { skill: 'update-profile', part: 'beyond', request: REQUEST };
     const wants: RunTask = { skill: 'update-profile', part: 'wants', request: REQUEST };
     const design: RunTask = { skill: 'update-profile', part: 'kind', kind: 'design', request: '' };
     const run = runControlsFor(
       [
-        { id: 'run-1', task: about, phase: 'working' },
+        { id: 'run-1', task: beyond, phase: 'working' },
         { id: 'run-2', task: wants, phase: 'in-line' },
       ],
       () => {},
@@ -193,8 +188,8 @@ describe('UpdateWithClaude', () => {
     );
     render(
       <>
-        <section aria-label="About">
-          <UpdateWithClaude part="about" api={api()} run={run} />
+        <section aria-label="Beyond">
+          <UpdateWithClaude part="beyond" api={api()} run={run} />
         </section>
         <section aria-label="Wants">
           <UpdateWithClaude part="wants" api={api()} run={run} />
@@ -208,8 +203,8 @@ describe('UpdateWithClaude', () => {
       </>,
     );
     // Named for a screen reader, which may be elsewhere.
-    expect(screen.getByRole('region', { name: 'About' }).textContent).toBe(
-      'Claude is on it (Update with Claude: About you)',
+    expect(screen.getByRole('region', { name: 'Beyond' }).textContent).toBe(
+      'Claude is on it (Update with Claude: Beyond work)',
     );
     expect(screen.getByRole('region', { name: 'Wants' }).textContent).toBe(
       'In line (Update with Claude: What you want)',
@@ -221,12 +216,10 @@ describe('UpdateWithClaude', () => {
   });
 
   it('passes an accessibility check, with its visible words in its name', async () => {
-    const { container } = render(
-      <UpdateWithClaude part="applications" api={api()} run={controls()} />,
-    );
+    const { container } = render(<UpdateWithClaude part="leaving" api={api()} run={controls()} />);
     const button = screen.getByRole('button', { name: /^Update with Claude/ });
     expect(button.getAttribute('aria-label')).toContain(button.textContent);
-    await open('For applications');
+    await open('Why you’re leaving');
     const results = await axe.run(container, { rules: { 'color-contrast': { enabled: false } } });
     expect(results.violations).toEqual([]);
   });
