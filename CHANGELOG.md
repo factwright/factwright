@@ -46,6 +46,7 @@ Notable changes to Factwright, newest first. The format follows [Keep a Changelo
 - The privacy policy has a part on ideas and the roadmap: what a suggestion keeps, that an email left with one is deleted once the idea is closed, that a vote is kept only as a one-way hash, and that your IP address only limits how often one address can suggest or vote, and isn't kept. It takes effect October 27, 2026.
 - For a job not under a kind of job yet, the pay to ask for goes by the job's title too. Where that fits the job titles you want in one kind alone, it's your target for that kind, in the job's Fit area and on its application forms, and says so, as "your target for Strategy jobs, by the job's title". Where that kind has no target, it's left for you. Where two kinds fit, or none does, it's your first kind's target, as before. Your own ask and your Claude's suggestion still win.
 - A form's panel and field menus say which kind of job's target pay they filled in, where they said only "From Profile".
+- The browser extension is version 0.3.1, ready for its next upload to the Chrome Web Store and Firefox Add-ons, which list 0.3.0. It carries the work-experience box and the pay to ask for by a job's title, and this version's fixes to forms. It asks for nothing new.
 
 ### Fixed
 - A city or a job title in What you want can hold a comma, so "Chicago, IL" stays one city and "Director, Sales" one title, where each used to become two. Press Enter to add it. "Chicago, Denver" and "Product Manager, Program Manager" still add two.
