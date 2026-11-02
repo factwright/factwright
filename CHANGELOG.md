@@ -4,6 +4,8 @@ Notable changes to Factwright, newest first. The format follows [Keep a Changelo
 
 ## Unreleased
 
+## 0.19.0 - 2026-11-02
+
 ### Added
 - The first time Factwright opens after an update, it says what's new in that version in a few plain lines, with Got it and a link to the full notes. It shows once for each update, and each profile hears for itself. It says nothing on a first install, in a new profile, going back to an older version, or over Get started, and an update that skipped versions says what's new in the newest. If a task or another dialog is going as the window opens, it waits for the next open rather than taking the keyboard. Your computer keeps which version you last saw, and it doesn't sync.
 - Update with Claude, on the parts of Profile where saying it beats typing it, whether they're empty or full, before or after Get started: What you want and each kind of job, Why you're leaving, Beyond work, Work history and education, Starting resumes, Resume templates, and Your fact bank. Say what to change in your own words, and a run changes that part and nothing else. It lists each change on its card, with Undo, and reads neither the web nor saved postings. Clicked while Claude is busy on Profile, it waits in line. Your Claude can now change what it couldn't before: everything in What you want, kinds of job, why you're leaving, your projects, and your template picks. What you say about your experience goes in the fact bank as you said it, unverified until you verify it. Your street, postal code and equal-opportunity answers stay out of it, as they always have: Claude never sees them, and For applications says so.
