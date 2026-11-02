@@ -10,6 +10,7 @@ import {
 import { Button, Dialog, DialogActions } from '@factwright/ui';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { FactwrightApi, RunView } from '../shared/api.ts';
+import { browserSearches } from '../shared/browser-searches.ts';
 import { signInCommand } from '../shared/claude-commands.ts';
 import type { FiledFacts } from '../shared/facts.ts';
 import { hasKinds, kindsOf } from '../shared/kinds.ts';
@@ -27,7 +28,8 @@ import {
   usersTask,
 } from '../shared/runs.ts';
 import styles from './App.module.css';
-import { GetStarted } from './about/GetStarted.tsx';
+import { AppearanceDialog } from './AppearanceDialog.tsx';
+import { GetStarted, STEPS } from './about/GetStarted.tsx';
 import { ProfilePage } from './about/ProfilePage.tsx';
 import { needsGettingStarted, useProfile } from './about/useProfile.ts';
 import {
@@ -88,8 +90,10 @@ import { SyncDialog } from './sync/SyncDialog.tsx';
 import { useApprovals, useSync } from './sync/useSync.ts';
 import { TopBar } from './TopBar.tsx';
 import { hasUnsaved } from './unsaved.ts';
+import { JustUpdated } from './updates/JustUpdated.tsx';
 import { inBanner, isPutOff } from './updates/putOff.ts';
 import { UpdateBanner } from './updates/UpdateBanner.tsx';
+import { useJustUpdated } from './updates/useJustUpdated.ts';
 import { useUpdates } from './updates/useUpdates.ts';
 import { isOpen, startsNow, useClaudeRuns } from './useClaudeRuns.ts';
 import { typedClaude, useClaudeStatus } from './useClaudeStatus.ts';
@@ -115,6 +119,13 @@ const VIEW_PREF = 'jobs.lastView';
 const keptView = () =>
   readPref<JobView | null>(VIEW_PREF, null, isView) ??
   viewNow(readPref<JobView | null>('jobs.view', null, isView));
+
+/** Puts focus back on the page the user is on, once what held it has gone. */
+const focusCurrentPage = () =>
+  requestAnimationFrame(() => {
+    if (document.activeElement !== document.body) return;
+    document.querySelector<HTMLElement>('nav[aria-label="Main"] [aria-current="page"]')?.focus();
+  });
 
 /** The app's window: the top bar, the sidebar, the jobs and their details, and Claude's panel. */
 export function App({ api }: { api: FactwrightApi }) {
@@ -152,10 +163,15 @@ export function App({ api }: { api: FactwrightApi }) {
       : [],
   );
   const kinds = useMemo<KindName[]>(() => JSON.parse(kindKey), [kindKey]);
-  // Each kind's target pay, for the pay to ask for at a job, which changes as a target does.
+  // Each kind's titles and target pay, for the pay to ask for at a job, which changes with them.
   const targetKey = JSON.stringify(
     profile
-      ? kindsOf(profile.answers).map(({ id, name, targetPay }) => ({ id, name, targetPay }))
+      ? kindsOf(profile.answers).map(({ id, name, roles, targetPay }) => ({
+          id,
+          name,
+          roles,
+          targetPay,
+        }))
       : [],
   );
   const targets = useMemo<KindTarget[]>(() => JSON.parse(targetKey), [targetKey]);
@@ -193,11 +209,14 @@ export function App({ api }: { api: FactwrightApi }) {
     | 'sync'
     | 'claude-settings'
     | 'extension'
+    | 'appearance'
     | 'add-profile'
     | 'profiles'
     | 'merge'
     | null
   >(null);
+  // The Browser extension window over Find jobs, which is as it was when this one closes.
+  const [extensionOver, setExtensionOver] = useState(false);
   // The job Claude noted might be the one open, when Merge with… opens from its note.
   const [mergeWith, setMergeWith] = useState<string | null>(null);
   // Once the user accepts an offer, the company and the other jobs still in play, to withdraw from.
@@ -269,6 +288,13 @@ export function App({ api }: { api: FactwrightApi }) {
     jobs.list.jobs.length === 0
       ? 'profile'
       : 'jobs');
+
+  // What's new in the version just installed, as the window opens on it.
+  const justUpdated = useJustUpdated(api, {
+    opened: profile !== null && jobs.state === 'ready' && profiles.list !== null,
+    gettingStarted: page === 'profile' && gettingStarted,
+    runGoing: claude.runs.some((run) => !startedOnItsOwn(run.task)),
+  });
 
   // Going to a part of the fact bank lasts while it shows: back from elsewhere, it opens as usual.
   useEffect(() => {
@@ -717,6 +743,7 @@ export function App({ api }: { api: FactwrightApi }) {
           }
           onOpenClaudeSettings={() => setDialog('claude-settings')}
           onOpenExtension={() => setDialog('extension')}
+          onOpenAppearance={() => setDialog('appearance')}
           levels={levels.choices}
           jobCount={jobs.state === 'ready' ? openJobs : undefined}
           factCount={profile?.status.facts.claims || undefined}
@@ -745,6 +772,7 @@ export function App({ api }: { api: FactwrightApi }) {
                   startRun({ skill: GET_STARTED_SKILL });
                 }}
                 onMakeTemplate={(source) => startRun({ skill: TEMPLATE_SKILL, source })}
+                run={ready ? runControls : undefined}
                 onSkip={() => {
                   about.update({ skipped: true });
                   setPicked('jobs');
@@ -764,6 +792,7 @@ export function App({ api }: { api: FactwrightApi }) {
                 busy={taken('profile')}
                 ready={ready}
                 onRun={(next) => startRun(next)}
+                run={ready ? runControls : undefined}
                 onOpenFacts={() => setPicked('facts')}
                 {...(profiles.list && {
                   profiles: {
@@ -889,6 +918,19 @@ export function App({ api }: { api: FactwrightApi }) {
           api={api}
           today={today}
           kinds={kinds}
+          fields={profile ? kindsOf(profile.answers).flatMap((kind) => kind.fields) : []}
+          searches={profile ? browserSearches(profile.answers) : []}
+          profileName={gettingStarted ? 'Get started' : 'Profile'}
+          onOpenExtension={() => setExtensionOver(true)}
+          onOpenProfile={() => {
+            // Getting started goes to the step that asks for titles, which is open from then on.
+            if (profile && gettingStarted) {
+              const step = STEPS.indexOf('What you want');
+              about.update({ step, reached: Math.max(profile.answers.reached, step) });
+            }
+            setPicked('profile');
+            focusCurrentPage();
+          }}
           onStart={(sources) => startRun({ skill: SEARCH_SKILL, sources })}
           onClose={() => setDialog(null)}
         />
@@ -924,6 +966,8 @@ export function App({ api }: { api: FactwrightApi }) {
         />
       )}
       {dialog === 'extension' && <ExtensionDialog api={api} onClose={() => setDialog(null)} />}
+      {extensionOver && <ExtensionDialog api={api} onClose={() => setExtensionOver(false)} />}
+      {dialog === 'appearance' && <AppearanceDialog api={api} onClose={() => setDialog(null)} />}
       {dialog === 'claude-settings' && (
         <ClaudeSettingsDialog
           api={api}
@@ -958,14 +1002,8 @@ export function App({ api }: { api: FactwrightApi }) {
           onChanged={profiles.reload}
           onClose={() => {
             setDialog(null);
-            // Removing down to one profile takes away what opened the dialog, so focus goes back
-            // to the page the user is on.
-            requestAnimationFrame(() => {
-              if (document.activeElement !== document.body) return;
-              document
-                .querySelector<HTMLElement>('nav[aria-label="Main"] [aria-current="page"]')
-                ?.focus();
-            });
+            // Removing down to one profile takes away what opened the dialog.
+            focusCurrentPage();
           }}
         />
       )}
@@ -1006,6 +1044,7 @@ export function App({ api }: { api: FactwrightApi }) {
           )}
         </Dialog>
       )}
+      {justUpdated.shown && <JustUpdated {...justUpdated.shown} onClose={justUpdated.close} />}
       {turns.shown?.kind === 'questions' && (
         <ClaudeQuestions
           key={turns.shown.item.id}

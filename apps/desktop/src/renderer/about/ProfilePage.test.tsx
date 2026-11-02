@@ -18,6 +18,7 @@ import type {
   ProfileStatus,
   TemplateInfo,
 } from '../../shared/profile.ts';
+import type { RunControls } from '../jobs/RunActions.tsx';
 import { ProfilePage } from './ProfilePage.tsx';
 import { useProfile } from './useProfile.ts';
 
@@ -124,6 +125,7 @@ function profileApi(
     removeTemplate: vi.fn(async () => ({ ok: true as const })),
     contactFromResume: vi.fn(async () => fromResume),
     saveHistory: vi.fn(async (saved: WorkHistory) => saved),
+    requestProfileChanges: vi.fn(async () => ({ ok: true as const, request: REQUEST })),
   };
 }
 
@@ -133,6 +135,7 @@ function Harness({
   ready = true,
   onRun = () => {},
   onOpenFacts = () => {},
+  run,
 }: {
   api: ReturnType<typeof profileApi>;
   /** Whether Claude has a task going, or in line, on the user's facts and Profile. */
@@ -140,6 +143,7 @@ function Harness({
   ready?: boolean;
   onRun?: (task: unknown) => void;
   onOpenFacts?: () => void;
+  run?: RunControls;
 }) {
   const state = useProfile(api as unknown as FactwrightApi);
   if (!state.profile) return null;
@@ -150,6 +154,7 @@ function Harness({
       busy={busy}
       ready={ready}
       onRun={onRun}
+      run={run}
       onOpenFacts={onOpenFacts}
     />
   );
@@ -157,6 +162,140 @@ function Harness({
 
 /** Answers save half a second after the last change, which a busy computer can stretch. */
 const SAVED = { timeout: 4000 };
+
+const REQUEST = '0123456789abcdef';
+
+/** The cards with an Update with Claude of their own, named for the card. */
+const CARDS = [
+  'Your fact bank',
+  'Starting resumes',
+  'What you want',
+  'Resume templates',
+  'Beyond work',
+  'Work history and education',
+] as const;
+
+/** Claude's runs, ready, with none going. */
+const freeRuns = (): RunControls => ({
+  stateOf: () => null,
+  tasksOn: () => [],
+  start: vi.fn(),
+  show: vi.fn(),
+});
+
+describe('Update with Claude', () => {
+  /** Someone who's handed everything to Claude, with nothing else told yet. */
+  const EMPTY = readAnswers({ you: { name: 'Jordan Avery' }, startedOn: '2026-10-12' });
+  const NOTHING: Partial<ProfileStatus> = {
+    facts: { claims: 0, unconfirmed: 0, files: 0 },
+    starting: [],
+  };
+
+  const expectOnEachCard = async () => {
+    for (const name of CARDS) {
+      const card = await screen.findByRole('region', { name });
+      expect(
+        within(card).getByRole('button', { name: `Update with Claude: ${name}` }),
+        name,
+      ).toBeTruthy();
+    }
+  };
+
+  it('is on its parts with nothing in them', async () => {
+    render(<Harness api={profileApi(NOTHING, EMPTY)} run={freeRuns()} />);
+    await expectOnEachCard();
+    const card = await screen.findByRole('region', { name: 'For applications' });
+    expect(card.textContent).toContain('Why you’re leaving: not said yet.');
+    expect(
+      within(card).getByRole('button', { name: 'Update with Claude: Why you’re leaving' }),
+    ).toBeTruthy();
+  });
+
+  it.each(['About you', 'For applications', 'What you’ve shared'])(
+    'isn’t on %s, which stays the user’s to change',
+    async (name) => {
+      render(<Harness api={profileApi(NOTHING, EMPTY)} run={freeRuns()} />);
+      const card = await screen.findByRole('region', { name });
+      expect(
+        within(card).queryByRole('button', { name: `Update with Claude: ${name}` }),
+      ).toBeNull();
+    },
+  );
+
+  it('is on its parts with something in them', async () => {
+    const history: WorkHistory = {
+      jobs: [
+        {
+          company: 'Harbor & Pine',
+          location: '',
+          positions: [{ title: 'Lead', start: '', end: '', summary: '' }],
+        },
+      ],
+      schools: [],
+    };
+    render(<Harness api={profileApi({}, ANSWERS, null, history)} run={freeRuns()} />);
+    await expectOnEachCard();
+  });
+
+  it('stays on its parts while Claude is busy on Profile, to go in line', async () => {
+    const run = freeRuns();
+    render(<Harness api={profileApi(NOTHING, EMPTY)} busy run={run} />);
+    const card = await screen.findByRole('region', { name: 'What you want' });
+    const button = within(card).getByRole('button', { name: 'Update with Claude: What you want' });
+    expect((button as HTMLButtonElement).disabled).toBe(false);
+    await expectOnEachCard();
+  });
+
+  it('gives each kind of job a button of its own', async () => {
+    const run = freeRuns();
+    const api = profileApi({}, TWO_KINDS);
+    render(<Harness api={api} run={run} />);
+    const card = await screen.findByRole('region', { name: 'What you want' });
+    await userEvent.click(within(card).getByRole('button', { name: 'Update with Claude: Design' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Update with Claude: Design' });
+    await userEvent.type(within(dialog).getByRole('textbox'), 'Add UX lead');
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Make the changes' }));
+    await waitFor(() =>
+      expect(run.start).toHaveBeenCalledWith({
+        skill: 'update-profile',
+        part: 'kind',
+        kind: 'design',
+        request: REQUEST,
+      }),
+    );
+    expect(within(card).getByRole('button', { name: 'Update with Claude: Product' })).toBeTruthy();
+  });
+
+  it('says on For applications what your Claude never sees', async () => {
+    render(<Harness api={profileApi()} run={freeRuns()} />);
+    const card = await screen.findByRole('region', { name: 'For applications' });
+    expect(card.textContent).toContain(
+      'Your street, postal code and equal-opportunity answers stay on this computer, and your Claude never sees them.',
+    );
+  });
+
+  it('saves what’s still waiting before Claude reads what’s there', async () => {
+    const run = freeRuns();
+    const api = profileApi();
+    render(<Harness api={api} run={run} />);
+    const about = await screen.findByRole('region', { name: 'About you' });
+    await userEvent.click(within(about).getByRole('button', { name: 'Change' }));
+    const change = await screen.findByRole('dialog', { name: 'About you' });
+    await userEvent.type(within(change).getByRole('textbox', { name: 'Phone' }), '555');
+    await userEvent.click(within(change).getByRole('button', { name: 'Done' }));
+    const wants = screen.getByRole('region', { name: 'What you want' });
+    await userEvent.click(
+      within(wants).getByRole('button', { name: 'Update with Claude: What you want' }),
+    );
+    const dialog = await screen.findByRole('dialog', { name: 'Update with Claude: What you want' });
+    await userEvent.type(within(dialog).getByRole('textbox'), 'Change it');
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Make the changes' }));
+    await waitFor(() => expect(api.requestProfileChanges).toHaveBeenCalled());
+    expect(api.saveAnswers).toHaveBeenCalled();
+    const saved = api.saveAnswers.mock.calls.at(-1)?.[0];
+    expect(saved?.you?.phone).toBe('555');
+  });
+});
 
 describe('ProfilePage', () => {
   it('opens the fact bank, to read and change each fact', async () => {
@@ -423,8 +562,11 @@ describe('ProfilePage', () => {
     expect(
       within(card).getByText('San Francisco State University: B.A., Hospitality and Tourism'),
     ).toBeTruthy();
-    await userEvent.click(within(card).getByRole('button', { name: 'Update with Claude' }));
-    expect(onRun).toHaveBeenLastCalledWith({ skill: 'work-history' });
+    // With something there, it's changed in the user's words, and there's nothing to fill in.
+    expect(within(card).queryByRole('button', { name: 'Fill in with Claude' })).toBeNull();
+    expect(
+      within(card).getByRole('button', { name: 'Update with Claude: Work history and education' }),
+    ).toBeTruthy();
     await userEvent.click(within(card).getByRole('button', { name: 'Change' }));
     const dialog = await screen.findByRole('dialog', { name: 'Work history and education' });
     const [, lead] = within(dialog).getAllByRole('textbox', { name: 'Title' });
@@ -480,6 +622,45 @@ describe('ProfilePage', () => {
       within(card).getByText('Why you’re leaving: I want to work at a bigger scale.'),
     ).toBeTruthy();
     expect(within(card).queryByText('Nothing yet.')).toBeNull();
+  });
+
+  it('keeps a city and its state together, and adds two cities typed together', async () => {
+    const api = profileApi();
+    render(<Harness api={api} />);
+    const wants = await screen.findByRole('region', { name: 'What you want' });
+    await userEvent.click(within(wants).getByRole('button', { name: 'Change' }));
+    const dialog = await screen.findByRole('dialog', { name: 'What you want' });
+    const cities = within(dialog).getByLabelText(/^Cities/);
+    await userEvent.type(cities, 'Chicago, IL{Enter}');
+    await userEvent.type(cities, 'Denver, Tulsa{Enter}');
+    for (const city of ['Chicago, IL', 'Denver', 'Tulsa']) {
+      expect(within(dialog).getByRole('button', { name: `Remove ${city}` })).toBeTruthy();
+    }
+    await userEvent.type(cities, 'Columbus, Ohio');
+    await userEvent.tab();
+    expect(within(dialog).getByRole('button', { name: 'Remove Columbus, Ohio' })).toBeTruthy();
+  });
+
+  it('keeps a job title with a comma whole, and adds two titles typed together', async () => {
+    const api = profileApi();
+    render(<Harness api={api} />);
+    const wants = await screen.findByRole('region', { name: 'What you want' });
+    await userEvent.click(within(wants).getByRole('button', { name: 'Change' }));
+    const dialog = await screen.findByRole('dialog', { name: 'What you want' });
+    const titles = within(dialog).getByLabelText('Job titles you want');
+    await userEvent.type(titles, 'Director, Sales');
+    // A comma doesn't add what's typed. Enter does.
+    expect((titles as HTMLInputElement).value).toBe('Director, Sales');
+    await userEvent.type(titles, '{Enter}');
+    await userEvent.type(titles, 'Scrum Master, Payments{Enter}');
+    for (const title of ['Director, Sales', 'Scrum Master, Payments']) {
+      expect(within(dialog).getByRole('button', { name: `Remove ${title}` })).toBeTruthy();
+    }
+    await userEvent.type(titles, 'Accountant, Controller');
+    await userEvent.tab();
+    for (const title of ['Accountant', 'Controller']) {
+      expect(within(dialog).getByRole('button', { name: `Remove ${title}` })).toBeTruthy();
+    }
   });
 
   it('adds another kind of job, with its own titles and pay, and names the first', async () => {

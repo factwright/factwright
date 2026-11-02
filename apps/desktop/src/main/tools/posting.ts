@@ -5,6 +5,7 @@ import {
   JOB_EXTRAS,
   localDate,
   normalizeUrl,
+  onFeedSite,
   type Posting,
   postingRequests,
   postingSource,
@@ -29,7 +30,7 @@ export interface FetchDeps {
   /**
    * Fetches a public page or API within a time limit, in milliseconds, and a size limit, in
    * bytes, when it's given, telling `onRedirect` each address a redirect sends it to before it
-   * goes there. Tests pass their own.
+   * goes there. With `sending`, it's the one POST the tools send. Tests pass their own.
    */
   fetch?: (
     url: string,
@@ -37,22 +38,31 @@ export interface FetchDeps {
     limitMs: number,
     maxBytes?: number,
     onRedirect?: (url: string) => void,
+    sending?: string,
   ) => Promise<unknown>;
   now?: () => Date;
   /** Hears each address a redirect sends a fetch to, before it goes there. */
   onRedirect?: ((url: string) => void) | undefined;
 }
 
-type Fetch = (url: string, json: boolean, maxBytes?: number) => Promise<unknown>;
+export type Fetch = (
+  url: string,
+  json: boolean,
+  maxBytes?: number,
+  sending?: string,
+) => Promise<unknown>;
 
 /** A fetch that gives up once the tool's time is spent, however many requests it took. */
 export function fetchInTime(deps: FetchDeps): Fetch {
   const clock = deps.now ?? (() => new Date());
   const giveUpAt = clock().getTime() + TIME_LIMIT_MS;
   const fetch = deps.fetch ?? fetchPublic;
-  return async (address, json, maxBytes) => {
+  return async (address, json, maxBytes, sending) => {
     const left = giveUpAt - clock().getTime();
     if (left <= 0) throw new Error('the site took too long to answer');
+    if (sending !== undefined) {
+      return fetch(address, json, left, maxBytes, deps.onRedirect, sending);
+    }
     if (deps.onRedirect) return fetch(address, json, left, maxBytes, deps.onRedirect);
     return maxBytes === undefined
       ? fetch(address, json, left)
@@ -98,7 +108,19 @@ async function readFrom(url: string, fetch: Fetch, feedsOnly: boolean): Promise<
   return readPosting(page, await fetch(page.url, false));
 }
 
-/** Whether a link is to one posting on Greenhouse, Lever, Ashby or Gem. */
+/**
+ * Stops a read of an applicant system's feed that a redirect would take off that system's own sites,
+ * as that read needs no OK from the user because it reaches nowhere else.
+ */
+const staysOnFeeds = (deps: FetchDeps): FetchDeps => ({
+  ...deps,
+  onRedirect: (to) => {
+    if (!onFeedSite(to)) throw new Error(`it sent the request on to ${new URL(to).hostname}`);
+    deps.onRedirect?.(to);
+  },
+});
+
+/** Whether a link is to one posting on an applicant system with a public feed for postings. */
 export const isFeedPosting = (url: string) => postingSource(url).kind !== 'page';
 
 /** How long what was read stays on hand for saving, and how many reads at most. */
@@ -137,8 +159,8 @@ export interface ReadDeps extends FetchDeps {
 
 /**
  * Reads a posting or a page as plain text for Claude, and keeps it on hand for save_posting.
- * With `feedsOnly`, as read_posting, it reads only postings on Greenhouse, Lever, Ashby and Gem,
- * through their public feeds and never the page the link names, so it needs no OK from the user.
+ * With `feedsOnly`, as read_posting, it reads only postings on the applicant systems with public
+ * feeds for them, and never the page the link names, so it needs no OK from the user.
  * Otherwise, as read_page, it reads any public page.
  */
 export async function readLink(
@@ -152,20 +174,22 @@ export async function readLink(
     return `“${url}” isn’t a link.`;
   }
   if (deps.feedsOnly && !isFeedPosting(parsed.href)) {
-    return `${parsed.href} isn’t a posting on Greenhouse, Lever, Ashby or Gem. Read it with read_page, or use job_board for a company’s whole board.`;
+    return `${parsed.href} isn’t a posting on Greenhouse, Lever, Ashby, Gem, Recruitee or Workable. Read it with read_page, or use job_board for a company’s whole board.`;
   }
   // Each page a request goes to is noted for the task's card before it goes, so one that fails,
   // or redirects somewhere else, is noted too. One the fetch turns away outright never goes.
   if (!linkProblem(parsed)) deps.onRead?.(parsed.href);
   let page: Posting | null;
   try {
-    const fetch = fetchInTime({ ...deps, ...(deps.onRead && { onRedirect: deps.onRead }) });
+    const fetching = { ...deps, ...(deps.onRead && { onRedirect: deps.onRead }) };
+    const fetch = fetchInTime(deps.feedsOnly ? staysOnFeeds(fetching) : fetching);
     page = await readFrom(parsed.href, fetch, deps.feedsOnly);
   } catch (error) {
     return error instanceof FetchRefused
       ? `Not read: ${reasonOf(error)}`
       : `Couldn’t read ${parsed.href} (${reasonOf(error)}).`;
   }
+  if (page?.closed) return `${parsed.href} has closed: ${page.via} says it’s no longer available.`;
   if (!page?.text.trim()) {
     return deps.feedsOnly
       ? `The applicant system has no posting at ${parsed.href}. It may have closed: check with job_board, or read the link with read_page.`
@@ -285,9 +309,8 @@ export async function savedFromBrowser(
 /**
  * Saves a job posting word for word as posting.md in the job's folder, so it survives the link
  * going dead. It saves the posting the user saved from their browser for the link, what read_page
- * or read_posting read from the link in this run, or reads a posting on Greenhouse, Lever, Ashby
- * or Gem from its public feed. It never reaches another
- * site, so it needs no OK from the user. A posting already saved there is kept, since it's the
+ * or read_posting read from the link in this run, or reads a posting on an applicant system with a
+ * public feed for postings. It never reaches another site, so it needs no OK from the user. A posting already saved there is kept, since it's the
  * one the user saw, unless the folder is another job's, which it says. Says, in words for Claude,
  * what happened.
  */
@@ -334,7 +357,7 @@ export async function savePosting(
       return `Nothing read from ${parsed.href} yet. Read it with read_page first, then save it.`;
     }
     try {
-      posting = await readFrom(parsed.href, fetchInTime(deps), true);
+      posting = await readFrom(parsed.href, fetchInTime(staysOnFeeds(deps)), true);
     } catch (error) {
       return error instanceof FetchRefused
         ? `Not saved: ${reasonOf(error)}`

@@ -98,6 +98,9 @@ repository's Releases page.
   - A problem is noted in `updates.log` in the app's data folder, and the next look tries again.
   - Only Factwright's own builds look for updates, as above. Each look sends the same ID for
     everyone, rather than one for each install.
+  - The first time a profile opens on the new version, the app says what's new in it, in the few
+    plain lines of the version's short notes, with a link to its release on GitHub. An update that
+    skipped versions shows the newest one's.
 
 ## Setting it up, once
 The release workflow ([`.github/workflows/release.yml`](../.github/workflows/release.yml)) reads
@@ -138,17 +141,23 @@ The client secret expires after 24 months, the Developer ID certificate after fi
 Azure identity validation on 2029-01-12. Releases stop until each is renewed.
 
 ## Releasing a version
-1. **Say what's new.** Write `apps/desktop/release-notes/<version>.md`: a few lines for users,
-   which installed copies show under What's new. Move the changelog's Unreleased entries under a
-   heading for the version.
-2. **Set the version** in `apps/desktop/package.json`, and merge the change to `main`.
+1. **Say what's new,** in two files in `apps/desktop/release-notes`. Move the changelog's Unreleased
+   entries under a heading for the version.
+   - `<version>.md`: a few lines for users, which installed copies show under What's new, and the
+     version's release on GitHub shows.
+   - `<version>.short.md`: what the app shows on its first open after the update, for someone who
+     isn't technical. It's a list of up to 6 lines, each starting with `- ` and at most 140
+     characters, usually about five, with only what they'd notice. A small version can say one
+     thing. An earlier version's file is the pattern, and it's fine to change until the tag.
+2. **Set the version** in `apps/desktop/package.json`, and merge the change to `main`. The change's
+   checks fail if either file is missing, or the short notes aren't short.
 3. **Tag it** on `main`:
    ```bash
    git tag v0.1.0 && git push origin v0.1.0
    ```
 4. **The workflow does the rest.** First it checks:
    - the tag is on `main`
-   - it names the app's version, and that version has its notes
+   - it names the app's version, and that version has its notes and its short notes
    - it's newer than the version out now, for the Mac and for Windows
    - it's built with Factwright's sync server and download site, and both answer
 

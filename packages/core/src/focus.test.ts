@@ -73,6 +73,7 @@ describe('isFocused and payAmount', () => {
     expect(isFocused({ ...NO_FOCUS, notes: ' ' })).toBe(false);
     expect(isFocused({ ...NO_FOCUS, posted: 7 })).toBe(true);
     expect(['150k', '$150,000', '150000', '150K'].map(payAmount)).toEqual(Array(4).fill(150_000));
+    expect(['$40 an hour', '$40/hr', '$40 per hour'].map(payAmount)).toEqual(Array(3).fill(83_200));
     expect(['', 'lots', '$150k–$200k'].map(payAmount)).toEqual([null, null, null]);
   });
 });

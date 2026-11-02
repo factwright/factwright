@@ -14,6 +14,11 @@ export interface KindName {
   name: string;
 }
 
+/** A kind of job, with the job titles the user wants in it, as Profile keeps them. */
+export interface TitledKind extends KindName {
+  roles: readonly string[];
+}
+
 /** How many kinds of job the app keeps, the first included, and how long a kind's name runs. */
 export const KIND_LIMITS = { kinds: 6, name: 60 } as const;
 

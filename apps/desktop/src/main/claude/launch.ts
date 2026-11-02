@@ -5,6 +5,35 @@ import { MODELS, type Model } from '../../shared/models.ts';
 /** The rules every run follows, whichever skill is working, appended to Claude's instructions. */
 export const STANDING_RULES = 'standing-rules.md';
 
+/**
+ * The built-in tools a run has: reading, searching and changing files, which restricted mode and
+ * the settings keep to the workspace, Claude's questions, Factwright's skills, helpers, the to-do
+ * list Claude keeps, and web searches, which the settings keep to runs on the job hunt. Claude
+ * Code updates itself, so this says what stays, and a new tool stays out until it's named here.
+ * The exception is what Claude Code adds itself, so far EndConversation on some models, which can
+ * only end the run. Factwright's own tools come over MCP, which this doesn't limit.
+ *
+ * Never name a tool that runs code or fetches pages, such as Bash or WebFetch: naming one lifts
+ * restricted mode's own rule against it. TodoWrite is the to-do list's older name.
+ */
+export const RUN_TOOLS = [
+  'Read',
+  'Grep',
+  'Glob',
+  'Edit',
+  'Write',
+  'AskUserQuestion',
+  'Skill',
+  'Agent',
+  'TaskCreate',
+  'TaskGet',
+  'TaskList',
+  'TaskUpdate',
+  'TaskStop',
+  'TodoWrite',
+  'WebSearch',
+] as const;
+
 /** The only permission modes the app launches Claude Code with. */
 export const PERMISSION_MODES = ['default', 'acceptEdits'] as const;
 
@@ -29,26 +58,31 @@ export interface LaunchOptions {
 /**
  * What every run asks of Claude Code through its environment, unless the user set it themselves:
  * the to-do list Claude keeps, which Claude Code leaves out on its newest models, so the working
- * strip can say "Step 3 of 7".
+ * strip can say "Step 3 of 7"; no session title, which the app has no use for and costs a request
+ * of the user's plan; and no advisor, which would cost more of it, should Claude Code turn one on.
  */
 export const RUN_VARIABLES: Readonly<Record<string, string>> = {
   CLAUDE_CODE_ENABLE_TODO_TOOLS: '1',
+  CLAUDE_CODE_DISABLE_TERMINAL_TITLE: '1',
+  CLAUDE_CODE_DISABLE_ADVISOR_TOOL: '1',
 };
 
 // Set by a Claude Code session for its own children. Left in, they'd change how this one starts.
 // Agent teams are off too: Factwright files the user's answers only for the run's own Claude,
 // which it tells apart from a subagent by Claude Code's hooks, and teammates are another kind.
+// Prompt suggestions are off too, and this variable would win over the setting that says so.
 const PARENT_SESSION_VARIABLES = new Set([
   'CLAUDECODE',
   'CLAUDE_CODE_ENTRYPOINT',
   'CLAUDE_CODE_SIMPLE',
   'CLAUDE_AGENT_SDK_VERSION',
   'CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS',
+  'CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION',
 ]);
 
 /**
  * Arguments for a session that loads only Factwright's plugin, its standing rules, its MCP
- * servers and its settings.
+ * servers and its settings, with only the built-in tools on RUN_TOOLS.
  */
 export function buildLaunchArgs(options: LaunchOptions): string[] {
   const { pluginDir, mcpConfig, settings, permissionMode, model, effort, prompt } = options;
@@ -72,6 +106,9 @@ export function buildLaunchArgs(options: LaunchOptions): string[] {
     permissionMode,
     ...(model ? ['--model', model] : []),
     ...(effort ? ['--effort', effort] : []),
+    // --tools takes several values too, so the list is one argument with it, and takes in nothing
+    // after it.
+    `--tools=${RUN_TOOLS.join(',')}`,
     '--no-chrome',
     '--plugin-dir',
     pluginDir,
@@ -142,7 +179,7 @@ export function launchEnv(base: NodeJS.ProcessEnv, path: string): NodeJS.Process
   // case, so each is compared in capitals.
   const kept = Object.entries(base).filter(([name]) => {
     const upper = name.toUpperCase();
-    if (upper === 'PATH' || PARENT_SESSION_VARIABLES.has(name)) return false;
+    if (upper === 'PATH' || PARENT_SESSION_VARIABLES.has(upper)) return false;
     if (!profileFolder) return true;
     return upper !== 'CLAUDE_CONFIG_DIR' && !CLAUDE_LOGINS.has(upper) && !ANTHROPIC_KEY.test(upper);
   });

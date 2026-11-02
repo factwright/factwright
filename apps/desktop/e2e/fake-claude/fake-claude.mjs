@@ -49,6 +49,20 @@ for (const file of [
     process.exit(1);
   }
 }
+// Nor, here, without what keeps a run to the built-in tools the app names, in one argument, with
+// none that runs code or fetches pages.
+const builtIn = args
+  .find((arg) => arg.startsWith('--tools='))
+  ?.slice('--tools='.length)
+  .split(',');
+if (
+  !args.includes('--restricted') ||
+  !builtIn?.includes('Read') ||
+  builtIn.some((tool) => ['Bash', 'PowerShell', 'WebFetch'].includes(tool))
+) {
+  console.error(`A run needs --restricted and a tool list, without a shell: ${args.join(' ')}`);
+  process.exit(1);
+}
 const settings = JSON.parse(readFileSync(after('--settings'), 'utf8'));
 const tools = JSON.parse(readFileSync(after('--mcp-config'), 'utf8')).mcpServers.factwright;
 const hookUrl = settings.hooks.Stop[0].hooks[0].url;
@@ -371,6 +385,23 @@ async function permission(tool, input) {
 async function work(text) {
   await hook('UserPromptSubmit', { prompt: text });
   show(`> ${text}\nWorking on it…\n`);
+  // As Claude Code does with a helper Claude asks for in a worktree: it asks the hook every call
+  // has, and on a no starts nothing.
+  if (text === 'start a helper in a worktree') {
+    const heard = await post(activityUrl, {
+      hook_event_name: 'PreToolUse',
+      session_id: 'fake',
+      tool_name: 'Agent',
+      tool_use_id: 'toolu_helper_elsewhere',
+      tool_input: { description: 'Work elsewhere', prompt: 'Go', isolation: 'worktree' },
+    });
+    const answer = heard.status === 200 ? (await heard.json()).hookSpecificOutput : null;
+    show(
+      answer?.permissionDecision === 'deny'
+        ? `No helper: ${answer.permissionDecisionReason}\n`
+        : 'A helper started in a worktree.\n',
+    );
+  }
   // As Claude would for a question about a job: read what's on file, then answer each one
   // that's waiting, with the tool that keeps the answer with the job.
   const asked = text.match(/^\/factwright:ask job (\S+)(?: question (\S+))?/);
@@ -577,6 +608,38 @@ async function work(text) {
       show(`${built.split('\n')[0]}\n`);
     }
   }
+  // As Claude would for a part of Profile: read what the user asked through the tool, never from
+  // the prompt, then save it with that part's own tool, without asking. A run tries what isn't its
+  // part's too, as Claude might, which the app turns away.
+  const updating = text.match(/^\/factwright:update-profile (\S+)(?: (\S+))?$/);
+  if (updating) {
+    const asked = await call('requested_changes', {});
+    show(`${asked.split('\n')[0]}\n`);
+    const words = asked
+      .split('\n')
+      .filter((line) => line.startsWith('> '))
+      .map((line) => line.slice(2))
+      .join(' ');
+    const saves = {
+      wants: ['save_what_you_want', { mustHaves: words }],
+      kind: ['save_what_you_want', { roles: [words] }],
+      leaving: ['save_why_leaving', { leaving: words }],
+      beyond: ['save_beyond_work', { interests: [words] }],
+      templates: ['save_resume_choices', { format: 'both' }],
+    }[updating[1]];
+    // Told a street, it tries to save it, which the tool refuses, so it can't sync.
+    if (/street/i.test(words) && updating[1] === 'leaving') {
+      show(`A street: ${await call('save_why_leaving', { street: words })}\n`);
+    } else if (saves) show(`${await callAllowed(...saves)}\n`);
+    // Past its part: another part's tool isn't listed, and the tool every other run saves with
+    // needs an OK, which the app turns away, with no dialog.
+    show(`Another part: ${(await call('save_beyond_work', { cares: words })) || 'no such tool'}\n`);
+    show(`The usual tool: ${await callAllowed('save_about_you', { start: words })}\n`);
+  }
+  // Asked for more in the same run, it tries the tool other runs save with, which still needs an OK.
+  if (text === 'try the usual tool') {
+    show(`Still the usual tool: ${await callAllowed('save_about_you', { start: 'Soon' })}\n`);
+  }
   // As Claude would for a revision: read what the user picked in the X-ray through the tool,
   // never from the prompt, ask about the term the fact bank doesn't back, then change the resume
   // and build it in the old one's place.
@@ -772,10 +835,16 @@ async function work(text) {
   // Its turn ends a moment later, with Stop, before it takes the next prompt, as Claude Code's does.
   await new Promise((resolve) => setTimeout(resolve, 300));
   show('Done.\n> ');
-  await hook('Stop', { last_assistant_message: 'Done.' });
+  // A run on a part of Profile says what it left, which only Claude knows.
+  const said = /^\/factwright:update-profile /.test(text)
+    ? 'Done. I left your name: that’s in About you’s Change.'
+    : 'Done.';
+  await hook('Stop', { last_assistant_message: said });
 }
 
 async function begin() {
+  // Pastes come marked, as they do for Claude Code.
+  show('\x1b[?2004h');
   show(`Fake Claude Code 2.1.300 · ${given('--model')} · ${given('--effort')} effort\n`);
   await post(tools.url, { jsonrpc: '2.0', id: 1, method: 'initialize', params: {} });
   const listed = await post(tools.url, { jsonrpc: '2.0', id: 2, method: 'tools/list' });
@@ -821,8 +890,17 @@ process.stdin.on('data', async (chunk) => {
     }
     return;
   }
-  if (!text.includes('\r')) {
-    typed += text;
+  // Ctrl-U clears the box.
+  if (text === '\x15') {
+    typed = '';
+    return;
+  }
+  // Marks around a paste are no part of what's in the box. Enter is the last key sent: in a paste,
+  // a line break arrives as one too.
+  // biome-ignore lint/suspicious/noControlCharactersInRegex: a paste's marks start with ESC
+  const clean = text.replace(/\x1b\[20[01]~/g, '');
+  if (!text.endsWith('\r')) {
+    typed += clean;
     return;
   }
   if (firstRunLeft > 0) {
@@ -844,6 +922,12 @@ process.stdin.on('data', async (chunk) => {
   if (askingTrust) {
     askingTrust = false;
     await begin();
+    return;
+  }
+  // Like Claude Code, it takes a "!" first in the box as a command for the user's shell.
+  if (typed.startsWith('!')) {
+    show(`Ran in your shell: ${typed.slice(1).trim()}\n`);
+    typed = '';
     return;
   }
   const line = typed.trim();

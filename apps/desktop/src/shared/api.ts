@@ -17,6 +17,7 @@ import type {
   SearchFocus,
   WorkHistory,
 } from '@factwright/core';
+import type { ThemeChoice } from '@factwright/ui/themes';
 import type { AboutYou, AnswerChanges, Contact } from './about.ts';
 import type { RunProgress, RunStep, TurnEnd } from './activity.ts';
 import type { EffortChoices } from './effort.ts';
@@ -40,6 +41,7 @@ import type {
   Profile,
   TemplateUpload,
 } from './profile.ts';
+import type { ProfileChanges } from './profile-parts.ts';
 import type { AddProfileResult, ProfileList } from './profiles.ts';
 import type { RevisionRequest, RevisionState } from './revision.ts';
 import type { QuestionRound, RoundReply } from './rounds.ts';
@@ -63,7 +65,9 @@ import type { ChangesRequest, DocKind, DocVersion } from './versions.ts';
  * Until then, the window shows commands for the user to run in their terminal, and `claude` is
  * what they type to start Claude Code there, when that isn't just `claude`: its whole path, such
  * as `~/.local/bin/claude`. Its installer doesn't add its folder to PATH on Windows, nor always
- * on a Mac. While it's missing, it's where its own installer puts it.
+ * on a Mac. While it's missing, it's where its own installer puts it. When it's too old, `update`
+ * is what they type to update it, when that isn't `claude update`: Homebrew's or WinGet's own
+ * command, for a Claude Code that one of them installed.
  */
 export type ClaudeStatus =
   | {
@@ -78,7 +82,7 @@ export type ClaudeStatus =
       method?: string | undefined;
     }
   | { state: 'signed-out'; version: string; claude?: string }
-  | { state: 'too-old'; version: string; minimum: string; claude?: string }
+  | { state: 'too-old'; version: string; minimum: string; claude?: string; update?: string }
   | { state: 'missing'; claude?: string }
   | { state: 'unknown'; claude?: string };
 
@@ -117,8 +121,9 @@ export interface TerminalSize {
 /**
  * Why a run didn't start. "revision": the app has no revision prepared for it, such as after a
  * restart, so it needs sending again. "changes": the same, for the changes the user asked for.
+ * "profile-changes": the same, for the changes they asked for in a part of Profile.
  */
-export type StartProblem = 'not-ready' | 'failed' | 'revision' | 'changes';
+export type StartProblem = 'not-ready' | 'failed' | 'revision' | 'changes' | 'profile-changes';
 
 /**
  * What a task in line waits for: its turn, while as many run as may at once; Claude's other task
@@ -578,10 +583,21 @@ export interface FactwrightApi {
    * starts next, which reads it through a tool, never typed into it.
    */
   requestChanges(request: ChangesRequest): Promise<EditResult>;
+  /**
+   * Holds what the user asked to change in a part of Profile, for the run the window starts next,
+   * which reads it with requested_changes, and answers with the ID that run's task names it by.
+   */
+  requestProfileChanges(
+    request: ProfileChanges,
+  ): Promise<{ ok: true; request: string } | { ok: false; message: string }>;
   /** Copies text to the clipboard, such as the journey as a flow chart. */
   copyText(text: string): Promise<EditResult>;
   /** Saves text to a file where the user picks, such as the journey as a spreadsheet. */
   saveFile(name: string, text: string): Promise<SaveFileResult>;
+  /** The theme chosen for how the app looks, or following the system's setting. */
+  theme(): Promise<ThemeChoice>;
+  /** Chooses a theme, which also shows in the window's own colors, and keeps it. */
+  setTheme(theme: ThemeChoice): Promise<ThemeChoice>;
   /** Which model Claude runs on, for everything and for each task. */
   claudeModels(): Promise<ModelChoices>;
   /** Changes which model Claude runs on, from its next start or the next task that needs another. */
@@ -729,6 +745,13 @@ export interface FactwrightApi {
   onUpdateChanged(listener: (status: UpdateStatus) => void): () => void;
   /** Restarts into a downloaded update. Answers whether there was one to install. */
   installUpdate(): Promise<boolean>;
+  /**
+   * The version whose short notes are due: the one just installed, until they've been shown or
+   * passed by, or null. A first install or a new profile has none due.
+   */
+  whatsNewDue(): Promise<string | null>;
+  /** Keeps that what's new has been shown or passed by, so it isn't due again. */
+  whatsNewSeen(): Promise<void>;
   /**
    * Where saving from each browser to Factwright on this computer stands, for the Browser
    * extension window. Looking never touches a browser's folders.

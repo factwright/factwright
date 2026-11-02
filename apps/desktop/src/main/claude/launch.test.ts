@@ -6,6 +6,7 @@ import {
   launchEnv,
   PERMISSION_MODES,
   type PermissionMode,
+  RUN_TOOLS,
   runEnv,
   useClaudeFolder,
 } from './launch.ts';
@@ -23,6 +24,7 @@ describe('buildLaunchArgs', () => {
       '--restricted',
       '--permission-mode',
       'default',
+      `--tools=${RUN_TOOLS.join(',')}`,
       '--no-chrome',
       '--plugin-dir',
       '/Applications/Factwright.app/Contents/Resources/plugin',
@@ -36,16 +38,47 @@ describe('buildLaunchArgs', () => {
     ]);
   });
 
-  it('never names the tools to keep, so restricted mode keeps WebFetch and the shell off', () => {
-    // Without --tools, --restricted gives Claude Code's own page fetching (WebFetch), Bash,
-    // PowerShell and the other tools that run code a deny rule of its own, which no setting lifts.
+  it('names the built-in tools a run keeps, and never one that runs code or fetches pages', () => {
+    expect(RUN_TOOLS).toEqual([
+      'Read',
+      'Grep',
+      'Glob',
+      'Edit',
+      'Write',
+      'AskUserQuestion',
+      'Skill',
+      'Agent',
+      'TaskCreate',
+      'TaskGet',
+      'TaskList',
+      'TaskUpdate',
+      'TaskStop',
+      'TodoWrite',
+      'WebSearch',
+    ]);
+    // Naming one of these would lift the deny rule --restricted gives it, which no setting lifts.
+    for (const tool of ['Bash', 'PowerShell', 'REPL', 'WebFetch', 'Monitor', 'Workflow']) {
+      expect(RUN_TOOLS).not.toContain(tool);
+    }
     for (const options of [OPTIONS, { ...OPTIONS, prompt: '/factwright:analyze-job job acme' }]) {
       const args = buildLaunchArgs(options);
       expect(args[0]).toBe('--restricted');
       expect(args.filter((arg) => /^--(?:tools|allowed-?tools|allowedTools)\b/i.test(arg))).toEqual(
-        [],
+        [`--tools=${RUN_TOOLS.join(',')}`],
       );
     }
+  });
+
+  it('leaves nothing for an option that takes several values to read as one of them', () => {
+    // --tools carries its list in its own argument. --mcp-config, the other such option, has
+    // another option after it, so neither can take in the prompt or a path.
+    const prompt = '/factwright:analyze-job job acme';
+    const args = buildLaunchArgs({ ...OPTIONS, model: 'opus', effort: 'high', prompt });
+    expect(args).not.toContain('--tools');
+    expect(args[args.indexOf('--mcp-config') + 2]).toBe('--strict-mcp-config');
+    expect(args.at(-1)).toBe(prompt);
+    expect(args.at(-2)).toBe(OPTIONS.settings);
+    expect(args.at(-3)).toBe('--settings');
   });
 
   it('runs on the model chosen, and only a model Claude Code knows', () => {
@@ -108,19 +141,23 @@ describe('buildLaunchArgs', () => {
 });
 
 describe('runEnv', () => {
-  it('asks Claude Code for its to-do list, which its newest models leave out', () => {
+  it('asks Claude Code for its to-do list, and for no session title or advisor', () => {
     expect(runEnv({ HOME: '/Users/someone' }, '/usr/bin')).toEqual({
       HOME: '/Users/someone',
       PATH: '/usr/bin',
       CLAUDE_CODE_ENABLE_TODO_TOOLS: '1',
+      CLAUDE_CODE_DISABLE_TERMINAL_TITLE: '1',
+      CLAUDE_CODE_DISABLE_ADVISOR_TOOL: '1',
     });
   });
 
-  it('keeps the user’s own choice about it', () => {
-    expect(runEnv({ CLAUDE_CODE_ENABLE_TODO_TOOLS: '0' }, '/usr/bin')).toEqual({
-      PATH: '/usr/bin',
+  it('keeps the user’s own choice about each', () => {
+    const own = {
       CLAUDE_CODE_ENABLE_TODO_TOOLS: '0',
-    });
+      CLAUDE_CODE_DISABLE_TERMINAL_TITLE: '0',
+      CLAUDE_CODE_DISABLE_ADVISOR_TOOL: '0',
+    };
+    expect(runEnv(own, '/usr/bin')).toEqual({ ...own, PATH: '/usr/bin' });
   });
 });
 
@@ -148,6 +185,15 @@ describe('launchEnv', () => {
       CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS: '1',
     };
     expect(launchEnv(base, '/usr/bin')).toEqual({ HOME: '/Users/someone', PATH: '/usr/bin' });
+  });
+
+  it('removes what would turn prompt suggestions back on, however Windows spells it', () => {
+    for (const name of [
+      'CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION',
+      'claude_code_enable_prompt_suggestion',
+    ]) {
+      expect(runEnv({ [name]: '1' }, '/usr/bin')).not.toHaveProperty(name);
+    }
   });
 
   it("passes the user's own Claude Code setup through untouched", () => {

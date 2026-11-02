@@ -115,8 +115,25 @@ const companyOf = (jobId: string) =>
     letter.toUpperCase(),
   );
 
+/** What a made-up change to a part of Profile saves, before and after. */
+const ANSWERS_BEFORE = JSON.stringify(
+  { applications: { leaving: 'I want a bigger team.' } },
+  null,
+  2,
+);
+const ANSWERS_AFTER = JSON.stringify(
+  { applications: { leaving: 'I’ve grown all I can here, and want to work at a bigger scale.' } },
+  null,
+  2,
+);
+
 /** What a task like the made-up one would change, by its skill. */
 function sampleFiles(task: RunTask | null): SampleFile[] {
+  if (task && 'part' in task) {
+    return [
+      { path: 'about-me/answers.json', before: ANSWERS_BEFORE, after: ANSWERS_AFTER, text: true },
+    ];
+  }
   const jobId = task ? taskJob(task) : null;
   if (!task || !jobId) return [];
   const folder = `applications/${jobId}`;

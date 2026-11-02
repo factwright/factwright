@@ -124,6 +124,39 @@ describe('RunServer', () => {
     expect(kept.at(-1)).toBe('/w/big.md');
   });
 
+  it('turns away a helper started anywhere but the workspace, before anything hears of it', async () => {
+    await server.start();
+    const activity = vi.fn();
+    const before = vi.fn();
+    server.listen(TOKEN, vi.fn(), { activity, before });
+    const start = (tool_input: unknown, tool_name = 'Agent', hook_event_name = 'PreToolUse') =>
+      post(server.activityUrl, { hook_event_name, tool_name, tool_input });
+
+    for (const [tool, isolation] of [
+      ['Agent', 'worktree'],
+      ['Agent', 'remote'],
+      ['Task', 'worktree'],
+    ] as const) {
+      const turned = await start({ description: 'Elsewhere', prompt: 'Go', isolation }, tool);
+      expect(turned.status).toBe(200);
+      expect(await turned.json()).toEqual({
+        hookSpecificOutput: {
+          hookEventName: 'PreToolUse',
+          permissionDecision: 'deny',
+          permissionDecisionReason: expect.stringContaining('Helpers work in the workspace'),
+        },
+      });
+    }
+    expect(before).not.toHaveBeenCalled();
+    expect(activity).not.toHaveBeenCalled();
+
+    // A helper in the workspace starts, and so does another tool with a field of that name.
+    expect((await start({ description: 'Here', prompt: 'Go' })).status).toBe(204);
+    expect((await start({ isolation: null })).status).toBe(204);
+    expect((await start({ isolation: 'worktree' }, 'Read')).status).toBe(204);
+    await vi.waitFor(() => expect(activity).toHaveBeenCalledTimes(3));
+  });
+
   it('tells the run what Factwright’s tools are about to write, and what they read', async () => {
     await server.start();
     const keep = vi.fn();

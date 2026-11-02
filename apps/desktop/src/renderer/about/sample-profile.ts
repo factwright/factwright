@@ -13,6 +13,7 @@ type ProfileApi = Pick<
   | 'savePrivateAnswers'
   | 'contactFromResume'
   | 'saveHistory'
+  | 'requestProfileChanges'
   | 'saveNotes'
   | 'changeConfidential'
   | 'addFile'
@@ -159,6 +160,17 @@ const TWO_KINDS: AboutYou = readAnswers({
   ],
 });
 
+/** Someone who wants work on-site in a city, at public employers, rather than remote. */
+const ON_SITE: AboutYou = readAnswers({
+  ...TOLD,
+  roles: ['Registered Nurse', 'Charge Nurse', 'Nurse Manager'],
+  fields: ['healthcare'],
+  workplaces: ['onsite'],
+  remoteFrom: '',
+  places: ['Columbus, OH', 'Dublin, OH'],
+  companies: ['public'],
+});
+
 const NOTES =
   'I lead the platform team at Tidewater Analytics. We moved twelve services onto one deploy pipeline last year, and deploys got about 40% faster.';
 
@@ -214,17 +226,24 @@ const STATUS: Readonly<Record<string, Partial<ProfileStatus>>> = {
     ],
     connections: { count: 412, added: '2026-10-12' },
   },
+  local: {
+    facts: { claims: 5, unconfirmed: 2, files: 5 },
+    starting: STARTING,
+    connections: { count: 412, added: '2026-10-12' },
+  },
 };
 
 /**
  * Sample answers about the user for checking the screens in a browser. ?profile=new starts with
  * nothing told, so getting started shows; started has Claude partway through the fact bank;
- * done, the default, has it finished; and kinds has two kinds of job, each with its starting
- * resumes. Changes stick until the page reloads.
+ * done, the default, has it finished; kinds has two kinds of job, each with its starting resumes;
+ * and local has someone looking on-site in a city, at public employers. Changes stick until the
+ * page reloads.
  */
 export function sampleProfile(state: string | null): ProfileApi {
   const kind = state && state in STATUS ? state : 'done';
-  let answers: AboutYou = kind === 'new' ? readAnswers({}) : kind === 'kinds' ? TWO_KINDS : TOLD;
+  const told = kind === 'kinds' ? TWO_KINDS : kind === 'local' ? ON_SITE : TOLD;
+  let answers: AboutYou = kind === 'new' ? readAnswers({}) : told;
   let notes = kind === 'new' ? '' : NOTES;
   let kept: KeptPrivate = NO_PRIVATE;
   let confidential = kind === 'new' ? [] : ['Bluebird'];
@@ -311,6 +330,7 @@ export function sampleProfile(state: string | null): ProfileApi {
       return answers;
     },
     privateAnswers: async () => kept,
+    requestProfileChanges: async () => ({ ok: true, request: '0123456789abcdef' }),
     saveHistory: async (saved) => {
       history = saved;
       changed();

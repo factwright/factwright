@@ -80,7 +80,14 @@ const WORK_HISTORY = {
     {
       company: 'Fernway',
       location: 'Boulder, CO',
-      positions: [{ title: 'Product Manager', start: '2018-06', end: '2021-03', summary: '' }],
+      positions: [
+        {
+          title: 'Product Manager',
+          start: '2018-06',
+          end: '2021-03',
+          summary: 'Shipped the first forecasting product.',
+        },
+      ],
     },
   ],
   schools: [
@@ -503,6 +510,32 @@ try {
     join(hunt.workspace, 'about-me', 'history.json'),
     `${JSON.stringify(WORK_HISTORY, null, 2)}\n`,
   );
+  // Your one kind of job's starting resume, which says what you did in your newest job.
+  mkdirSync(join(hunt.workspace, 'base'), { recursive: true });
+  writeFileSync(
+    join(hunt.workspace, 'base', 'big-company-ic.json'),
+    JSON.stringify({
+      name: 'Ana María Ruiz',
+      headline: 'Product manager',
+      summary: 'Ships data products.',
+      experience: [
+        {
+          title: 'Director of Product',
+          company: 'Tidewater Analytics',
+          start: '2023',
+          end: 'Present',
+          bullet_groups: [
+            {
+              bullets: [
+                { text: 'Set the roadmap for data products.' },
+                { text: 'Hired the first four PMs.' },
+              ],
+            },
+          ],
+        },
+      ],
+    }),
+  );
   await hunt.sync();
   const workday = await context.newPage();
   workday.on('pageerror', (error) => errors.push(error.message));
@@ -550,6 +583,12 @@ try {
       (await typedIn('workExperience-225--companyName')) === 'Tidewater Analytics',
     'Fill this page, on the page it went on to, fills it through sync the same way',
   );
+  check(
+    (await typedIn('workExperience-225--roleDescription')) ===
+      'Set the roadmap for data products.\nHired the first four PMs.' &&
+      (await workdayPanel.getByText('From your starting resume').count()) === 1,
+    'its Role Description takes the starting resume’s words through sync, and the panel says so',
+  );
   await workdayPanel
     .getByRole('button', { name: 'Add 2 for your other jobs', exact: true })
     .click();
@@ -557,6 +596,13 @@ try {
   check(
     (await throughSync()) && (await inPart('Work-Experience-3-panel', 'companyName')) === 'Fernway',
     'it offers a part for each job in your synced work history, and fills each new one through sync',
+  );
+  check(
+    (await workday
+      .locator('[aria-labelledby="Work-Experience-3-panel"] textarea')
+      .evaluate((box) => (box as HTMLTextAreaElement).value)) ===
+      'Shipped the first forecasting product.',
+    'and a job no resume says anything of takes what Profile says of it',
   );
   await shoot(workdayPanel, 'sync-6-workday');
   await workdayPanel.close();

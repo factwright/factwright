@@ -109,6 +109,8 @@ const TOOLS: Readonly<Record<string, StepWords>> = {
   save_template: words('Saving the template', 'Saved the template'),
   save_posting: words('Saving the posting', 'Saved the posting'),
   job_board: words('Reading a job board', 'Read a job board'),
+  careers_site: words('Reading a careers site', 'Read a careers site'),
+  job_listings: words('Searching public job listings', 'Searched public job listings'),
   hn_jobs: words('Reading Hacker News’s hiring thread', 'Read Hacker News’s hiring thread'),
   about_you: words('Reading about you', 'Read about you'),
   past_answers: words('Looking at answers you gave before', 'Looked at answers you gave before'),
@@ -119,6 +121,11 @@ const TOOLS: Readonly<Record<string, StepWords>> = {
   correct_fact: words('Correcting a fact', 'Corrected a fact'),
   save_about_you: words('Saving what you told Claude', 'Saved what you told Claude'),
   save_work_history: words('Saving your work history', 'Saved your work history'),
+  save_what_you_want: words('Saving what you want', 'Saved what you want'),
+  save_why_leaving: words('Saving why you’re leaving', 'Saved why you’re leaving'),
+  save_beyond_work: words('Saving Beyond work', 'Saved Beyond work'),
+  save_resume_choices: words('Saving your resume choices', 'Saved your resume choices'),
+  keep_names_private: words('Changing the names kept private', 'Changed the names kept private'),
   log_check: words('Logging the check', 'Logged the check'),
 };
 
@@ -141,6 +148,8 @@ const TOOL_KINDS: Readonly<Record<string, StepKind>> = {
   save_template: 'writing',
   save_posting: 'writing',
   job_board: 'reading',
+  careers_site: 'reading',
+  job_listings: 'searching',
   hn_jobs: 'reading',
   about_you: 'reading',
   past_answers: 'reading',
@@ -151,6 +160,11 @@ const TOOL_KINDS: Readonly<Record<string, StepKind>> = {
   correct_fact: 'checking',
   save_about_you: 'writing',
   save_work_history: 'writing',
+  save_what_you_want: 'writing',
+  save_why_leaving: 'writing',
+  save_beyond_work: 'writing',
+  save_resume_choices: 'writing',
+  keep_names_private: 'writing',
   log_check: 'writing',
 };
 
@@ -195,6 +209,7 @@ const SKILLS: Readonly<
   'salary-check': { how: 'check what a job pays' },
   'thank-you': { how: 'write thank-you notes' },
   'unmask-job': { how: 'find who’s hiring' },
+  'update-profile': { how: 'update your Profile' },
   'who-to-message': { how: 'find who to message' },
   'work-history': { how: 'fill in your work history' },
 };

@@ -24,6 +24,8 @@ import {
   WORKPLACES,
 } from '../../../shared/about.ts';
 import { changeKind, hasKinds, kindsOf, removeKind } from '../../../shared/kinds.ts';
+import { placesIn } from '../../../shared/places.ts';
+import { titlesIn } from '../../../shared/titles.ts';
 import { AddKind, KindNameField, KindSwitcher, RemoveKind } from './KindsOfJob.tsx';
 import styles from './steps.module.css';
 
@@ -165,6 +167,7 @@ export function WantsStep({
                 autoFocus={added === kind.id}
                 value={kind.roles}
                 onChange={(roles) => change({ roles })}
+                splitEntries={titlesIn}
                 placeholder="Such as Product Designer"
               />
             )}
@@ -245,7 +248,8 @@ export function WantsStep({
                 {...control}
                 value={answers.places}
                 onChange={(places) => update({ places })}
-                placeholder="Such as Chicago"
+                splitEntries={placesIn}
+                placeholder="Such as Chicago, IL"
               />
             )}
           </Field>

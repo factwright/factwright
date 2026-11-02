@@ -3,6 +3,8 @@ import {
   decodeEntities,
   htmlToText,
   jobPostingData,
+  jobPostingFields,
+  onFeedSite,
   postingRequests,
   postingSource,
   readPosting,
@@ -60,6 +62,26 @@ describe('postingSource', () => {
     expect(postingRequests({ kind: 'greenhouse', boards: ['acme', 'acme co'], id: '42' })).toEqual([
       { url: 'https://boards-api.greenhouse.io/v1/boards/acme/jobs/42', json: true },
       { url: 'https://boards-api.greenhouse.io/v1/boards/acme%20co/jobs/42', json: true },
+    ]);
+    // An iCIMS posting's page is a frame that loads later, so its frame's own view is read.
+    expect(
+      postingRequests({ kind: 'page', url: 'https://careers-acme.icims.com/jobs/17/nurse/job' }),
+    ).toEqual([
+      { url: 'https://careers-acme.icims.com/jobs/17/nurse/job?in_iframe=1', json: false },
+    ]);
+    expect(
+      postingRequests({
+        kind: 'page',
+        url: 'https://careers-acme.icims.com/jobs/17/nurse/job?mode=job&in_iframe=1',
+      }),
+    ).toEqual([
+      { url: 'https://careers-acme.icims.com/jobs/17/nurse/job?mode=job&in_iframe=1', json: false },
+    ]);
+    expect(postingRequests({ kind: 'page', url: 'https://www.icims.com/jobs/' })).toEqual([
+      { url: 'https://www.icims.com/jobs/?in_iframe=1', json: false },
+    ]);
+    expect(postingRequests({ kind: 'page', url: 'https://notreallyicims.com/jobs/1' })).toEqual([
+      { url: 'https://notreallyicims.com/jobs/1', json: false },
     ]);
     expect(postingRequests({ kind: 'page', url: 'https://acme.example/jobs' })).toEqual([
       { url: 'https://acme.example/jobs', json: false },
@@ -146,7 +168,82 @@ describe('readPosting', () => {
   });
 });
 
+describe('a Workday posting’s page', () => {
+  const source = {
+    kind: 'page',
+    url: 'https://acme.wd1.myworkdayjobs.com/en-US/Careers/job/Nurse_R1',
+  } as const;
+  const script = (available: string) =>
+    `<script>window.workday = { siteId: "Careers", postingAvailable: ${available}, }</script>`;
+
+  it('reads the posting’s own page rather than its page for applying, which can say it’s closed', () => {
+    const address = (url: string) => postingRequests({ kind: 'page', url })[0]?.url;
+    const posting = 'https://acme.wd1.myworkdayjobs.com/Careers/job/Nurse_R1';
+    expect(address(`${posting}/apply`)).toBe(posting);
+    expect(address(`${posting}/apply/applyManually?source=x`)).toBe(`${posting}?source=x`);
+    expect(address(posting)).toBe(posting);
+    expect(
+      address('https://wd5.myworkdaysite.com/recruiting/acme/Careers/job/Nurse_R1/apply'),
+    ).toBe('https://wd5.myworkdaysite.com/recruiting/acme/Careers/job/Nurse_R1');
+    expect(address('https://acme.example/jobs/1/apply')).toBe('https://acme.example/jobs/1/apply');
+    // A title that only starts with the word stays, and a long link takes as long as it is long.
+    expect(address(`${posting}/Apply-Today_R2`)).toBe(`${posting}/Apply-Today_R2`);
+    const start = Date.now();
+    expect(address(`${posting}${'/apply'.repeat(200_000)}`)).toBe(posting);
+    expect(Date.now() - start).toBeLessThan(1000);
+  });
+
+  it('says the posting has closed when the page says so', () => {
+    expect(readPosting(source, script('false'))).toEqual({
+      text: '',
+      via: 'Workday',
+      closed: true,
+    });
+  });
+
+  it('reads an open one’s job data as any other page’s', () => {
+    const data = `<script type="application/ld+json">${JSON.stringify({
+      '@type': 'JobPosting',
+      title: 'Registered Nurse',
+      description: 'Care for patients.',
+    })}</script>`;
+    const read = readPosting(source, `${script('true')}${data}`);
+    expect(read?.closed).toBeUndefined();
+    expect(read?.text).toContain('Registered Nurse');
+  });
+
+  it('takes no such word from a page on any other site', () => {
+    const elsewhere = { kind: 'page', url: 'https://acme.example/jobs/1' } as const;
+    expect(
+      readPosting(elsewhere, `<main>${script('false')}Still hiring</main>`)?.closed,
+    ).toBeUndefined();
+  });
+});
+
 describe('jobPostingData', () => {
+  it('says when a posting went up and when it closes, without their times', () => {
+    const html = `<script type="application/ld+json">${JSON.stringify({
+      '@type': 'JobPosting',
+      title: 'Registered Nurse',
+      datePosted: '2026-07-24T04:00:00Z',
+      validThrough: '2027-07-24',
+      description: '<p>Care for patients.</p>',
+    })}</script>`;
+    expect(jobPostingData(html)).toBe(
+      'Registered Nurse\nPosted: 2026-07-24\nCloses: 2027-07-24\n\nCare for patients.',
+    );
+  });
+
+  it('keeps a date as the page writes it when it isn’t in the usual form', () => {
+    const html = `<script type="application/ld+json">${JSON.stringify({
+      '@type': 'JobPosting',
+      title: 'Store Manager',
+      datePosted: 'October 3, 2026',
+      description: 'Run the store.',
+    })}</script>`;
+    expect(jobPostingData(html)).toBe('Store Manager\nPosted: October 3, 2026\n\nRun the store.');
+  });
+
   it('finds a JobPosting inside a graph, and skips broken data', () => {
     const html = `<script type="application/ld+json">{ broken</script>
       <script type="application/ld&#x2B;json">${JSON.stringify({
@@ -211,5 +308,165 @@ describe('a page made to keep the app busy', () => {
 
   it('reads a character number past the last one as "�", rather than failing', () => {
     expect(decodeEntities('a&#x110000;b&#99999999;c')).toBe('a�b�c');
+  });
+});
+
+describe('reading a posting on Recruitee or Workable', () => {
+  it('reads it from the system’s public feed, by the names in its link', () => {
+    const recruitee = postingSource('https://bunq.recruitee.com/o/data-scientist-3?source=hn');
+    expect(recruitee).toEqual({ kind: 'recruitee', board: 'bunq', id: 'data-scientist-3' });
+    expect(postingRequests(recruitee)).toEqual([
+      { url: 'https://bunq.recruitee.com/api/offers/data-scientist-3', json: true },
+    ]);
+    expect(
+      readPosting(recruitee, {
+        offer: {
+          title: 'Data Scientist',
+          location: 'Amsterdam',
+          description: '<p>Build models.</p>',
+          requirements: '<ul><li>Python</li></ul>',
+        },
+      }),
+    ).toEqual({
+      text: 'Data Scientist\nAmsterdam\n\nBuild models.\n\n- Python',
+      via: 'Recruitee API',
+    });
+
+    const workable = postingSource('https://apply.workable.com/seeq/j/1B6E0A1710/apply');
+    expect(workable).toEqual({ kind: 'workable', board: 'seeq', id: '1B6E0A1710' });
+    expect(postingRequests(workable)).toEqual([
+      { url: 'https://apply.workable.com/api/v2/accounts/seeq/jobs/1B6E0A1710', json: true },
+    ]);
+    expect(
+      readPosting(workable, {
+        title: 'Staff Engineer',
+        remote: true,
+        location: { country: 'United States', city: null, region: null },
+        description: '<p>Build things.</p>',
+        requirements: '<p>Ten years.</p>',
+        benefits: '<p>Dental.</p>',
+      }),
+    ).toEqual({
+      text: 'Staff Engineer\nUnited States\nRemote\n\nBuild things.\n\nTen years.\n\nDental.',
+      via: 'Workable API',
+    });
+  });
+
+  it.each([
+    'https://apply.workable.com/j/1B6E0A1710',
+    'https://apply.workable.com/seeq',
+    'https://bunq.recruitee.com/',
+    'https://jobs.smartrecruiters.com/Sodexo/744000158662429',
+    'https://eswt.fa.us6.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1001/job/24825',
+    'https://a.b.recruitee.com.evil.example/o/nurse',
+  ])('reads %s as a page, through no feed', (link) => {
+    expect(postingSource(link).kind).toBe('page');
+  });
+
+  it('reads a Recruitee link by its language too', () => {
+    expect(postingSource('https://bunq.recruitee.com/l/en/o/data-scientist-3')).toEqual({
+      kind: 'recruitee',
+      board: 'bunq',
+      id: 'data-scientist-3',
+    });
+  });
+
+  it('knows the feeds’ own sites', () => {
+    for (const site of [
+      'https://boards-api.greenhouse.io/x',
+      'https://api.lever.co/x',
+      'https://api.ashbyhq.com/x',
+      'https://api.gem.com/x',
+      'https://acme.recruitee.com/x',
+      'https://apply.workable.com/x',
+    ]) {
+      expect(onFeedSite(site), site).toBe(true);
+    }
+    for (const site of ['https://evil.example/x', 'https://greenhouse.io.evil.example/x']) {
+      expect(onFeedSite(site), site).toBe(false);
+    }
+  });
+
+  it('takes a name that could change where its feed’s request goes as no feed at all', () => {
+    for (const link of [
+      'https://bunq.recruitee.com/o/..%2F..%2Fadmin',
+      'https://bunq.recruitee.com/o/%E0%A4%A',
+      'https://apply.workable.com/seeq/j/AB%2F..%2FCD',
+      'https://apply.workable.com/..%2Fadmin/j/ABC',
+    ]) {
+      expect(postingSource(link).kind, link).toBe('page');
+    }
+  });
+
+  it('finds nothing in an empty or hostile answer', () => {
+    const recruitee = postingSource('https://bunq.recruitee.com/o/data-scientist-3');
+    const workable = postingSource('https://apply.workable.com/seeq/j/ABC');
+    for (const answer of [null, 'text', 42, [], {}, { offer: 'x' }, { offer: {} }]) {
+      expect(readPosting(recruitee, answer)).toBeNull();
+      expect(readPosting(workable, answer)).toBeNull();
+    }
+  });
+});
+
+describe('job data built to break a reader', () => {
+  const page = (more: unknown) =>
+    `<script type="application/ld+json">${JSON.stringify({
+      '@type': 'JobPosting',
+      title: 'Nurse',
+      description: 'Care for patients.',
+      ...(more as object),
+    })}</script>`;
+
+  it.each([
+    [{ baseSalary: { value: { minValue: { toString: 1 } } } }],
+    [{ baseSalary: { value: { minValue: [[[]]], maxValue: { valueOf: 1 } } } }],
+    [{ baseSalary: { value: { value: { toString: 1 } } } }],
+    [{ baseSalary: 'a lot' }],
+  ])('leaves out what isn’t an amount: %j', (more) => {
+    const data = jobPostingFields(page(more));
+    expect(data?.title).toBe('Nurse');
+    expect(data?.pay ?? '').not.toContain('[object');
+  });
+
+  it('reads an amount as it should', () => {
+    const value = { minValue: 40, maxValue: '50', unitText: 'HOUR' };
+    expect(jobPostingFields(page({ baseSalary: { currency: 'USD', value } }))?.pay).toBe(
+      '40–50 USD HOUR',
+    );
+    expect(
+      jobPostingData(page({ baseSalary: { currency: 'USD', value: { value: 45 } } })),
+    ).toContain('Pay: 45 USD');
+  });
+
+  it('spells out a title a site escaped twice', () => {
+    expect(jobPostingFields(page({ title: 'Sales &amp; Service' }))?.title).toBe('Sales & Service');
+  });
+});
+
+describe('a page whose job data is a teaser', () => {
+  const page = (description: string, body: string) =>
+    `<html><script type="application/ld+json">${JSON.stringify({
+      '@type': 'JobPosting',
+      title: 'Nurse',
+      description,
+    })}</script><body><main>${body}</main></body></html>`;
+  const source = { kind: 'page', url: 'https://www.usajobs.gov/job/1' } as const;
+
+  it('gives the page’s text too, when that’s where the posting is', () => {
+    const body = `<p>${'The duties of this job, at length. '.repeat(40)}</p>`;
+    const read = readPosting(source, page('A short summary.', body));
+    expect(read?.via).toBe('the page’s JobPosting data and its text');
+    expect(read?.text).toContain('A short summary.');
+    expect(read?.text).toContain('The duties of this job');
+  });
+
+  it('gives only the job data when that’s all there is, or it’s long', () => {
+    expect(readPosting(source, page('A short summary.', ''))?.via).toBe(
+      'the page’s JobPosting data',
+    );
+    const full = 'All the duties of this job, at length. '.repeat(60);
+    const read = readPosting(source, page(full, '<p>Menus and other words.</p>'));
+    expect(read?.via).toBe('the page’s JobPosting data');
+    expect(read?.text).not.toContain('Menus');
   });
 });

@@ -42,7 +42,7 @@ When the command ends with `quick`, the user asked for a resume they don't have 
 - If Analyze job (or unmask) already made a folder for this job, reuse it: keep its `posting.md`, `job.md` and `fit-check.md`, and add to them. Otherwise use `applications/<YYYY-MM-DD>-<company>-<role>/`, lowercase with hyphens. One by that name that's there already is another job's: add `-2` to the name, or the next number that's free.
 - Save the posting word for word as `posting.md`, if the folder doesn't have one yet:
   - Saved from the user's browser, which `job_details` names: `save_posting` with the job's link and its id copies it in, with no reading, LinkedIn's included.
-  - From a link: read it with `read_posting` (on Greenhouse, Lever, Ashby or Gem) or `read_page` (anywhere else), then `save_posting` with the link and the folder's name.
+  - From a link: read it with `read_posting` (on Greenhouse, Lever, Ashby, Gem, Recruitee or Workable) or `read_page` (anywhere else), then `save_posting` with the link and the folder's name.
   - Pasted text, or the link needs a sign-in: save the user's text as `posting.md` with a `- **Source:** pasted by the user <YYYY-MM-DD>` line on top.
 - If the posting has special application steps (apply by email, an exact subject line or phrase, specific attachments, "mention X", warnings like "no AI-written answers"), write `apply.md`, which the app shows as a How to apply alert. Skip it for a plain apply button. Its format: `# How to apply: <Company>, <Role>`, then `- **Alert:** <one line>`, `- **Email:**` and `- **Subject:**` when they apply, then numbered steps with exact words in backticks.
 - Write (or update) `job.md`: `# <Company>: <Role>`, then `- **Job ID:** <the job's id>` when the job is on file, which keeps the folder with this job, `- **Date:**`, `- **Company:**`, `- **Role:**`, `- **Links:**`, `- **Format:** <pdf, word or both>` and `- **Style / track:** <style> / <track>`, and the fit check's `- **Kind of job:**`, `- **Pay:**`, `- **Work arrangement:**` and `- **Pay to ask for:**` lines when it has them, then:
@@ -50,8 +50,8 @@ When the command ends with `quick`, the user asked for a resume they don't have 
   - `## The user's notes`, verbatim
 
 ## 2. Research the company (brief)
-- Read the company's site with `read_page`: the link the user gave, plus its about or careers page if it's useful. Run 1–2 web searches at most, for stage and funding, size, product, customers, and tech stack.
-- Append `## Company notes` to job.md: what they do, stage and size, domain, stack, and the words they use about themselves.
+- Read the company's site with `read_page`: the link the user gave, plus its about or careers page if it's useful. Run 1–2 web searches at most, for stage and funding, size, what it makes or does, who it serves, and the tools it uses.
+- Append `## Company notes` to job.md: what they do, stage and size, field, tools, and the words they use about themselves.
 - Pick the **style** with `guide/styles/README.md`, then read that style's file.
 - Pick the **track** from the role title and scope.
 

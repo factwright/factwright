@@ -116,15 +116,20 @@ export const requestedRun = (ready: boolean, startsNow: boolean): RunRequestAnsw
 /** Whether a task is practice for a call, rather than prep for it. */
 const practices = (task: RunTask | null) => Boolean(task && 'practice' in task && task.practice);
 
+/** The part of Profile a task changes, with its kind of job, or null for any other task. */
+const partKey = (task: RunTask | null) =>
+  task && 'part' in task ? `${task.part}/${task.kind ?? ''}` : null;
+
 /**
- * Whether a run is this one: the same skill, on the same job and call, and practice for a call
- * only as practice. A quick resume is its job's tailored resume, made another way, and a run
- * analyzing several jobs analyzes each of them.
+ * Whether a run is this one: the same skill, on the same job and call, or the same part of Profile,
+ * and practice for a call only as practice. A quick resume is its job's tailored resume, made
+ * another way, and a run analyzing several jobs analyzes each of them.
  */
 export const isSameRun = (task: RunTask | null, run: RunTask) =>
   task?.skill === run.skill &&
   (taskJob(task) === taskJob(run) || analyzesIt(task, run) || analyzesIt(run, task)) &&
   taskCall(task) === taskCall(run) &&
+  partKey(task) === partKey(run) &&
   practices(task) === practices(run);
 
 /** Whether a run analyzing several jobs analyzes the one job another task is on. */

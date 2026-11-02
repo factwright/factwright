@@ -155,16 +155,20 @@ export class FactBankFiles {
    * Files a claim from the user's answers in a run: after a file's last claim, or the last in a
    * section, such as a role's, or in place of one that still waits to be verified. A confirmed
    * claim is never changed or deleted. A file of projects is started when there's none, with the
-   * claim in it.
+   * claim in it, and so is a new job's, when it's asked to start one, by the job's name.
    */
   fileClaim(
     path: string,
     text: string,
     replacing: FactTarget | null = null,
     section: string | null = null,
+    newJob: string | null = null,
   ): FactResult {
     if (path === PROJECTS && !replacing && this.file(path) === null && !this.exists(path)) {
       return this.create(path, addClaim('# Projects\n', text, section));
+    }
+    if (newJob && !replacing && this.file(path) === null && !this.exists(path)) {
+      return this.create(path, addClaim(`# ${newJob}\n`, text, section));
     }
     return this.edit(
       path,

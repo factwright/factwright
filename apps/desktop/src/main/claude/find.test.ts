@@ -1,6 +1,12 @@
 import { posix, win32 } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
-import { claudeInTerminal, type FindDeps, findClaude, installedClaude } from './find.ts';
+import {
+  claudeInTerminal,
+  type FindDeps,
+  findClaude,
+  installedClaude,
+  packageManagerUpdate,
+} from './find.ts';
 
 /** A made-up computer where only `files` exist and the login shell finds nothing. */
 function computer(
@@ -16,12 +22,83 @@ function computer(
     env: {},
     home: platform === 'win32' ? 'C:\\Users\\someone' : '/Users/someone',
     isFile: async (path) => files.some((file) => key(file) === key(path)),
+    realPath: async (path) => path,
     runShell: vi.fn(async () => {
       throw new Error('claude not found');
     }),
     ...overrides,
   };
 }
+
+describe('packageManagerUpdate', () => {
+  /** A computer where the claude found is really at `real`. */
+  const leadingTo = (platform: NodeJS.Platform, real: string) =>
+    computer(platform, [], { realPath: async () => real });
+
+  it.each([
+    ['/opt/homebrew/Caskroom/claude-code/2.1.309/claude', 'brew upgrade claude-code'],
+    ['/opt/homebrew/Caskroom/claude-code@latest/2.1.316/claude', 'brew upgrade claude-code@latest'],
+    ['/usr/local/Caskroom/claude-code/2.1.309/claude', 'brew upgrade claude-code'],
+  ])('names the cask at %s', async (real, command) => {
+    const deps = leadingTo('darwin', real);
+    expect(await packageManagerUpdate('/opt/homebrew/bin/claude', true, deps)).toBe(command);
+  });
+
+  it('gives brew by its whole path when a new terminal doesn’t find claude by name', async () => {
+    const real = '/opt/homebrew/Caskroom/claude-code/2.1.309/claude';
+    const deps = leadingTo('darwin', real);
+    expect(await packageManagerUpdate('/opt/homebrew/bin/claude', false, deps)).toBe(
+      "'/opt/homebrew/bin/brew' upgrade claude-code",
+    );
+    expect(
+      await packageManagerUpdate(
+        '/Users/someone/brew/bin/claude',
+        false,
+        leadingTo('darwin', '/Users/someone/brew/Caskroom/claude-code/2.1.309/claude'),
+      ),
+    ).toBe('~/brew/bin/brew upgrade claude-code');
+  });
+
+  it.each([
+    'C:\\Users\\someone\\AppData\\Local\\Microsoft\\WinGet\\Links\\claude.exe',
+    'C:\\Users\\someone\\AppData\\Local\\Microsoft\\WinGet\\Packages\\Anthropic.ClaudeCode_Microsoft.Winget.Source_8wekyb3d8bbwe\\claude.exe',
+    'C:\\Program Files\\microsoft\\winget\\packages\\Anthropic.ClaudeCode\\claude.exe',
+  ])('gives WinGet’s command for %s', async (real) => {
+    const deps = leadingTo('win32', real);
+    expect(await packageManagerUpdate(real, true, deps)).toBe(
+      'winget upgrade Anthropic.ClaudeCode',
+    );
+  });
+
+  it.each([
+    ['darwin', '/Users/someone/.local/share/claude/versions/2.1.314'],
+    ['darwin', '/opt/homebrew/lib/node_modules/@anthropic-ai/claude-code/cli.js'],
+    ['darwin', '/Users/someone/Caskroom-notes/claude'],
+    ['win32', 'C:\\Users\\someone\\.local\\bin\\claude.exe'],
+    ['win32', 'C:\\Users\\someone\\AppData\\Roaming\\npm\\claude.cmd'],
+  ] as const)('leaves %s %s to `claude update`', async (platform, real) => {
+    expect(await packageManagerUpdate(real, true, leadingTo(platform, real))).toBeNull();
+  });
+
+  it('puts only a plain cask name into a command', async () => {
+    for (const name of ['claude code', '--force', 'claude;rm', "claude'code"]) {
+      const real = `/opt/homebrew/Caskroom/${name}/2.1.309/claude`;
+      expect(await packageManagerUpdate(real, true, leadingTo('darwin', real))).toBeNull();
+    }
+  });
+
+  it('goes by the path found when the system can’t say where it leads', async () => {
+    const links = 'C:\\Users\\someone\\AppData\\Local\\Microsoft\\WinGet\\Links\\claude.exe';
+    const deps = computer('win32', [], {
+      realPath: async () => {
+        throw new Error('EPERM');
+      },
+    });
+    expect(await packageManagerUpdate(links, true, deps)).toBe(
+      'winget upgrade Anthropic.ClaudeCode',
+    );
+  });
+});
 
 describe('findClaude on macOS', () => {
   it('takes the first PATH folder that has claude', async () => {

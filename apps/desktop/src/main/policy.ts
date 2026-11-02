@@ -2,6 +2,12 @@ import { join, normalize, resolve, sep } from 'node:path';
 import { ASK_ID, CALL_ID, FOCUS_ID, type Job, KIND_ID } from '@factwright/core';
 import type { TerminalSize } from '../shared/api.ts';
 import {
+  PROFILE_PARTS,
+  PROFILE_REQUEST,
+  PROFILE_SKILL,
+  type ProfilePart,
+} from '../shared/profile-parts.ts';
+import {
   FINDING_ID,
   MAX_FINDINGS,
   RESUME_FILE,
@@ -71,6 +77,20 @@ export function isSafeExternalUrl(url: string): boolean {
     const { protocol } = new URL(url);
     // Email links open the user's mail app with a draft, which they still send themselves.
     return protocol === 'https:' || protocol === 'mailto:';
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * What a page in the window may ask for: the app's own pages and, during development, the screens'
+ * dev server, but nothing else on the web. Links go to the user's own browser instead.
+ */
+export function windowMayLoad(url: string, devUrl?: string): boolean {
+  try {
+    const { protocol, host } = new URL(url);
+    if (!['http:', 'https:', 'ws:', 'wss:'].includes(protocol)) return true;
+    return devUrl !== undefined && host === new URL(devUrl).host;
   } catch {
     return false;
   }
@@ -190,6 +210,8 @@ export function parseRunTask(value: unknown): RunTask | null {
   const fields = value as Record<string, unknown>;
   // Analyzing several jobs in one run.
   if (fields.jobIds !== undefined) return parseAnalyzeTask(fields);
+  // Changes to a part of Profile.
+  if (fields.part !== undefined || fields.skill === PROFILE_SKILL) return parseProfileTask(fields);
   // A new version, or the changes the user asked for, on one job.
   if (fields.again !== undefined || fields.changes !== undefined) return parseVersionTask(fields);
   if (fields.skill === REVISE_SKILL) return parseRevision(value);
@@ -288,6 +310,21 @@ function parseAnalyzeTask(fields: Record<string, unknown>): RunTask | null {
 }
 
 /**
+ * Changes to a part of Profile: the part, by its name, the kind's id for one kind of job, and the
+ * request's ID, which holds the user's words.
+ */
+function parseProfileTask(fields: Record<string, unknown>): RunTask | null {
+  const { skill, part, kind, request, ...rest } = fields;
+  if (Object.keys(rest).length > 0 || skill !== PROFILE_SKILL) return null;
+  if (!(PROFILE_PARTS as readonly unknown[]).includes(part)) return null;
+  if (typeof request !== 'string' || !PROFILE_REQUEST.test(request)) return null;
+  if (part !== 'kind') {
+    return kind === undefined ? { skill, part: part as ProfilePart, request } : null;
+  }
+  return typeof kind === 'string' && KIND_ID.test(kind) ? { skill, part, kind, request } : null;
+}
+
+/**
  * A new version of a job's resume, letter or Projects page, a quick one of its resume, or changes
  * to its resume or letter.
  */
@@ -359,9 +396,14 @@ const MODE_WORDS = {
  * never reaches Claude as if the user had typed it. The exceptions are a company the user typed
  * for a search themselves, checked first, and the id of a kind of job they named. A focus for a
  * search goes by its ID alone, and the search reads what it says with search_focus. A search the
- * user picked no places for starts without any, so Claude asks.
+ * user picked no places for starts without any, so Claude asks. Changes to a part of Profile name
+ * it by the app's own word, and one kind of job by its id, and the run reads what the user asked
+ * with requested_changes.
  */
 export function runPrompt(task: RunTask): string {
+  if ('part' in task) {
+    return `/factwright:${task.skill} ${task.part}${task.kind ? ` ${task.kind}` : ''}`;
+  }
   if ('sources' in task && task.sources) {
     const { sites, month, company, kind, focus } = task.sources;
     const places = [
@@ -427,6 +469,13 @@ export const SEVERAL_ASK_NOTHING =
  */
 export const SEVERAL_PERMITS_NOTHING =
   'Analyzing several jobs asks the user nothing, so this wasn’t asked, and the call didn’t run. Go on without it, with Factwright’s tools and what’s on file, and say in the job’s line what’s missing.';
+
+/**
+ * What Claude Code reads in place of the user's OK when it asks for one in a run on a part of
+ * Profile, which has no prompts, whatever it's asked next, for a call that then never runs.
+ */
+export const UPDATE_PERMITS_NOTHING =
+  'A change to one part of Profile uses that part’s own tools and nothing else, so this wasn’t asked, and the call didn’t run. Go on without it, and say in your reply what you left, and where in the app the user changes it.';
 
 /**
  * Why a task asks the user nothing, by its prompt, for Claude to read when it asks anyway: a

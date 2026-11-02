@@ -1,5 +1,7 @@
 import { type CallDocKind, FACT_TAGS, localDate, sameCompany } from '@factwright/core';
 import { hasKinds, kindsOf } from '../../shared/kinds.ts';
+import type { ProfilePart } from '../../shared/profile-parts.ts';
+import { partOf, type RunScope } from '../../shared/runs.ts';
 import type { FactBankFiles } from '../about/facts.ts';
 import type { AboutStore } from '../about/store.ts';
 import type { JobsService } from '../jobs/service.ts';
@@ -8,6 +10,7 @@ import type { TemplateLibrary } from '../resume/templates.ts';
 import { aboutYouChanges, aboutYouText, SAVABLE_ANSWERS } from './about.ts';
 import { MAX_ANSWER, pastAnswers, saveAnswer } from './answers.ts';
 import { saveCallDoc } from './calls.ts';
+import { careersSite } from './careers.ts';
 import { requestedChanges } from './changes.ts';
 import {
   correctFact,
@@ -25,19 +28,32 @@ import { findJob, findJobs, type JobQuery, jobDetails } from './lookup.ts';
 import { huntCall, type McpTool, type ToolCall } from './mcp.ts';
 import { mergeJob } from './merge.ts';
 import { type FetchDeps, ReadCache, readLink, savePosting } from './posting.ts';
+import {
+  BEYOND_SCHEMA,
+  CHOICES_SCHEMA,
+  keepNamesPrivate,
+  LEAVING_SCHEMA,
+  noStreet,
+  type PartAbout,
+  saveBeyondWork,
+  saveResumeChoices,
+  saveWhatYouWant,
+  saveWhyLeaving,
+  WANTS_SCHEMA,
+} from './profile-parts.ts';
 import { buildProjectsPage } from './projects.ts';
 import { buildResume } from './resume.ts';
 import { revisionFindings } from './revision.ts';
-import { hnJobs, jobBoard } from './search.ts';
+import { hnJobs, jobBoard, jobListings } from './search.ts';
 import { listTemplates, readTemplateFile, saveTemplate } from './templates.ts';
 
 export interface ToolDeps {
   jobs: JobsService;
   /**
    * What the user told Factwright about themselves, which save_about_you adds to, and the work
-   * history and education save_work_history saves.
+   * history and education save_work_history saves, and what a run on one part of Profile changes.
    */
-  about: Pick<AboutStore, 'answers' | 'saveAnswers' | 'history' | 'saveHistory'>;
+  about: Pick<AboutStore, 'saveHistory'> & PartAbout;
   /** The fact bank's files, which the user's answers in a run add to. */
   facts: Pick<FactBankFiles, 'read' | 'fileClaim' | 'addGap' | 'confirm' | 'correct'>;
   workspace: string;
@@ -59,9 +75,27 @@ const SEARCH_FOLDER = {
   description: 'The job search’s folder name under searches/, such as 2026-11-hn-whos-hiring.',
 };
 
+/** The most titles one call narrows by, and the longest title. */
+const MAX_TITLES = 30;
+const MAX_TITLE = 100;
+
+/** Job titles to narrow a list by, or none. */
+function titlesInput(input: Record<string, unknown>): string[] {
+  const value = input.titles;
+  if (value === undefined || value === null) return [];
+  const list = Array.isArray(value) ? value : [value];
+  if (
+    list.length > MAX_TITLES ||
+    list.some((title) => typeof title !== 'string' || title.length > MAX_TITLE)
+  ) {
+    throw new Error(`Give up to ${MAX_TITLES} titles, each of ${MAX_TITLE} characters or fewer.`);
+  }
+  return list.map((title: string) => title.trim()).filter(Boolean);
+}
+
 /** What Factwright's tools tell Claude about themselves when it connects. */
 export const TOOLS_INSTRUCTIONS =
-  'Factwright’s tools work on the user’s job hunt: the jobs on file with everything saved for each, their status, notes and calls, what the user sent on applications and asked about a job, what they told Factwright about themselves, reading postings and web pages and saving postings word for word, reading whole job boards and Hacker News’s hiring thread, building resumes and cover letters, the resume templates, the job hunt’s logs of fit checks, salary checks and unmasked listings, and saving to the fact bank what the user answers when you ask them. Use them to read the tracker and the web, and to save answers, prep sheets and thank-you notes for calls, facts from the user’s answers, templates, rows in the logs, and resume and cover letter files.';
+  'Factwright’s tools work on the user’s job hunt: the jobs on file with everything saved for each, their status, notes and calls, what the user sent on applications and asked about a job, what they told Factwright about themselves, reading postings and web pages and saving postings word for word, reading whole job boards, careers sites, public job listings and Hacker News’s hiring thread, building resumes and cover letters, the resume templates, the job hunt’s logs of fit checks, salary checks and unmasked listings, and saving to the fact bank what the user answers when you ask them. Use them to read the tracker and the web, and to save answers, prep sheets and thank-you notes for calls, facts from the user’s answers, templates, rows in the logs, and resume and cover letter files.';
 
 /** The tools that never reach past this computer, so Claude may call them without asking. */
 export const LOCAL_TOOLS = [
@@ -99,6 +133,9 @@ export const FACT_TOOLS = ['save_fact', 'save_gap', 'verify_fact', 'correct_fact
  */
 export const PROFILE_TOOLS = ['save_about_you', 'save_work_history'];
 
+/** What a run on any part of Profile reads: the changes the user asked for, and Profile itself. */
+export const PART_READS = ['about_you', 'requested_changes'];
+
 /**
  * The tool that adds to the user's templates. It stays on this computer. A revision reads what an
  * X-ray found in a posting, so it asks before saving one.
@@ -109,18 +146,64 @@ export const TEMPLATE_TOOLS = ['save_template'];
 export const TEMPLATE_READS = ['list_templates', 'read_template'];
 
 /**
- * The tools that reach only fixed public job APIs: the applicant systems' postings and boards,
- * and Hacker News's. They send nothing but a board's name, a posting's ID or a month, never to
- * a site a link names, so Claude may call them without asking too. save_posting otherwise saves
- * only what was read already.
+ * The tools that reach only fixed public job addresses: the applicant systems' postings and
+ * boards, Hacker News's and USAJOBS's feeds, and Workable's job search. They send nothing but a
+ * board's name, a posting's ID, a month, or to Workday's and Workable's searches a job's title and
+ * place. A link can name only a board, on those systems' own sites, so Claude may call them without
+ * asking too, and job_board's reads go on the task's card. save_posting otherwise saves only
+ * what was read already.
  */
-export const PUBLIC_API_TOOLS = ['read_posting', 'save_posting', 'job_board', 'hn_jobs'];
+export const PUBLIC_API_TOOLS = [
+  'read_posting',
+  'save_posting',
+  'job_board',
+  'hn_jobs',
+  'job_listings',
+];
 
 /**
- * The tool that reads any public page: never LinkedIn's, nor anything on this computer or the
- * user's network. The task's card lists each page it read.
+ * The tools that read any public site: never LinkedIn's, nor anything on this computer or the
+ * user's network. The task's card lists each page they read.
  */
-export const WEB_TOOLS = ['read_page'];
+export const WEB_TOOLS = ['read_page', 'careers_site'];
+
+/**
+ * What a run started with Update with Claude saves with, for each part: only that part's own tools,
+ * so a run on one part can't save another. Those in PART_ONLY no other run has.
+ */
+export const PART_TOOLS: Readonly<Record<ProfilePart, readonly string[]>> = {
+  wants: ['save_what_you_want'],
+  kind: ['save_what_you_want'],
+  leaving: ['save_why_leaving'],
+  beyond: ['save_beyond_work', 'keep_names_private'],
+  history: ['save_work_history', 'keep_names_private'],
+  resumes: ['list_templates', 'build_resume', 'keep_names_private'],
+  templates: ['save_resume_choices', ...TEMPLATE_READS, ...TEMPLATE_TOOLS],
+  facts: [...FACT_TOOLS, 'keep_names_private'],
+};
+
+/** The tools only a run on a part of Profile has, as each is for what the user asked in it. */
+const PART_ONLY = [
+  'save_what_you_want',
+  'save_why_leaving',
+  'save_beyond_work',
+  'save_resume_choices',
+  'keep_names_private',
+];
+
+/**
+ * Whether a run has a tool, which it sees and can call: a run on a part of Profile has that part's
+ * alone, and no other run has a part's own. A run that reads the web can't change the job titles
+ * the user wants, and one changing their templates has nothing to do with the rest.
+ */
+export function runHasTool(scope: RunScope, tool: string): boolean {
+  const part = partOf(scope);
+  if (part) return PART_READS.includes(tool) || PART_TOOLS[part].includes(tool);
+  return !PART_ONLY.includes(tool);
+}
+
+/** A tool saving to a part of Profile: it stays on this computer, and the card lists its changes. */
+const SAVES_PART = { readOnlyHint: false, idempotentHint: true, openWorldHint: false };
 
 /** Tools that only read, and don't reach past this computer. */
 const READS = { readOnlyHint: true, openWorldHint: false };
@@ -291,15 +374,15 @@ export function factwrightTools(deps: ToolDeps): McpTool[] {
     {
       name: 'requested_changes',
       description:
-        'What the user asked to change in a job’s resume or cover letter, in their own words, typed in the app for this run, with where the version before is kept. Only a run the user started with Request changes has them.',
+        'What the user asked to change in a job’s resume or cover letter, or in a part of their Profile, in their own words, typed in the app for this run, with where the version before is kept, or what the part holds now. Only a run the user started with Request changes or Update with Claude has them.',
       inputSchema: { type: 'object', properties: {}, additionalProperties: false },
       annotations: READS,
-      run: async (_input, call) => requestedChanges(call?.changes),
+      run: async (_input, call) => requestedChanges(call?.changes, deps.about),
     },
     {
       name: 'read_posting',
       description:
-        'Reads a job posting on Greenhouse, Lever, Ashby or Gem straight from the applicant system’s public feed, without asking the user. Then save it with save_posting. For a posting anywhere else, use read_page.',
+        'Reads a job posting on Greenhouse, Lever, Ashby, Gem, Recruitee or Workable straight from the applicant system’s public feed, without asking the user. Then save it with save_posting. For a posting anywhere else, use read_page.',
       inputSchema: {
         type: 'object',
         properties: { url: { type: 'string', description: 'The posting’s https link.' } },
@@ -317,7 +400,7 @@ export function factwrightTools(deps: ToolDeps): McpTool[] {
     {
       name: 'read_page',
       description:
-        'Reads any public web page as plain text: a posting on another site, a careers page, a company’s about or team page. Never LinkedIn’s. Read only what the task needs: the user sees each page you read. Use read_posting for postings on Greenhouse, Lever, Ashby or Gem. A posting read this way can then be saved with save_posting.',
+        'Reads any public web page as plain text: a posting on another site, a careers page, a company’s about or team page. Never LinkedIn’s. Read only what the task needs: the user sees each page you read. Use read_posting for postings on Greenhouse, Lever, Ashby, Gem, Recruitee or Workable. It gives Posted and Closes lines for a posting whose page has them. A posting read this way can then be saved with save_posting.',
       inputSchema: {
         type: 'object',
         properties: { url: { type: 'string', description: 'The page’s https link.' } },
@@ -355,15 +438,21 @@ export function factwrightTools(deps: ToolDeps): McpTool[] {
       },
       // It writes only resume files, beside their data, from what's on this computer.
       annotations: { readOnlyHint: false, idempotentHint: true, openWorldHint: false },
-      run: async (input, call) =>
-        buildResume(textInput(input, 'folder', true) ?? '', textInput(input, 'format', false), {
+      run: async (input, call) => {
+        const folder = textInput(input, 'folder', true) ?? '';
+        // A run on the starting resumes builds those, and never a job's.
+        if (call?.scope === 'part:resumes' && !folder.startsWith('base/')) {
+          return `Not built: this run is on the starting resumes in base/, and a job’s resume isn’t one of them.`;
+        }
+        return buildResume(folder, textInput(input, 'format', false), {
           workspace: deps.workspace,
           printer: deps.printer,
           templates: deps.templates,
           jobs: () => deps.jobs.list().jobs,
           ...(deps.now && { now: deps.now }),
           ...(call?.keep && { keep: call.keep }),
-        }),
+        });
+      },
     },
     {
       name: 'build_cover_letter',
@@ -534,7 +623,12 @@ export function factwrightTools(deps: ToolDeps): McpTool[] {
             id: textInput(input, 'id', true) ?? '',
             template: input.template,
             replace: input.replace === true,
-            resume: textInput(input, 'resume', false),
+            // A run on Resume templates reads no job's folder, even for a preview.
+            resume:
+              call?.scope === 'part:templates' &&
+              !textInput(input, 'resume', false)?.startsWith('base/')
+                ? undefined
+                : textInput(input, 'resume', false),
           },
           {
             workspace: deps.workspace,
@@ -548,7 +642,7 @@ export function factwrightTools(deps: ToolDeps): McpTool[] {
     {
       name: 'save_posting',
       description:
-        'Saves a job posting word for word as posting.md in the job’s folder, so it survives the link going dead: the posting the user saved from their browser for that link, which job_details names, LinkedIn’s included; what read_page or read_posting read from that link in this run; or a posting on Greenhouse, Lever, Ashby or Gem read from its feed. It reaches no other site. Use it for every posting with a link. A posting already saved in the folder is kept, unless the folder is another job’s, which it says. If it says the page needs a sign-in, ask the user to paste the posting.',
+        'Saves a job posting word for word as posting.md in the job’s folder, so it survives the link going dead: the posting the user saved from their browser for that link, which job_details names, LinkedIn’s included; what read_page or read_posting read from that link in this run; or a posting on Greenhouse, Lever, Ashby, Gem, Recruitee or Workable read from its feed. It reaches no other site. Use it for every posting with a link. A posting already saved in the folder is kept, unless the folder is another job’s, which it says. If it says the page needs a sign-in, ask the user to paste the posting.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -586,16 +680,22 @@ export function factwrightTools(deps: ToolDeps): McpTool[] {
     {
       name: 'job_board',
       description:
-        'Reads every open job on a company’s board on Greenhouse, Lever, Ashby or Gem, and saves them word for word as one file in a job search’s folder. Lists each job with where, pay, when it was posted, its link, and the line it starts on in the file. Give a link to the board, or to any posting on it: for a posting, it also says whether it’s still open. Use it to see all a company is hiring for, and to check that a job is still open.',
+        'Reads a company’s board on Greenhouse, Lever, Ashby, Gem, Recruitee, Workable, JazzHR, Paylocity, Workday or iCIMS, and saves what it gives as one file in a job search’s folder. Lists each job with where, pay and when it was posted when the system says, its link, and the line it starts on in the file. Give a link to the board, or to any posting on it: for a posting, it also says whether it’s still open. Give titles to list only the jobs that fit, which a big employer needs. They stay on this computer, but for Workday, whose own search gets the first 6, so put the main ones first. Greenhouse, Lever, Ashby, Gem, Recruitee and Workable save each posting word for word. JazzHR, Paylocity, Workday and iCIMS save what lists it, so read a job’s full text with read_page. iCIMS comes from its sitemap, by the words in each link, as Workday does if its search doesn’t answer, and it says when a list may be partial. Use it to see all a company is hiring for, and to check that a job is still open. SmartRecruiters and Oracle stay out, by their terms and documents, so search for those employers’ jobs instead.',
       inputSchema: {
         type: 'object',
         properties: {
           url: {
             type: 'string',
             description:
-              'A link to the company’s board or one of its postings, such as https://jobs.ashbyhq.com/acme.',
+              'A link to the company’s board or one of its postings, such as https://jobs.ashbyhq.com/acme or https://acme.wd1.myworkdayjobs.com/Careers.',
           },
           folder: SEARCH_FOLDER,
+          titles: {
+            type: 'array',
+            items: { type: 'string' },
+            description:
+              'Job titles to narrow the list to, the main ones first, such as ["registered nurse", "RN", "charge nurse"]. A job fits when its title has all the words of one of them, in any order. Without it, every job is listed. Nothing about the user.',
+          },
         },
         required: ['url', 'folder'],
         additionalProperties: false,
@@ -603,12 +703,100 @@ export function factwrightTools(deps: ToolDeps): McpTool[] {
       // It reads a public API and saves what it read, replacing the last copy.
       annotations: { readOnlyHint: false, idempotentHint: true, openWorldHint: true },
       run: async (input, call) =>
-        jobBoard(textInput(input, 'url', true) ?? '', textInput(input, 'folder', true) ?? '', {
-          workspace: deps.workspace,
-          ...(deps.fetch && { fetch: deps.fetch }),
-          ...(deps.now && { now: deps.now }),
-          ...(call?.keep && { keep: call.keep }),
-        }),
+        jobBoard(
+          textInput(input, 'url', true) ?? '',
+          textInput(input, 'folder', true) ?? '',
+          {
+            workspace: deps.workspace,
+            ...(deps.fetch && { fetch: deps.fetch }),
+            ...(deps.now && { now: deps.now }),
+            ...(call?.keep && { keep: call.keep }),
+            ...(call?.read && { onRead: call.read }),
+          },
+          titlesInput(input),
+        ),
+    },
+    {
+      name: 'careers_site',
+      description:
+        'Reads a company’s own careers site, one not on a system job_board reads: its robots.txt first, whose rules it follows, then its sitemap, then the JobPosting data on up to 12 postings whose links have the titles you give. Saves them word for word as one file in a job search’s folder, and lists them with the links it didn’t read, which are in the file, for read_page. Calling again for the same titles reads the same ones. The user sees each page it reads. Never for job boards that collect other employers’ jobs. It says when a site’s robots.txt keeps it out, or its links don’t name the job.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          url: {
+            type: 'string',
+            description: 'Any link on the careers site, such as https://careers.acme.com/jobs.',
+          },
+          titles: {
+            type: 'array',
+            items: { type: 'string' },
+            description:
+              'The job titles to look for in the site’s links, such as ["registered nurse", "RN"]. A link fits when it has all the words of one of them, in any order.',
+          },
+          folder: SEARCH_FOLDER,
+        },
+        required: ['url', 'titles', 'folder'],
+        additionalProperties: false,
+      },
+      // It reads public pages and saves what it read, replacing the last copy.
+      annotations: { readOnlyHint: false, idempotentHint: true, openWorldHint: true },
+      run: async (input, call) =>
+        careersSite(
+          textInput(input, 'url', true) ?? '',
+          titlesInput(input),
+          textInput(input, 'folder', true) ?? '',
+          {
+            workspace: deps.workspace,
+            ...(deps.fetch && { fetch: deps.fetch }),
+            ...(deps.now && { now: deps.now }),
+            ...(call?.keep && { keep: call.keep }),
+            ...(call?.read && { onRead: call.read }),
+          },
+        ),
+    },
+    {
+      name: 'job_listings',
+      description:
+        'Searches a public source of jobs across many employers, for job titles and a place, and saves what it finds as one file in a job search’s folder. usajobs is federal jobs: its feed is read here, a week at a time, and only days go to it, so give every title in one call, as each call takes half a minute. workable is Workable’s own job search across its employers, which gets each title, up to 5, and the place, and nothing else. Lists each job with who’s hiring, where, pay, when it was posted, and its link.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          source: { type: 'string', enum: ['usajobs', 'workable'], description: 'Which source.' },
+          titles: {
+            type: 'array',
+            items: { type: 'string' },
+            description:
+              'Job titles, such as ["registered nurse", "RN"]. Nothing about the user. A job fits when its title has all the words of one of them, in any order.',
+          },
+          place: {
+            type: 'string',
+            description:
+              'A city and state, such as Columbus, Ohio, or remote. Never a street or a postal code. Without it, anywhere.',
+          },
+          folder: SEARCH_FOLDER,
+        },
+        required: ['source', 'titles', 'folder'],
+        additionalProperties: false,
+      },
+      annotations: { readOnlyHint: false, idempotentHint: true, openWorldHint: true },
+      run: async (input, call) => {
+        const source = textInput(input, 'source', true);
+        if (source !== 'usajobs' && source !== 'workable') {
+          throw new Error('The source is usajobs or workable.');
+        }
+        return jobListings(
+          source,
+          titlesInput(input),
+          textInput(input, 'place', false) ?? '',
+          textInput(input, 'folder', true) ?? '',
+          {
+            workspace: deps.workspace,
+            ...(deps.fetch && { fetch: deps.fetch }),
+            ...(deps.now && { now: deps.now }),
+            ...(call?.keep && { keep: call.keep }),
+          },
+        );
+      },
     },
     {
       name: 'hn_jobs',
@@ -1013,6 +1201,7 @@ export function factwrightTools(deps: ToolDeps): McpTool[] {
       // It changes the user's profile on this computer, which the task's card lists, with Undo.
       annotations: { readOnlyHint: false, idempotentHint: true, openWorldHint: false },
       run: async (input, call) => {
+        noStreet(input, ['location']);
         const current = deps.about.answers();
         const read = aboutYouChanges(input, current);
         if (!read) {
@@ -1035,7 +1224,7 @@ export function factwrightTools(deps: ToolDeps): McpTool[] {
     {
       name: 'save_work_history',
       description:
-        'Saves the user’s work history and education in Profile, whole, in place of what’s there, for application forms that ask for each job and school one at a time. Give every position they held, newest first, under its company: several positions at one company are each their own, with their own title, dates and summary, under that company, never merged. Give every school, newest first. Dates are YYYY-MM, or YYYY when only the year is known, and an end of present for a position they still hold. Save only what the fact bank and their resumes say, and leave a date blank rather than guess it.',
+        'Saves the user’s work history and education in Profile, whole, in place of what’s there, for application forms that ask for each job and school one at a time. Give every position they held, newest first, under its company: several positions at one company are each their own, with their own title, dates and summary, under that company, never merged. Give every school, newest first. Dates are YYYY-MM, or YYYY when only the year is known, and an end of present for a position they still hold. Save only what the fact bank and their resumes say, or what they asked for in this run’s requested_changes, and leave a date blank rather than guess it.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -1094,6 +1283,57 @@ export function factwrightTools(deps: ToolDeps): McpTool[] {
       // It changes the user's profile on this computer, which the task's card lists, with Undo.
       annotations: { readOnlyHint: false, idempotentHint: true, openWorldHint: false },
       run: async (input, call) => saveHistory(input, deps.about, call?.keep),
+    },
+    {
+      name: 'save_what_you_want',
+      description:
+        'Saves what the user wants in Profile, as they asked in this run’s requested_changes: only what they asked to change. Each list is whole, in place of what’s there, so to add one give the ones there too. Titles, kinds of work, levels and pay are each kind of job’s own: when they want more than one kind, give kind. Add, rename and remove kinds of job here too. A run on one kind of job changes only that kind’s own answers and name. Only a run on What you want, or one kind of job, has it.',
+      inputSchema: WANTS_SCHEMA,
+      annotations: SAVES_PART,
+      run: async (input, call) => saveWhatYouWant(input, deps.about, call),
+    },
+    {
+      name: 'save_why_leaving',
+      description:
+        'Saves what forms get when they ask why the user’s leaving, as they asked in this run’s requested_changes. It takes that answer alone: the rest of Profile’s For applications is the user’s to change, in its Change. It never takes their street, postal code or equal-opportunity answers, which stay on this computer, so leave those out of the answer too. Only a run on why they’re leaving has it.',
+      inputSchema: LEAVING_SCHEMA,
+      annotations: SAVES_PART,
+      run: async (input, call) => saveWhyLeaving(input, deps.about, call),
+    },
+    {
+      name: 'save_beyond_work',
+      description:
+        'Saves Profile’s Beyond work, as the user asked in this run’s requested_changes: only what they asked to change. Add, change and remove projects, each change by the project’s id, with what changed, and set how projects look. Interests, what they’re learning and communities are each whole, in place of what’s there, so to add one give the ones there too. A project’s overview is the user’s own words, not a fact. Only a run on Beyond work has it.',
+      inputSchema: BEYOND_SCHEMA,
+      annotations: SAVES_PART,
+      run: async (input, call) => saveBeyondWork(input, deps.about, call),
+    },
+    {
+      name: 'save_resume_choices',
+      description:
+        'Saves which resume templates the user picked and what each is for, how long resumes run, and which files they come as, as they asked in this run’s requested_changes: only what they asked to change. looks is whole, in place of what’s there. Only a run on Resume templates has it.',
+      inputSchema: CHOICES_SCHEMA,
+      annotations: SAVES_PART,
+      run: async (input, call) => saveResumeChoices(input, deps.about, deps.templates, call),
+    },
+    {
+      name: 'keep_names_private',
+      description:
+        'Adds names to the user’s list of names that must never reach an employer: customers, coworkers, internal project names, codenames and internal tools. Every resume is checked against it. Give each name as they said it. Taking one off stays with the user, in What you’ve shared.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          add: {
+            type: 'array',
+            items: { type: 'string' },
+            description: 'Names to add, each as they said it.',
+          },
+        },
+        required: ['add'],
+        additionalProperties: false,
+      },
+      annotations: { readOnlyHint: false, idempotentHint: true, openWorldHint: false },
+      run: async (input, call) => keepNamesPrivate(input, deps.about, call),
     },
   ];
 }

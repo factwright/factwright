@@ -23,14 +23,31 @@ export { type ApplySteps, readApplySteps } from './apply-steps.ts';
 export {
   type BoardJob,
   type BoardSource,
+  boardAnswerEmpty,
+  boardAnswersJson,
+  boardFromSitemap,
+  boardHasText,
   boardJobLine,
   boardMarkdown,
+  boardName,
+  boardNameIsSafe,
   boardPostingId,
   boardRequest,
   boardSource,
   boardSystem,
+  jobsMarkdown,
+  listLine,
+  paylocityBoardOf,
+  paylocityJobId,
+  paylocityJobPage,
+  paylocitySaysGone,
   readBoard,
+  readWorkdaySearch,
+  titleFilter,
+  WORKDAY_SEARCH_PAGE,
   workablePostingId,
+  workdaySearchBody,
+  workdaySearchRequest,
 } from './boards.ts';
 export { callInvite, callInviteName, callStart, callTitle, isClockTime } from './calendar.ts';
 export { US_STATES } from './countries.ts';
@@ -110,6 +127,7 @@ export {
   type ResumeOnFile,
   readEqualOpportunity,
   type SentBefore,
+  type StartingOnFile,
 } from './fill.ts';
 export { FIT_TIERS, type FitTier } from './fit.ts';
 export {
@@ -271,6 +289,7 @@ export {
   kindOfJob,
   readKindName,
   sameKind,
+  type TitledKind,
   unnamedFirstKind,
 } from './kinds.ts';
 export { PRIVACY_URL, TERMS_URL } from './legal.ts';
@@ -285,6 +304,16 @@ export {
   readLetterText,
 } from './letter.ts';
 export { hostOf, isJobLink, isLinkedIn, type Link, linksFrom, normalizeUrl } from './links.ts';
+export {
+  isRemotePlace,
+  type ListingPage,
+  type ListingSource,
+  placeFits,
+  readUsajobs,
+  readWorkableSearch,
+  usajobsRequest,
+  workableSearchRequest,
+} from './listings.ts';
 export {
   type ListItem,
   markdownItems,
@@ -307,6 +336,7 @@ export {
   postingSite,
   readTitle,
   type SavedHow,
+  SUCCESSFACTORS,
   sameJob,
   savedJobFor,
   type TitleFit,
@@ -326,6 +356,7 @@ export {
   askedJob,
   formJob,
   foundOn,
+  isStartingResume,
   isSyncedAnswer,
   jobPdfs,
   type KindTarget,
@@ -344,10 +375,13 @@ export {
   readContact,
   readForApplications,
   resumeDetails,
+  type StartingFolder,
   SYNCED_ANSWERS,
   type SyncedAnswerKind,
   sentAnswersOf,
   sentBefore,
+  startingFolders,
+  startingOnFile,
   uploadName,
   withFormQuestions,
   withProfileAnswers,
@@ -357,7 +391,10 @@ export { type PayRange, parsePay, payBand } from './pay.ts';
 export {
   decodeEntities,
   htmlToText,
+  type JobPostingFields,
   jobPostingData,
+  jobPostingFields,
+  onFeedSite,
   type Posting,
   type PostingRequest,
   type PostingSource,
@@ -425,6 +462,15 @@ export {
   SYNC_PRICE,
   SYNC_PRICE_WORDS,
 } from './site.ts';
+export {
+  NO_ROBOTS,
+  type Robots,
+  readRobots,
+  readSitemap,
+  robotsAllow,
+  type Sitemap,
+  type SitemapLink,
+} from './sitemaps.ts';
 export {
   byJob,
   callOrder,

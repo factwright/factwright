@@ -1,6 +1,15 @@
 import { readdir, readFile, stat } from 'node:fs/promises';
 import { join } from 'node:path';
-import { type ResumeOnFile, resumeDetails } from '@factwright/core';
+import {
+  isStartingResume,
+  type Job,
+  type ResumeOnFile,
+  resumeDetails,
+  type StartingOnFile,
+  startingFolders,
+  startingOnFile,
+  type TitledKind,
+} from '@factwright/core';
 import { type Resume, readResume } from '@factwright/engine';
 import type { Contact } from '../../shared/about.ts';
 
@@ -20,15 +29,17 @@ async function readOne(path: string): Promise<Resume | null> {
   }
 }
 
+/** What's in a folder, or nothing when it isn't there. */
+async function listed(folder: string) {
+  try {
+    return await readdir(folder, { withFileTypes: true });
+  } catch {
+    return [];
+  }
+}
+
 /** Every resume Factwright made in a workspace, as paths: the jobs' own, and the base ones. */
 async function resumePaths(workspace: string): Promise<string[]> {
-  const listed = async (folder: string) => {
-    try {
-      return await readdir(folder, { withFileTypes: true });
-    } catch {
-      return [];
-    }
-  };
   const jobs = (await listed(join(workspace, 'applications')))
     .filter((each) => each.isDirectory())
     .map((each) => join(workspace, 'applications', each.name, 'resume.json'));
@@ -76,6 +87,30 @@ export async function resumeOnFile(
   const newest = await newestResume(workspace);
   return newest ? resumeDetails(newest, 'newest') : null;
 }
+
+/**
+ * What your starting resumes say you did in each position, for a form's box that asks: those of
+ * the job's kind of job, or of each kind while that isn't known. Never another job's own resume.
+ */
+export const startingOnDisk = (
+  workspace: string,
+  job: Pick<Job, 'kind' | 'kindFound' | 'role'> | null,
+  kinds: readonly TitledKind[],
+): Promise<StartingOnFile[]> =>
+  Promise.all(
+    startingFolders(job, kinds).map(async (starting) => {
+      const folder = join(workspace, ...starting.folder.split('/'));
+      const names = (await listed(folder))
+        .filter((each) => each.isFile() && isStartingResume(each.name))
+        .map((each) => each.name)
+        .sort();
+      const read = await Promise.all(names.map((name) => readOne(join(folder, name))));
+      return startingOnFile(
+        starting,
+        read.filter((each) => each !== null),
+      );
+    }),
+  );
 
 /** Your contact details as your newest resume shows them, to fill Profile's blanks with. */
 export async function contactFromResume(workspace: string): Promise<Contact | null> {

@@ -24,8 +24,14 @@ import { Tracker } from '../jobs/tracker.ts';
 import { SyncAccount } from './account.ts';
 import { NO_KEYCHAIN, NO_KEYCHAIN_MESSAGE, Secrets } from './secrets.ts';
 
-// Each test signs in and syncs for real, against the server running locally.
-vi.setConfig({ testTimeout: 30_000 });
+// Each test signs in and syncs for real, against the server running locally. On GitHub's Windows
+// runners each request to it takes several times as long, and a busy run there several times as
+// long again, so tests there get three times as long, as the app's end-to-end tests do.
+const SLOW = process.platform === 'win32' ? 3 : 1;
+vi.setConfig({ testTimeout: 30_000 * SLOW });
+
+/** How long a test waits for sync to get somewhere, such as to the end of a round. */
+const WAIT = { timeout: 10_000 * SLOW };
 
 let server: TestServer;
 
@@ -171,14 +177,11 @@ function computer(
     },
     /** Waits for a round of sync to finish. */
     synced: () =>
-      vi.waitFor(
-        () => {
-          const now = sync.status();
-          expect(now).toMatchObject({ state: 'on', activity: 'idle' });
-          expect(now.state === 'on' && now.lastSynced).toBeTruthy();
-        },
-        { timeout: 10_000 },
-      ),
+      vi.waitFor(() => {
+        const now = sync.status();
+        expect(now).toMatchObject({ state: 'on', activity: 'idle' });
+        expect(now.state === 'on' && now.lastSynced).toBeTruthy();
+      }, WAIT),
   };
 }
 
@@ -207,9 +210,7 @@ async function recoveryKey(sync: SyncAccount): Promise<string> {
 /** Waits for a computer to be signed out, as when its account was deleted. */
 async function signedOut(sync: SyncAccount) {
   sync.requestSync();
-  await vi.waitFor(() => expect(sync.status()).toMatchObject({ state: 'signed-out' }), {
-    timeout: 10_000,
-  });
+  await vi.waitFor(() => expect(sync.status()).toMatchObject({ state: 'signed-out' }), WAIT);
 }
 
 /** Waits for a computer to stop, asking for a new account key and recovery key. */
@@ -222,7 +223,7 @@ async function waitsForNewKey(sync: SyncAccount) {
         firstDevice: true,
         again: 'remade',
       }),
-    { timeout: 10_000 },
+    WAIT,
   );
 }
 
@@ -591,11 +592,11 @@ describe('turning on sync', () => {
     expect(await mac.sync.signInWithBrowser()).toEqual({ ok: true });
     await recoveryKey(mac.sync);
     const turningOn = mac.sync.turnOn();
-    await vi.waitFor(() => expect(save.waiting).toBe(true), { timeout: 10_000 });
+    await vi.waitFor(() => expect(save.waiting).toBe(true), WAIT);
     // Not the account Sam meant: that sign-in ends while the key is still being saved, and the
     // key is saved before the server hears of the sign-out.
     const ending = mac.sync.useDifferentAccount();
-    await vi.waitFor(() => expect(signOut.waiting).toBe(true), { timeout: 10_000 });
+    await vi.waitFor(() => expect(signOut.waiting).toBe(true), WAIT);
     save.open();
     expect(await turningOn).toMatchObject({ ok: false });
     signOut.open();
@@ -659,7 +660,7 @@ describe('a computer with sync on', () => {
     );
     await other.sync.start();
     const signingIn = other.sync.signInWithBrowser();
-    await vi.waitFor(() => expect(checking.waiting).toBe(true), { timeout: 10_000 });
+    await vi.waitFor(() => expect(checking.waiting).toBe(true), WAIT);
     other.sync.cancelSignIn();
     checking.open();
     expect(await signingIn).toEqual({ ok: false, message: 'Signing in was canceled.' });
@@ -717,9 +718,7 @@ describe('a computer with sync on', () => {
     mac.sync.requestSync();
     await vi.waitFor(
       () => expect(mac.sync.status()).toEqual({ state: 'signed-out', email: person.email }),
-      {
-        timeout: 10_000,
-      },
+      WAIT,
     );
     expect(await mac.sync.signInWithBrowser()).toEqual({ ok: true });
     expect(mac.sync.status()).toMatchObject({ state: 'on' });
@@ -733,9 +732,7 @@ describe('a computer with sync on', () => {
     const oldKeyId = (await person.client.keys())?.keyId;
     await remakeAccount();
     mac.sync.requestSync();
-    await vi.waitFor(() => expect(mac.sync.status()).toMatchObject({ state: 'signed-out' }), {
-      timeout: 10_000,
-    });
+    await vi.waitFor(() => expect(mac.sync.status()).toMatchObject({ state: 'signed-out' }), WAIT);
 
     // Signing in again finds no key for the account: a new recovery key comes first, and
     // nothing goes up before it.
@@ -784,9 +781,7 @@ describe('a computer with sync on', () => {
     const other = await server.newSession(sam.id);
     await other.client.removeDevice(own?.id ?? '');
     mac.sync.requestSync();
-    await vi.waitFor(() => expect(mac.sync.status()).toMatchObject({ state: 'signed-out' }), {
-      timeout: 10_000,
-    });
+    await vi.waitFor(() => expect(mac.sync.status()).toMatchObject({ state: 'signed-out' }), WAIT);
 
     // Someone else's account, with its own key, signs in on the Mac.
     person = await server.signUp('Alex Kim');
@@ -925,14 +920,12 @@ describe('a computer with sync on', () => {
       return fetch(input, init);
     });
     await updated.sync.start();
-    await vi.waitFor(() => expect(account.waiting).toBe(true), { timeout: 10_000 });
+    await vi.waitFor(() => expect(account.waiting).toBe(true), WAIT);
     round = gate();
     updated.sync.requestSync();
-    await vi.waitFor(() => expect(round?.waiting).toBe(true), { timeout: 10_000 });
+    await vi.waitFor(() => expect(round?.waiting).toBe(true), WAIT);
     account.open();
-    await vi.waitFor(() => expect(syncMeta(mac.dataDir, 'unchecked')).toBe('1'), {
-      timeout: 10_000,
-    });
+    await vi.waitFor(() => expect(syncMeta(mac.dataDir, 'unchecked')).toBe('1'), WAIT);
     const closing = updated.sync.stop();
     round.open();
     await closing;
@@ -967,7 +960,7 @@ describe('a computer with sync on', () => {
       return response;
     });
     await updated.sync.start();
-    await vi.waitFor(() => expect(late.waiting).toBe(true), { timeout: 10_000 });
+    await vi.waitFor(() => expect(late.waiting).toBe(true), WAIT);
 
     // Meanwhile the Mac is signed out, and Alex signs in on it, to an account with no key.
     const listed = await sam.client.account();
@@ -982,7 +975,7 @@ describe('a computer with sync on', () => {
 
     // The late answer about Sam's account changes nothing for Alex's sign-in.
     late.open();
-    await vi.waitFor(() => expect(answered).toBe(true), { timeout: 10_000 });
+    await vi.waitFor(() => expect(answered).toBe(true), WAIT);
     await new Promise((resolve) => setTimeout(resolve, 100));
     expect(updated.sync.status()).toEqual(remade);
     await recoveryKey(updated.sync);
@@ -1011,7 +1004,7 @@ describe('a computer with sync on', () => {
       return response;
     });
     const opening = reopened.sync.start();
-    await vi.waitFor(() => expect(late.waiting).toBe(true), { timeout: 10_000 });
+    await vi.waitFor(() => expect(late.waiting).toBe(true), WAIT);
 
     // Meanwhile that sign-in ends here, and Alex signs in.
     expect(await reopened.sync.useDifferentAccount()).toEqual({ ok: true });
@@ -1038,7 +1031,7 @@ describe('a computer with sync on', () => {
       return fetch(input, init);
     });
     await updated.sync.start();
-    await vi.waitFor(() => expect(asked).toBe(1), { timeout: 10_000 });
+    await vi.waitFor(() => expect(asked).toBe(1), WAIT);
     await updated.synced();
     answers = true;
     updated.sync.requestSync();
@@ -1067,9 +1060,7 @@ describe('a computer with sync on', () => {
     expect((await person.client.keys())?.keyId).not.toBe(keyId);
     expect(pc.read('facts/from-mac.md')).toBe('From the Mac');
     mac.sync.requestSync();
-    await vi.waitFor(() => expect(mac.read('facts/from-pc.md')).toBe('From the PC'), {
-      timeout: 10_000,
-    });
+    await vi.waitFor(() => expect(mac.read('facts/from-pc.md')).toBe('From the PC'), WAIT);
   });
 
   it('ends the sign-in on the recovery key step, and asks again after signing back in', async () => {
@@ -1094,9 +1085,7 @@ describe('a computer with sync on', () => {
     await mac.synced();
     await remakeAccount();
     mac.sync.requestSync();
-    await vi.waitFor(() => expect(mac.sync.status()).toMatchObject({ state: 'signed-out' }), {
-      timeout: 10_000,
-    });
+    await vi.waitFor(() => expect(mac.sync.status()).toMatchObject({ state: 'signed-out' }), WAIT);
     await mac.sync.stop();
 
     // The PC sets up the remade account with a new key, then the Mac signs in again on 0.1.0.
@@ -1114,7 +1103,7 @@ describe('a computer with sync on', () => {
       firstDevice: false,
       again: 'changed',
     };
-    await vi.waitFor(() => expect(updated.sync.status()).toEqual(linking), { timeout: 10_000 });
+    await vi.waitFor(() => expect(updated.sync.status()).toEqual(linking), WAIT);
     await updated.sync.stop();
     const reopened = computer('Sam’s Mac', mac.dataDir);
     await reopened.sync.start();
@@ -1127,9 +1116,7 @@ describe('a computer with sync on', () => {
     await reopened.synced();
     expect(reopened.read('facts/education.md')).toBe('From the PC');
     pc.sync.requestSync();
-    await vi.waitFor(() => expect(pc.read('facts/skills.md')).toBe('From the Mac'), {
-      timeout: 10_000,
-    });
+    await vi.waitFor(() => expect(pc.read('facts/skills.md')).toBe('From the Mac'), WAIT);
   });
 
   it('says why when the account can’t be checked after signing in again, and syncs nothing', async () => {
@@ -1141,9 +1128,7 @@ describe('a computer with sync on', () => {
     const own = listed.account.devices.find((device) => device.current);
     await (await server.newSession(person.id)).client.removeDevice(own?.id ?? '');
     mac.sync.requestSync();
-    await vi.waitFor(() => expect(mac.sync.status()).toMatchObject({ state: 'signed-out' }), {
-      timeout: 10_000,
-    });
+    await vi.waitFor(() => expect(mac.sync.status()).toMatchObject({ state: 'signed-out' }), WAIT);
     await mac.sync.stop();
     // The same Mac, opened again while the server can't answer about the account's key.
     const flaky = computer('Sam’s Mac', mac.dataDir, async (input, init) => {
@@ -1355,7 +1340,7 @@ describe('a server of your own', () => {
     const mac = computer('Sam’s Mac', undefined, undefined, undefined, undefined, async () => {});
     await mac.sync.start();
     const connecting = mac.sync.connect(address);
-    await vi.waitFor(() => expect(mac.pages).toHaveLength(1));
+    await vi.waitFor(() => expect(mac.pages).toHaveLength(1), WAIT);
     mac.sync.cancelSignIn();
     expect(await connecting).toEqual({ ok: false, message: 'Signing in was canceled.' });
     expect(mac.sync.status()).toEqual({ state: 'off' });
@@ -1411,7 +1396,7 @@ describe('a server of your own', () => {
     const held = gate();
     checking = held;
     const signingIn = mac.sync.signInWithBrowser();
-    await vi.waitFor(() => expect(held.waiting).toBe(true));
+    await vi.waitFor(() => expect(held.waiting).toBe(true), WAIT);
     expect(await mac.sync.signOut()).toEqual({ ok: true });
     held.open();
     expect(await signingIn).toEqual({ ok: false, message: 'Signing in was canceled.' });
@@ -1427,7 +1412,7 @@ describe('a server of your own', () => {
     });
     await mac.sync.start();
     const connecting = mac.sync.connect(address);
-    await vi.waitFor(() => expect(mac.sync.status()).toMatchObject({ state: 'signing-in' }));
+    await vi.waitFor(() => expect(mac.sync.status()).toMatchObject({ state: 'signing-in' }), WAIT);
     const waiting = mac.sync.status();
     // Copy the link, opened in a browser on this computer, where the person allows it.
     if (waiting.state !== 'signing-in') throw new Error('Not signing in.');
@@ -1491,7 +1476,7 @@ describe('a server of your own', () => {
     await ownPerson.client.removeDevice(here?.id ?? '');
     mac.sync.requestSync();
     const signedOut = { state: 'signed-out', email: ownPerson.email, ownServer: address };
-    await vi.waitFor(() => expect(mac.sync.status()).toEqual(signedOut), { timeout: 10_000 });
+    await vi.waitFor(() => expect(mac.sync.status()).toEqual(signedOut), WAIT);
     // The token's gone, and the address stays.
     expect(JSON.parse(secretsOf(mac.dataDir).get('ownSession') ?? '')).toEqual({
       server: address,
@@ -1714,7 +1699,7 @@ describe('a server of your own', () => {
         });
         await mac.sync.start();
         const connecting = mac.sync.connect(fake);
-        await vi.waitFor(() => expect(checking.waiting).toBe(true));
+        await vi.waitFor(() => expect(checking.waiting).toBe(true), WAIT);
         if (overtake === 'cancel') {
           mac.sync.cancelSignIn();
         } else {
@@ -1816,7 +1801,7 @@ describe('a server that sells sync', () => {
           again,
           waiting: false,
         }),
-      { timeout: 10_000 },
+      WAIT,
     );
 
   beforeAll(async () => {
@@ -1864,7 +1849,7 @@ describe('a server that sells sync', () => {
           email: seller.email,
           firstDevice: true,
         }),
-      { timeout: 10_000 },
+      WAIT,
     );
     await recoveryKey(mac.sync);
     expect(await mac.sync.turnOn()).toEqual({ ok: true });
@@ -1944,7 +1929,7 @@ describe('a server that sells sync', () => {
     await setUpFirstHere(mac);
     await vi.waitFor(
       () => expect(mac.sync.status()).toMatchObject({ state: 'on', paymentFailed: true }),
-      { timeout: 10_000 },
+      WAIT,
     );
     mac.write('notes/still.md', 'Still syncing');
     mac.sync.requestSync();
@@ -1967,9 +1952,7 @@ describe('a server that sells sync', () => {
     if (!device) throw new Error('The Mac isn’t signed in.');
     await seller.client.removeDevice(device.id);
     mac.sync.requestSync();
-    await vi.waitFor(() => expect(mac.sync.status()).toMatchObject({ state: 'signed-out' }), {
-      timeout: 10_000,
-    });
+    await vi.waitFor(() => expect(mac.sync.status()).toMatchObject({ state: 'signed-out' }), WAIT);
     await subscription(seller, 'canceled');
 
     expect(await mac.sync.signInWithBrowser()).toEqual({ ok: true });
@@ -2018,7 +2001,7 @@ describe('a server that sells sync', () => {
           email: seller.email,
           firstDevice: true,
         }),
-      { timeout: 10_000 },
+      WAIT,
     );
   });
 
@@ -2042,7 +2025,7 @@ describe('a server that sells sync', () => {
     // The look sees sync is back, then the connection drops as it carries on.
     answers.push('through', 'lost');
     expect((await mac.sync.account()).ok).toBe(true);
-    await vi.waitFor(() => expect(answers).toEqual([]));
+    await vi.waitFor(() => expect(answers).toEqual([]), WAIT);
     await new Promise((done) => setTimeout(done, 300));
     expect(mac.sync.status()).toMatchObject({ state: 'paused' });
     // The next look gets through.
@@ -2066,7 +2049,7 @@ describe('a server that sells sync', () => {
     const late = gate();
     hold = late;
     mac.sync.lookAgain();
-    await vi.waitFor(() => expect(late.waiting).toBe(true));
+    await vi.waitFor(() => expect(late.waiting).toBe(true), WAIT);
     // Meanwhile the account gets sync again, and another look carries on.
     await freeSync(seller.email);
     expect((await mac.sync.account()).ok).toBe(true);
@@ -2119,7 +2102,7 @@ describe('a server that sells sync', () => {
           email: seller.email,
           firstDevice: true,
         }),
-      { timeout: 10_000 },
+      WAIT,
     );
   });
 });

@@ -20,7 +20,9 @@ import type { RoundReply } from '../shared/rounds.ts';
 import { type RunTask, startedOnItsOwn } from '../shared/runs.ts';
 import { TemplatePreviews } from './about/previews.ts';
 import { PrivateAnswers } from './about/private.ts';
+import { ProfileRequests } from './about/profile-requests.ts';
 import { AboutStore } from './about/store.ts';
+import { loadTheme } from './appearance.ts';
 import { AnalyzeNew } from './claude/analyze-new.ts';
 import { loadAtOnce } from './claude/at-once.ts';
 import { Desk, fromRun } from './claude/desk.ts';
@@ -36,7 +38,7 @@ import { answerAsk, type FillDeps } from './extension/fill.ts';
 import { JobInbox } from './extension/inbox.ts';
 import { helperName, registerSaveHelper, runProgram } from './extension/register.ts';
 import { createSaveHelper } from './extension/save-helper.ts';
-import { registerIpc } from './ipc.ts';
+import { registerAppearance, registerIpc } from './ipc.ts';
 import { Revisions } from './jobs/revisions.ts';
 import { JobsService } from './jobs/service.ts';
 import { Tracker } from './jobs/tracker.ts';
@@ -62,13 +64,14 @@ import { QUIET } from './quiet.ts';
 import { CallReminders } from './reminders.ts';
 import { ElectronResumePrinter } from './resume/printer.ts';
 import { TemplateLibrary } from './resume/templates.ts';
-import { applyDevPolicy, denyPermissions, hardenContents } from './security.ts';
+import { applyDevPolicy, denyPermissions, hardenContents, keepOffTheWeb } from './security.ts';
 import { SyncAccount } from './sync/account.ts';
 import { Claims } from './sync/claims.ts';
 import { NO_KEYCHAIN } from './sync/secrets.ts';
 import { factwrightTools } from './tools/index.ts';
 import { UpdateWatcher } from './updates.ts';
-import { createMainWindow, DEV_ICON } from './window.ts';
+import { WhatsNewDue } from './whats-new.ts';
+import { createMainWindow, DEV_ICON, showTheme, themeChosen } from './window.ts';
 
 /**
  * Settings for development and tests, from the environment. An installed copy ignores them, so
@@ -93,6 +96,12 @@ const syncServer = develop('FACTWRIGHT_SERVER_URL') || __SYNC_SERVER__ || null;
  * in its place, so the tests never reach Greenhouse.
  */
 const formFeedFile = develop('FACTWRIGHT_FORM_FEED');
+
+/**
+ * In quiet mode, for the app's tests, the app says nothing about what's new, unless a test names a
+ * version here, which it then says what's new for, as if it were running that version.
+ */
+const whatsNewFor = develop('FACTWRIGHT_WHATS_NEW');
 
 /** The most an update's log keeps before it starts again, as it only helps with the latest problem. */
 const UPDATE_LOG_BYTES = 200_000;
@@ -214,6 +223,7 @@ function start(home: string, profile: ProfileFolder, stopped: ProfileFolder | nu
     if (devUrl) applyDevPolicy(session.defaultSession, policy);
     else serveApp(fileURLToPath(new URL('../renderer', import.meta.url)), policy);
     denyPermissions(session.defaultSession);
+    keepOffTheWeb(session.defaultSession, devUrl);
 
     // Opens a job in the window, such as when the user clicks a call's reminder.
     const opener = new JobOpener();
@@ -239,9 +249,24 @@ function start(home: string, profile: ProfileFolder, stopped: ProfileFolder | nu
 
     // The open profile's folder, which holds its job hunt, its sync and its settings.
     const dataDir = app.getPath('userData');
+    // Before the window opens, so it opens in the theme chosen, and can ask which that is.
+    const isAppPage = (url: string) => url.startsWith(devUrl ?? `${APP_ORIGIN}/`);
+    showTheme(await loadTheme(dataDir));
+    registerAppearance({ isAppPage, dataDir, chosen: themeChosen, show: showTheme });
     // The tracker sits beside the workspace, not in it, so Claude's file tools can't reach it.
     // Claude reaches it only through Factwright's tools.
-    const tracker = new Tracker(join(dataDir, 'tracker.db'));
+    const trackerFile = join(dataDir, 'tracker.db');
+    // Before the tracker opens, which makes its file: that it's there says a version ran here.
+    const whatsNew =
+      QUIET && !whatsNewFor
+        ? null
+        : new WhatsNewDue({
+            file: join(dataDir, 'whats-new.json'),
+            version: whatsNewFor ?? app.getVersion(),
+            usedBefore: existsSync(trackerFile),
+          });
+    await whatsNew?.load();
+    const tracker = new Tracker(trackerFile);
     const workspace = workspaceDir(dataDir);
     const profiles = new Profiles({
       home,
@@ -375,6 +400,7 @@ function start(home: string, profile: ProfileFolder, stopped: ProfileFolder | nu
       jobs: () => jobs.list().jobs,
       trash: (path) => shell.trashItem(path),
     });
+    const profileRequests = new ProfileRequests();
     // What each of Claude's tasks changes, with a copy of each file from before it, kept beside the
     // workspace rather than in it, so Claude can't reach them, for Undo on the task's card.
     const runChanges = new RunChanges({
@@ -403,7 +429,7 @@ function start(home: string, profile: ProfileFolder, stopped: ProfileFolder | nu
           },
           events,
         ),
-      prepare: taskPreparer({ dataDir, revisions, versions }),
+      prepare: taskPreparer({ dataDir, revisions, versions, profileRequests }),
       atOnce,
       onView: (view) => {
         window.send('claude:runs', view);
@@ -611,7 +637,7 @@ function start(home: string, profile: ProfileFolder, stopped: ProfileFolder | nu
       powerMonitor.on('unlock-screen', () => updates.lookAgain());
     }
     registerIpc({
-      isAppPage: (url) => url.startsWith(devUrl ?? `${APP_ORIGIN}/`),
+      isAppPage,
       about,
       kept,
       templates,
@@ -623,11 +649,13 @@ function start(home: string, profile: ProfileFolder, stopped: ProfileFolder | nu
       jobs,
       revisions,
       versions,
+      profileRequests,
       workspace,
       sync,
       dataDir,
       runChanges,
       updates,
+      whatsNew,
       profiles,
       reminders,
       opener,

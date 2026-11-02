@@ -14,6 +14,7 @@ import {
 } from '../../shared/about.ts';
 import type { ClaudeStatus, FactwrightApi } from '../../shared/api.ts';
 import type { Profile } from '../../shared/profile.ts';
+import type { RunControls } from '../jobs/RunActions.tsx';
 import type { ClaudeStatusView } from '../useClaudeStatus.ts';
 import { GetStarted } from './GetStarted.tsx';
 import { useProfile } from './useProfile.ts';
@@ -117,6 +118,7 @@ function Harness({
   onMakeTemplate = () => {},
   onSkip = () => {},
   onOpenSync = () => {},
+  run,
 }: {
   api: Api;
   claude?: ClaudeStatusView;
@@ -124,6 +126,7 @@ function Harness({
   onMakeTemplate?: (source: string) => void;
   onSkip?: () => void;
   onOpenSync?: (() => void) | null;
+  run?: RunControls;
 }) {
   const state = useProfile(api as unknown as FactwrightApi);
   if (!state.profile) return null;
@@ -138,6 +141,7 @@ function Harness({
       onMakeTemplate={onMakeTemplate}
       onSkip={onSkip}
       onOpenSync={onOpenSync}
+      run={run}
     />
   );
 }
@@ -147,6 +151,37 @@ const SAVED = { timeout: 4000 };
 
 const next = () =>
   userEvent.click(screen.getByRole('button', { name: /^(Continue|Get started)$/ }));
+
+describe('Update with Claude, before getting started', () => {
+  const free: RunControls = {
+    stateOf: () => null,
+    tasksOn: () => [],
+    start: vi.fn(),
+    show: vi.fn(),
+  };
+
+  it.each([
+    [4, 'What you want'],
+    [5, 'Resume templates'],
+    [6, 'Beyond work'],
+  ])('is on step %i, for %s', async (step, part) => {
+    render(<Harness api={profileApi({ step, reached: step })} run={free} />);
+    const button = await screen.findByRole('button', { name: `Update with Claude: ${part}` });
+    expect((button as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it.each([0, 1, 2, 3, 7])('isn’t on step %i, which has none of its own', async (step) => {
+    render(<Harness api={profileApi({ step, reached: step })} run={free} />);
+    await screen.findByRole('navigation', { name: 'Getting started' });
+    expect(screen.queryByRole('button', { name: /^Update with Claude/ })).toBeNull();
+  });
+
+  it('waits for Claude Code to be ready', async () => {
+    render(<Harness api={profileApi({ step: 4, reached: 4 })} />);
+    const button = await screen.findByRole('button', { name: 'Update with Claude: What you want' });
+    expect((button as HTMLButtonElement).disabled).toBe(true);
+  });
+});
 
 describe('GetStarted', () => {
   it('welcomes the user, says whose Claude does the work, and can be skipped', async () => {
@@ -221,7 +256,7 @@ describe('GetStarted', () => {
       'Copy the sign-in command',
     ],
     [
-      { state: 'too-old', version: '2.0.12', minimum: '2.1.270' },
+      { state: 'too-old', version: '2.0.12', minimum: '2.1.295' },
       'Update Claude Code',
       'update',
       'Copy the update command',
@@ -240,6 +275,29 @@ describe('GetStarted', () => {
       expect(container.textContent).toContain(
         'PowerShell doesn’t find Claude Code by its name, so this starts it where it’s installed. To type just claude, add it to your PATH.',
       );
+      expect((await axe.run(container)).violations).toEqual([]);
+    },
+  );
+
+  it.each([
+    ['darwin', 'brew upgrade claude-code', undefined],
+    ['darwin', "'/opt/homebrew/bin/brew' upgrade claude-code", "'/opt/homebrew/bin/claude'"],
+    ['win32', 'winget upgrade Anthropic.ClaudeCode', undefined],
+  ] as const)(
+    'updates with a package manager’s own command, on %s: %s',
+    async (platform, update, claude) => {
+      const api = { ...profileApi(), platform };
+      const status = { state: 'too-old', version: '2.0.12', minimum: '2.1.295', update } as const;
+      const { container } = render(
+        <Harness api={api} claude={claude ? { ...status, claude } : status} />,
+      );
+      expect(await screen.findByRole('heading', { name: 'Update Claude Code' })).toBeTruthy();
+      expect(screen.getByText(update)).toBeTruthy();
+      expect(container.textContent).not.toContain('claude update');
+      await userEvent.click(screen.getByRole('button', { name: 'Copy the update command' }));
+      expect(api.copyText).toHaveBeenCalledWith(update);
+      // It doesn't start Claude Code, so the note on starting it by its path has no place here.
+      expect(screen.queryByRole('link', { name: 'add it to your PATH' })).toBeNull();
       expect((await axe.run(container)).violations).toEqual([]);
     },
   );

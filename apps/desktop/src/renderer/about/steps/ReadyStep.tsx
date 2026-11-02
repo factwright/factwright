@@ -4,6 +4,7 @@ import { type ReactNode, useId } from 'react';
 import {
   type AboutYou,
   COMPANY_KINDS,
+  entriesLine,
   FIELDS,
   type KindAnswers,
   LEVELS,
@@ -53,7 +54,7 @@ export function workSummary(kind: KindAnswers): string {
       .filter((field) => field !== 'other')
       .map((field) => labelOf(FIELDS, field).toLowerCase()),
   );
-  const work = either(kind.roles.slice(0, 3)) || fields;
+  const work = entriesLine(kind.roles.slice(0, 3)) || fields;
   if (work) return `${work} roles${levels ? ` (${levels})` : ''}`;
   return levels ? `${capitalized(levels)} roles` : '';
 }
@@ -62,7 +63,7 @@ export function workSummary(kind: KindAnswers): string {
 function placeParts(answers: AboutYou): string[] {
   const where = answers.workplaces.includes('remote')
     ? `remote${answers.remoteFrom ? ` from ${answers.remoteFrom}` : ''}`
-    : either(answers.places.slice(0, 2));
+    : entriesLine(answers.places.slice(0, 2));
   const companies = either(
     answers.companies.map((kind) => labelOf(COMPANY_KINDS, kind).toLowerCase()),
   );

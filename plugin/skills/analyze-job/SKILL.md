@@ -29,7 +29,7 @@ One run does five things, in this order: the posting, the details, duplicates, t
 Get the posting word for word, if the job has none yet. `job_details` lists what's on file.
 - **Already in the folder:** `posting.md` (or `job.md` in older folders). Read it from there, plus `unmask.md` and `notes.md` if they're there: an employer check may already have found the real employer behind a board listing. `job_details` lists everything else on file, such as the user's notes and calls, which can change the verdict.
 - **Saved from the user's browser:** when `job_details` names a posting saved from their browser, that's it, as they saw it, LinkedIn's included, which Factwright's tools never read. `save_posting` with the job's link and its id copies it into the folder.
-- **On the board's own API:** a posting on Greenhouse, Lever, Ashby or Gem comes from `read_posting`. A link to a company's whole board, as a Hacker News search saves it, isn't one job's: `job_board` with that link, and `boards` as its folder, lists every open job there, with its own link. Find this role among them, and use its own link from then on.
+- **On the board's own API:** a posting on Greenhouse, Lever, Ashby, Gem, Recruitee or Workable comes from `read_posting`. A link to a company's whole board, as a Hacker News search saves it, isn't one job's: `job_board` with that link, and `boards` as its folder, lists every open job there, with its own link. Find this role among them, and use its own link from then on.
 - **Anywhere else:** `read_page`. Never LinkedIn's pages: a job whose only link is LinkedIn's, with nothing saved from the browser, has no posting to read.
 - Save what you read with `save_posting`, the job's link and its id. If it needs a sign-in, won't load, or there's nothing to read, ask the user to paste the text, or to save the page with Factwright's browser extension.
 - If the employer is hidden (a recruiter or board listing), score it anyway, skip sentiment, and suggest `/factwright:unmask-job`.
@@ -54,7 +54,7 @@ Once the details are right, call `find_job` with the company, the role and the p
 ## 4. The fit check
 ### Score
 - Check the criteria.md **Filters** first, and the job's kind's lines when there's more than one kind. A failed filter makes the verdict **Skip**, stated first with the reason (e.g. "Skip: hybrid in Austin"). Still give the score, since the user may want it anyway.
-- Score 0–100 against facts/ only, with the criteria.md rubric. Without one, use: work 40 (how much of the job's core work the facts prove, domain included) · role 25 (how well the level and shape fit what the user wants) · stack 20 (overlap with proven tech) · reqs 15 (full marks unless a hard requirement isn't met: years, degree, certification).
+- Score 0–100 against facts/ only, with the criteria.md rubric. Without one, use: work 40 (how much of the job's core work the facts prove, its industry counting only when the posting asks for it) · role 25 (how well the level and shape fit what the user wants) · skills 20 (overlap with the tools, methods, licenses and skills the facts prove) · reqs 15 (full marks unless a hard requirement isn't met: years, degree, license or certification). An older criteria.md may call the Skills row Stack, and say "domain included" in its Work row: read them as this does. A job that requires a license they don't have, or years in a field they've never worked in, is a **Long shot**, whatever else adds up.
 - Respect status and ownership tags: built ≠ live, led-team ≠ solo. A claim tagged `unconfirmed` counts for half until the user verifies it; say so in the gaps.
 - Tiers: **Strong** ≥ 75 · **Good** 62–74 · **Worth a look** 50–61 · **Long shot** < 50.
 - **Worth asking you:** up to 4 of the posting's must-haves and nice-to-haves that the facts don't show, but that the user plausibly has, judged from what's near them in the facts, must-haves first. Each is a question, in your own words, that a tailored resume asks them before it's written. Leave out anything `facts/gaps.md` settles under Doesn't have. Score them as gaps: Analyze job never asks.
@@ -62,7 +62,7 @@ Once the details are right, call `find_job` with the company, the role and the p
 
 ### Sentiment (5 searches at most)
 - Reviews: Glassdoor, Indeed, Blind, Comparably. Search snippets are enough, so never sign in. Note the rating, the review count, and how recent the reviews are.
-- Talk: Reddit and Hacker News. A web search with `site:news.ycombinator.com` finds HN threads.
+- Talk: Reddit and Hacker News. A web search with `allowed_domains` of `news.ycombinator.com` finds HN threads.
 - News from the last ~12 months: layoffs, funding or runway, acquisitions, lawsuits, leadership churn, return-to-office.
 - Small startups often have no reviews. Say "thin data", then lean on funding, the founders' track record, and HN/Reddit.
 - Report themes, not single angry reviews. Every point gets a source link.
@@ -82,7 +82,7 @@ Every job analyzed gets a folder, so its posting and this write-up survive dead 
 # Fit check: <Company>, <Role>
 
 - **Date:** <YYYY-MM-DD>
-- **Verdict:** <Verdict>, <score>/100 (work N/40 · role N/25 · stack N/20 · reqs N/15)
+- **Verdict:** <Verdict>, <score>/100 (work N/40 · role N/25 · skills N/20 · reqs N/15)
 - **Filters:** <pass, or fail: why>
 - **Pay to ask for:** <amount>: <why, in a few words>
 
@@ -92,7 +92,7 @@ Every job analyzed gets a folder, so its posting and this write-up survive dead 
   - ~ <core work item>: <only partly: built not live, team-delivered, side project>
   - ✗ <core work item>: nothing on file
 - **Role N/25:** <one line>
-- **Stack N/20:** <one line>
+- **Skills N/20:** <one line>
 - **Reqs N/15:** <one line: which hard requirements cost points, or "all met">
 
 ## Why it fits
@@ -131,7 +131,7 @@ The app picks up the folder and the row on its own. There's nothing to commit or
 ## 7. Reply (10 lines or fewer)
 With more than one kind of job, name the job's kind in the first line, such as **Good fit as Project manager, 68/100**.
 ```
-**Good fit, 68/100**: work 30/40 · role 18/25 · stack 12/20 · reqs 8/15
+**Good fit, 68/100**: work 30/40 · role 18/25 · skills 12/20 · reqs 8/15
 - Why: <2–3 strongest matches, each tied to a fact>
 - Gaps: <1–2 real gaps, or "none that matter">
 - Worth asking: <1–2 things the user may well have, which a tailored resume asks about; leave the line out when there are none>

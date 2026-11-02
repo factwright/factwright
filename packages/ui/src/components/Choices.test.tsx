@@ -101,6 +101,24 @@ describe('TagInput', () => {
     ]);
     expect((box as HTMLInputElement).disabled).toBe(true);
   });
+
+  it('keeps commas in what’s typed when it has its own way to split entries', async () => {
+    const splitEntries = (text: string) => text.split(' and ');
+    const onCities = vi.fn();
+    render(
+      <Field label="Cities">
+        {(control) => (
+          <TagInput {...control} value={[]} onChange={onCities} splitEntries={splitEntries} />
+        )}
+      </Field>,
+    );
+    const box = screen.getByRole('textbox', { name: 'Cities' });
+    await userEvent.type(box, 'Columbus, OH');
+    expect(onCities).not.toHaveBeenCalled();
+    expect((box as HTMLInputElement).value).toBe('Columbus, OH');
+    await userEvent.type(box, ' and Tulsa, OK{Enter}');
+    expect(onCities).toHaveBeenCalledExactlyOnceWith(['Columbus, OH', 'Tulsa, OK']);
+  });
 });
 
 describe('FileDrop', () => {

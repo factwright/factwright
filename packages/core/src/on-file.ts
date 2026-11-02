@@ -7,13 +7,17 @@ import {
   type RememberedKind,
   type ResumeOnFile,
   type SentBefore,
+  type StartingOnFile,
+  sameWords,
+  unreadable,
 } from './fill.ts';
 import { type FieldKind, fieldKind } from './forms.ts';
 import type { AskedJob } from './inbox.ts';
 import type { Job } from './jobs.ts';
-import { type KindName, kindNamesIn, kindOfJob } from './kinds.ts';
+import { type KindName, kindNamed, kindNamesIn, readKindName, type TitledKind } from './kinds.ts';
+import { unmarked } from './letter.ts';
 import { hostOf } from './links.ts';
-import { matchJobs } from './matching.ts';
+import { isTitled, matchJobs, readTitle, titleFit } from './matching.ts';
 import type { JobFile } from './records.ts';
 import type { SentAnswer } from './tracker.ts';
 
@@ -82,40 +86,83 @@ export const onFileJob = (job: Job): NonNullable<OnFile['job']> => ({
   location: job.location ?? '',
 });
 
-/** A kind of job you want, with your target pay for it, as Profile keeps it. */
-export interface KindTarget extends KindName {
+/** A kind of job you want, with the titles you want in it and your target pay for it. */
+export interface KindTarget extends TitledKind {
   targetPay: string;
 }
 
+/** The job titles you want, from where Profile keeps a kind's, as the app reads them. */
+const titlesIn = (kept: unknown): string[] =>
+  entries((kept as { roles?: unknown } | null | undefined)?.roles) ?? [];
+
 /**
- * Each kind of job you want, with your target pay for it, as Profile keeps them: the first
- * kind's in answers.json, and each other kind's in kinds-of-job.json, by its id, as the app reads
- * them. With one kind, that one alone, with no id or name.
+ * Each kind of job you want, with your target pay for it and the job titles you want in it, as
+ * Profile keeps them: the first kind's in answers.json, and each other kind's in kinds-of-job.json,
+ * by its id, as the app reads them. With one kind, that one alone, with no id or name.
  */
 export function kindTargetsIn(answers: unknown, kindsFile: unknown): KindTarget[] {
-  const first = profileForForms(answers).targetPay;
+  const first = { targetPay: profileForForms(answers).targetPay, roles: titlesIn(answers) };
   const named = kindNamesIn(kindsFile);
-  if (named.length === 0) return [{ id: '', name: '', targetPay: first }];
+  if (named.length === 0) return [{ id: '', name: '', ...first }];
   const { others } = (typeof kindsFile === 'object' && kindsFile !== null ? kindsFile : {}) as {
     others?: unknown;
   };
   const listed = Array.isArray(others) ? others : [];
-  const targetOf = (id: string) => {
-    const entry = listed.find(
-      (each) => typeof each === 'object' && each !== null && (each as { id?: unknown }).id === id,
-    ) as { targetPay?: unknown } | undefined;
-    return isText(entry?.targetPay, PROFILE_LIMITS.entry) ? entry.targetPay : '';
+  // The entry that's the kind, by its id and name, as an earlier one by either was left out.
+  const ownOf = ({ id, name }: KindName) => {
+    const entry = listed.find((each) => {
+      const read = readKindName(each);
+      return read?.id === id && read.name === name;
+    }) as { targetPay?: unknown } | undefined;
+    return {
+      targetPay: isText(entry?.targetPay, PROFILE_LIMITS.entry) ? entry.targetPay : '',
+      roles: titlesIn(entry),
+    };
   };
-  return named.map((kind, at) => ({ ...kind, targetPay: at === 0 ? first : targetOf(kind.id) }));
+  return named.map((kind, at) => ({ ...kind, ...(at === 0 ? first : ownOf(kind)) }));
+}
+
+/**
+ * Whether a job's title fits one you want in a kind of job, as matching reads them: the same work,
+ * or one saying more about it, as "Senior Program Manager, Data" does of "Program manager". How
+ * senior doesn't count, as Profile asks that apart from the titles. A title with letters matching
+ * can't read, or that says nothing but how senior, fits only in its whole words.
+ */
+function fitsTitle(wanted: string, title: string): boolean {
+  const ours = { ...readTitle(wanted), levels: [] };
+  const theirs = { ...readTitle(title), levels: [] };
+  if (unreadable(wanted) || unreadable(title) || !isTitled(ours) || !isTitled(theirs)) {
+    return sameWords(wanted, title);
+  }
+  const fit = titleFit(ours, theirs);
+  return fit === 'same' || fit === 'more';
+}
+
+/**
+ * The kind of job a form's job goes by, of more than one: the one you put it under, or its fit
+ * check or job search found it as, or else the one kind whose titles fit the job's title, `byTitle`,
+ * a guess for what Fill types, as the job isn't put under it. Null when none of those says, or
+ * with no job saved.
+ */
+function kindToFill(
+  job: Pick<Job, 'kind' | 'kindFound' | 'role'> | null,
+  kinds: readonly TitledKind[],
+): { id: string; byTitle: boolean } | null {
+  if (!job) return null;
+  const said = kindNamed(job.kind, kinds) ?? kindNamed(job.kindFound, kinds);
+  if (said) return { id: said, byTitle: false };
+  const fitting = kinds.filter(({ roles }) => roles.some((role) => fitsTitle(role, job.role)));
+  const [only] = fitting;
+  return only && fitting.length === 1 ? { id: only.id, byTitle: true } : null;
 }
 
 /**
  * The pay to ask for at a job: your own for it, or else your Claude's suggestion for it, or else
- * your target for the kind of job it's under, or for your first kind, for a form with no job
- * saved. Null when there's none.
+ * your target for the kind of job it goes by, which may be its title alone, or for your first kind,
+ * while nothing says which, or for a form with no job saved. Null when there's none.
  */
 export function payAskFor(
-  job: Pick<Job, 'payAsk' | 'suggestedAsk' | 'kind' | 'kindFound'> | null,
+  job: Pick<Job, 'payAsk' | 'suggestedAsk' | 'kind' | 'kindFound' | 'role'> | null,
   kinds: readonly KindTarget[],
 ): PayAsk | null {
   const yours = job?.payAsk?.trim();
@@ -123,10 +170,12 @@ export function payAskFor(
   const claudes = job?.suggestedAsk?.trim();
   if (claudes) return { text: claudes, from: 'claude', kind: null };
   const several = kinds.length > 1;
-  const id = job && several ? kindOfJob(job, kinds) : null;
-  const kind = kinds.find((each) => each.id === id) ?? kinds[0];
+  const found = several ? kindToFill(job, kinds) : null;
+  const kind = kinds.find((each) => each.id === found?.id) ?? kinds[0];
   const target = kind?.targetPay.trim();
-  return kind && target ? { text: target, from: 'target', kind: several ? kind.name : null } : null;
+  if (!kind || !target) return null;
+  const by = found?.byTitle && { byTitle: true };
+  return { text: target, from: 'target', kind: several ? kind.name : null, ...by };
 }
 
 /** A job's PDFs of a kind, its resume or its cover letter, newest first: the first is uploaded. */
@@ -253,10 +302,46 @@ export interface ResumeShape {
     linkedin?: string;
     website?: string;
   };
-  experience: { title: string; company: string; location?: string; start: string; end: string }[];
+  experience: {
+    title: string;
+    company: string;
+    location?: string;
+    start: string;
+    end: string;
+    intro?: string;
+    bullet_groups?: { bullets: { lead?: string; text: string }[] }[];
+  }[];
   education?: { degree: string; school: string; start?: string; end?: string }[];
   skills?: { category: string; items: string[] }[];
   extra_sections?: { heading: string; items: string[] }[];
+}
+
+/**
+ * A line of a resume as a form's box takes it: with no **bold** marks, with letters typed as one
+ * character written out, as applicant systems misread those, on one line. None for a line that
+ * still holds a [[placeholder]].
+ */
+function plainLine(text: string): string {
+  const line = unmarked(text)
+    .replace(/[\uFB00-\uFB06]/g, (joined) => joined.normalize('NFKC'))
+    .replace(/\s+/g, ' ')
+    .trim();
+  return line.includes('[[') ? '' : line;
+}
+
+/**
+ * What a resume says you did in a position, as plain text: its intro, then a line to a bullet, each
+ * with its lead-in, as the resume shows it. Headings over groups of bullets stay out, as a form's
+ * box has none.
+ */
+function positionLines(position: ResumeShape['experience'][number]): string[] {
+  const bullets = (position.bullet_groups ?? []).flatMap((group) => group.bullets);
+  return [
+    position.intro ?? '',
+    ...bullets.map(({ lead, text }) => (lead ? `${lead}: ${text}` : text)),
+  ]
+    .map(plainLine)
+    .filter(Boolean);
 }
 
 /** What a resume says of you, as the form filler takes it. */
@@ -282,6 +367,7 @@ export function resumeDetails(resume: ResumeShape, from: ResumeOnFile['from']): 
       location: each.location ?? '',
       start: each.start,
       end: each.end,
+      lines: positionLines(each),
     })),
     education: (resume.education ?? []).map((each) => ({
       school: each.school,
@@ -294,6 +380,60 @@ export function resumeDetails(resume: ResumeShape, from: ResumeOnFile['from']): 
     summary: resume.summary,
   };
 }
+
+/** A kind of job's starting resumes, as a form takes from them: where they are, and for what. */
+export type StartingFolder = Pick<StartingOnFile, 'kind' | 'ofJob' | 'byTitle'> & {
+  /** Its folder in the workspace: base, for the first kind, or base/<kind> for each other. */
+  folder: string;
+};
+
+/**
+ * Where a form's job's starting resumes are. With one kind of job, its own, for any job. With more
+ * than one, those of the kind the job is under, as you put it or its fit check or job search found
+ * it, or else each kind's, for a job none of those has said yet, or a form with no job saved, as a
+ * job only counts as the first kind until one says. Of each kind's, the one kind whose titles fit
+ * the job's title goes as the job's, `byTitle`, with the others beside it.
+ */
+export function startingFolders(
+  job: Pick<Job, 'kind' | 'kindFound' | 'role'> | null,
+  kinds: readonly TitledKind[],
+): StartingFolder[] {
+  if (kinds.length < 2) return [{ folder: 'base', kind: '', ofJob: true }];
+  const found = kindToFill(job, kinds);
+  const each = kinds.map((kind, at) => ({
+    folder: at === 0 ? 'base' : `base/${kind.id}`,
+    kind: kind.name,
+    ofJob: kind.id === found?.id,
+    ...(kind.id === found?.id && found.byTitle && { byTitle: true }),
+  }));
+  return found && !found.byTitle ? each.filter(({ ofJob }) => ofJob) : each;
+}
+
+/**
+ * Whether a file in a folder of starting resumes is one: a resume's data, and not a copy sync kept
+ * of one two devices changed, as "startup-ic (Sam’s MacBook Pro, Oct 12).json".
+ */
+export function isStartingResume(name: string): boolean {
+  if (!name.endsWith('.json')) return false;
+  const stem = name.slice(0, -'.json'.length);
+  return !(stem.endsWith(')') && stem.includes(' ('));
+}
+
+/** What a kind of job's starting resumes say, as a form's box takes it, in their files' order. */
+export const startingOnFile = (
+  { folder: _, ...starting }: StartingFolder,
+  resumes: readonly ResumeShape[],
+): StartingOnFile => ({
+  ...starting,
+  positions: resumes.flatMap(({ experience }) =>
+    experience.flatMap((each) => {
+      const lines = positionLines(each);
+      return lines.length > 0
+        ? [{ company: each.company, title: each.title, start: each.start, lines }]
+        : [];
+    }),
+  ),
+});
 
 /**
  * The longest line Profile keeps, the longest entry in one of its lists, and the longest answer

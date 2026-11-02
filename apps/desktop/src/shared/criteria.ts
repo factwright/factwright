@@ -2,6 +2,7 @@ import {
   type AboutYou,
   COMPANY_KINDS,
   EMPLOYMENT,
+  entriesLine,
   FIELDS,
   type JobKind,
   LEVELS,
@@ -28,9 +29,10 @@ function where(answers: AboutYou): string | null {
   const local = answers.workplaces.filter((place) => place !== 'remote');
   if (local.length > 0) {
     const kinds = either(local.map((place) => (place === 'onsite' ? 'on-site' : place)));
-    parts.push(answers.places.length > 0 ? `${kinds} in ${either(answers.places)}` : kinds);
+    parts.push(answers.places.length > 0 ? `${kinds} in ${entriesLine(answers.places)}` : kinds);
   }
-  if (parts.length === 0 && answers.places.length > 0) parts.push(`In ${either(answers.places)}`);
+  if (parts.length === 0 && answers.places.length > 0)
+    parts.push(`In ${entriesLine(answers.places)}`);
   if (parts.length === 0) return null;
   const sentence = `${parts.join('; ')}.`;
   const moving = answers.relocate
@@ -56,7 +58,7 @@ function kindFilters(kind: JobKind): string[] {
     .map((field) => labelOf(FIELDS, field));
   const work = [
     fields.length > 0 ? `${either(fields)}.` : '',
-    kind.roles.length > 0 ? `Roles such as ${either(kind.roles)}, and close matches.` : '',
+    kind.roles.length > 0 ? `Roles such as ${entriesLine(kind.roles)}, and close matches.` : '',
   ]
     .filter(Boolean)
     .join(' ');
@@ -82,7 +84,7 @@ const kindPay = (kind: JobKind) => [
 /** The level and shape a kind of job's roles take, such as "Senior roles: Staff Engineer". */
 function shapeOf(kind: JobKind): string {
   const levels = kind.levels.map((level) => labelOf(LEVELS, level));
-  return [levels.length > 0 ? either(levels) : '', kind.roles.length > 0 ? either(kind.roles) : '']
+  return [levels.length > 0 ? either(levels) : '', entriesLine(kind.roles)]
     .filter(Boolean)
     .join(' roles: ');
 }
@@ -171,11 +173,11 @@ export function criteriaMarkdown(answers: AboutYou): string {
     '',
     '| Part | Points | What earns it |',
     '|---|---|---|',
-    '| Work | 40 | The job’s core work is work the fact bank proves, domain included |',
+    '| Work | 40 | The job’s core work is work the fact bank proves. Its industry counts only when the posting asks for it |',
     kinds
       ? '| Role | 25 | The level and shape fit what the user wants for the job’s kind |'
       : `| Role | 25 | The level and shape fit what the user wants${shape ? `: ${shape}` : ''} |`,
-    '| Stack | 20 | Overlap with the tools, methods and skills the fact bank proves |',
+    '| Skills | 20 | Overlap with the tools, methods, licenses and skills the fact bank proves |',
     '| Reqs | 15 | Full marks unless a hard requirement isn’t met: years, degree, license or certification |',
     '',
     '**Tiers:** Strong ≥ 75 · Good 62–74 · Worth a look 50–61. Below 50 goes to long shots.',
