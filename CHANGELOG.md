@@ -4,6 +4,8 @@ Notable changes to Factwright, newest first. The format follows [Keep a Changelo
 
 ## Unreleased
 
+## 0.19.1 - 2026-11-02
+
 ### Security
 - Factwright runs on Electron 44.10.1, up from 44.9.3, with Chromium 152.0.7977.169 and Node.js 24.22.1. Node.js 24.22.1 fixes the flaw in its Brotli decoder (CVE-2026-111497) for everything Factwright fetches, sync included: 0.12.1 only kept job sites from sending Brotli.
 
