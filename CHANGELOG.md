@@ -4,6 +4,9 @@ Notable changes to Factwright, newest first. The format follows [Keep a Changelo
 
 ## Unreleased
 
+### Security
+- Factwright runs on Electron 45.2.1, up from 44.9.3, with Chromium 156.0.8078.75 and Node.js 24.22.1. Node.js 24.22.1 fixes the flaw in its Brotli decoder (CVE-2026-111497) for everything Factwright fetches, sync included: 0.12.1 only kept job sites from sending Brotli. It also has Chromium's and V8's latest security fixes. A Mac still needs macOS 13 Ventura or later, and Windows still 64-bit Windows 10 or 11.
+
 ## 0.19.0 - 2026-11-02
 
 ### Added
