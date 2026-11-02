@@ -32,7 +32,7 @@ Notable changes to Factwright, newest first. The format follows [Keep a Changelo
   - It can search USAJOBS for federal jobs, and Workable's public job search across small and mid-size employers. USAJOBS gets only dates, as Factwright searches its feed on your computer. Workable gets the job titles and the place, and nothing else.
   - For each kind of job, `searches/plan.md` keeps a list of employers with the link to each board and what the last read found, for you to read and change, so the next search can say what's new.
   - The search report and its method say which source found what, so a poor source shows.
-  - The privacy policy lists these sources, and what the two searches get. It takes effect November 1, 2026.
+  - The privacy policy lists these sources, and what the two searches get. It takes effect November 2, 2026.
 - **Find jobs reaches far more jobs, in any field.**
   - Company job boards now means the systems employers of every kind post to, such as Workday, iCIMS and Greenhouse, not mostly startups'.
   - Before searching, your Claude works out the job titles and places to try for your field, and keeps them in `searches/plan.md`.
