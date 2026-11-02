@@ -65,22 +65,6 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
 /** A question's key: its words on one line, in one form and case, so spacing can't tell two apart. */
 export const questionKey = (question: string) => oneLine(question).normalize('NFC').toLowerCase();
 
-/** The letters and digits of scripts that put spaces between words. */
-const SPACED = /[\p{Script=Latin}\p{Script=Cyrillic}\p{Script=Greek}\p{N}]/u;
-
-/** Whether some text has these words, whole: "Java" isn't in "JavaScript". */
-function hasWords(text: string, wanted: string): boolean {
-  for (let at = text.indexOf(wanted); at >= 0; at = text.indexOf(wanted, at + 1)) {
-    const before = text[at - 1] ?? '';
-    const after = text[at + wanted.length] ?? '';
-    const cutsIn =
-      (SPACED.test(before) && SPACED.test(wanted[0] ?? '')) ||
-      (SPACED.test(after) && SPACED.test(wanted.at(-1) ?? ''));
-    if (!cutsIn) return true;
-  }
-  return false;
-}
-
 /** A string of a length, trimmed, or null. */
 const text = (value: unknown, max: number): string | null =>
   typeof value === 'string' && value.trim() !== '' && value.length <= max ? value.trim() : null;
@@ -172,22 +156,6 @@ export class QuestionLog {
       backed: { fact: 0, gap: 0, verify: 0 },
       own: answer,
     });
-  }
-
-  /**
-   * Whether the user said these words in this run, as they said them: in what they typed in the
-   * app for it, what they typed in answer to a question, or a note to their pick. Never in a
-   * question, or an option they picked, which Claude writes. A letter or two says nothing.
-   */
-  said(words: string): boolean {
-    const wanted = questionKey(words);
-    return (
-      wanted.length >= 3 &&
-      this.heard.some(
-        ({ own, notes }) =>
-          hasWords(questionKey(own), wanted) || hasWords(questionKey(notes ?? ''), wanted),
-      )
-    );
   }
 
   /** A filing call Claude Code is about to make, for the tool to find. */

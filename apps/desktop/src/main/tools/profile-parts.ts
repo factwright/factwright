@@ -140,7 +140,7 @@ const STREET_OR_POSTAL = new RegExp(
 export const readsLikeStreet = (words: string) => STREET_OR_POSTAL.test(words);
 
 /** Throws when an answer about where the user lives looks like a street or a postal code. */
-function noStreet(input: Record<string, unknown>, keys: readonly string[]) {
+export function noStreet(input: Record<string, unknown>, keys: readonly string[]) {
   for (const key of keys) {
     const given = input[key];
     for (const value of Array.isArray(given) ? given : [given]) {
@@ -290,17 +290,29 @@ const asList = (value: unknown, name: string): unknown[] => {
   return value;
 };
 
+/** What stays on this computer, by any name Claude might give it. */
+const KEPT_APART =
+  /^(?:street|address|postal|zip|equal|eeo|gender|hispanic|latino|race|ethnicity|veteran|disability)/i;
+
 /**
  * Why the user's leaving, the one thing For applications holds that a run changes: that answer alone,
- * over what's there. The rest is the user's to type, in that card's Change, and their street, postal
- * code and equal-opportunity answers aren't there at all: they're kept on this computer alone, so
- * this takes no field but its own.
+ * over what's there. The rest is the user's to type, in that card's Change. Their street, postal code
+ * and equal-opportunity answers aren't there: they're kept on this computer alone, so this turns them
+ * away, by name, and says where they go, so they don't come back as words in the answer. Those words
+ * aren't checked for them: a why reads like anything, years and places included, so the skill and
+ * the dialog say so.
  */
 export function saveWhyLeaving(
   input: Record<string, unknown>,
   about: Pick<PartAbout, 'answers' | 'saveAnswers'>,
   call: ToolCall | undefined,
 ): string {
+  const apart = Object.keys(input).find((key) => KEPT_APART.test(key));
+  if (apart) {
+    throw new Error(
+      'Not saved: street, postal code and equal-opportunity answers stay on this computer, and Claude never sees or saves them. Tell the user they change those themselves, in For applications’ Change, and leave them out of why they’re leaving.',
+    );
+  }
   givenOnly(input, ['leaving'], 'why they’re leaving');
   const read = readForApplications({ ...about.answers().applications, leaving: input.leaving });
   if (!read) {

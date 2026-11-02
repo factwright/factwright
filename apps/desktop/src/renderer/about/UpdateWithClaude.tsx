@@ -30,6 +30,8 @@ const PARTS: Readonly<Record<ProfilePart, { changes: string; example: string; le
     leaving: {
       changes: 'what forms get when they ask why you’re leaving',
       example: 'Such as: make it sound more positive, and say the team was cut in half',
+      leftOut:
+        'Your street, postal code and equal-opportunity answers stay on this computer, and your Claude never sees them. Leave them out of what you type here. For applications’ Change has them.',
     },
     beyond: {
       changes:

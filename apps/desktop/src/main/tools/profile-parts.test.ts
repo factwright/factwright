@@ -247,22 +247,43 @@ describe('save_why_leaving', () => {
     expect(kept.some((path) => path.endsWith(join('about-me', 'answers.json')))).toBe(true);
   });
 
-  it.each(['city', 'howHeard', 'street', 'postalCode', 'gender', 'veteran'])(
-    'takes nothing else: turns away %s, and saves nothing',
-    async (key) => {
-      await expect(
-        run(
-          'save_why_leaving',
-          { leaving: 'I want a bigger scale.', [key]: 'Something private' },
-          callFor('leaving'),
-        ),
-      ).rejects.toThrow(`${key} isn’t part of why they’re leaving`);
-      expect(about.answers().applications.leaving).toBe('');
-      expect(readFileSync(join(root, 'about-me', 'answers.json'), 'utf8')).not.toContain(
-        'Something private',
-      );
-    },
-  );
+  it.each(['city', 'howHeard'])('takes nothing else: turns away %s', async (key) => {
+    await expect(
+      run(
+        'save_why_leaving',
+        { leaving: 'I want a bigger scale.', [key]: 'Something else' },
+        callFor('leaving'),
+      ),
+    ).rejects.toThrow(`${key} isn’t part of why they’re leaving`);
+    expect(about.answers().applications.leaving).toBe('');
+  });
+
+  it.each([
+    'street',
+    'streetAddress',
+    'address',
+    'postalCode',
+    'postal_code',
+    'zip',
+    'equalOpportunity',
+    'gender',
+    'race',
+    'hispanic',
+    'veteran',
+    'disability',
+  ])('turns away %s, which stays on this computer, and saves nothing', async (key) => {
+    await expect(
+      run(
+        'save_why_leaving',
+        { leaving: 'I want a bigger scale.', [key]: 'Something private' },
+        callFor('leaving'),
+      ),
+    ).rejects.toThrow('stay on this computer');
+    expect(about.answers().applications.leaving).toBe('');
+    expect(readFileSync(join(root, 'about-me', 'answers.json'), 'utf8')).not.toContain(
+      'Something private',
+    );
+  });
 
   it('refuses what doesn’t hold up', async () => {
     await expect(
@@ -470,7 +491,11 @@ describe('a street or a postal code', () => {
     ['Hauptstraße 12, Berlin'],
     ['Calle Mayor 5, Madrid'],
     ['12 rue de la Paix, Paris'],
-  ])('isn’t saved as where they’d work from: %s', async (place) => {
+  ])('isn’t saved as where they live, or where they’d work from: %s', async (place) => {
+    await expect(run('save_about_you', { location: place }, newCall('hunt'))).rejects.toThrow(
+      'stay on this computer',
+    );
+    expect(about.answers().you.location).toBe('Denver, CO');
     await expect(
       run('save_what_you_want', { remoteFrom: place }, callFor('wants')),
     ).rejects.toThrow('stay on this computer');
@@ -511,6 +536,8 @@ describe('a street or a postal code', () => {
     '100 Mile House, BC',
     '29 Palms, CA',
   ])('leaves a place alone: %s', async (place) => {
+    await run('save_about_you', { location: place }, newCall('hunt'));
+    expect(about.answers().you.location).toBe(place);
     await run('save_what_you_want', { remoteFrom: place }, callFor('wants'));
     expect(about.answers().remoteFrom).toBe(place);
   });

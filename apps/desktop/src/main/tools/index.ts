@@ -33,6 +33,7 @@ import {
   CHOICES_SCHEMA,
   keepNamesPrivate,
   LEAVING_SCHEMA,
+  noStreet,
   type PartAbout,
   saveBeyondWork,
   saveResumeChoices,
@@ -192,8 +193,8 @@ const PART_ONLY = [
 
 /**
  * Whether a run has a tool, which it sees and can call: a run on a part of Profile has that part's
- * alone, and no other run has a part's own. A run that reads the web can't change what the user
- * wants, and one changing their templates has nothing to do with the rest.
+ * alone, and no other run has a part's own. A run that reads the web can't change the job titles
+ * the user wants, and one changing their templates has nothing to do with the rest.
  */
 export function runHasTool(scope: RunScope, tool: string): boolean {
   const part = partOf(scope);
@@ -1200,6 +1201,7 @@ export function factwrightTools(deps: ToolDeps): McpTool[] {
       // It changes the user's profile on this computer, which the task's card lists, with Undo.
       annotations: { readOnlyHint: false, idempotentHint: true, openWorldHint: false },
       run: async (input, call) => {
+        noStreet(input, ['location']);
         const current = deps.about.answers();
         const read = aboutYouChanges(input, current);
         if (!read) {
@@ -1293,7 +1295,7 @@ export function factwrightTools(deps: ToolDeps): McpTool[] {
     {
       name: 'save_why_leaving',
       description:
-        'Saves what forms get when they ask why the user’s leaving, as they asked in this run’s requested_changes. It takes that answer alone: the rest of Profile’s For applications is the user’s to change, in its Change. Only a run on why they’re leaving has it.',
+        'Saves what forms get when they ask why the user’s leaving, as they asked in this run’s requested_changes. It takes that answer alone: the rest of Profile’s For applications is the user’s to change, in its Change. It never takes their street, postal code or equal-opportunity answers, which stay on this computer, so leave those out of the answer too. Only a run on why they’re leaving has it.',
       inputSchema: LEAVING_SCHEMA,
       annotations: SAVES_PART,
       run: async (input, call) => saveWhyLeaving(input, deps.about, call),

@@ -115,13 +115,21 @@ test('changes a part from the user’s words, with Undo', async () => {
 
 test('says what stays out of Claude’s reach, and turns it away if it comes anyway', async () => {
   const { window } = opened;
-  await expect(card('For applications')).toContainText(
-    'Your street, postal code and equal-opportunity answers stay on this computer',
-  );
-  await ask('Why you’re leaving', 'My street is 12 Elm', card('For applications'));
+  const applications = card('For applications');
+  const stays = 'Your street, postal code and equal-opportunity answers stay on this computer';
+  await expect(applications).toContainText(stays);
+  await applications
+    .getByRole('button', { name: 'Update with Claude: Why you’re leaving' })
+    .click();
+  const dialog = window.getByRole('dialog', { name: 'Update with Claude: Why you’re leaving' });
+  await expect(dialog).toContainText(stays);
+  await dialog.getByRole('button', { name: 'Cancel' }).click();
+
+  // The stand-in tries to save a street as one, which the tool refuses by name.
+  await ask('Why you’re leaving', 'My street is 12 Elm', applications);
   const typed = await terminalText(window);
-  expect(typed).toContain('A street: street isn’t part of why they’re leaving');
-  // It never reaches a file that syncs.
+  expect(typed).toContain('A street: Not saved: street, postal code and equal-opportunity answers');
+  // So it never reaches a file that syncs.
   expect(readFileSync(workspace('about-me/answers.json'), 'utf8')).not.toContain('12 Elm');
   await closeRun();
 });

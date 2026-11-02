@@ -106,6 +106,11 @@ describe('UpdateWithClaude', () => {
   });
 
   it.each([
+    [
+      'leaving',
+      'Why you’re leaving',
+      'Your street, postal code and equal-opportunity answers stay on this computer',
+    ],
     ['facts', 'Your fact bank', 'Removing a fact stays with you'],
     ['resumes', 'Starting resumes', 'Facts still waiting to be verified stay off them'],
     ['templates', 'Resume templates', 'To copy the look of a resume you like, add it in Change.'],
