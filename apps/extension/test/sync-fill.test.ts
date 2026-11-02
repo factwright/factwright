@@ -48,14 +48,17 @@ import {
 
 let server: TestServer;
 const work = mkdtempSync(join(tmpdir(), 'fw-sync-fill-'));
+/** The databases each computer has open, which Windows won't let `work` go with. */
+const open: { close(): void }[] = [];
 
 beforeAll(async () => {
   server = await startServer();
 }, 60_000);
 
-afterAll(() => {
-  server?.close();
-  rmSync(work, { recursive: true, force: true });
+afterAll(async () => {
+  await server?.close();
+  for (const database of open) database.close();
+  rmSync(work, { recursive: true, force: true, maxRetries: 20, retryDelay: 250 });
 });
 
 const NOW = new Date(2026, 9, 23, 18, 30);
@@ -240,6 +243,7 @@ async function computer({ older = false } = {}) {
   write(`applications/${LUMEN}/LumenResume.pdf`, PDF.subarray(0, 4000));
   const file = join(home, 'tracker.db');
   const tracker = new Tracker(file);
+  open.push(tracker);
   if (older) {
     trackerAsOf(file, 8, { keepTables: true });
     vi.spyOn(tracker, 'saveFolders').mockImplementation(() => {});
@@ -288,10 +292,12 @@ async function account(app: Parameters<typeof computer>[0] = {}) {
   const keys = await accountKeys(newAccountKey());
   const desktop = await computer(app);
   const session = await server.newSession(sam.id);
+  const state = new SyncState(join(dirname(desktop.workspace), 'sync.db'));
+  open.push(state);
   const engine = new SyncEngine({
     client: session.client,
     keys,
-    state: new SyncState(join(dirname(desktop.workspace), 'sync.db')),
+    state,
     tracker: desktop.tracker,
     workspace: desktop.workspace,
     device: 'Sam’s Mac',

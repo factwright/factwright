@@ -481,7 +481,9 @@ test('makes a Projects page, printed as cards in the resume’s template, to pre
   );
   await files.getByRole('button', { name: 'Make a Projects page' }).click();
   await expect(claudePanel().getByRole('status')).toHaveText('Done');
-  expect(await terminalText(window)).toContain(`/factwright:projects-page job ${ACME_ID}`);
+  await expect
+    .poll(() => terminalStart(window))
+    .toContain(`/factwright:projects-page job ${ACME_ID}`);
   expect(await terminalLines(window)).toContain('in the Classic template, as cards: 1 page');
   await closeRun();
 
@@ -1029,6 +1031,8 @@ test('saves what the user answers while Claude tailors a resume, unverified, and
     .getByRole('navigation', { name: 'Main' })
     .getByRole('button', { name: /^Jobs/ })
     .click();
+  // In a narrow window, a job's details cover the page's buttons.
+  await window.getByRole('button', { name: 'Close details' }).click();
   await pickView(/^All/);
   // Acme's resume went out with its application, so it stays as sent: this tailors Tidewater's.
   await window.getByRole('button', { name: /^Tidewater Analytics/ }).click();
@@ -1110,6 +1114,8 @@ test('keeps the pay to ask for at a job, in the user’s words, after a restart'
     .getByRole('navigation', { name: 'Main' })
     .getByRole('button', { name: /^Jobs/ })
     .click();
+  // In a narrow window, a job's details cover the page's buttons.
+  await window.getByRole('button', { name: 'Close details' }).click();
   await pickView(/^All/);
   await window.getByRole('button', { name: /^Acme Robotics/ }).click();
   const fit = () => jobPanel().getByRole('region', { name: 'Fit' });
@@ -1381,15 +1387,18 @@ test('drags a job’s details to any width beside the list, and keeps it', async
   const room = (box?.x ?? 0) + (box?.width ?? 0) - (list?.x ?? 0);
   await expect.poll(widthOf).toBeCloseTo(room - (room <= 980 ? 48 : 360), -1);
 
-  // With the list that narrow, Filters still opens in full, inside the list.
-  const page = window.getByRole('main');
-  const filterButton = page.getByRole('button', { name: 'Filters', exact: true });
-  await filterButton.click();
-  const filters = page.getByRole('region', { name: 'Filters' });
-  await expect(filters).toBeVisible();
-  const shown = await filters.boundingBox();
-  expect(shown?.x ?? 0).toBeGreaterThanOrEqual((await page.boundingBox())?.x ?? 0);
-  await filterButton.click();
+  // With the list that narrow beside the details, Filters still opens in full, inside the list. In
+  // a narrow window, the details are over the list's buttons.
+  if (room > 980) {
+    const page = window.getByRole('main');
+    const filterButton = page.getByRole('button', { name: 'Filters', exact: true });
+    await filterButton.click();
+    const filters = page.getByRole('region', { name: 'Filters' });
+    await expect(filters).toBeVisible();
+    const shown = await filters.boundingBox();
+    expect(shown?.x ?? 0).toBeGreaterThanOrEqual((await page.boundingBox())?.x ?? 0);
+    await filterButton.click();
+  }
 
   // A double-click puts it back, and it never goes narrower than its areas are laid out for.
   await dragBy(3000);
