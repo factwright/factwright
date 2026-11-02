@@ -164,6 +164,8 @@ test('takes a task out of line when its tab is closed', async () => {
 
 test('shows where a run is in its working strip: its step on Claude’s to-do list, and its helpers at work', async () => {
   const { window } = opened;
+  // In a narrow window, a job's details cover the page's buttons.
+  await jobPanel().getByRole('button', { name: 'Close details' }).click();
   await window.getByRole('button', { name: 'Find jobs' }).click();
   await window
     .getByRole('dialog', { name: 'Find jobs' })
