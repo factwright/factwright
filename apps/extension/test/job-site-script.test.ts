@@ -191,14 +191,15 @@ describe('the script on a job site you allowed', () => {
   });
 
   it('puts nothing on the page until it has loaded and settled a moment, as one that builds itself may be checking its own', async () => {
-    script = startScript(() => true, 200);
+    // Its real moment, a second, so a busy run that's slow to look still looks within it.
+    script = startScript(() => true);
     await vi.waitFor(() =>
       expect(sentOf('form').length + sentOf('hello').length).toBeGreaterThan(0),
     );
     await new Promise((resolve) => setTimeout(resolve, 100));
     expect(frames()).toHaveLength(0);
     expect(document.documentElement.querySelectorAll('div')).toHaveLength(0);
-    await vi.waitFor(() => expect(frames()).toHaveLength(1));
+    await vi.waitFor(() => expect(frames()).toHaveLength(1), { timeout: 5000 });
   });
 
   it('puts its Fill button back when the page takes it away, or builds itself again', async () => {
@@ -278,12 +279,13 @@ describe('the script on a job site you allowed', () => {
     document.body.insertAdjacentHTML('beforeend', '<button id="everywhere">Chat</button>');
     boxes.set('everywhere', new DOMRect(0, 0, innerWidth, innerHeight));
     script = startScript(() => true, 0);
-    // Placing it looks at every spot beside the field first, which takes a while on a busy run.
-    await vi.waitFor(() => expect(sentOf('hello')).toHaveLength(1), { timeout: 5000 });
+    // Its Fill button, hidden, as no corner has room: it's there once the script has settled. A
+    // click any sooner opens no menu, however long it's waited for.
+    await vi.waitFor(() => expect(frames()).toHaveLength(1));
+    expect(frames()[0]?.host.style.getPropertyValue('display')).toBe('none');
     clickIn('name');
-    await vi.waitFor(
-      () => expect(frames().some(({ frame }) => frame.src.includes('#menu:'))).toBe(true),
-      { timeout: 5000 },
+    await vi.waitFor(() =>
+      expect(frames().some(({ frame }) => frame.src.includes('#menu:'))).toBe(true),
     );
     const menu = frames().find(({ frame }) => frame.src.includes('#menu:'));
     expect(menu?.host.style.getPropertyValue('left')).toBe('40px');
