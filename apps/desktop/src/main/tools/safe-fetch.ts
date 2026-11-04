@@ -182,13 +182,19 @@ export function postProblem(url: URL, body: string): string | null {
 }
 
 /**
- * Whether an answer is something the app reads: a page, text, JSON or XML, rather than a file such
- * as a PDF or a Word document, whose bytes read as nonsense. An answer that doesn't say is read.
+ * Whether an answer is something the app reads, rather than a file such as a PDF, a Word document,
+ * a picture or an archive, whose bytes read as nonsense. Anything else is read, an answer that
+ * doesn't say what it is or only calls itself bytes included, as a sitemap kept as a file can.
  */
 export function readableType(type: string | undefined): boolean {
-  if (!type) return true;
-  const [kind = '', sub = ''] = (type.split(';', 1)[0] ?? '').trim().toLowerCase().split('/');
-  return kind === 'text' || /^(json|xml|html|javascript)$|\+(json|xml)$/.test(sub);
+  const [kind = '', sub = ''] = (type?.split(';', 1)[0] ?? '').trim().toLowerCase().split('/');
+  if (['image', 'audio', 'video', 'font'].includes(kind)) return false;
+  return !(
+    kind === 'application' &&
+    /^(pdf|msword|rtf|zip|gzip|x-gzip|x-zip-compressed|x-7z-compressed|x-rar-compressed|x-tar|vnd\.(openxmlformats|ms-|oasis\.opendocument|apple\.))/.test(
+      sub,
+    )
+  );
 }
 
 /**

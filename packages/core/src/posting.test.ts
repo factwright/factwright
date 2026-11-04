@@ -4,6 +4,7 @@ import {
   htmlToText,
   jobPostingData,
   jobPostingFields,
+  namesOnePosting,
   onFeedSite,
   postingRequests,
   postingSource,
@@ -177,6 +178,39 @@ describe('readPosting', () => {
   it('gives nothing back for an answer without a posting', () => {
     expect(readPosting({ kind: 'greenhouse', boards: [], id: '1' }, { title: 'x' })).toBeNull();
     expect(readPosting({ kind: 'page', url: 'https://acme.example' }, { not: 'html' })).toBeNull();
+  });
+});
+
+describe('namesOnePosting', () => {
+  it.each([
+    'https://job-boards.greenhouse.io/gitlab/jobs/8638232002',
+    'https://jobs.lever.co/spotify/2a55d6c9-c564-443a-be3e-a3851db5a93b',
+    'https://jobs.smartrecruiters.com/AECOM2/744000156427409-senior-project-manager',
+    'https://www.amazon.jobs/en/jobs/10577480/program-manager-ii-amz26173-4',
+    'https://amazon.jobs/jobs/10595883',
+    'https://careers-aptiveresources.icims.com/jobs/4751/payroll-and-benefits-administrator/job',
+    'https://uhg.taleo.net/careersection/10000/jobdetail.ftl?job=2380443&lang=en',
+    'https://jobs.acme.example/12345',
+    'https://careers.acme.example/senior-engineer?utm_source=linkedin',
+    'https://www.fredrin.example/careers/senior-software-engineer',
+    'https://news.ycombinator.com/item?id=49927319',
+    'https://careers.acme.example/jobs?gh_jid=4012345',
+  ])('names one job: %s', (link) => {
+    expect(namesOnePosting(link)).toBe(true);
+  });
+
+  it.each([
+    'https://job-boards.greenhouse.io/gitlab',
+    'https://jobs.lever.co/acme?team=Engineering',
+    'https://jobs.ashbyhq.com/acme',
+    'https://www.acme.example/en/careers',
+    'https://careers.acme.example/',
+    'https://www.acme.example/careers/open-positions',
+    'https://www.acme.example/jobs?page=2',
+    'https://www.acme.example/careers/search?q=engineer',
+    'not a link',
+  ])('names a list of jobs, or none: %s', (link) => {
+    expect(namesOnePosting(link)).toBe(false);
   });
 });
 

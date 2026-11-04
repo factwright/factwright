@@ -3,9 +3,9 @@ import { join } from 'node:path';
 import {
   FEED_SYSTEMS,
   folderJobId,
-  isJobLink,
   JOB_EXTRAS,
   localDate,
+  namesOnePosting,
   normalizeUrl,
   onFeedSite,
   PAGE_TEXT,
@@ -369,9 +369,23 @@ export async function readForAdding(link: string, deps: FetchDeps): Promise<Addi
   }
   const refused = linkRefusal(url);
   if (refused) return { ok: false, ...plainly(refused, url) };
+  // Where the page itself was read from, after any redirect, as a short link's posting is.
+  let landed = url.href;
+  const fetch = deps.fetch ?? fetchPublic;
+  const reading: FetchDeps = {
+    ...deps,
+    fetch: (address, json, limitMs, maxBytes, onRedirect, sending) => {
+      if (!json) landed = address;
+      const heard = (to: string) => {
+        if (!json) landed = to;
+        onRedirect?.(to);
+      };
+      return fetch(address, json, limitMs, maxBytes, heard, sending);
+    },
+  };
   let posting: Posting | null;
   try {
-    posting = await readFrom(url.href, fetchInTime(deps), false);
+    posting = await readFrom(url.href, fetchInTime(reading), false);
   } catch (error) {
     return { ok: false, ...plainly(error, url) };
   }
@@ -385,9 +399,9 @@ export async function readForAdding(link: string, deps: FetchDeps): Promise<Addi
       message: `${siteOf(url)} shows the posting only in a web browser, or once you’re signed in, so Factwright found nothing to read.`,
     };
   }
-  // A page's own text, from a link that isn't one job's, as a company's board or careers page is,
-  // is never this job's posting, which the job would keep.
-  if (posting.via === PAGE_TEXT && !isJobLink(url.href)) {
+  // A page's own text, from an address that isn't one job's, as a company's board or careers
+  // page is, is never this job's posting, which the job would keep.
+  if (posting.via === PAGE_TEXT && !namesOnePosting(landed)) {
     return {
       ok: false,
       why: 'list',

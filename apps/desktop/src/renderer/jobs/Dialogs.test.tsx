@@ -326,7 +326,10 @@ describe('AddJobDialog', () => {
     // Add waits while the link is read, then says why it couldn't, without adding yet.
     await userEvent.click(screen.getByRole('button', { name: 'Add job' }));
     expect(await screen.findByText('Reading the posting…')).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Add job' })).toHaveProperty('disabled', true);
+    // It keeps the keyboard's focus, as a disabled button would lose it.
+    expect(screen.getByRole('button', { name: 'Add job' }).getAttribute('aria-disabled')).toBe(
+      'true',
+    );
     answer({
       ok: false,
       why: 'linkedin',
@@ -433,6 +436,35 @@ describe('AddJobDialog', () => {
     expect(screen.getByRole('textbox', { name: 'Company' })).toHaveProperty('value', '');
     expect(screen.getByRole('textbox', { name: 'Role' })).toHaveProperty('value', '');
     expect(screen.queryByText(/^Read the posting/)).toBeNull();
+  });
+
+  it('tries a site again that couldn’t be reached', async () => {
+    const readPosting = vi
+      .fn<() => Promise<PostingRead>>()
+      .mockResolvedValueOnce({
+        ok: false,
+        why: 'unreachable',
+        message:
+          'careers.acme.example is busy, and asked Factwright to wait (429). Try again in a minute.',
+      })
+      .mockResolvedValueOnce(READ);
+    render(
+      <AddJobDialog
+        api={{ readPosting } as unknown as FactwrightApi}
+        onAdded={() => {}}
+        onClose={() => {}}
+      />,
+    );
+    await userEvent.type(screen.getByRole('textbox', { name: 'Link to the posting' }), WORKDAY);
+    await userEvent.tab();
+    await screen.findByText(/^careers\.acme\.example is busy/);
+    // Leaving the box again asks nothing more: Try again does.
+    await userEvent.click(screen.getByRole('textbox', { name: 'Link to the posting' }));
+    await userEvent.tab();
+    expect(readPosting).toHaveBeenCalledTimes(1);
+    await userEvent.click(screen.getByRole('button', { name: 'Try again' }));
+    await screen.findByText(/^Read the posting: Product Manager, AI Platform/);
+    expect(readPosting).toHaveBeenCalledTimes(2);
   });
 
   it('says what works for a page of several jobs, or a file', async () => {

@@ -193,6 +193,65 @@ export function postingSource(address: string): PostingSource {
   return { kind: 'page', url: url.href };
 }
 
+/** Query parameters that track a visit, or page through, sort or search a list, rather than name a job. */
+const NOT_A_JOB =
+  /^(utm_\w*|gclid|fbclid|msclkid|ref|referrer|source|src|trk\w*|lang|locale|page|p|offset|limit|start|from|size|sort|q|query|keywords?|search)$/i;
+
+/** What the last part of a list's own address says, as /careers or /open-positions. */
+const LIST_PAGES = new Set([
+  'careers',
+  'career',
+  'jobs',
+  'job',
+  'openings',
+  'open-positions',
+  'open-jobs',
+  'all-jobs',
+  'job-openings',
+  'current-openings',
+  'positions',
+  'vacancies',
+  'opportunities',
+  'career-opportunities',
+  'job-opportunities',
+  'join',
+  'join-us',
+  'work-with-us',
+  'job-search',
+  'search-jobs',
+  'search',
+  'results',
+]);
+
+/**
+ * Whether a page's address names one job's posting rather than a list of jobs, such as a
+ * company's board or careers page. On an applicant system with a public feed, it's a link its feed
+ * reads one posting by. Anywhere else, one with a number in its path, as /jobs/4751/… or
+ * /senior-engineer-2110, a last part of words that isn't a list's own, as /senior-engineer, or a
+ * number in its query that tracks nothing, as ?id=42.
+ */
+export function namesOnePosting(address: string): boolean {
+  let url: URL;
+  try {
+    url = new URL(address);
+  } catch {
+    return false;
+  }
+  if (onFeedSite(address)) return postingSource(address).kind !== 'page';
+  const parts = url.pathname
+    .split('/')
+    .filter(Boolean)
+    .map((part) => part.toLowerCase());
+  if (parts.some((part) => /\d/.test(part))) return true;
+  const last = parts.at(-1) ?? '';
+  if (last && !LIST_PAGES.has(last) && /[-_]/.test(last)) return true;
+  const query = url.search.slice(1).split('&');
+  return query.some((pair) => {
+    const [name = '', value = ''] = pair.split('=', 2);
+    return !NOT_A_JOB.test(name) && /\d/.test(value);
+  });
+}
+
 /** The requests to try for a source, in order, until one answers. */
 export function postingRequests(source: PostingSource): PostingRequest[] {
   const part = encodeURIComponent;

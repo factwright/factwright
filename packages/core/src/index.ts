@@ -397,6 +397,7 @@ export {
   type JobPostingFields,
   jobPostingData,
   jobPostingFields,
+  namesOnePosting,
   onFeedSite,
   PAGE_TEXT,
   type Posting,

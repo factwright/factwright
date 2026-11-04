@@ -54,8 +54,8 @@ interface LinkRead {
 /** A number of characters, as "4,692". */
 const count = (characters: number) => characters.toLocaleString('en-US');
 
-/** What Add job says of the link it read, or is reading, under it. */
-function ReadNote({ read }: { read: LinkRead }) {
+/** What Add job says of the link it read, or is reading, under it, with Try again when it may work. */
+function ReadNote({ read, onAgain }: { read: LinkRead; onAgain: () => void }) {
   const { result } = read;
   if (!result) {
     return (
@@ -76,6 +76,13 @@ function ReadNote({ read }: { read: LinkRead }) {
   return (
     <p className={`${styles.unread} ${styles.wide}`} role="status">
       {result.message}{' '}
+      {result.why === 'unreachable' && (
+        <>
+          <Button size="sm" variant="quiet" onClick={onAgain}>
+            Try again
+          </Button>{' '}
+        </>
+      )}
       {instead === 'browser' && (
         <>
           Open the posting in your browser and click{' '}
@@ -136,11 +143,11 @@ export function AddJobDialog({
    * Reads the link, unless it's being read or was read already, and fills in the company and the
    * role from the posting where the user left them empty. Null for text that isn't a link.
    */
-  const readLink = (value: string): Promise<PostingRead> | null => {
+  const readLink = (value: string, again = false): Promise<PostingRead> | null => {
     clearTimeout(timer.current);
     const wanted = value.trim();
     if (!looksLikeLink(wanted)) return null;
-    if (reading.current?.link === wanted) return reading.current.done;
+    if (reading.current?.link === wanted && !again) return reading.current.done;
     const done = api.readPosting(wanted).catch(() => NOT_READ);
     reading.current = { link: wanted, done };
     setRead({ link: wanted, result: null });
@@ -255,7 +262,7 @@ export function AddJobDialog({
               />
             )}
           </Field>
-          {shownRead && <ReadNote read={shownRead} />}
+          {shownRead && <ReadNote read={shownRead} onAgain={() => readLink(link, true)} />}
           <Field label="Job description" className={styles.wide}>
             {(control) => (
               <TextArea
@@ -322,7 +329,12 @@ export function AddJobDialog({
           <div className={styles.wide}>
             <DialogActions>
               <Button onClick={close}>Cancel</Button>
-              <Button variant="primary" type="submit" disabled={saving || waiting}>
+              <Button
+                variant="primary"
+                type="submit"
+                disabled={saving}
+                aria-disabled={waiting || undefined}
+              >
                 Add job
               </Button>
             </DialogActions>

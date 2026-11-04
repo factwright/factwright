@@ -131,6 +131,8 @@ describe('readableType', () => {
       'application/xhtml+xml',
       'text/xml',
       'application/rss+xml',
+      // As a sitemap kept as a file can come.
+      'application/octet-stream',
       undefined,
       '',
     ]) {
@@ -143,7 +145,7 @@ describe('readableType', () => {
       'application/pdf',
       'application/msword',
       'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-      'application/octet-stream',
+      'application/vnd.ms-excel',
       'image/png',
       'application/zip',
     ]) {

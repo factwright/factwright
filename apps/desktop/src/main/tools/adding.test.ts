@@ -15,9 +15,9 @@ const PAGES = join(import.meta.dirname, '../../../test/pages/pages.json');
 async function adding(link: string, fetch: NonNullable<FetchDeps['fetch']> = testPages(PAGES)) {
   const asked: string[] = [];
   const read = await readForAdding(link, {
-    fetch: (url, json, limitMs, maxBytes) => {
+    fetch: (url, json, limitMs, maxBytes, onRedirect) => {
       asked.push(url);
-      return fetch(url, json, limitMs, maxBytes);
+      return fetch(url, json, limitMs, maxBytes, onRedirect);
     },
   });
   return { read, asked };
@@ -264,6 +264,26 @@ describe('reading a job’s link for Add job', () => {
       expect(read).toMatchObject({ ok: true, posting: { via: 'the web page' } });
       expect(asked.at(-1)).toBe(link);
     }
+  });
+
+  it('judges a short link by the posting it leads to', async () => {
+    const posting = `<main><h1>Staff Engineer</h1><p>${'Build the tools our engineers use. '.repeat(20)}</p></main>`;
+    const { read } = await adding(
+      'https://sho.rt.example/Ab',
+      async (_url, _json, _ms, _max, heard) => {
+        heard?.('https://careers.acme.example/jobs/staff-engineer-42');
+        return posting;
+      },
+    );
+    expect(read).toMatchObject({ ok: true, posting: { via: 'the web page' } });
+    const list = await adding(
+      'https://sho.rt.example/Cd',
+      async (_url, _json, _ms, _max, heard) => {
+        heard?.('https://careers.acme.example/careers');
+        return posting;
+      },
+    );
+    expect(list.read).toMatchObject({ ok: false, why: 'list' });
   });
 
   it('keeps no page that lists jobs, nor a file, as one job’s posting', async () => {
