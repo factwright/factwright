@@ -693,6 +693,7 @@ describe('JobPanel', () => {
       path: `saved/${job.id}/posting.md`,
       source: 'https://www.linkedin.com/jobs/view/4012345678/',
       saved: TODAY,
+      came: 'browser' as const,
       text: '## About the job\n\nPlace engineers with clients.',
     };
     panel(job, {
@@ -717,7 +718,13 @@ describe('JobPanel', () => {
 
   it('shows the folder’s posting, not the browser’s, once Claude has saved it', async () => {
     const job = byCompany('Northwind Labs');
-    const saved = { path: 'x', source: null, saved: null, text: 'From the browser.' };
+    const saved = {
+      path: 'x',
+      source: null,
+      saved: null,
+      came: 'browser' as const,
+      text: 'From the browser.',
+    };
     panel(job, {
       jobExtras: vi.fn(async () => ({
         asked: {},
@@ -738,7 +745,13 @@ describe('JobPanel', () => {
 
   it('reads the browser’s posting again when the job changes, as a sync can bring it in', async () => {
     const job = byCompany('Bluewave Staffing');
-    const saved = { path: `saved/${job.id}/posting.md`, source: null, saved: TODAY, text: 'Hi.' };
+    const saved = {
+      path: `saved/${job.id}/posting.md`,
+      source: null,
+      saved: TODAY,
+      came: 'browser' as const,
+      text: 'Hi.',
+    };
     let posting: typeof saved | null = null;
     const jobExtras = vi.fn(async () => ({
       asked: {},
@@ -766,7 +779,13 @@ describe('JobPanel', () => {
 
   it('keeps the job notes’ own name beside a posting saved from the browser', async () => {
     const job: Job = { ...byCompany('Bluewave Staffing'), docKinds: ['job'] };
-    const saved = { path: `saved/${job.id}/posting.md`, source: null, saved: TODAY, text: 'Hi.' };
+    const saved = {
+      path: `saved/${job.id}/posting.md`,
+      source: null,
+      saved: TODAY,
+      came: 'browser' as const,
+      text: 'Hi.',
+    };
     panel(job, {
       jobExtras: vi.fn(async () => ({
         asked: {},

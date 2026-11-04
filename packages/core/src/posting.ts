@@ -1,6 +1,7 @@
 /** Where a posting's text can be read from: an applicant system's public API, or the page itself. */
 export type PostingSource =
-  | { kind: 'greenhouse'; boards: string[]; id: string }
+  /** With `guessed`, the boards are guesses from a company's site's name, not the link's own. */
+  | { kind: 'greenhouse'; boards: string[]; id: string; guessed?: true }
   | { kind: 'lever'; company: string; id: string }
   | { kind: 'gem'; board: string; id: string }
   | { kind: 'ashby'; board: string; id: string }
@@ -169,7 +170,7 @@ export function postingSource(address: string): PostingSource {
   if (embedded && /^\d+$/.test(embedded)) {
     const parts = host.split('.');
     const boards = [...new Set([parts[0] ?? '', parts.slice(0, -1).join('')])].filter(Boolean);
-    return { kind: 'greenhouse', boards, id: embedded };
+    return { kind: 'greenhouse', boards, id: embedded, guessed: true };
   }
   const lever = on(host === 'jobs.lever.co', /^\/([^/]+)\/([0-9a-f-]{36})/i);
   if (lever?.[1] && lever[2]) return { kind: 'lever', company: lever[1], id: lever[2] };
@@ -190,6 +191,65 @@ export function postingSource(address: string): PostingSource {
     return { kind: 'workable', board: workable[1], id: workable[2] };
   }
   return { kind: 'page', url: url.href };
+}
+
+/** Query parameters that track a visit, or page through, sort or search a list, rather than name a job. */
+const NOT_A_JOB =
+  /^(utm_\w*|gclid|fbclid|msclkid|ref|referrer|source|src|trk\w*|lang|locale|page|p|offset|limit|start|from|size|sort|q|query|keywords?|search)$/i;
+
+/** What the last part of a list's own address says, as /careers or /open-positions. */
+const LIST_PAGES = new Set([
+  'careers',
+  'career',
+  'jobs',
+  'job',
+  'openings',
+  'open-positions',
+  'open-jobs',
+  'all-jobs',
+  'job-openings',
+  'current-openings',
+  'positions',
+  'vacancies',
+  'opportunities',
+  'career-opportunities',
+  'job-opportunities',
+  'join',
+  'join-us',
+  'work-with-us',
+  'job-search',
+  'search-jobs',
+  'search',
+  'results',
+]);
+
+/**
+ * Whether a page's address names one job's posting rather than a list of jobs, such as a
+ * company's board or careers page. On an applicant system with a public feed, it's a link its feed
+ * reads one posting by. Anywhere else, one with a number in its path, as /jobs/4751/… or
+ * /senior-engineer-2110, a last part of words that isn't a list's own, as /senior-engineer, or a
+ * number in its query that tracks nothing, as ?id=42.
+ */
+export function namesOnePosting(address: string): boolean {
+  let url: URL;
+  try {
+    url = new URL(address);
+  } catch {
+    return false;
+  }
+  if (onFeedSite(address)) return postingSource(address).kind !== 'page';
+  const parts = url.pathname
+    .split('/')
+    .filter(Boolean)
+    .map((part) => part.toLowerCase());
+  if (parts.some((part) => /\d/.test(part))) return true;
+  const last = parts.at(-1) ?? '';
+  if (last && !LIST_PAGES.has(last) && /[-_]/.test(last)) return true;
+  const query = url.search.slice(1).split('&');
+  return query.some((pair) => {
+    const [name = '', value = ''] = pair.split('=', 2);
+    return !NOT_A_JOB.test(name) && /\d/.test(value);
+  });
 }
 
 /** The requests to try for a source, in order, until one answers. */
@@ -289,6 +349,33 @@ export interface Posting {
   via: string;
   /** The page itself says the posting has closed, so it has no text. */
   closed?: true;
+  /** The job's title, as the applicant system or the page's job data gives it. */
+  title?: string;
+  /** The employer's name, as the applicant system or the page's job data gives it. */
+  company?: string;
+}
+
+/** The applicant systems with public feeds for postings, by name. */
+export const FEED_SYSTEMS: Readonly<Record<Exclude<PostingSource['kind'], 'page'>, string>> = {
+  greenhouse: 'Greenhouse',
+  lever: 'Lever',
+  gem: 'Gem',
+  ashby: 'Ashby',
+  recruitee: 'Recruitee',
+  workable: 'Workable',
+};
+
+/** A title or a name as one trimmed line, or null when there's none. */
+function oneLine(value: unknown, longest: number): string | null {
+  const line = typeof value === 'string' ? decodeEntities(value).replace(/\s+/g, ' ').trim() : '';
+  return line ? line.slice(0, longest) : null;
+}
+
+/** A posting's title and employer, those that are known, as a Posting holds them. */
+function titled(title: unknown, company?: unknown): Pick<Posting, 'title' | 'company'> {
+  const job = oneLine(title, 300);
+  const by = oneLine(company, 200);
+  return { ...(job && { title: job }), ...(by && { company: by }) };
 }
 
 /**
@@ -300,8 +387,88 @@ const WORKDAY_CLOSED = /\bpostingAvailable\s*:\s*false\b/;
 const onWorkday = (address: string) =>
   /(^|\.)myworkday(jobs|site)\.com$/i.test(new URL(address).hostname);
 
+/**
+ * A Workday legal entity's code before its name, as "2100 " in "2100 NVIDIA USA" or "ADUS-" in
+ * "ADUS-Adobe Inc.", as the extension reads it too.
+ */
+const WORKDAY_ENTITY = /^(\d+\s+|[A-Z]{2,}\d+\s+|[A-Z\d]{2,8}\s*[-:]\s*|[A-Z][a-z]+:\s+)/;
+
+/**
+ * Who a Workday posting's job data says is hiring, which names the legal entity: the site's own
+ * name, as the entity writes it ("NVIDIA" at nvidia.wd5.myworkdayjobs.com) but with a capital, or
+ * else the entity without its code.
+ */
+function workdayEmployer(name: string, address: string): string {
+  const tenant = new URL(address).hostname.split('.', 1)[0] ?? '';
+  const own = name.split(/[^\p{L}\p{N}]+/u).find((word) => word.toLowerCase() === tenant);
+  return own ? own.charAt(0).toUpperCase() + own.slice(1) : name.replace(WORKDAY_ENTITY, '');
+}
+
+const onTaleo = (address: string) => /(^|\.)taleo\.net$/i.test(new URL(address).hostname);
+
+/** The hidden field a Taleo posting's page keeps the posting in. */
+const TALEO_FIELD = 'name="initialHistory"';
+
+/** One part of what a Taleo page keeps: URL-encoded, with a backslash before a character it escapes, as "\:". */
+function taleoPart(part: string): string {
+  let decoded = part;
+  try {
+    decoded = decodeURIComponent(part);
+  } catch {
+    // A part that isn't encoded as it should be is read as it is.
+  }
+  return decoded.replace(/\\(.)/g, '$1');
+}
+
+/**
+ * The value of the hidden field a Taleo posting's page keeps the posting in: the first input tag
+ * that names it, whatever the page's scripts say of it. It reads each input tag once, from its
+ * "<input" to the next ">", and once a tag has no ">" after it, no later one does either.
+ */
+function taleoField(html: string): string | null {
+  const opening = /<input\b/gi;
+  for (let found = opening.exec(html); found; found = opening.exec(html)) {
+    const end = html.indexOf('>', opening.lastIndex);
+    if (end < 0) return null;
+    const tag = html.slice(found.index, end);
+    opening.lastIndex = end + 1;
+    if (!tag.includes(TALEO_FIELD)) continue;
+    const value = /\bvalue="([^"]*)"/.exec(tag)?.[1];
+    if (value) return value;
+  }
+  return null;
+}
+
+/**
+ * A Taleo posting, from its page. What the page shows is only the site's menus: the posting is in
+ * a hidden field, initialHistory, that the page's script shows it from. Its value is the posting's
+ * parts between "!|!": its title, its number, then each block of it as HTML, starting "!*!", each
+ * there twice. Null for a page without one.
+ */
+function taleoPosting(html: string): Posting | null {
+  const value = taleoField(html);
+  const parts = value ? decodeEntities(value).split('!|!').map(taleoPart) : [];
+  const first = parts.findIndex((part) => part.startsWith('!*!'));
+  const blocks = [
+    ...new Set(
+      parts.filter((part) => part.startsWith('!*!')).map((part) => htmlToText(part.slice(3))),
+    ),
+  ].filter(Boolean);
+  if (blocks.length === 0) return null;
+  const title = first >= 2 ? (parts[first - 2] ?? '') : '';
+  const known = title.length <= 300 && !/^(true|false|\d*)$/.test(title) && !title.includes('!$!');
+  return {
+    text: lines(known ? title : null, '', blocks.join('\n\n')),
+    via: 'Taleo',
+    ...(known && titled(title)),
+  };
+}
+
 /** Job data shorter than this, in characters, may be a teaser for what's on the page. */
 const FULL_JOB_DATA = 1500;
+
+/** How a page is read when it has no job data: its own text, which may be any page's. */
+export const PAGE_TEXT = 'the web page';
 
 /**
  * Reads a posting from what its source answered: the API's JSON, or the page's HTML. A page
@@ -321,6 +488,7 @@ export function readPosting(source: PostingSource, answer: unknown): Posting | n
           body,
         ),
         via: 'Greenhouse API',
+        ...titled(field(answer, 'title'), field(answer, 'company_name')),
       };
     }
     case 'lever': {
@@ -345,6 +513,7 @@ export function readPosting(source: PostingSource, answer: unknown): Posting | n
           htmlToText(text(field(answer, 'additional')) ?? ''),
         ),
         via: 'Lever API',
+        ...titled(field(answer, 'text')),
       };
     }
     case 'gem': {
@@ -359,6 +528,7 @@ export function readPosting(source: PostingSource, answer: unknown): Posting | n
       return {
         text: lines(text(field(answer, 'title')), where || null, '', htmlToText(content)),
         via: 'Gem API',
+        ...titled(field(answer, 'title')),
       };
     }
     case 'ashby': {
@@ -380,6 +550,7 @@ export function readPosting(source: PostingSource, answer: unknown): Posting | n
           body,
         ),
         via: 'Ashby API',
+        ...titled(field(job, 'title')),
       };
     }
     case 'recruitee': {
@@ -396,6 +567,7 @@ export function readPosting(source: PostingSource, answer: unknown): Posting | n
           htmlToText(text(field(offer, 'requirements')) ?? ''),
         ),
         via: 'Recruitee API',
+        ...titled(field(offer, 'title'), field(offer, 'company_name')),
       };
     }
     case 'workable': {
@@ -417,6 +589,7 @@ export function readPosting(source: PostingSource, answer: unknown): Posting | n
           htmlToText(text(field(answer, 'benefits')) ?? ''),
         ),
         via: 'Workable API',
+        ...titled(field(answer, 'title')),
       };
     }
     case 'page': {
@@ -424,9 +597,24 @@ export function readPosting(source: PostingSource, answer: unknown): Posting | n
       if (onWorkday(source.url) && WORKDAY_CLOSED.test(answer)) {
         return { text: '', via: 'Workday', closed: true };
       }
-      const data = jobPostingData(answer);
+      const job = jobPostingFields(answer);
+      if (onTaleo(source.url)) {
+        const taleo = taleoPosting(answer);
+        if (taleo) return taleo;
+        // A posting's page without the posting in its field, nor job data, has only the site's
+        // menus to read, which are never the posting.
+        if (!job && /\/jobdetail\.ftl$/i.test(new URL(source.url).pathname)) {
+          return { text: '', via: 'Taleo' };
+        }
+      }
+      const data = job && jobPostingText(job);
+      const hiring =
+        job?.company && onWorkday(source.url)
+          ? workdayEmployer(job.company, source.url)
+          : job?.company;
+      const known = job ? titled(job.title, hiring) : {};
       if (data && data.length >= FULL_JOB_DATA) {
-        return { text: data, via: 'the page’s JobPosting data' };
+        return { text: data, via: 'the page’s JobPosting data', ...known };
       }
       const main = htmlToText(
         element(answer, 'main') ??
@@ -434,11 +622,11 @@ export function readPosting(source: PostingSource, answer: unknown): Posting | n
           element(answer, 'body', true) ??
           answer,
       );
-      if (!data) return { text: main, via: 'the web page' };
+      if (!data) return { text: main, via: PAGE_TEXT };
       // Some job data holds only a teaser, as USAJOBS's does, with the posting on the page itself.
       return main.length > data.length
-        ? { text: lines(data, '', main), via: 'the page’s JobPosting data and its text' }
-        : { text: data, via: 'the page’s JobPosting data' };
+        ? { text: lines(data, '', main), via: 'the page’s JobPosting data and its text', ...known }
+        : { text: data, via: 'the page’s JobPosting data', ...known };
     }
   }
 }
@@ -511,18 +699,20 @@ export interface JobPostingFields {
 /** Most job pages embed schema.org JobPosting data, which reads cleaner than the page. */
 export function jobPostingData(html: string): string | null {
   const job = jobPostingFields(html);
-  return (
-    job &&
-    lines(
-      job.title,
-      job.company,
-      job.where,
-      job.pay ? `Pay: ${job.pay}` : null,
-      job.posted ? `Posted: ${job.posted}` : null,
-      job.closes ? `Closes: ${job.closes}` : null,
-      '',
-      job.text,
-    )
+  return job && jobPostingText(job);
+}
+
+/** A page's JobPosting data as the posting's text, with its title, employer, place and dates on top. */
+function jobPostingText(job: JobPostingFields): string {
+  return lines(
+    job.title,
+    job.company,
+    job.where,
+    job.pay ? `Pay: ${job.pay}` : null,
+    job.posted ? `Posted: ${job.posted}` : null,
+    job.closes ? `Closes: ${job.closes}` : null,
+    '',
+    job.text,
   );
 }
 

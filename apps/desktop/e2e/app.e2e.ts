@@ -1420,6 +1420,9 @@ test('gets a Greenhouse form’s questions before it’s open, and has your Clau
   await add.getByRole('textbox', { name: 'Company' }).fill('Harbor & Pine Outfitters');
   await add.getByRole('textbox', { name: 'Role' }).fill('Account Executive');
   await add.getByRole('textbox', { name: 'Link to the posting' }).fill(HARBOR_POSTING);
+  // No saved page has this made-up posting, so Add job says it couldn't read it, then adds the job.
+  await add.getByRole('textbox', { name: 'Link to the posting' }).blur();
+  await expect(add.getByRole('status')).toContainText('Couldn’t reach');
   await add.getByRole('button', { name: 'Add job' }).click();
   const answers = jobPanel().getByRole('region', { name: 'Application questions' });
   await answers.getByRole('button', { name: 'Get the form’s questions' }).click();

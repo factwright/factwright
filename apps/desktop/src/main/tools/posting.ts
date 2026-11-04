@@ -1,11 +1,14 @@
 import { access, mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import {
+  FEED_SYSTEMS,
   folderJobId,
   JOB_EXTRAS,
   localDate,
+  namesOnePosting,
   normalizeUrl,
   onFeedSite,
+  PAGE_TEXT,
   type Posting,
   postingRequests,
   postingSource,
@@ -14,7 +17,15 @@ import {
   type SavedPosting,
   WORKSPACE_PATHS,
 } from '@factwright/core';
-import { FetchRefused, fetchPublic, linkProblem } from './safe-fetch.ts';
+import type { PostingProblem } from '../../shared/api.ts';
+import {
+  FetchAnswered,
+  FetchRefused,
+  FetchTooBig,
+  fetchPublic,
+  linkProblem,
+  linkRefusal,
+} from './safe-fetch.ts';
 
 /** Less text than this means the page needs a browser or a sign-in to show the posting. */
 const MIN_POSTING_LENGTH = 400;
@@ -82,30 +93,71 @@ async function exists(path: string): Promise<boolean> {
   }
 }
 
+/** What a site answers for a page that isn't there: the posting has closed, or the link is wrong. */
+const GONE = new Set([404, 410]);
+
+/** What a site answers when it turns the app away: it wants a sign-in, or blocks apps. */
+const TURNED_AWAY = new Set([401, 403, 407, 451, 999]);
+
+/** What a site answers when it wants fewer requests for now. */
+const BUSY = 429;
+
 /**
  * A posting or page, read from where the link points. With `feedsOnly`, only through an
  * applicant system's public feed, never the page the link names, so nothing reaches a site the
- * link chose.
+ * link chose, unless the feed is a whole board too big to read, as a big employer's on Ashby, and
+ * the link's page is on the system's own site. A posting's own link on its system, whose feed says
+ * it isn't there, has closed: its page only sends a reader on to the company's other jobs, as
+ * Greenhouse's does. Ashby's feed is the whole board's, with no answer for one posting.
  */
 async function readFrom(url: string, fetch: Fetch, feedsOnly: boolean): Promise<Posting | null> {
   const source = postingSource(url);
   let failure: unknown = null;
+  let gone = false;
+  let tooBig = false;
   for (const attempt of postingRequests(source)) {
     try {
       const posting = readPosting(source, await fetch(attempt.url, attempt.json));
       if (posting) return posting;
     } catch (error) {
-      if (error instanceof FetchRefused) throw error;
+      if (error instanceof FetchTooBig && source.kind !== 'page') tooBig = true;
+      else if (error instanceof FetchRefused) throw error;
+      if (error instanceof FetchAnswered && GONE.has(error.status)) gone = true;
       failure = error;
     }
   }
-  if (source.kind === 'page' || feedsOnly) {
+  if (source.kind === 'page') {
     if (failure) throw failure;
     return null;
   }
-  // The applicant system's API didn't have it, so read the page itself.
+  // Only the posting's own link on its system says so: never a board guessed from a company's
+  // site's name, nor Ashby's whole board.
+  const ownLink =
+    source.kind !== 'ashby' && !(source.kind === 'greenhouse' && source.guessed) && onFeedSite(url);
+  if (gone && ownLink) return { text: '', via: FEED_SYSTEMS[source.kind], closed: true };
+  if (feedsOnly && !(tooBig && onFeedSite(url))) {
+    if (failure) throw failure;
+    return null;
+  }
+  // The applicant system's API didn't have it, or answered more than the app reads, so read the
+  // page itself.
   const page = { kind: 'page' as const, url: new URL(url).href };
   return readPosting(page, await fetch(page.url, false));
+}
+
+/** Why a link wasn't read, for Claude: what the site answered or the fetch refused, and what to do. */
+function notRead(error: unknown, href: string): string {
+  if (error instanceof FetchRefused) return `Not read: ${reasonOf(error)}`;
+  if (error instanceof FetchAnswered && GONE.has(error.status)) {
+    return `Couldn’t read ${href}: ${reasonOf(error)}, so the posting has probably closed, or the link is wrong. If the user says it’s still open, ask them to paste it.`;
+  }
+  if (error instanceof FetchAnswered && TURNED_AWAY.has(error.status)) {
+    return `Couldn’t read ${href}: ${reasonOf(error)}. The site turns apps away or wants a sign-in, so never try another way round it: ask the user to save it from their browser with Save to Factwright, or to paste it.`;
+  }
+  if (error instanceof FetchAnswered && error.status === BUSY) {
+    return `Couldn’t read ${href}: ${reasonOf(error)}, as it wants fewer requests for now. Try it again later, or ask the user to paste it.`;
+  }
+  return `Couldn’t read ${href} (${reasonOf(error)}).`;
 }
 
 /**
@@ -148,6 +200,11 @@ export class ReadCache {
     if (!entry || now - entry.at > KEEP_MS) return null;
     return entry.posting;
   }
+
+  /** Forgets what was read from a link, as when reading it again failed. */
+  forget(url: string): void {
+    this.entries.delete(url);
+  }
 }
 
 export interface ReadDeps extends FetchDeps {
@@ -185,9 +242,7 @@ export async function readLink(
     const fetch = fetchInTime(deps.feedsOnly ? staysOnFeeds(fetching) : fetching);
     page = await readFrom(parsed.href, fetch, deps.feedsOnly);
   } catch (error) {
-    return error instanceof FetchRefused
-      ? `Not read: ${reasonOf(error)}`
-      : `Couldn’t read ${parsed.href} (${reasonOf(error)}).`;
+    return notRead(error, parsed.href);
   }
   if (page?.closed) return `${parsed.href} has closed: ${page.via} says it’s no longer available.`;
   if (!page?.text.trim()) {
@@ -209,6 +264,151 @@ export async function readLink(
   ]
     .filter((line) => line !== null)
     .join('\n');
+}
+
+/**
+ * What Add job read from a job's link: the posting, by the link it was read from, or why it
+ * couldn't, in plain words for the user.
+ */
+export type AddingRead =
+  | { ok: true; url: string; posting: Posting }
+  | { ok: false; why: PostingProblem; message: string };
+
+/** A site's name for the user, without its "www.". */
+const siteOf = (url: URL) => url.hostname.replace(/^www\./i, '');
+
+/** Why Add job couldn't read a link, in plain words for the user. */
+function plainly(error: unknown, url: URL): { why: PostingProblem; message: string } {
+  const site = siteOf(url);
+  if (error instanceof FetchRefused) {
+    switch (error.why) {
+      case 'linkedin':
+        return {
+          why: 'linkedin',
+          message: 'LinkedIn doesn’t let apps read its pages, so Factwright never does.',
+        };
+      case 'barred':
+        return {
+          why: 'barred',
+          message: `${error.site ?? site} turns apps away, so Factwright doesn’t read it.`,
+        };
+      case 'network':
+        return {
+          why: 'refused',
+          message: 'That link leads to a private network, which Factwright never reads.',
+        };
+      case 'brotli':
+        return {
+          why: 'refused',
+          message: `${site} sent its page packed in a way Factwright never unpacks.`,
+        };
+      case 'too-big':
+        return { why: 'refused', message: 'That page is too big for Factwright to read.' };
+      case 'file':
+        return {
+          why: 'file',
+          message:
+            'That link is a file, such as a PDF, not a web page, so Factwright doesn’t read it.',
+        };
+      default:
+        return { why: 'refused', message: error.message };
+    }
+  }
+  if (error instanceof FetchAnswered && GONE.has(error.status)) {
+    return {
+      why: 'gone',
+      message: `${site} says that page isn’t there (${error.status}), so the posting has probably closed. Check the link, too.`,
+    };
+  }
+  if (error instanceof FetchAnswered && TURNED_AWAY.has(error.status)) {
+    return {
+      why: 'blocked',
+      message: `${site} turned Factwright away (${error.status}): it blocks apps, or wants you signed in.`,
+    };
+  }
+  if (error instanceof FetchAnswered && error.status === BUSY) {
+    return {
+      why: 'unreachable',
+      message: `${site} is busy, and asked Factwright to wait (${error.status}). Try again in a minute.`,
+    };
+  }
+  if (error instanceof FetchAnswered) {
+    return {
+      why: 'unreachable',
+      message: `${site} didn’t send the page: it answered ${error.status}.`,
+    };
+  }
+  const code = String((error as { code?: unknown } | null)?.code ?? '');
+  if (code === 'ENOTFOUND' || code === 'EAI_AGAIN') {
+    return {
+      why: 'unreachable',
+      message: `Couldn’t find ${site}. Check the link, and that you’re online.`,
+    };
+  }
+  if (/CERT|SSL|TLS/.test(code)) {
+    return {
+      why: 'unreachable',
+      message: `Couldn’t connect safely to ${site} (${code}). Antivirus or a work network that checks secure connections can cause this.`,
+    };
+  }
+  return { why: 'unreachable', message: `Couldn’t reach ${site}: ${reasonOf(error)}.` };
+}
+
+/**
+ * Reads a job's link for Add job, as read_page reads one: through its applicant system's public
+ * feed first, then the page itself. Says plainly why it couldn't: LinkedIn's and the other sites
+ * Factwright never reads are turned away before anything is fetched, and a site that turns apps
+ * away is never asked another way.
+ */
+export async function readForAdding(link: string, deps: FetchDeps): Promise<AddingRead> {
+  let url: URL;
+  try {
+    url = new URL(link.trim());
+  } catch {
+    return { ok: false, why: 'refused', message: 'That isn’t a link: links start with https://.' };
+  }
+  const refused = linkRefusal(url);
+  if (refused) return { ok: false, ...plainly(refused, url) };
+  // Where the page itself was read from, after any redirect, as a short link's posting is.
+  let landed = url.href;
+  const fetch = deps.fetch ?? fetchPublic;
+  const reading: FetchDeps = {
+    ...deps,
+    fetch: (address, json, limitMs, maxBytes, onRedirect, sending) => {
+      if (!json) landed = address;
+      const heard = (to: string) => {
+        if (!json) landed = to;
+        onRedirect?.(to);
+      };
+      return fetch(address, json, limitMs, maxBytes, heard, sending);
+    },
+  };
+  let posting: Posting | null;
+  try {
+    posting = await readFrom(url.href, fetchInTime(reading), false);
+  } catch (error) {
+    return { ok: false, ...plainly(error, url) };
+  }
+  if (posting?.closed) {
+    return { ok: false, why: 'closed', message: `${posting.via} says this posting has closed.` };
+  }
+  if (!posting || posting.text.trim().length < MIN_POSTING_LENGTH) {
+    return {
+      ok: false,
+      why: 'browser',
+      message: `${siteOf(url)} shows the posting only in a web browser, or once you’re signed in, so Factwright found nothing to read.`,
+    };
+  }
+  // A page's own text, from an address that isn't one job's, as a company's board or careers
+  // page is, is never this job's posting, which the job would keep.
+  if (posting.via === PAGE_TEXT && !namesOnePosting(landed)) {
+    return {
+      ok: false,
+      why: 'list',
+      message: 'That page looks like a list of jobs or a careers page, not one job’s posting.',
+    };
+  }
+  return { ok: true, url: url.href, posting };
 }
 
 export interface SavePostingDeps extends ReadDeps {
@@ -265,6 +465,13 @@ async function anotherJobsFolder(
     ? `${folder} is another job’s folder: its posting came from ${source}, the link of ${theirs.id}.`
     : null;
 }
+
+/** How a posting kept with a job came, in words for Claude. */
+const CAME = {
+  browser: 'saved from the user’s browser',
+  pasted: 'pasted by the user when they added the job',
+  read: 'read when the user added the job',
+} as const;
 
 /** A job's ID as the extension and Add job make them: lowercase letters, digits and hyphens. */
 const JOB_ID = /^[a-z0-9-]{1,200}$/;
@@ -350,7 +557,7 @@ export async function savePosting(
   // a LinkedIn job's posting gets to its folder this way, as Factwright's tools never read LinkedIn.
   const fromBrowser = await savedFromBrowser(deps.workspace, parsed.href, jobId);
   let posting: Posting | null = fromBrowser
-    ? { text: fromBrowser.text, via: 'saved from the user’s browser' }
+    ? { text: fromBrowser.text, via: CAME[fromBrowser.came] }
     : deps.cache.recall(parsed.href, (deps.now?.() ?? new Date()).getTime());
   if (!posting) {
     if (!isFeedPosting(parsed.href)) {
@@ -365,6 +572,9 @@ export async function savePosting(
     }
     if (!posting)
       return `The applicant system has no posting at ${parsed.href}, so it may have closed. ${ask}`;
+    if (posting.closed) {
+      return `${parsed.href} has closed: ${posting.via} says it’s no longer available, so there’s no posting to save. If the user says it’s still open, ask them to paste it.`;
+    }
   }
   // A posting the user saved, from text they could pick themselves, can be short.
   if (!fromBrowser && posting.text.length < MIN_POSTING_LENGTH) {

@@ -11,6 +11,7 @@ import {
   isPrivateAddress,
   linkProblem,
   postProblem,
+  readableType,
 } from './safe-fetch.ts';
 
 /** A site's answer, as the fetcher gets it. */
@@ -117,6 +118,39 @@ describe('decoded', () => {
 
   it.each(['br', 'BR', 'gzip, br'])('never unpacks a page sent in Brotli (%s)', (encoding) => {
     expect(decoded(answer(brotliCompressSync(page), encoding))).toBeNull();
+  });
+});
+
+describe('readableType', () => {
+  it('reads pages, text, JSON and XML, and an answer that doesn’t say what it is', () => {
+    for (const type of [
+      'text/html; charset=utf-8',
+      'TEXT/PLAIN',
+      'application/json',
+      'application/ld+json',
+      'application/xhtml+xml',
+      'text/xml',
+      'application/rss+xml',
+      // As a sitemap kept as a file can come.
+      'application/octet-stream',
+      undefined,
+      '',
+    ]) {
+      expect(readableType(type)).toBe(true);
+    }
+  });
+
+  it('never reads a file, such as a PDF or a Word document, whose bytes read as nonsense', () => {
+    for (const type of [
+      'application/pdf',
+      'application/msword',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'application/vnd.ms-excel',
+      'image/png',
+      'application/zip',
+    ]) {
+      expect(readableType(type)).toBe(false);
+    }
   });
 });
 

@@ -32,7 +32,10 @@ const pickView = (name: RegExp) =>
     .filter({ has: opened.window.getByRole('radio', { name }) })
     .click();
 
-/** Adds a job by hand, as one saved from the browser is added, with a link to its posting. */
+/**
+ * Adds a job by hand, as one saved from the browser is added, with a link to its posting, which
+ * Add job can't read, as no saved page has it: once it says so, the job is added without it.
+ */
 async function addJob(company: string, role: string, link: string) {
   const { window } = opened;
   await window.getByRole('button', { name: 'Add job' }).click();
@@ -40,6 +43,8 @@ async function addJob(company: string, role: string, link: string) {
   await dialog.getByRole('textbox', { name: 'Company' }).fill(company);
   await dialog.getByRole('textbox', { name: 'Role' }).fill(role);
   await dialog.getByRole('textbox', { name: 'Link to the posting' }).fill(link);
+  await dialog.getByRole('textbox', { name: 'Link to the posting' }).blur();
+  await expect(dialog.getByRole('status')).toContainText('Couldn’t reach');
   await dialog.getByRole('button', { name: 'Add job' }).click();
   await expect(jobRow(company)).toBeVisible();
 }

@@ -4,6 +4,7 @@ import {
   htmlToText,
   jobPostingData,
   jobPostingFields,
+  namesOnePosting,
   onFeedSite,
   postingRequests,
   postingSource,
@@ -39,7 +40,12 @@ describe('postingSource', () => {
     ],
     [
       'https://careers.acme.example/jobs?gh_jid=4012345',
-      { kind: 'greenhouse', boards: ['careers', 'careersacme'], id: '4012345' },
+      { kind: 'greenhouse', boards: ['careers', 'careersacme'], id: '4012345', guessed: true },
+    ],
+    // Greenhouse's boards in the EU answer on its one job API too.
+    [
+      'https://job-boards.eu.greenhouse.io/acme/jobs/4012345101',
+      { kind: 'greenhouse', boards: ['acme'], id: '4012345101' },
     ],
     [
       'https://jobs.lever.co/acme/0b7a1c2d-3e4f-4a5b-8c6d-7e8f9a0b1c2d',
@@ -95,13 +101,17 @@ describe('readPosting', () => {
       { kind: 'greenhouse', boards: ['acme'], id: '42' },
       {
         title: 'Staff Engineer',
+        company_name: 'Acme Robotics',
         location: { name: 'Remote, US' },
         content: '&lt;p&gt;Build tools.&lt;/p&gt;',
       },
     );
+    // With its title and employer apart, for Add job to fill in.
     expect(posting).toEqual({
       text: 'Staff Engineer\nRemote, US\n\nBuild tools.',
       via: 'Greenhouse API',
+      title: 'Staff Engineer',
+      company: 'Acme Robotics',
     });
   });
 
@@ -134,6 +144,7 @@ describe('readPosting', () => {
     expect(readPosting({ kind: 'ashby', board: 'acme', id: 'job-1' }, answer)).toEqual({
       text: 'Staff Engineer\nRemote\nCompensation: $185K – $215K\n\nBuild tools.',
       via: 'Ashby API',
+      title: 'Staff Engineer',
     });
     expect(readPosting({ kind: 'ashby', board: 'acme', id: 'gone' }, answer)).toBeNull();
   });
@@ -153,6 +164,8 @@ describe('readPosting', () => {
     expect(readPosting({ kind: 'page', url: 'https://acme.example' }, data)).toEqual({
       text: 'Staff Engineer\nAcme Robotics\nRemote\nPay: 185000–215000 USD YEAR\n\nBuild tools.',
       via: 'the page’s JobPosting data',
+      title: 'Staff Engineer',
+      company: 'Acme Robotics',
     });
     const plain =
       '<html><body><header>Logo</header><main><h1>Staff Engineer</h1><p>Build tools.</p></main></body></html>';
@@ -165,6 +178,98 @@ describe('readPosting', () => {
   it('gives nothing back for an answer without a posting', () => {
     expect(readPosting({ kind: 'greenhouse', boards: [], id: '1' }, { title: 'x' })).toBeNull();
     expect(readPosting({ kind: 'page', url: 'https://acme.example' }, { not: 'html' })).toBeNull();
+  });
+});
+
+describe('namesOnePosting', () => {
+  it.each([
+    'https://job-boards.greenhouse.io/gitlab/jobs/8638232002',
+    'https://jobs.lever.co/spotify/2a55d6c9-c564-443a-be3e-a3851db5a93b',
+    'https://jobs.smartrecruiters.com/AECOM2/744000156427409-senior-project-manager',
+    'https://www.amazon.jobs/en/jobs/10577480/program-manager-ii-amz26173-4',
+    'https://amazon.jobs/jobs/10595883',
+    'https://careers-aptiveresources.icims.com/jobs/4751/payroll-and-benefits-administrator/job',
+    'https://uhg.taleo.net/careersection/10000/jobdetail.ftl?job=2380443&lang=en',
+    'https://jobs.acme.example/12345',
+    'https://careers.acme.example/senior-engineer?utm_source=linkedin',
+    'https://www.fredrin.example/careers/senior-software-engineer',
+    'https://news.ycombinator.com/item?id=49927319',
+    'https://careers.acme.example/jobs?gh_jid=4012345',
+  ])('names one job: %s', (link) => {
+    expect(namesOnePosting(link)).toBe(true);
+  });
+
+  it.each([
+    'https://job-boards.greenhouse.io/gitlab',
+    'https://jobs.lever.co/acme?team=Engineering',
+    'https://jobs.ashbyhq.com/acme',
+    'https://www.acme.example/en/careers',
+    'https://careers.acme.example/',
+    'https://www.acme.example/careers/open-positions',
+    'https://www.acme.example/jobs?page=2',
+    'https://www.acme.example/careers/search?q=engineer',
+    'not a link',
+  ])('names a list of jobs, or none: %s', (link) => {
+    expect(namesOnePosting(link)).toBe(false);
+  });
+});
+
+describe('a Taleo posting’s page', () => {
+  const url = 'https://acme.taleo.net/careersection/10000/jobdetail.ftl?job=2380443&lang=en';
+  /** A page as Taleo makes one: its menus, and the posting in a hidden field its script shows. */
+  const page = (parts: string[]) =>
+    `<html><body><nav>Work Here</nav><main><p>Our Culture</p><p>Hiring Process</p></main>
+    <input type="hidden" name="initialHistory" id="initialHistory" value="${parts
+      .map(encodeURIComponent)
+      .join('!|!')}" /></body></html>`;
+
+  it('reads the posting from the page’s data, not the menus around it', () => {
+    const block = '!*!<p>Plan the work\\: every step.</p><ul><li>Lead teams</li></ul>';
+    const posting = readPosting(
+      { kind: 'page', url },
+      page(['ftlx0', 'Submission for the position', 'Project Manager', '2380443', block, block]),
+    );
+    // Each block is there twice, and the colon comes escaped.
+    expect(posting).toEqual({
+      text: 'Project Manager\n\nPlan the work: every step.\n\n- Lead teams',
+      via: 'Taleo',
+      title: 'Project Manager',
+    });
+  });
+
+  it('reads the field itself, whatever a script says of it first', () => {
+    const block = '!*!<p>Plan the work.</p>';
+    const html = page(['Project Manager', '2380443', block]).replace(
+      '<input',
+      '<script>document.querySelector(\'[name="initialHistory"]\')</script><input',
+    );
+    expect(readPosting({ kind: 'page', url }, html)?.text).toBe(
+      'Project Manager\n\nPlan the work.',
+    );
+  });
+
+  it('reads nothing from a posting’s page without the posting, unless it has job data', () => {
+    expect(readPosting({ kind: 'page', url }, page(['ftlx0', 'true']))).toEqual({
+      text: '',
+      via: 'Taleo',
+    });
+    const data = `<script type="application/ld+json">${JSON.stringify({
+      '@type': 'JobPosting',
+      title: 'Project Manager',
+      description: 'Plan the work.',
+    })}</script>`;
+    expect(readPosting({ kind: 'page', url }, page(['ftlx0']) + data)?.via).toBe(
+      'the page’s JobPosting data',
+    );
+    const search = 'https://acme.taleo.net/careersection/10000/jobsearch.ftl';
+    expect(readPosting({ kind: 'page', url: search }, page(['ftlx0']))?.via).toBe('the web page');
+  });
+
+  it('reads a page of input tags left open in a moment', () => {
+    const start = Date.now();
+    readPosting({ kind: 'page', url }, `<input name="initialHistory" ${'<input '.repeat(200_000)}`);
+    readPosting({ kind: 'page', url }, `<p>${' name="initialHistory"'.repeat(200_000)}`);
+    expect(Date.now() - start).toBeLessThan(2000);
   });
 });
 
@@ -330,6 +435,7 @@ describe('reading a posting on Recruitee or Workable', () => {
     ).toEqual({
       text: 'Data Scientist\nAmsterdam\n\nBuild models.\n\n- Python',
       via: 'Recruitee API',
+      title: 'Data Scientist',
     });
 
     const workable = postingSource('https://apply.workable.com/seeq/j/1B6E0A1710/apply');
@@ -349,6 +455,7 @@ describe('reading a posting on Recruitee or Workable', () => {
     ).toEqual({
       text: 'Staff Engineer\nUnited States\nRemote\n\nBuild things.\n\nTen years.\n\nDental.',
       via: 'Workable API',
+      title: 'Staff Engineer',
     });
   });
 

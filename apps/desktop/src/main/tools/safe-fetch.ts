@@ -16,8 +16,40 @@ const MAX_POST_BYTES = 1_000;
 const WORKDAY_SITE = /^[a-z0-9-]{1,63}\.wd\d{1,3}\.myworkdayjobs\.com$/;
 const WORKDAY_SEARCH = /^\/wday\/cxs\/[a-z0-9-]{1,63}\/[\w-]{1,100}\/jobs$/;
 
+/**
+ * What a fetch was refused for: a site the app never reads (LinkedIn's, or another barred one),
+ * the link itself, a site on a private network, an answer in Brotli or bigger than the app
+ * reads, or a POST it never sends.
+ */
+export type Refusal =
+  | 'linkedin'
+  | 'barred'
+  | 'link'
+  | 'network'
+  | 'brotli'
+  | 'too-big'
+  | 'file'
+  | 'post';
+
 /** A fetch the app won't make, with the reason in plain words. */
-export class FetchRefused extends Error {}
+export class FetchRefused extends Error {
+  readonly why: Refusal;
+  /** A barred site's name, such as Indeed, or null. */
+  readonly site: string | null;
+
+  constructor(message: string, why: Refusal = 'link', site: string | null = null) {
+    super(message);
+    this.why = why;
+    this.site = site;
+  }
+}
+
+/** An answer bigger than the app reads, which it stopped reading. */
+export class FetchTooBig extends FetchRefused {
+  constructor() {
+    super('That page is too big.', 'too-big');
+  }
+}
 
 /** A site's answer that wasn't a page, such as a 404, with its status. */
 export class FetchAnswered extends Error {
@@ -79,7 +111,11 @@ export const publicLookup: LookupFunction = (hostname, options, callback) => {
     const addresses = found as LookupAddress[];
     const first = addresses[0];
     if (!first || addresses.some(({ address }) => isPrivateAddress(address))) {
-      callback(new FetchRefused('That site is on a private network, which is off limits.'), '', 4);
+      callback(
+        new FetchRefused('That site is on a private network, which is off limits.', 'network'),
+        '',
+        4,
+      );
       return;
     }
     if (options.all) callback(null, addresses);
@@ -99,21 +135,37 @@ const OFF_LIMITS: readonly (readonly [RegExp, string])[] = [
 
 /** Why a link can't be fetched, or null when it can. The address itself is checked on connecting. */
 export function linkProblem(url: URL): string | null {
-  if (url.protocol !== 'https:') return 'Only https links work.';
-  if (url.username || url.password) return 'Links with a sign-in in them are off limits.';
+  return linkRefusal(url)?.message ?? null;
+}
+
+/** The refusal a link gets before anything is fetched, or null for one that can be. */
+export function linkRefusal(url: URL): FetchRefused | null {
+  const refused = (message: string) => new FetchRefused(message);
+  if (url.protocol !== 'https:') return refused('Only https links work.');
+  if (url.username || url.password) return refused('Links with a sign-in in them are off limits.');
   const name = url.hostname.replace(/^\[|\]$/g, '').toLowerCase();
   // A name can end in a dot and mean the same site, so "indeed.com." is still Indeed.
   const host = name.endsWith('.') ? name.slice(0, -1) : name;
-  if (isIP(host)) return 'Links to a bare network address are off limits. Use the site’s name.';
+  if (isIP(host)) {
+    return refused('Links to a bare network address are off limits. Use the site’s name.');
+  }
   if (!host.includes('.') || /\.(localhost|local|internal|lan|home\.arpa)$/.test(host)) {
-    return 'Links to this computer or a home network are off limits.';
+    return refused('Links to this computer or a home network are off limits.');
   }
   if (isLinkedIn(url.href)) {
-    return 'Factwright never reads LinkedIn: its terms forbid software reading it. Find the job on the employer’s own site, use a posting the user saved from their browser, or ask the user to paste it.';
+    return new FetchRefused(
+      'Factwright never reads LinkedIn: its terms forbid software reading it. Find the job on the employer’s own site, use a posting the user saved from their browser, or ask the user to paste it.',
+      'linkedin',
+      'LinkedIn',
+    );
   }
   const barred = OFF_LIMITS.find(([site]) => site.test(host))?.[1];
   if (barred) {
-    return `Factwright doesn’t read ${barred}: it turns software away, or its terms forbid it. Find the job on the employer’s own site, use a posting the user saved from their browser, or ask the user to paste it.`;
+    return new FetchRefused(
+      `Factwright doesn’t read ${barred}: it turns software away, or its terms forbid it. Find the job on the employer’s own site, use a posting the user saved from their browser, or ask the user to paste it.`,
+      'barred',
+      barred,
+    );
   }
   return null;
 }
@@ -127,6 +179,22 @@ export function postProblem(url: URL, body: string): string | null {
     WORKDAY_SITE.test(url.hostname) && WORKDAY_SEARCH.test(url.pathname) && !url.search;
   if (!search) return 'Factwright sends a POST only to a company’s Workday site’s own job search.';
   return body.length > MAX_POST_BYTES ? 'That search is too long to send.' : null;
+}
+
+/**
+ * Whether an answer is something the app reads, rather than a file such as a PDF, a Word document,
+ * a picture or an archive, whose bytes read as nonsense. Anything else is read, an answer that
+ * doesn't say what it is or only calls itself bytes included, as a sitemap kept as a file can.
+ */
+export function readableType(type: string | undefined): boolean {
+  const [kind = '', sub = ''] = (type?.split(';', 1)[0] ?? '').trim().toLowerCase().split('/');
+  if (['image', 'audio', 'video', 'font'].includes(kind)) return false;
+  return !(
+    kind === 'application' &&
+    /^(pdf|msword|rtf|zip|gzip|x-gzip|x-zip-compressed|x-7z-compressed|x-rar-compressed|x-tar|vnd\.(openxmlformats|ms-|oasis\.opendocument|apple\.))/.test(
+      sub,
+    )
+  );
 }
 
 /**
@@ -179,6 +247,16 @@ function send(
           resolve({ status, location: response.headers.location ?? '', body: '' });
           return;
         }
+        const type = response.headers['content-type'];
+        if (status >= 200 && status < 300 && !readableType(type)) {
+          fail(
+            new FetchRefused(
+              `That link is a file (${(type ?? '').split(';', 1)[0]}), not a page, so the app doesn’t read it. Ask the user to paste the posting.`,
+              'file',
+            ),
+          );
+          return;
+        }
         const chunks: Buffer[] = [];
         let size = 0;
         const stream = decoded(response);
@@ -186,13 +264,14 @@ function send(
           fail(
             new FetchRefused(
               'That site sent the page compressed with Brotli, which the app never unpacks. Use a posting the user saved from their browser, or ask the user to paste it.',
+              'brotli',
             ),
           );
           return;
         }
         stream.on('data', (chunk: Buffer) => {
           size += chunk.length;
-          if (size > maxBytes) fail(new FetchRefused('That page is too big.'));
+          if (size > maxBytes) fail(new FetchTooBig());
           else chunks.push(chunk);
         });
         stream.on('end', () => {
@@ -235,8 +314,10 @@ export async function fetchPublic(
   const deadline = Date.now() + Math.min(limitMs, TIME_LIMIT_MS);
   let url = new URL(address);
   for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
-    const problem = linkProblem(url) ?? (sending === undefined ? null : postProblem(url, sending));
-    if (problem) throw new FetchRefused(problem);
+    const refusal = linkRefusal(url);
+    if (refusal) throw refusal;
+    const posting = sending === undefined ? null : postProblem(url, sending);
+    if (posting) throw new FetchRefused(posting, 'post');
     if (hop > 0) onRedirect?.(url.href);
     const answer = await send(url, json, deadline, maxBytes, sending);
     if (answer.location !== undefined) {

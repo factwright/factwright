@@ -153,6 +153,7 @@ export function parseNewJob(value: unknown): NewJob | null {
     status: orNull(oneOf(JOB_STATUSES)),
     notes: textUpTo(LIMITS.notes),
     kind: orNull(kindId),
+    posting: textUpTo(LIMITS.posting),
   });
   return fields ? { ...fields, company: fields.company ?? '' } : null;
 }

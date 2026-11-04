@@ -28,10 +28,10 @@ One run does five things, in this order: the posting, the details, duplicates, t
 ## 1. The posting
 Get the posting word for word, if the job has none yet. `job_details` lists what's on file.
 - **Already in the folder:** `posting.md` (or `job.md` in older folders). Read it from there, plus `unmask.md` and `notes.md` if they're there: an employer check may already have found the real employer behind a board listing. `job_details` lists everything else on file, such as the user's notes and calls, which can change the verdict.
-- **Saved from the user's browser:** when `job_details` names a posting saved from their browser, that's it, as they saw it, LinkedIn's included, which Factwright's tools never read. `save_posting` with the job's link and its id copies it into the folder.
+- **Kept with the job:** when `job_details` names a posting kept with the job (saved from the user's browser, or pasted or read from its link when they added the job), that's it, LinkedIn's included, which Factwright's tools never read. `save_posting` with the job's link and its id copies it into the folder. A job with no link: save its text as `posting.md` yourself.
 - **On the board's own API:** a posting on Greenhouse, Lever, Ashby, Gem, Recruitee or Workable comes from `read_posting`. A link to a company's whole board, as a Hacker News search saves it, isn't one job's: `job_board` with that link, and `boards` as its folder, lists every open job there, with its own link. Find this role among them, and use its own link from then on.
 - **Anywhere else:** `read_page`. Never LinkedIn's pages: a job whose only link is LinkedIn's, with nothing saved from the browser, has no posting to read.
-- Save what you read with `save_posting`, the job's link and its id. If it needs a sign-in, won't load, or there's nothing to read, ask the user to paste the text, or to save the page with Factwright's browser extension.
+- Save what you read with `save_posting`, the job's link and its id. If it needs a sign-in, won't load, or there's nothing to read, ask the user to paste the text, or to save the page with Factwright's browser extension. A site that turns Factwright away stays that way: never try another way round it.
 - If the employer is hidden (a recruiter or board listing), score it anyway, skip sentiment, and suggest `/factwright:unmask-job`.
 
 ## 2. The details
@@ -72,7 +72,7 @@ Once the details are right, call `find_job` with the company, the role and the p
 Every job analyzed gets a folder, so its posting and this write-up survive dead links. The app shows them in the job's panel.
 - Folder: `applications/<YYYY-MM-DD>-<company>-<role>/`, lowercase with hyphens. If `find_job` or `job_details` found a folder for this job, reuse it. If they found none and one by that name is there already, it's another job's, as a job with the same company and title can have: add `-2` to the name, or the next number that's free. `save_posting` says so too, when the folder is another job's.
 - `posting.md`, the posting word for word:
-  - From a link: call `save_posting` with the link, the folder's name and the job's id. It saves what you read, or the posting the user saved from their browser, word for word, without asking.
+  - From a link: call `save_posting` with the link, the folder's name and the job's id. It saves what you read, or the posting kept with the job, word for word, without asking.
   - Pasted text, or save_posting couldn't read it: save the user's text as `posting.md` with a `- **Source:** pasted by the user <YYYY-MM-DD>` line on top.
 - `job.md`: `# <Company>: <Role>`, then `- **Job ID:** <the job's id>`, which keeps the folder with this job whatever other job has the same company and title, `- **Date:**`, `- **Company:**`, `- **Role:**`, `- **Links:**`, `- **Pay:**` (as listed, or leave the line out), `- **Work arrangement:**`, `- **Fit check:** <Verdict>, <score>/100 (fit-check.md)`, `- **Pay to ask for:**` (step 5), and with more than one kind of job, `- **Kind of job:** <its id>`, which the app files the job under. Then `## Job description` with one line: "Saved word for word in posting.md." Leave out the Job ID line only for a job that isn't on file.
 - `fit-check.md`: the full write-up, in the shape below. The app reads the parts, the work list and the mood out of it.
