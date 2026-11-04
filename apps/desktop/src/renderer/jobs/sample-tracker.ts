@@ -68,6 +68,7 @@ type TrackerApi = Pick<
   | 'updateJobs'
   | 'mergeJobs'
   | 'notSameJob'
+  | 'readPosting'
   | 'addJob'
   | 'addCall'
   | 'updateCall'
@@ -401,6 +402,40 @@ export function sampleTracker(
           ],
         }),
       ),
+    // As the app reads a link for Add job, a moment later: never LinkedIn's or Indeed's, nothing
+    // from a page that shows its posting only in a browser, and the sample's posting from the rest.
+    readPosting: async (link) => {
+      await new Promise((done) => setTimeout(done, 600));
+      const site = URL.canParse(link) ? new URL(link).hostname.replace(/^www\./, '') : link;
+      if (/(^|\.)linkedin\.com$/.test(site)) {
+        return {
+          ok: false,
+          why: 'linkedin',
+          message: 'LinkedIn doesn’t let apps read its pages, so Factwright never does.',
+        };
+      }
+      if (/(^|\.)indeed\.com$/.test(site)) {
+        return {
+          ok: false,
+          why: 'barred',
+          message: 'Indeed turns apps away, so Factwright doesn’t read it.',
+        };
+      }
+      if (/(^|\.)apple\.com$/.test(site)) {
+        return {
+          ok: false,
+          why: 'browser',
+          message: `${site} shows the posting only in a web browser, or once you’re signed in, so Factwright found nothing to read.`,
+        };
+      }
+      return {
+        ok: true,
+        via: 'the page’s JobPosting data',
+        characters: 4692,
+        title: 'Staff Platform Engineer',
+        company: 'Fernhill Labs',
+      };
+    },
     addJob: async (input) => {
       const company = input.company.trim();
       if (!company) return { ok: false, message: 'Add the company’s name.' };

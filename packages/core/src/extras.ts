@@ -184,6 +184,12 @@ export function readSavedForm(text: string | null | undefined): SavedForm | null
 /** A form's questions as their file keeps them. */
 export const savedFormJson = (form: SavedForm) => `${JSON.stringify(form, null, 2)}\n`;
 
+/**
+ * How a posting kept with a job came: saved from the user's browser, pasted into Add job, or read
+ * from its link when the user added the job.
+ */
+export type PostingCame = 'browser' | 'pasted' | 'read';
+
 /** A posting the user saved from their browser, as save_posting keeps one in a job's folder. */
 export interface SavedPosting {
   path: string;
@@ -191,6 +197,8 @@ export interface SavedPosting {
   source: string | null;
   /** When, as YYYY-MM-DD. */
   saved: string | null;
+  /** How it came, by its Saved line. */
+  came: PostingCame;
   /** The posting, without the lines on top. */
   text: string;
 }
@@ -218,16 +226,51 @@ export function savedPostingMarkdown(posting: {
   ].join('\n');
 }
 
-/** A saved posting's link, date and text, from its Markdown. */
+/** What a posting's Saved line says, after its date, for one Add job kept. */
+const ADDED = { pasted: 'pasted by the user into Add job', read: 'when the user added the job' };
+
+/**
+ * A posting Add job kept with a job, as Markdown, with the same lines on top as one saved from
+ * the browser: the text the user pasted, or what Factwright read from the job's link, and how.
+ */
+export function addedPostingMarkdown(posting: {
+  url: string | null;
+  savedOn: string;
+  text: string;
+  /** How Factwright read it, such as "Workday's JobPosting data", or null for text the user pasted. */
+  via: string | null;
+}): string {
+  return [
+    '# Job posting',
+    '',
+    `- **Source:** ${posting.url ?? 'pasted by the user'}`,
+    posting.via === null
+      ? `- **Saved:** ${posting.savedOn}, ${ADDED.pasted}, word for word`
+      : `- **Saved:** ${posting.savedOn} by Factwright ${ADDED.read} (${posting.via}), word for word`,
+    '',
+    '---',
+    '',
+    posting.text.trim(),
+    '',
+  ].join('\n');
+}
+
+/** A saved posting's link, date, how it came and text, from its Markdown. */
 export function readSavedPosting(path: string, markdown: string): SavedPosting {
   const field = (name: string) =>
     markdown.match(new RegExp(`^- \\*\\*${name}:\\*\\*[ \\t]*(.+)$`, 'm'))?.[1]?.trim() ?? null;
   const rule = markdown.search(/^---\s*$/m);
   const text = (rule >= 0 ? markdown.slice(rule).replace(/^---\s*/, '') : markdown).trim();
+  const saved = field('Saved');
   return {
     path,
     source: field('Source'),
-    saved: field('Saved')?.match(/\d{4}-\d{2}-\d{2}/)?.[0] ?? null,
+    saved: saved?.match(/\d{4}-\d{2}-\d{2}/)?.[0] ?? null,
+    came: saved?.includes(ADDED.pasted)
+      ? 'pasted'
+      : saved?.includes(ADDED.read)
+        ? 'read'
+        : 'browser',
     text,
   };
 }

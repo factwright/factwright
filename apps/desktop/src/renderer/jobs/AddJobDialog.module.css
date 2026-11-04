@@ -26,3 +26,20 @@
   color: var(--fw-accent-text);
   font-weight: 550;
 }
+
+.read,
+.unread {
+  margin: 0;
+  font-size: var(--fw-text-sm);
+}
+
+.read {
+  color: var(--fw-ok);
+}
+
+.unread {
+  padding: 8px 10px;
+  border-radius: var(--fw-radius);
+  background: var(--fw-need-soft);
+  color: var(--fw-text);
+}

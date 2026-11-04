@@ -30,6 +30,7 @@ import {
   PASS_REASON_LABELS,
   PASS_REASONS,
   type PassReason,
+  type PostingCame,
   questionKey,
   readApplySteps,
   readJobExtras,
@@ -307,6 +308,13 @@ function formLines(asked: FormQuestion | undefined): string[] {
   ];
 }
 
+/** What job_details calls the posting kept with a job, by how it came. */
+const KEPT_WITH: Readonly<Record<PostingCame, string>> = {
+  browser: 'Posting saved from the user’s browser',
+  pasted: 'Posting the user pasted when they added the job',
+  read: 'Posting read from its link when the user added the job',
+};
+
 const MODE_WORDS: Readonly<Record<CallMode, string>> = {
   phone: 'by phone',
   video: 'on video',
@@ -394,11 +402,13 @@ export async function jobDetails(
   );
   add('Links', job.links.map((link) => `${link.label} ${link.url}`).join(' · '));
   add('Folder', job.folder && `${WORKSPACE_PATHS.jobs}/${job.folder}/`);
-  add(
-    'Posting saved from the user’s browser',
-    posting &&
-      `${posting.path}${posting.saved ? ` (${posting.saved})` : ''}, as the user saw it. Read the posting there, LinkedIn's included: save_posting with the job's link and this job's id copies it into the job's folder.`,
-  );
+  if (posting) {
+    const linked = job.links.length > 0 || Boolean(job.link);
+    add(
+      KEPT_WITH[posting.came],
+      `${posting.path}${posting.saved ? ` (${posting.saved})` : ''}${posting.came === 'browser' ? ', as the user saw it' : ''}. Read the posting there${posting.came === 'browser' ? ", LinkedIn's included" : ''}: ${linked ? "save_posting with the job's link and this job's id copies it into the job's folder." : "the job has no link, so save its text as posting.md in the job's folder yourself."}`,
+    );
+  }
   if (job.apply) {
     const steps = readApplySteps(job.apply);
     add(

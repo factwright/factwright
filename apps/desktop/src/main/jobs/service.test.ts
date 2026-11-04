@@ -286,6 +286,75 @@ describe('screenshots and questions for Claude', () => {
   });
 });
 
+describe('a job added by hand, with its posting', () => {
+  const kept = (jobId: string) => readFileSync(join(root, 'saved', jobId, 'posting.md'), 'utf8');
+  const read = {
+    text: 'Platform Engineer\n\nRun the platform.',
+    via: 'the page’s JobPosting data',
+  };
+
+  it('keeps the posting the user pasted, or else what Add job read from its link, with the job', () => {
+    const pasted = jobs.addJob({
+      company: 'Fernhill Labs',
+      role: 'Platform Engineer',
+      link: 'https://www.linkedin.com/jobs/view/4012345678/',
+      posting: '  About the role\n\nRun the platform.\n',
+    });
+    if (!pasted.ok) throw new Error(pasted.message);
+    expect(kept(pasted.jobId)).toBe(
+      [
+        '# Job posting',
+        '',
+        '- **Source:** https://www.linkedin.com/jobs/view/4012345678/',
+        '- **Saved:** 2026-10-10, pasted by the user into Add job, word for word',
+        '',
+        '---',
+        '',
+        'About the role\n\nRun the platform.',
+        '',
+      ].join('\n'),
+    );
+    // The job panel shows it, saying how it came.
+    expect(jobs.extras(pasted.jobId).posting).toMatchObject({
+      came: 'pasted',
+      saved: '2026-10-10',
+      text: 'About the role\n\nRun the platform.',
+    });
+    const fromLink = jobs.addJob(
+      { company: 'Kite', role: 'Staff Engineer', link: 'https://careers.kite.example/jobs/7' },
+      read,
+    );
+    if (!fromLink.ok) throw new Error(fromLink.message);
+    expect(kept(fromLink.jobId)).toContain(
+      '- **Saved:** 2026-10-10 by Factwright when the user added the job (the page’s JobPosting data), word for word',
+    );
+    expect(jobs.extras(fromLink.jobId).posting?.came).toBe('read');
+    // What the user pasted wins over what was read.
+    const both = jobs.addJob(
+      {
+        company: 'Kite',
+        role: 'Designer',
+        link: 'https://careers.kite.example/jobs/8',
+        posting: 'Mine.',
+      },
+      read,
+    );
+    if (!both.ok) throw new Error(both.message);
+    expect(kept(both.jobId)).toContain('pasted by the user into Add job');
+  });
+
+  it('adds a job without a posting all the same', () => {
+    const added = jobs.addJob({ company: 'Northwind Labs' });
+    if (!added.ok) throw new Error(added.message);
+    expect(existsSync(join(root, 'saved', added.jobId))).toBe(false);
+    expect(jobs.addJob({ company: '' }, read)).toEqual({
+      ok: false,
+      message: 'Add the company’s name.',
+    });
+    expect(existsSync(join(root, 'saved'))).toBe(false);
+  });
+});
+
 describe('a job the extension saved on this computer', () => {
   const job = {
     url: 'https://jobs.lever.co/harborpine/4f1c2b7e',

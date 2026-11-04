@@ -7,7 +7,7 @@ import {
   type Page,
 } from '@playwright/test';
 import electronPath from 'electron';
-import { desktop, fakeClaude } from './paths.ts';
+import { desktop, fakeClaude, testPagesList } from './paths.ts';
 import { usersClaude } from './workspace.ts';
 
 export interface Opened {
@@ -41,6 +41,8 @@ export async function openApp(dataDir: string, env: Record<string, string> = {})
       // Claude analyzes no new jobs on its own, so every run is one a test started, unless a test
       // turns it on.
       FACTWRIGHT_ANALYZE_NEW: 'off',
+      // Add job reads a job's link from saved pages, never a live site.
+      FACTWRIGHT_TEST_PAGES: testPagesList,
       ...env,
     },
     timeout: 30_000,

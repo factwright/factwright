@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  addedPostingMarkdown,
   askAnswer,
   askedFile,
   callDocFile,
@@ -8,6 +9,7 @@ import {
   readJobExtras,
   readOutreach,
   readSavedForm,
+  readSavedPosting,
   type SavedForm,
   savedFormFile,
   savedFormJson,
@@ -178,7 +180,39 @@ describe('a posting saved from the browser', () => {
       path: `saved/${JOB}/posting.md`,
       source: 'https://www.linkedin.com/jobs/view/4012345678/',
       saved: '2026-10-15',
+      came: 'browser',
       text: 'About the job\n\nBuild payments at scale.',
+    });
+  });
+
+  it('says how one Add job kept came: pasted by the user, or read from the job’s link', () => {
+    const pasted = addedPostingMarkdown({
+      url: null,
+      savedOn: '2026-11-04',
+      text: 'About the role\n\nRun projects.',
+      via: null,
+    });
+    expect(pasted).toContain('- **Source:** pasted by the user');
+    expect(readSavedPosting('p.md', pasted)).toEqual({
+      path: 'p.md',
+      source: 'pasted by the user',
+      saved: '2026-11-04',
+      came: 'pasted',
+      text: 'About the role\n\nRun projects.',
+    });
+    const read = addedPostingMarkdown({
+      url: 'https://acme.wd1.myworkdayjobs.com/Careers/job/PM_R1',
+      savedOn: '2026-11-04',
+      text: 'Project Manager\n\nRun projects.',
+      via: 'the page’s JobPosting data',
+    });
+    expect(read).toContain(
+      '- **Saved:** 2026-11-04 by Factwright when the user added the job (the page’s JobPosting data), word for word',
+    );
+    expect(readSavedPosting('p.md', read)).toMatchObject({
+      source: 'https://acme.wd1.myworkdayjobs.com/Careers/job/PM_R1',
+      came: 'read',
+      text: 'Project Manager\n\nRun projects.',
     });
   });
 

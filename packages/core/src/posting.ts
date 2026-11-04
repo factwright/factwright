@@ -289,6 +289,33 @@ export interface Posting {
   via: string;
   /** The page itself says the posting has closed, so it has no text. */
   closed?: true;
+  /** The job's title, as the applicant system or the page's job data gives it. */
+  title?: string;
+  /** The employer's name, as the applicant system or the page's job data gives it. */
+  company?: string;
+}
+
+/** The applicant systems with public feeds for postings, by name. */
+export const FEED_SYSTEMS: Readonly<Record<Exclude<PostingSource['kind'], 'page'>, string>> = {
+  greenhouse: 'Greenhouse',
+  lever: 'Lever',
+  gem: 'Gem',
+  ashby: 'Ashby',
+  recruitee: 'Recruitee',
+  workable: 'Workable',
+};
+
+/** A title or a name as one trimmed line, or null when there's none. */
+function oneLine(value: unknown, longest: number): string | null {
+  const line = typeof value === 'string' ? decodeEntities(value).replace(/\s+/g, ' ').trim() : '';
+  return line ? line.slice(0, longest) : null;
+}
+
+/** A posting's title and employer, those that are known, as a Posting holds them. */
+function titled(title: unknown, company?: unknown): Pick<Posting, 'title' | 'company'> {
+  const job = oneLine(title, 300);
+  const by = oneLine(company, 200);
+  return { ...(job && { title: job }), ...(by && { company: by }) };
 }
 
 /**
@@ -299,6 +326,69 @@ const WORKDAY_CLOSED = /\bpostingAvailable\s*:\s*false\b/;
 
 const onWorkday = (address: string) =>
   /(^|\.)myworkday(jobs|site)\.com$/i.test(new URL(address).hostname);
+
+/**
+ * A Workday legal entity's code before its name, as "2100 " in "2100 NVIDIA USA" or "ADUS-" in
+ * "ADUS-Adobe Inc.", as the extension reads it too.
+ */
+const WORKDAY_ENTITY = /^(\d+\s+|[A-Z]{2,}\d+\s+|[A-Z\d]{2,8}\s*[-:]\s*|[A-Z][a-z]+:\s+)/;
+
+/**
+ * Who a Workday posting's job data says is hiring, which names the legal entity: the site's own
+ * name, as the entity writes it ("NVIDIA" at nvidia.wd5.myworkdayjobs.com) but with a capital, or
+ * else the entity without its code.
+ */
+function workdayEmployer(name: string, address: string): string {
+  const tenant = new URL(address).hostname.split('.', 1)[0] ?? '';
+  const own = name.split(/[^\p{L}\p{N}]+/u).find((word) => word.toLowerCase() === tenant);
+  return own ? own.charAt(0).toUpperCase() + own.slice(1) : name.replace(WORKDAY_ENTITY, '');
+}
+
+const onTaleo = (address: string) => /(^|\.)taleo\.net$/i.test(new URL(address).hostname);
+
+/** The hidden field a Taleo posting's page keeps the posting in. */
+const TALEO_FIELD = 'name="initialHistory"';
+
+/** One part of what a Taleo page keeps: URL-encoded, with a backslash before a character it escapes, as "\:". */
+function taleoPart(part: string): string {
+  let decoded = part;
+  try {
+    decoded = decodeURIComponent(part);
+  } catch {
+    // A part that isn't encoded as it should be is read as it is.
+  }
+  return decoded.replace(/\\(.)/g, '$1');
+}
+
+/**
+ * A Taleo posting, from its page. What the page shows is only the site's menus: the posting is in
+ * a hidden field, initialHistory, that the page's script shows it from. Its value is the posting's
+ * parts between "!|!": its title, its number, then each block of it as HTML, starting "!*!", each
+ * there twice. A posting's page without one has nothing of the posting to read. Null for any other
+ * page of Taleo's, which is read as it is.
+ */
+function taleoPosting(html: string, address: string): Posting | null {
+  const posting = /\/jobdetail\.ftl$/i.test(new URL(address).pathname);
+  const at = html.indexOf(TALEO_FIELD);
+  const start = at < 0 ? -1 : html.lastIndexOf('<', at);
+  const end = at < 0 ? -1 : html.indexOf('>', at);
+  const value = start < 0 || end < 0 ? null : /\bvalue="([^"]*)"/.exec(html.slice(start, end))?.[1];
+  const parts = value ? decodeEntities(value).split('!|!').map(taleoPart) : [];
+  const first = parts.findIndex((part) => part.startsWith('!*!'));
+  const blocks = [
+    ...new Set(
+      parts.filter((part) => part.startsWith('!*!')).map((part) => htmlToText(part.slice(3))),
+    ),
+  ].filter(Boolean);
+  if (blocks.length === 0) return posting ? { text: '', via: 'Taleo' } : null;
+  const title = first >= 2 ? (parts[first - 2] ?? '') : '';
+  const known = title.length <= 300 && !/^(true|false|\d*)$/.test(title) && !title.includes('!$!');
+  return {
+    text: lines(known ? title : null, '', blocks.join('\n\n')),
+    via: 'Taleo',
+    ...(known && titled(title)),
+  };
+}
 
 /** Job data shorter than this, in characters, may be a teaser for what's on the page. */
 const FULL_JOB_DATA = 1500;
@@ -321,6 +411,7 @@ export function readPosting(source: PostingSource, answer: unknown): Posting | n
           body,
         ),
         via: 'Greenhouse API',
+        ...titled(field(answer, 'title'), field(answer, 'company_name')),
       };
     }
     case 'lever': {
@@ -345,6 +436,7 @@ export function readPosting(source: PostingSource, answer: unknown): Posting | n
           htmlToText(text(field(answer, 'additional')) ?? ''),
         ),
         via: 'Lever API',
+        ...titled(field(answer, 'text')),
       };
     }
     case 'gem': {
@@ -359,6 +451,7 @@ export function readPosting(source: PostingSource, answer: unknown): Posting | n
       return {
         text: lines(text(field(answer, 'title')), where || null, '', htmlToText(content)),
         via: 'Gem API',
+        ...titled(field(answer, 'title')),
       };
     }
     case 'ashby': {
@@ -380,6 +473,7 @@ export function readPosting(source: PostingSource, answer: unknown): Posting | n
           body,
         ),
         via: 'Ashby API',
+        ...titled(field(job, 'title')),
       };
     }
     case 'recruitee': {
@@ -396,6 +490,7 @@ export function readPosting(source: PostingSource, answer: unknown): Posting | n
           htmlToText(text(field(offer, 'requirements')) ?? ''),
         ),
         via: 'Recruitee API',
+        ...titled(field(offer, 'title'), field(offer, 'company_name')),
       };
     }
     case 'workable': {
@@ -417,6 +512,7 @@ export function readPosting(source: PostingSource, answer: unknown): Posting | n
           htmlToText(text(field(answer, 'benefits')) ?? ''),
         ),
         via: 'Workable API',
+        ...titled(field(answer, 'title')),
       };
     }
     case 'page': {
@@ -424,9 +520,19 @@ export function readPosting(source: PostingSource, answer: unknown): Posting | n
       if (onWorkday(source.url) && WORKDAY_CLOSED.test(answer)) {
         return { text: '', via: 'Workday', closed: true };
       }
-      const data = jobPostingData(answer);
+      if (onTaleo(source.url)) {
+        const taleo = taleoPosting(answer, source.url);
+        if (taleo) return taleo;
+      }
+      const job = jobPostingFields(answer);
+      const data = job && jobPostingText(job);
+      const hiring =
+        job?.company && onWorkday(source.url)
+          ? workdayEmployer(job.company, source.url)
+          : job?.company;
+      const known = job ? titled(job.title, hiring) : {};
       if (data && data.length >= FULL_JOB_DATA) {
-        return { text: data, via: 'the page’s JobPosting data' };
+        return { text: data, via: 'the page’s JobPosting data', ...known };
       }
       const main = htmlToText(
         element(answer, 'main') ??
@@ -437,8 +543,8 @@ export function readPosting(source: PostingSource, answer: unknown): Posting | n
       if (!data) return { text: main, via: 'the web page' };
       // Some job data holds only a teaser, as USAJOBS's does, with the posting on the page itself.
       return main.length > data.length
-        ? { text: lines(data, '', main), via: 'the page’s JobPosting data and its text' }
-        : { text: data, via: 'the page’s JobPosting data' };
+        ? { text: lines(data, '', main), via: 'the page’s JobPosting data and its text', ...known }
+        : { text: data, via: 'the page’s JobPosting data', ...known };
     }
   }
 }
@@ -511,18 +617,20 @@ export interface JobPostingFields {
 /** Most job pages embed schema.org JobPosting data, which reads cleaner than the page. */
 export function jobPostingData(html: string): string | null {
   const job = jobPostingFields(html);
-  return (
-    job &&
-    lines(
-      job.title,
-      job.company,
-      job.where,
-      job.pay ? `Pay: ${job.pay}` : null,
-      job.posted ? `Posted: ${job.posted}` : null,
-      job.closes ? `Closes: ${job.closes}` : null,
-      '',
-      job.text,
-    )
+  return job && jobPostingText(job);
+}
+
+/** A page's JobPosting data as the posting's text, with its title, employer, place and dates on top. */
+function jobPostingText(job: JobPostingFields): string {
+  return lines(
+    job.title,
+    job.company,
+    job.where,
+    job.pay ? `Pay: ${job.pay}` : null,
+    job.posted ? `Posted: ${job.posted}` : null,
+    job.closes ? `Closes: ${job.closes}` : null,
+    '',
+    job.text,
   );
 }
 

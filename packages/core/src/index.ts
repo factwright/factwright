@@ -53,6 +53,7 @@ export { callInvite, callInviteName, callStart, callTitle, isClockTime } from '.
 export { US_STATES } from './countries.ts';
 export { addDays, daysBetween, firstDate, isIsoDate, localDate } from './dates.ts';
 export {
+  addedPostingMarkdown,
   askAnswer,
   askedFile,
   CALL_DOCS,
@@ -65,6 +66,7 @@ export {
   JOB_EXTRAS,
   type JobShot,
   type OutreachDraft,
+  type PostingCame,
   readAllCallDocs,
   readCallDocs,
   readJobExtras,
@@ -390,6 +392,7 @@ export {
 export { type PayRange, parsePay, payBand } from './pay.ts';
 export {
   decodeEntities,
+  FEED_SYSTEMS,
   htmlToText,
   type JobPostingFields,
   jobPostingData,
