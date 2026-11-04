@@ -6,6 +6,8 @@ export const LIMITS = {
   nextAction: 500,
   /** The one undated box of notes the app had before notes were dated. */
   notes: 20_000,
+  /** A job's posting, as the user pastes it into Add job. */
+  posting: 100_000,
   /** One dated note, such as what was said on a call. */
   note: 10_000,
   /** What a call's about, written before it. */

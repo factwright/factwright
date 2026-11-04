@@ -1,4 +1,11 @@
-import type { Job, JobDocKind, JobDocs, JobFile, SavedPosting } from '@factwright/core';
+import type {
+  Job,
+  JobDocKind,
+  JobDocs,
+  JobFile,
+  PostingCame,
+  SavedPosting,
+} from '@factwright/core';
 import { fileSize, shortDate } from '@factwright/core';
 import { Button, Dialog, IconButton, Markdown } from '@factwright/ui';
 import { Download, FileText, FolderOpen } from 'lucide-react';
@@ -131,6 +138,13 @@ export function FileRow({
   );
 }
 
+/** How the posting kept with a job came, as its line in Saved for this job says. */
+const KEPT: Readonly<Record<PostingCame, string>> = {
+  browser: 'Saved from your browser',
+  pasted: 'Pasted when you added the job',
+  read: 'Read from its link when you added the job',
+};
+
 /**
  * What's saved for a job besides its resumes and letters, to open here: the posting, saved word
  * for word or from the user's browser, the fit check's write-up, and Claude's other notes.
@@ -206,14 +220,14 @@ export function SavedSection({ job, api, today }: { job: Job; api: FactwrightApi
             <span className={styles.fileText}>
               <span className={styles.fileName}>Posting</span>
               <span className={styles.fileMeta}>
-                Saved from your browser
+                {KEPT[browserPosting.came]}
                 {browserPosting.saved ? `, ${shortDate(browserPosting.saved, today)}` : ''}
               </span>
             </span>
             <Button
               size="sm"
               variant="quiet"
-              aria-label="Open the posting saved from your browser"
+              aria-label={`Open the posting ${KEPT[browserPosting.came].toLowerCase()}`}
               onClick={() =>
                 setOpen({ title: `Posting: ${job.company}`, text: browserPosting.text })
               }

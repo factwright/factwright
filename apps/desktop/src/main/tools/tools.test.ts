@@ -39,7 +39,7 @@ import {
   TEMPLATE_TOOLS,
 } from './index.ts';
 import { type McpTool, newCall } from './mcp.ts';
-import { FetchRefused } from './safe-fetch.ts';
+import { FetchAnswered, FetchRefused, FetchTooBig } from './safe-fetch.ts';
 
 const NOW = () => new Date(2026, 9, 11, 9, 30);
 const FOLDER = '2026-10-07-acme-staff-engineer';
@@ -591,6 +591,41 @@ describe('job_details', () => {
     expect(await tool('job_details').run({ job: id })).toContain(
       `- Posting saved from the user’s browser: saved/${id}/posting.md (2026-10-10), as the user saw it.`,
     );
+  });
+
+  it('names a posting the user pasted into Add job, or one Add job read from the job’s link', async () => {
+    const pasted = jobs.addJob({
+      company: 'Fernhill Labs',
+      role: 'Platform Engineer',
+      posting: 'About the role\n\nRun the platform.',
+    });
+    if (!pasted.ok) throw new Error(pasted.message);
+    expect(await tool('job_details').run({ job: pasted.jobId })).toContain(
+      `- Posting the user pasted when they added the job: saved/${pasted.jobId}/posting.md (2026-10-11). Read the posting there: the job has no link, so save its text as posting.md in the job's folder yourself.`,
+    );
+    const link = 'https://careers.kite.example/jobs/7';
+    const read = jobs.addJob(
+      { company: 'Kite', role: 'Staff Engineer', link },
+      {
+        text: `Staff Engineer\n\n${'Build the tools our engineers use. '.repeat(20)}`,
+        via: 'the web page',
+      },
+    );
+    if (!read.ok) throw new Error(read.message);
+    expect(await tool('job_details').run({ job: read.jobId })).toContain(
+      `- Posting read from its link when the user added the job: saved/${read.jobId}/posting.md (2026-10-11). Read the posting there: save_posting with the job's link and this job's id copies it into the job's folder.`,
+    );
+    // Saving it copies it, reading nothing, and says how it came.
+    expect(
+      await tool('save_posting').run({
+        url: link,
+        folder: '2026-10-11-kite-staff-engineer',
+        job: read.jobId,
+      }),
+    ).toMatch(
+      /^Saved applications\/2026-10-11-kite-staff-engineer\/posting\.md \(\d+ characters, via read when the user added the job\)\.$/,
+    );
+    expect(fetch).not.toHaveBeenCalled();
   });
 
   it('gives the application’s questions, numbered, as questions to answer, with what was sent', async () => {
@@ -1187,6 +1222,15 @@ describe('read_posting', () => {
     );
   });
 
+  it('reads a posting’s own page on Ashby, which is Ashby’s too, when the whole board is too big to read', async () => {
+    fetch.mockImplementation(async (_url: string, json: boolean) => {
+      if (json) throw new FetchTooBig();
+      return POSTING;
+    });
+    expect(await tool('read_posting').run({ url: ASHBY })).toContain('via the web page');
+    expect(fetched()).toEqual([ASHBY_FEED, ASHBY]);
+  });
+
   it('sends any other link to read_page, without fetching it', async () => {
     expect(await tool('read_posting').run({ url: 'https://acme.example/jobs/staff' })).toBe(
       'https://acme.example/jobs/staff isn’t a posting on Greenhouse, Lever, Ashby, Gem, Recruitee or Workable. Read it with read_page, or use job_board for a company’s whole board.',
@@ -1236,6 +1280,36 @@ describe('read_page', () => {
     fetch.mockRejectedValue(new FetchRefused('Only https links work.'));
     expect(await tool('read_page').run({ url: 'http://acme.example/' })).toBe(
       'Not read: Only https links work.',
+    );
+  });
+
+  it('says a posting has closed when its system’s feed has none, never reading the jobs its page sends a reader to', async () => {
+    fetch.mockRejectedValue(new FetchAnswered('boards-api.greenhouse.io', 404));
+    const closed = 'https://job-boards.greenhouse.io/acme/jobs/4012345';
+    expect(await tool('read_page').run({ url: closed })).toBe(
+      `${closed} has closed: Greenhouse says it’s no longer available.`,
+    );
+    expect(fetched()).toEqual(['https://boards-api.greenhouse.io/v1/boards/acme/jobs/4012345']);
+    // A company's own careers page names the board only by a guess, so its page is read.
+    fetch.mockReset();
+    fetch.mockImplementation(async (_url: string, json: boolean) => {
+      if (json) throw new FetchAnswered('boards-api.greenhouse.io', 404);
+      return POSTING;
+    });
+    expect(
+      await tool('read_page').run({ url: 'https://www.acme.example/careers?gh_jid=4012345' }),
+    ).toContain('via the web page');
+  });
+
+  it('says what a site answered that turns apps away, or has no such page, and what to do', async () => {
+    const link = 'https://careers.acme.example/jobs/1';
+    fetch.mockRejectedValue(new FetchAnswered('careers.acme.example', 403));
+    expect(await tool('read_page').run({ url: link })).toBe(
+      `Couldn’t read ${link}: careers.acme.example answered 403. The site turns apps away or wants a sign-in, so never try another way round it: ask the user to save it from their browser with Save to Factwright, or to paste it.`,
+    );
+    fetch.mockRejectedValue(new FetchAnswered('careers.acme.example', 404));
+    expect(await tool('read_page').run({ url: link })).toBe(
+      `Couldn’t read ${link}: careers.acme.example answered 404, so the posting has probably closed, or the link is wrong. If the user says it’s still open, ask them to paste it.`,
     );
   });
 
@@ -1327,6 +1401,14 @@ describe('save_posting', () => {
       /^The applicant system has no posting at .+, so it may have closed\. Ask the user to paste/,
     );
     expect(fetched()).toEqual([ASHBY_FEED]);
+  });
+
+  it('says a closed posting has nothing to save', async () => {
+    const closed = 'https://jobs.lever.co/acme/0b7a1c2d-3e4f-4a5b-8c6d-7e8f9a0b1c2d';
+    fetch.mockRejectedValue(new FetchAnswered('api.lever.co', 404));
+    expect(await tool('save_posting').run({ url: closed, folder: FOLDER })).toBe(
+      `${closed} has closed: Lever says it’s no longer available, so there’s no posting to save. If the user says it’s still open, ask them to paste it.`,
+    );
   });
 
   it('asks for the text when the page needs a sign-in', async () => {

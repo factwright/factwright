@@ -57,6 +57,7 @@ import type { SetupChecker } from './claude/self-test.ts';
 import { claudeStatus, nodeStatusDeps } from './claude/status.ts';
 import { BROWSERS } from './extension/browsers.ts';
 import type { SaveHelper } from './extension/save-helper.ts';
+import { AddedPostings, NOT_A_LINK } from './jobs/added-posting.ts';
 import { hasFocus, parseFocus, saveFocus } from './jobs/focus.ts';
 import { getFormQuestions } from './jobs/form-feed.ts';
 import {
@@ -202,6 +203,8 @@ export interface IpcDeps {
   onClaudeStatus?: (status: ClaudeStatus) => void;
   /** Stands in for Greenhouse's job API, as the tests' copy has it, or undefined to ask it. */
   formFeed?: FetchDeps['fetch'] | undefined;
+  /** Stands in for the sites Add job reads jobs' links on, as the tests' copy has it. */
+  pages?: FetchDeps['fetch'] | undefined;
 }
 
 /** A file's size in bytes, or null when it isn't a file. */
@@ -297,6 +300,7 @@ export function registerIpc({
   analyzeNew,
   onClaudeStatus,
   formFeed,
+  pages,
 }: IpcDeps): void {
   const fromApp = (event: IpcMainEvent | IpcMainInvokeEvent) =>
     isAppPage(event.senderFrame?.url ?? '');
@@ -619,9 +623,16 @@ export function registerIpc({
     isId(jobId) && isId(otherId) && jobId !== otherId ? jobs.notSame(jobId, otherId) : REFUSED,
   );
 
+  // What Add job reads from a job's link, which the job keeps once it's added.
+  const postings = new AddedPostings(pages ? { fetch: pages } : {});
+  answer('jobs:read-posting', (link) =>
+    typeof link === 'string' && link.length <= LIMITS.link ? postings.read(link) : NOT_A_LINK,
+  );
+
   answer('jobs:add', (job) => {
     const valid = parseNewJob(job);
-    return valid ? jobs.addJob(valid) : REFUSED;
+    if (!valid) return REFUSED;
+    return jobs.addJob(valid, valid.link && !valid.posting ? postings.readFor(valid.link) : null);
   });
 
   answer('calls:add', (jobId, call) => {

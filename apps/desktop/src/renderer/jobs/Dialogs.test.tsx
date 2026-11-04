@@ -6,7 +6,7 @@ import axe from 'axe-core';
 import { type ComponentProps, useState } from 'react';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { readAnswers } from '../../shared/about.ts';
-import type { FactwrightApi, SaveFocusResult } from '../../shared/api.ts';
+import type { FactwrightApi, PostingRead, SaveFocusResult } from '../../shared/api.ts';
 import { browserSearches } from '../../shared/browser-searches.ts';
 import { kindsOf } from '../../shared/kinds.ts';
 import { AddJobDialog } from './AddJobDialog.tsx';
@@ -227,6 +227,180 @@ describe('AddJobDialog', () => {
       'Screen',
       'Interview',
     ]);
+  });
+
+  const WORKDAY =
+    'https://nvidia.wd5.myworkdayjobs.com/NVIDIAExternalCareerSite/job/US-CA-Santa-Clara/Product-Manager_JR2016992';
+
+  it('reads the posting’s link, fills in what the user left empty, and keeps the posting with the job', async () => {
+    const readPosting = vi.fn(async () => ({
+      ok: true as const,
+      via: 'the page’s JobPosting data',
+      characters: 4692,
+      title: 'Product Manager, AI Platform',
+      company: 'NVIDIA',
+    }));
+    const addJob = vi.fn(async () => ({ ok: true as const, jobId: 'nvidia--product-manager' }));
+    const onAdded = vi.fn();
+    render(
+      <AddJobDialog
+        api={{ readPosting, addJob } as unknown as FactwrightApi}
+        onAdded={onAdded}
+        onClose={() => {}}
+      />,
+    );
+    await userEvent.type(screen.getByRole('textbox', { name: 'Link to the posting' }), WORKDAY);
+    await userEvent.tab();
+    expect(
+      await screen.findByText(
+        'Read the posting: Product Manager, AI Platform, 4,692 characters. It’s kept with the job.',
+      ),
+    ).toBeTruthy();
+    expect(readPosting.mock.calls).toEqual([[WORKDAY]]);
+    expect(screen.getByRole('textbox', { name: 'Company' })).toHaveProperty('value', 'NVIDIA');
+    expect(screen.getByRole('textbox', { name: 'Role' })).toHaveProperty(
+      'value',
+      'Product Manager, AI Platform',
+    );
+    await userEvent.click(screen.getByRole('button', { name: 'Add job' }));
+    // The main process keeps what it read, so the job is added with its link alone.
+    expect(addJob).toHaveBeenCalledWith({
+      company: 'NVIDIA',
+      role: 'Product Manager, AI Platform',
+      link: WORKDAY,
+      pay: '',
+      status: 'new',
+      notes: '',
+    });
+    expect(readPosting).toHaveBeenCalledTimes(1);
+    expect(onAdded).toHaveBeenCalledWith('nvidia--product-manager', 'new', null);
+  });
+
+  it('never changes a company or role the user typed', async () => {
+    const readPosting = vi.fn(async () => ({
+      ok: true as const,
+      via: 'Greenhouse API',
+      characters: 900,
+      title: 'Staff Engineer',
+      company: 'Acme Robotics',
+    }));
+    render(
+      <AddJobDialog
+        api={{ readPosting } as unknown as FactwrightApi}
+        onAdded={() => {}}
+        onClose={() => {}}
+      />,
+    );
+    await userEvent.keyboard('Acme');
+    await userEvent.type(screen.getByRole('textbox', { name: 'Role' }), 'Platform lead');
+    await userEvent.type(
+      screen.getByRole('textbox', { name: 'Link to the posting' }),
+      'https://job-boards.greenhouse.io/acme/jobs/4012345',
+    );
+    await userEvent.tab();
+    await screen.findByText(/^Read the posting: Staff Engineer/);
+    expect(screen.getByRole('textbox', { name: 'Company' })).toHaveProperty('value', 'Acme');
+    expect(screen.getByRole('textbox', { name: 'Role' })).toHaveProperty('value', 'Platform lead');
+  });
+
+  it('says plainly why it can’t read a link and what works, before adding the job without its posting', async () => {
+    let answer: (read: PostingRead) => void = () => {};
+    const readPosting = vi.fn(
+      () =>
+        new Promise<PostingRead>((resolve) => {
+          answer = resolve;
+        }),
+    );
+    const addJob = vi.fn(async () => ({ ok: true as const, jobId: 'kite--staff-engineer' }));
+    const onAdded = vi.fn();
+    const { container } = render(
+      <AddJobDialog
+        api={{ readPosting, addJob } as unknown as FactwrightApi}
+        onAdded={onAdded}
+        onClose={() => {}}
+      />,
+    );
+    await userEvent.keyboard('Kite');
+    const linkedIn = 'https://www.linkedin.com/jobs/view/4012345678/';
+    await userEvent.type(screen.getByRole('textbox', { name: 'Link to the posting' }), linkedIn);
+    // Adding while the link is read waits for it, and says why it couldn't, without adding yet.
+    await userEvent.click(screen.getByRole('button', { name: 'Add job' }));
+    expect(await screen.findByText('Reading the posting…')).toBeTruthy();
+    answer({
+      ok: false,
+      why: 'linkedin',
+      message: 'LinkedIn doesn’t let apps read its pages, so Factwright never does.',
+    });
+    const note = await screen.findByText(/^LinkedIn doesn’t let apps read its pages/);
+    expect(note.textContent).toBe(
+      'LinkedIn doesn’t let apps read its pages, so Factwright never does. Open the posting in your browser and click Save to Factwright, or paste the description below.',
+    );
+    expect(
+      within(note).getByRole('link', { name: 'Save to Factwright' }).getAttribute('href'),
+    ).toBe('https://factwright.com/extension');
+    expect(addJob).not.toHaveBeenCalled();
+    const results = await axe.run(container, { rules: { 'color-contrast': { enabled: false } } });
+    expect(results.violations).toEqual([]);
+    // Once it's said, the job is added without its posting.
+    await userEvent.click(screen.getByRole('button', { name: 'Add job' }));
+    expect(addJob).toHaveBeenCalledWith(
+      expect.not.objectContaining({ posting: expect.anything() }),
+    );
+    expect(readPosting).toHaveBeenCalledTimes(1);
+    expect(onAdded).toHaveBeenCalled();
+  });
+
+  it('adds the job at once with the description the user pasted', async () => {
+    const readPosting = vi.fn(async () => ({
+      ok: false as const,
+      why: 'browser' as const,
+      message:
+        'jobs.apple.com shows the posting only in a web browser, or once you’re signed in, so Factwright found nothing to read.',
+    }));
+    const addJob = vi.fn(async () => ({ ok: true as const, jobId: 'apple--engineering-pm' }));
+    render(
+      <AddJobDialog
+        api={{ readPosting, addJob } as unknown as FactwrightApi}
+        onAdded={() => {}}
+        onClose={() => {}}
+      />,
+    );
+    await userEvent.keyboard('Apple');
+    await userEvent.type(
+      screen.getByRole('textbox', { name: 'Link to the posting' }),
+      'https://jobs.apple.com/en-us/details/200626630-0836/engineering-project-manager',
+    );
+    await userEvent.type(
+      screen.getByRole('textbox', { name: 'Job description' }),
+      'Engineering Project Manager. Lead the work.',
+    );
+    await screen.findByText(/^jobs\.apple\.com shows the posting only in a web browser/);
+    await userEvent.click(screen.getByRole('button', { name: 'Add job' }));
+    expect(addJob).toHaveBeenCalledWith(
+      expect.objectContaining({ posting: 'Engineering Project Manager. Lead the work.' }),
+    );
+  });
+
+  it('says a closed posting has closed, and that a description can still be pasted', async () => {
+    const readPosting = vi.fn(async () => ({
+      ok: false as const,
+      why: 'closed' as const,
+      message: 'Workday says this posting has closed.',
+    }));
+    render(
+      <AddJobDialog
+        api={{ readPosting } as unknown as FactwrightApi}
+        onAdded={() => {}}
+        onClose={() => {}}
+      />,
+    );
+    await userEvent.type(screen.getByRole('textbox', { name: 'Link to the posting' }), WORKDAY);
+    await userEvent.tab();
+    expect(
+      await screen.findByText(
+        'Workday says this posting has closed. If it’s still open, paste its description below.',
+      ),
+    ).toBeTruthy();
   });
 
   it('points to the browser extension, for a job found in the browser', () => {

@@ -173,7 +173,13 @@ describe('saving a job through sync', () => {
     if (!data) throw new Error('the posting’s file wasn’t uploaded');
     const contents = await openFile(keys, file.file.id, data);
     const posting = readSavedPosting(path, fromUtf8(contents ?? new Uint8Array()) ?? '');
-    expect(posting).toEqual({ path, source: JOB.url, saved: '2026-10-15', text: JOB.posting });
+    expect(posting).toEqual({
+      path,
+      source: JOB.url,
+      saved: '2026-10-15',
+      came: 'browser',
+      text: JOB.posting,
+    });
   });
 
   it('saves the link alone when there’s no posting', async () => {

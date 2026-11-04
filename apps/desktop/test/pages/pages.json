@@ -1,0 +1,43 @@
+{
+  "https://boards-api.greenhouse.io/v1/boards/gitlab/jobs/8638232002": {
+    "file": "greenhouse-posting.json"
+  },
+  "https://boards-api.greenhouse.io/v1/boards/omadahealth/jobs/7964775": { "status": 404 },
+  "https://api.lever.co/v0/postings/spotify/2a55d6c9-c564-443a-be3e-a3851db5a93b": {
+    "file": "lever-posting.json"
+  },
+  "https://api.ashbyhq.com/posting-api/job-board/openai?includeCompensation=true": {
+    "tooBig": true
+  },
+  "https://jobs.ashbyhq.com/openai/240d459b-696d-43eb-8497-fab3e56ecd9b": {
+    "file": "ashby-posting.html"
+  },
+  "https://nvidia.wd5.myworkdayjobs.com/NVIDIAExternalCareerSite/job/US-CA-Santa-Clara/Product-Manager--AI-Platform-SW---Agentic-AI-Kernel-Generation_JR2016992": {
+    "file": "workday-posting.html"
+  },
+  "https://clark.wd503.myworkdayjobs.com/clarkexternal/job/McLean-VA/Project-Manager_R5025094": {
+    "file": "workday-closed.html"
+  },
+  "https://jobs.smartrecruiters.com/AECOM2/744000156427409-senior-project-manager-data-centers-remote-u-s-": {
+    "file": "smartrecruiters-posting.html"
+  },
+  "https://careers-aptiveresources.icims.com/jobs/4751/payroll-and-benefits-administrator/job?in_iframe=1": {
+    "file": "icims-posting.html"
+  },
+  "https://careers-aptiveresources.icims.com/jobs/4605/project-manager/job?in_iframe=1": {
+    "status": 410
+  },
+  "https://www.amazon.jobs/en/jobs/10577480/program-manager-ii-amz26173-4": {
+    "file": "amazon-posting.html"
+  },
+  "https://jobs.apple.com/en-us/details/200626630-0836/engineering-project-manager-app-analytics": {
+    "file": "apple-posting.html"
+  },
+  "https://uhg.taleo.net/careersection/10000/jobdetail.ftl?job=2380443&lang=en": {
+    "file": "taleo-posting.html"
+  },
+  "https://jobs.dayforcehcm.com/en-US/signanthealth/CANDIDATEPORTAL/jobs/11768": {
+    "file": "dayforce-posting.html"
+  },
+  "https://careers.blocks-apps.example/jobs/1": { "status": 403 }
+}

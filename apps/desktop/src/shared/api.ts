@@ -248,7 +248,38 @@ export interface NewJob {
   notes?: string | null;
   /** The kind of job it's under, by its id, when the user wants more than one kind. */
   kind?: string | null;
+  /** The posting, as the user pasted it, for a link Factwright couldn't read or a job with none. */
+  posting?: string | null;
 }
+
+/**
+ * Why Add job couldn't read a job's link: LinkedIn's, or another site Factwright never reads; the
+ * site turned it away; the page isn't there, or the posting has closed; the page shows its posting
+ * only in a browser; the site couldn't be reached; or the link isn't one Factwright reads.
+ */
+export type PostingProblem =
+  | 'linkedin'
+  | 'barred'
+  | 'blocked'
+  | 'gone'
+  | 'closed'
+  | 'browser'
+  | 'unreachable'
+  | 'refused';
+
+/**
+ * What Add job read from a job's link, which the job keeps once it's added: how, how long it is,
+ * and the job's title and employer when the posting gives them. Or why it couldn't, in plain words.
+ */
+export type PostingRead =
+  | {
+      ok: true;
+      via: string;
+      characters: number;
+      title: string | null;
+      company: string | null;
+    }
+  | { ok: false; why: PostingProblem; message: string };
 
 /** A note the user jots about a job: its words, and the day it's about if not today. */
 export interface NewNote {
@@ -497,6 +528,11 @@ export interface FactwrightApi {
    * never merges the two.
    */
   notSameJob(jobId: string, otherId: string): Promise<EditResult>;
+  /**
+   * Reads a job's link for Add job, as Claude's tools read one, and keeps what it read for the job
+   * the link is added with. Never LinkedIn's, nor another site Factwright never reads.
+   */
+  readPosting(link: string): Promise<PostingRead>;
   addJob(job: NewJob): Promise<AddJobResult>;
   addCall(jobId: string, call: NewCall): Promise<EditResult>;
   updateCall(callId: string, changes: CallChanges): Promise<EditResult>;

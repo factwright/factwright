@@ -128,12 +128,20 @@ describe('parseNewJob', () => {
       company: 'Acme',
       kind: 'developer',
     });
+    // The posting the user pasted, for a link Factwright couldn't read, however long it runs.
+    const posting = `About the role\n\n${'Run the platform. '.repeat(4000)}`;
+    expect(parseNewJob({ company: 'Acme', posting })).toEqual({
+      company: 'Acme',
+      posting: posting.trim(),
+    });
+    expect(parseNewJob({ company: 'Acme', posting: 'x'.repeat(LIMITS.posting + 1) })).toBeNull();
   });
 
   it.each([
     { company: 42 },
     { company: 'Acme', pay: 'x'.repeat(LIMITS.pay + 1) },
     { company: 'Acme', kind: 'Developer' },
+    { company: 'Acme', posting: 42 },
   ])('refuses %j', (value) => {
     expect(parseNewJob(value)).toBeNull();
   });

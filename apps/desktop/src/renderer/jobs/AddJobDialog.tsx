@@ -9,13 +9,82 @@ import {
   Select,
   TextArea,
 } from '@factwright/ui';
-import { type FormEvent, useState } from 'react';
-import type { FactwrightApi } from '../../shared/api.ts';
+import { type FormEvent, useEffect, useRef, useState } from 'react';
+import type { FactwrightApi, PostingProblem, PostingRead } from '../../shared/api.ts';
 import { LIMITS } from '../../shared/limits.ts';
 import styles from './AddJobDialog.module.css';
 
 /** The statuses a job added by hand can start at. */
 const STARTING: readonly JobStatus[] = ['new', 'review', 'apply', 'applied', 'screen', 'interview'];
+
+/** How long typing in the link pauses before Factwright reads it. */
+const READ_AFTER_MS = 700;
+
+/** A link Factwright might read: one that starts as a web address does and names a site. */
+const looksLikeLink = (text: string) => /^https?:\/\/[^\s/]+\.[^\s/]+/i.test(text);
+
+/** The problems that leave the posting where only a browser, or the user, can get it. */
+const IN_A_BROWSER: readonly PostingProblem[] = [
+  'linkedin',
+  'barred',
+  'blocked',
+  'browser',
+  'unreachable',
+  'refused',
+];
+
+/** What Add job says when reading the link failed in the app itself, as it never should. */
+const NOT_READ: PostingRead = {
+  ok: false,
+  why: 'unreachable',
+  message: 'Factwright couldn’t read the link.',
+};
+
+/** What Add job read from the link it has, or is reading. */
+interface LinkRead {
+  link: string;
+  /** Null while it's reading. */
+  result: PostingRead | null;
+}
+
+/** A number of characters, as "4,692". */
+const count = (characters: number) => characters.toLocaleString('en-US');
+
+/** What Add job says of the link it read, or is reading, under it. */
+function ReadNote({ read }: { read: LinkRead }) {
+  const { result } = read;
+  if (!result) {
+    return (
+      <p className={`${styles.hint} ${styles.wide}`} role="status">
+        Reading the posting…
+      </p>
+    );
+  }
+  if (result.ok) {
+    return (
+      <p className={`${styles.read} ${styles.wide}`} role="status">
+        Read the posting{result.title ? `: ${result.title}` : ''}, {count(result.characters)}{' '}
+        characters. It’s kept with the job.
+      </p>
+    );
+  }
+  return (
+    <p className={`${styles.unread} ${styles.wide}`} role="status">
+      {result.message}{' '}
+      {IN_A_BROWSER.includes(result.why) ? (
+        <>
+          Open the posting in your browser and click{' '}
+          <a className={styles.link} href={EXTENSION_URL} target="_blank" rel="noreferrer">
+            Save to Factwright
+          </a>
+          , or paste the description below.
+        </>
+      ) : (
+        'If it’s still open, paste its description below.'
+      )}
+    </p>
+  );
+}
 
 /**
  * Adds a job the user found on their own. Only the company is needed. A user who wants more than
@@ -48,29 +117,75 @@ export function AddJobDialog({
     kinds.some((each) => each.id === startingKind) ? (startingKind ?? '') : '',
   );
   const [notes, setNotes] = useState('');
+  const [posting, setPosting] = useState('');
   const [problem, setProblem] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  // What was read from the link, shown under it, and the read still going, for adding to wait on.
+  const [read, setRead] = useState<LinkRead | null>(null);
+  const reading = useRef<{ link: string; done: Promise<PostingRead> } | null>(null);
+  const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  useEffect(() => () => clearTimeout(timer.current), []);
+
+  /**
+   * Reads the link, unless it's being read or was read already, and fills in the company and the
+   * role from the posting where the user left them empty. Null for text that isn't a link.
+   */
+  const readLink = (value: string): Promise<PostingRead> | null => {
+    clearTimeout(timer.current);
+    const wanted = value.trim();
+    if (!looksLikeLink(wanted)) return null;
+    if (reading.current?.link === wanted) return reading.current.done;
+    const done = api.readPosting(wanted).catch(() => NOT_READ);
+    reading.current = { link: wanted, done };
+    setRead({ link: wanted, result: null });
+    void done.then((result) => {
+      if (reading.current?.link !== wanted) return;
+      setRead({ link: wanted, result });
+      if (!result.ok) return;
+      setCompany((typed) => (typed.trim() ? typed : (result.company ?? typed)));
+      setRole((typed) => (typed.trim() ? typed : (result.title ?? typed)));
+    });
+    return done;
+  };
+
+  const changeLink = (value: string) => {
+    setLink(value);
+    clearTimeout(timer.current);
+    if (looksLikeLink(value.trim()))
+      timer.current = setTimeout(() => readLink(value), READ_AFTER_MS);
+  };
 
   const add = async (event: FormEvent, close: () => void) => {
     event.preventDefault();
     setSaving(true);
-    const result = await api.addJob({
+    // A link still being read, or not read yet, is read before the job is added, so its posting
+    // goes with it. One that couldn't be read says why before the job's added without it.
+    const shown = read?.link === link.trim() ? read.result : null;
+    const result = shown ?? (await readLink(link));
+    if (result && !result.ok && !shown && !posting.trim()) {
+      setSaving(false);
+      return;
+    }
+    const added = await api.addJob({
       company,
       role,
       link,
       pay,
       status,
       notes,
+      ...(posting.trim() && { posting }),
       ...(hasKinds && kind && { kind }),
     });
     setSaving(false);
-    if (!result.ok) {
-      setProblem(result.message);
+    if (!added.ok) {
+      setProblem(added.message);
       return;
     }
-    onAdded(result.jobId, status, (hasKinds && kind) || null);
+    onAdded(added.jobId, status, (hasKinds && kind) || null);
     close();
   };
+
+  const shownRead = read && read.link === link.trim() ? read : null;
 
   return (
     <Dialog
@@ -124,7 +239,21 @@ export function AddJobDialog({
                 placeholder="https://"
                 maxLength={LIMITS.link}
                 value={link}
-                onChange={(event) => setLink(event.target.value)}
+                onChange={(event) => changeLink(event.target.value)}
+                onBlur={(event) => readLink(event.target.value)}
+              />
+            )}
+          </Field>
+          {shownRead && <ReadNote read={shownRead} />}
+          <Field label="Job description" className={styles.wide}>
+            {(control) => (
+              <TextArea
+                {...control}
+                rows={3}
+                placeholder="Paste it here if Factwright can’t read the link"
+                maxLength={LIMITS.posting}
+                value={posting}
+                onChange={(event) => setPosting(event.target.value)}
               />
             )}
           </Field>

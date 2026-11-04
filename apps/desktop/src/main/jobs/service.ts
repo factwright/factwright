@@ -12,6 +12,7 @@ import {
 import { basename, dirname, join, resolve, sep } from 'node:path';
 import {
   ASK_ID,
+  addedPostingMarkdown,
   askedFile,
   CALL_ID,
   type CallDoc,
@@ -23,6 +24,7 @@ import {
   type JobDocs,
   jobList,
   localDate,
+  type Posting,
   type PostingSaved,
   readAllCallDocs,
   readJobExtras,
@@ -214,8 +216,38 @@ export class JobsService {
     return this.saved(this.deps.tracker.updateJobs(jobIds, changes, this.context()));
   }
 
-  addJob(job: NewJob): AddJobResult {
-    return this.saved(this.deps.tracker.addJob(job, this.context()));
+  /**
+   * Adds a job by hand, with the posting the user pasted into Add job, or else what Add job read
+   * from its link: kept with the job's extras in `saved/<job ID>/posting.md`, as a posting saved
+   * from the browser is, where Claude's work later copies it into the job's folder.
+   */
+  addJob(job: NewJob, read: Posting | null = null): AddJobResult {
+    const context = this.context();
+    const added = this.deps.tracker.addJob(job, context);
+    if (added.ok) this.keepAdded(added.jobId, job, read, context.today);
+    return this.saved(added);
+  }
+
+  /** Keeps a posting Add job was given or read. A job without one is added all the same. */
+  private keepAdded(jobId: string, job: NewJob, read: Posting | null, today: string): void {
+    const pasted = job.posting?.trim();
+    const text = pasted || read?.text.trim();
+    if (!text) return;
+    const file = join(this.deps.workspace, ...savedPostingFile(jobId).split('/'));
+    try {
+      mkdirSync(dirname(file), { recursive: true });
+      writeWhole(
+        file,
+        addedPostingMarkdown({
+          url: job.link?.trim() || null,
+          savedOn: today,
+          text,
+          via: pasted ? null : (read?.via ?? null),
+        }),
+      );
+    } catch {
+      // The job is added: Analyze job reads its link again, or asks for the posting.
+    }
   }
 
   /**

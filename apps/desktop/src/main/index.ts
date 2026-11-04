@@ -69,6 +69,7 @@ import { SyncAccount } from './sync/account.ts';
 import { Claims } from './sync/claims.ts';
 import { NO_KEYCHAIN } from './sync/secrets.ts';
 import { factwrightTools } from './tools/index.ts';
+import { testPages } from './tools/test-pages.ts';
 import { UpdateWatcher } from './updates.ts';
 import { WhatsNewDue } from './whats-new.ts';
 import { createMainWindow, DEV_ICON, showTheme, themeChosen } from './window.ts';
@@ -96,6 +97,12 @@ const syncServer = develop('FACTWRIGHT_SERVER_URL') || __SYNC_SERVER__ || null;
  * in its place, so the tests never reach Greenhouse.
  */
 const formFeedFile = develop('FACTWRIGHT_FORM_FEED');
+
+/**
+ * A file listing the saved pages the tests' copy reads in place of the sites Add job reads jobs'
+ * links on (tools/test-pages.ts), so the tests never reach them.
+ */
+const testPagesFile = develop('FACTWRIGHT_TEST_PAGES');
 
 /**
  * In quiet mode, for the app's tests, the app says nothing about what's new, unless a test names a
@@ -670,6 +677,7 @@ function start(home: string, profile: ProfileFolder, stopped: ProfileFolder | nu
       formFeed: formFeedFile
         ? async () => JSON.parse(await readFile(formFeedFile, 'utf8')) as unknown
         : undefined,
+      pages: testPagesFile ? testPages(testPagesFile) : undefined,
     });
     void sync.start();
     // Coming back to the app, or the computer waking, asks a paused computer's account whether it

@@ -95,13 +95,17 @@ describe('readPosting', () => {
       { kind: 'greenhouse', boards: ['acme'], id: '42' },
       {
         title: 'Staff Engineer',
+        company_name: 'Acme Robotics',
         location: { name: 'Remote, US' },
         content: '&lt;p&gt;Build tools.&lt;/p&gt;',
       },
     );
+    // With its title and employer apart, for Add job to fill in.
     expect(posting).toEqual({
       text: 'Staff Engineer\nRemote, US\n\nBuild tools.',
       via: 'Greenhouse API',
+      title: 'Staff Engineer',
+      company: 'Acme Robotics',
     });
   });
 
@@ -134,6 +138,7 @@ describe('readPosting', () => {
     expect(readPosting({ kind: 'ashby', board: 'acme', id: 'job-1' }, answer)).toEqual({
       text: 'Staff Engineer\nRemote\nCompensation: $185K – $215K\n\nBuild tools.',
       via: 'Ashby API',
+      title: 'Staff Engineer',
     });
     expect(readPosting({ kind: 'ashby', board: 'acme', id: 'gone' }, answer)).toBeNull();
   });
@@ -153,6 +158,8 @@ describe('readPosting', () => {
     expect(readPosting({ kind: 'page', url: 'https://acme.example' }, data)).toEqual({
       text: 'Staff Engineer\nAcme Robotics\nRemote\nPay: 185000–215000 USD YEAR\n\nBuild tools.',
       via: 'the page’s JobPosting data',
+      title: 'Staff Engineer',
+      company: 'Acme Robotics',
     });
     const plain =
       '<html><body><header>Logo</header><main><h1>Staff Engineer</h1><p>Build tools.</p></main></body></html>';
@@ -165,6 +172,39 @@ describe('readPosting', () => {
   it('gives nothing back for an answer without a posting', () => {
     expect(readPosting({ kind: 'greenhouse', boards: [], id: '1' }, { title: 'x' })).toBeNull();
     expect(readPosting({ kind: 'page', url: 'https://acme.example' }, { not: 'html' })).toBeNull();
+  });
+});
+
+describe('a Taleo posting’s page', () => {
+  const url = 'https://acme.taleo.net/careersection/10000/jobdetail.ftl?job=2380443&lang=en';
+  /** A page as Taleo makes one: its menus, and the posting in a hidden field its script shows. */
+  const page = (parts: string[]) =>
+    `<html><body><nav>Work Here</nav><main><p>Our Culture</p><p>Hiring Process</p></main>
+    <input type="hidden" name="initialHistory" id="initialHistory" value="${parts
+      .map(encodeURIComponent)
+      .join('!|!')}" /></body></html>`;
+
+  it('reads the posting from the page’s data, not the menus around it', () => {
+    const block = '!*!<p>Plan the work\\: every step.</p><ul><li>Lead teams</li></ul>';
+    const posting = readPosting(
+      { kind: 'page', url },
+      page(['ftlx0', 'Submission for the position', 'Project Manager', '2380443', block, block]),
+    );
+    // Each block is there twice, and the colon comes escaped.
+    expect(posting).toEqual({
+      text: 'Project Manager\n\nPlan the work: every step.\n\n- Lead teams',
+      via: 'Taleo',
+      title: 'Project Manager',
+    });
+  });
+
+  it('reads nothing from a posting’s page without the posting, and any other page as it is', () => {
+    expect(readPosting({ kind: 'page', url }, page(['ftlx0', 'true']))).toEqual({
+      text: '',
+      via: 'Taleo',
+    });
+    const search = 'https://acme.taleo.net/careersection/10000/jobsearch.ftl';
+    expect(readPosting({ kind: 'page', url: search }, page(['ftlx0']))?.via).toBe('the web page');
   });
 });
 
@@ -330,6 +370,7 @@ describe('reading a posting on Recruitee or Workable', () => {
     ).toEqual({
       text: 'Data Scientist\nAmsterdam\n\nBuild models.\n\n- Python',
       via: 'Recruitee API',
+      title: 'Data Scientist',
     });
 
     const workable = postingSource('https://apply.workable.com/seeq/j/1B6E0A1710/apply');
@@ -349,6 +390,7 @@ describe('reading a posting on Recruitee or Workable', () => {
     ).toEqual({
       text: 'Staff Engineer\nUnited States\nRemote\n\nBuild things.\n\nTen years.\n\nDental.',
       via: 'Workable API',
+      title: 'Staff Engineer',
     });
   });
 
