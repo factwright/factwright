@@ -1,6 +1,7 @@
 /** Where a posting's text can be read from: an applicant system's public API, or the page itself. */
 export type PostingSource =
-  | { kind: 'greenhouse'; boards: string[]; id: string }
+  /** With `guessed`, the boards are guesses from a company's site's name, not the link's own. */
+  | { kind: 'greenhouse'; boards: string[]; id: string; guessed?: true }
   | { kind: 'lever'; company: string; id: string }
   | { kind: 'gem'; board: string; id: string }
   | { kind: 'ashby'; board: string; id: string }
@@ -169,7 +170,7 @@ export function postingSource(address: string): PostingSource {
   if (embedded && /^\d+$/.test(embedded)) {
     const parts = host.split('.');
     const boards = [...new Set([parts[0] ?? '', parts.slice(0, -1).join('')])].filter(Boolean);
-    return { kind: 'greenhouse', boards, id: embedded };
+    return { kind: 'greenhouse', boards, id: embedded, guessed: true };
   }
   const lever = on(host === 'jobs.lever.co', /^\/([^/]+)\/([0-9a-f-]{36})/i);
   if (lever?.[1] && lever[2]) return { kind: 'lever', company: lever[1], id: lever[2] };
@@ -361,18 +362,32 @@ function taleoPart(part: string): string {
 }
 
 /**
+ * The value of the hidden field a Taleo posting's page keeps the posting in: the first input tag
+ * that names it, whatever the page's scripts say of it. It reads each input tag once, from its
+ * "<input" to the next ">", and once a tag has no ">" after it, no later one does either.
+ */
+function taleoField(html: string): string | null {
+  const opening = /<input\b/gi;
+  for (let found = opening.exec(html); found; found = opening.exec(html)) {
+    const end = html.indexOf('>', opening.lastIndex);
+    if (end < 0) return null;
+    const tag = html.slice(found.index, end);
+    opening.lastIndex = end + 1;
+    if (!tag.includes(TALEO_FIELD)) continue;
+    const value = /\bvalue="([^"]*)"/.exec(tag)?.[1];
+    if (value) return value;
+  }
+  return null;
+}
+
+/**
  * A Taleo posting, from its page. What the page shows is only the site's menus: the posting is in
  * a hidden field, initialHistory, that the page's script shows it from. Its value is the posting's
  * parts between "!|!": its title, its number, then each block of it as HTML, starting "!*!", each
- * there twice. A posting's page without one has nothing of the posting to read. Null for any other
- * page of Taleo's, which is read as it is.
+ * there twice. Null for a page without one.
  */
-function taleoPosting(html: string, address: string): Posting | null {
-  const posting = /\/jobdetail\.ftl$/i.test(new URL(address).pathname);
-  const at = html.indexOf(TALEO_FIELD);
-  const start = at < 0 ? -1 : html.lastIndexOf('<', at);
-  const end = at < 0 ? -1 : html.indexOf('>', at);
-  const value = start < 0 || end < 0 ? null : /\bvalue="([^"]*)"/.exec(html.slice(start, end))?.[1];
+function taleoPosting(html: string): Posting | null {
+  const value = taleoField(html);
   const parts = value ? decodeEntities(value).split('!|!').map(taleoPart) : [];
   const first = parts.findIndex((part) => part.startsWith('!*!'));
   const blocks = [
@@ -380,7 +395,7 @@ function taleoPosting(html: string, address: string): Posting | null {
       parts.filter((part) => part.startsWith('!*!')).map((part) => htmlToText(part.slice(3))),
     ),
   ].filter(Boolean);
-  if (blocks.length === 0) return posting ? { text: '', via: 'Taleo' } : null;
+  if (blocks.length === 0) return null;
   const title = first >= 2 ? (parts[first - 2] ?? '') : '';
   const known = title.length <= 300 && !/^(true|false|\d*)$/.test(title) && !title.includes('!$!');
   return {
@@ -392,6 +407,9 @@ function taleoPosting(html: string, address: string): Posting | null {
 
 /** Job data shorter than this, in characters, may be a teaser for what's on the page. */
 const FULL_JOB_DATA = 1500;
+
+/** How a page is read when it has no job data: its own text, which may be any page's. */
+export const PAGE_TEXT = 'the web page';
 
 /**
  * Reads a posting from what its source answered: the API's JSON, or the page's HTML. A page
@@ -520,11 +538,16 @@ export function readPosting(source: PostingSource, answer: unknown): Posting | n
       if (onWorkday(source.url) && WORKDAY_CLOSED.test(answer)) {
         return { text: '', via: 'Workday', closed: true };
       }
-      if (onTaleo(source.url)) {
-        const taleo = taleoPosting(answer, source.url);
-        if (taleo) return taleo;
-      }
       const job = jobPostingFields(answer);
+      if (onTaleo(source.url)) {
+        const taleo = taleoPosting(answer);
+        if (taleo) return taleo;
+        // A posting's page without the posting in its field, nor job data, has only the site's
+        // menus to read, which are never the posting.
+        if (!job && /\/jobdetail\.ftl$/i.test(new URL(source.url).pathname)) {
+          return { text: '', via: 'Taleo' };
+        }
+      }
       const data = job && jobPostingText(job);
       const hiring =
         job?.company && onWorkday(source.url)
@@ -540,7 +563,7 @@ export function readPosting(source: PostingSource, answer: unknown): Posting | n
           element(answer, 'body', true) ??
           answer,
       );
-      if (!data) return { text: main, via: 'the web page' };
+      if (!data) return { text: main, via: PAGE_TEXT };
       // Some job data holds only a teaser, as USAJOBS's does, with the posting on the page itself.
       return main.length > data.length
         ? { text: lines(data, '', main), via: 'the page’s JobPosting data and its text', ...known }

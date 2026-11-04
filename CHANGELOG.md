@@ -9,6 +9,7 @@ Notable changes to Factwright, newest first. The format follows [Keep a Changelo
 - Taleo postings read as the posting, not the site's menus around it, which Factwright used to take for the posting.
 - A big employer's posting on Ashby, such as OpenAI's, reads from its own page, where Factwright used to give up because the employer's whole list was too big to read.
 - A closed posting on Greenhouse, Lever, Gem, Recruitee or Workable says it has closed, rather than reading the employer's other jobs as if they were the posting. A page that isn't there, or a site that turns apps away, says so too, with what to do.
+- A link to a file, such as a PDF, says it's a file, where Factwright used to read its bytes as if they were a page. A link to a page of several jobs, such as a company's board, is never kept as one job's posting, and a site that's only busy says to try again in a minute, not that it blocks apps.
 
 ## 0.19.1 - 2026-11-02
 

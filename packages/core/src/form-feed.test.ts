@@ -239,6 +239,7 @@ describe('formFeed', () => {
       kind: 'greenhouse',
       boards: ['harborpine'],
       id: '4012345',
+      guessed: true,
     });
   });
 

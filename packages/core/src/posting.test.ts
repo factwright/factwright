@@ -39,7 +39,12 @@ describe('postingSource', () => {
     ],
     [
       'https://careers.acme.example/jobs?gh_jid=4012345',
-      { kind: 'greenhouse', boards: ['careers', 'careersacme'], id: '4012345' },
+      { kind: 'greenhouse', boards: ['careers', 'careersacme'], id: '4012345', guessed: true },
+    ],
+    // Greenhouse's boards in the EU answer on its one job API too.
+    [
+      'https://job-boards.eu.greenhouse.io/acme/jobs/4012345101',
+      { kind: 'greenhouse', boards: ['acme'], id: '4012345101' },
     ],
     [
       'https://jobs.lever.co/acme/0b7a1c2d-3e4f-4a5b-8c6d-7e8f9a0b1c2d',
@@ -198,13 +203,39 @@ describe('a Taleo posting’s page', () => {
     });
   });
 
-  it('reads nothing from a posting’s page without the posting, and any other page as it is', () => {
+  it('reads the field itself, whatever a script says of it first', () => {
+    const block = '!*!<p>Plan the work.</p>';
+    const html = page(['Project Manager', '2380443', block]).replace(
+      '<input',
+      '<script>document.querySelector(\'[name="initialHistory"]\')</script><input',
+    );
+    expect(readPosting({ kind: 'page', url }, html)?.text).toBe(
+      'Project Manager\n\nPlan the work.',
+    );
+  });
+
+  it('reads nothing from a posting’s page without the posting, unless it has job data', () => {
     expect(readPosting({ kind: 'page', url }, page(['ftlx0', 'true']))).toEqual({
       text: '',
       via: 'Taleo',
     });
+    const data = `<script type="application/ld+json">${JSON.stringify({
+      '@type': 'JobPosting',
+      title: 'Project Manager',
+      description: 'Plan the work.',
+    })}</script>`;
+    expect(readPosting({ kind: 'page', url }, page(['ftlx0']) + data)?.via).toBe(
+      'the page’s JobPosting data',
+    );
     const search = 'https://acme.taleo.net/careersection/10000/jobsearch.ftl';
     expect(readPosting({ kind: 'page', url: search }, page(['ftlx0']))?.via).toBe('the web page');
+  });
+
+  it('reads a page of input tags left open in a moment', () => {
+    const start = Date.now();
+    readPosting({ kind: 'page', url }, `<input name="initialHistory" ${'<input '.repeat(200_000)}`);
+    readPosting({ kind: 'page', url }, `<p>${' name="initialHistory"'.repeat(200_000)}`);
+    expect(Date.now() - start).toBeLessThan(2000);
   });
 });
 

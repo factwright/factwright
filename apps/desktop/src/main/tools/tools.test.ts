@@ -1311,6 +1311,11 @@ describe('read_page', () => {
     expect(await tool('read_page').run({ url: link })).toBe(
       `Couldn’t read ${link}: careers.acme.example answered 404, so the posting has probably closed, or the link is wrong. If the user says it’s still open, ask them to paste it.`,
     );
+    // A busy site asks for fewer requests for now, which is no block.
+    fetch.mockRejectedValue(new FetchAnswered('careers.acme.example', 429));
+    expect(await tool('read_page').run({ url: link })).toBe(
+      `Couldn’t read ${link}: careers.acme.example answered 429, as it wants fewer requests for now. Try it again later, or ask the user to paste it.`,
+    );
   });
 
   it('gives each fetch the time left, and stops trying once it’s spent', async () => {

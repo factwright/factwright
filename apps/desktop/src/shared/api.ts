@@ -255,7 +255,8 @@ export interface NewJob {
 /**
  * Why Add job couldn't read a job's link: LinkedIn's, or another site Factwright never reads; the
  * site turned it away; the page isn't there, or the posting has closed; the page shows its posting
- * only in a browser; the site couldn't be reached; or the link isn't one Factwright reads.
+ * only in a browser; it's a page of several jobs, not one's; it's a file, such as a PDF; the site
+ * couldn't be reached; or the link isn't one Factwright reads.
  */
 export type PostingProblem =
   | 'linkedin'
@@ -264,6 +265,8 @@ export type PostingProblem =
   | 'gone'
   | 'closed'
   | 'browser'
+  | 'list'
+  | 'file'
   | 'unreachable'
   | 'refused';
 

@@ -323,9 +323,10 @@ describe('AddJobDialog', () => {
     await userEvent.keyboard('Kite');
     const linkedIn = 'https://www.linkedin.com/jobs/view/4012345678/';
     await userEvent.type(screen.getByRole('textbox', { name: 'Link to the posting' }), linkedIn);
-    // Adding while the link is read waits for it, and says why it couldn't, without adding yet.
+    // Add waits while the link is read, then says why it couldn't, without adding yet.
     await userEvent.click(screen.getByRole('button', { name: 'Add job' }));
     expect(await screen.findByText('Reading the posting…')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Add job' })).toHaveProperty('disabled', true);
     answer({
       ok: false,
       why: 'linkedin',
@@ -348,6 +349,127 @@ describe('AddJobDialog', () => {
     );
     expect(readPosting).toHaveBeenCalledTimes(1);
     expect(onAdded).toHaveBeenCalled();
+  });
+
+  /** A read of the link that answers only when the test says. */
+  function slowRead() {
+    let answer: (read: PostingRead) => void = () => {};
+    const readPosting = vi.fn(
+      () =>
+        new Promise<PostingRead>((resolve) => {
+          answer = resolve;
+        }),
+    );
+    return { readPosting, answer: (read: PostingRead) => answer(read) };
+  }
+  const READ: PostingRead = {
+    ok: true,
+    via: 'the page’s JobPosting data',
+    characters: 4692,
+    title: 'Product Manager, AI Platform',
+    company: 'NVIDIA',
+  };
+
+  it('adds the job with what the read filled in, once the link is read', async () => {
+    const { readPosting, answer } = slowRead();
+    const addJob = vi.fn(async () => ({ ok: true as const, jobId: 'nvidia--product-manager' }));
+    render(
+      <AddJobDialog
+        api={{ readPosting, addJob } as unknown as FactwrightApi}
+        onAdded={() => {}}
+        onClose={() => {}}
+      />,
+    );
+    await userEvent.type(screen.getByRole('textbox', { name: 'Link to the posting' }), WORKDAY);
+    await userEvent.click(screen.getByRole('button', { name: 'Add job' }));
+    expect(addJob).not.toHaveBeenCalled();
+    answer(READ);
+    await screen.findByText(/^Read the posting: Product Manager, AI Platform/);
+    await userEvent.click(screen.getByRole('button', { name: 'Add job' }));
+    expect(addJob).toHaveBeenCalledWith(
+      expect.objectContaining({ company: 'NVIDIA', role: 'Product Manager, AI Platform' }),
+    );
+  });
+
+  it('never adds a job when it’s cancelled while its link is read', async () => {
+    const { readPosting, answer } = slowRead();
+    const addJob = vi.fn(async () => ({ ok: true as const, jobId: 'nvidia--product-manager' }));
+    const onAdded = vi.fn();
+    const onClose = vi.fn();
+    render(
+      <AddJobDialog
+        api={{ readPosting, addJob } as unknown as FactwrightApi}
+        onAdded={onAdded}
+        onClose={onClose}
+      />,
+    );
+    await userEvent.keyboard('NVIDIA');
+    await userEvent.type(screen.getByRole('textbox', { name: 'Link to the posting' }), WORKDAY);
+    await userEvent.click(screen.getByRole('button', { name: 'Add job' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(onClose).toHaveBeenCalled();
+    cleanup();
+    answer(READ);
+    await new Promise((settled) => setTimeout(settled, 50));
+    expect(addJob).not.toHaveBeenCalled();
+    expect(onAdded).not.toHaveBeenCalled();
+  });
+
+  it('fills in nothing from a link the user changed while it was read', async () => {
+    const { readPosting, answer } = slowRead();
+    render(
+      <AddJobDialog
+        api={{ readPosting } as unknown as FactwrightApi}
+        onAdded={() => {}}
+        onClose={() => {}}
+      />,
+    );
+    const link = screen.getByRole('textbox', { name: 'Link to the posting' });
+    await userEvent.type(link, WORKDAY);
+    await userEvent.tab();
+    await userEvent.clear(link);
+    answer(READ);
+    await new Promise((settled) => setTimeout(settled, 50));
+    expect(screen.getByRole('textbox', { name: 'Company' })).toHaveProperty('value', '');
+    expect(screen.getByRole('textbox', { name: 'Role' })).toHaveProperty('value', '');
+    expect(screen.queryByText(/^Read the posting/)).toBeNull();
+  });
+
+  it('says what works for a page of several jobs, or a file', async () => {
+    let read: PostingRead = {
+      ok: false,
+      why: 'list',
+      message: 'That page looks like a list of jobs or a careers page, not one job’s posting.',
+    };
+    const readPosting = vi.fn(async () => read);
+    render(
+      <AddJobDialog
+        api={{ readPosting } as unknown as FactwrightApi}
+        onAdded={() => {}}
+        onClose={() => {}}
+      />,
+    );
+    const link = screen.getByRole('textbox', { name: 'Link to the posting' });
+    await userEvent.type(link, 'https://job-boards.greenhouse.io/acme');
+    await userEvent.tab();
+    expect(
+      await screen.findByText(
+        'That page looks like a list of jobs or a careers page, not one job’s posting. Use the job’s own link, or paste its description below.',
+      ),
+    ).toBeTruthy();
+    read = {
+      ok: false,
+      why: 'file',
+      message: 'That link is a file, such as a PDF, not a web page, so Factwright doesn’t read it.',
+    };
+    await userEvent.clear(link);
+    await userEvent.type(link, 'https://careers.acme.example/jobs/pm.pdf');
+    await userEvent.tab();
+    expect(
+      await screen.findByText(
+        'That link is a file, such as a PDF, not a web page, so Factwright doesn’t read it. Open it, and paste the description below.',
+      ),
+    ).toBeTruthy();
   });
 
   it('adds the job at once with the description the user pasted', async () => {

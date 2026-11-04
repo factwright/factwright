@@ -2,6 +2,7 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import type { FetchDeps } from './posting.ts';
 import { readForAdding } from './posting.ts';
+import { FetchAnswered, FetchRefused } from './safe-fetch.ts';
 import { testPages } from './test-pages.ts';
 
 /**
@@ -224,6 +225,78 @@ describe('reading a job’s link for Add job', () => {
       ok: false,
       why: 'unreachable',
       message: 'Couldn’t reach careers.acme.example: the site took too long to answer.',
+    });
+  });
+
+  it('reads a board in the EU through Greenhouse’s one job API, and a posting gone from it as closed', async () => {
+    const pages = testPages(PAGES);
+    const eu = await adding(
+      'https://job-boards.eu.greenhouse.io/gitlab/jobs/8638232002',
+      (url, json, limitMs, maxBytes) =>
+        url === 'https://boards-api.greenhouse.io/v1/boards/gitlab/jobs/8638232002'
+          ? pages(url, json, limitMs, maxBytes)
+          : Promise.reject(new Error(`not ${url}`)),
+    );
+    expect(eu.read).toMatchObject({ ok: true, posting: { via: 'Greenhouse API' } });
+    const gone = await adding(
+      'https://job-boards.eu.greenhouse.io/gitlab/jobs/4000000001',
+      async (url) => {
+        throw new FetchAnswered(new URL(url).hostname, 404);
+      },
+    );
+    expect(gone).toEqual({
+      read: { ok: false, why: 'closed', message: 'Greenhouse says this posting has closed.' },
+      asked: ['https://boards-api.greenhouse.io/v1/boards/gitlab/jobs/4000000001'],
+    });
+  });
+
+  it('reads the page itself when Greenhouse has no board by the name it guessed', async () => {
+    const posting = `<main><h1>Staff Engineer</h1><p>${'Build the tools our engineers use. '.repeat(20)}</p></main>`;
+    const fetch: NonNullable<FetchDeps['fetch']> = async (url, json) => {
+      if (json) throw new FetchAnswered(new URL(url).hostname, 404);
+      return posting;
+    };
+    for (const link of [
+      'https://careers.acme.example/jobs?gh_jid=4012345',
+      'https://job-boards.greenhouse.io/embed/job_app?for=acme&gh_jid=4012345',
+    ]) {
+      const { read, asked } = await adding(link, fetch);
+      expect(read).toMatchObject({ ok: true, posting: { via: 'the web page' } });
+      expect(asked.at(-1)).toBe(link);
+    }
+  });
+
+  it('keeps no page that lists jobs, nor a file, as one job’s posting', async () => {
+    const board = `<main>${'<p>Staff Engineer · Remote · Engineering</p>'.repeat(30)}</main>`;
+    expect((await adding('https://job-boards.greenhouse.io/acme', async () => board)).read).toEqual(
+      {
+        ok: false,
+        why: 'list',
+        message: 'That page looks like a list of jobs or a careers page, not one job’s posting.',
+      },
+    );
+    expect(
+      (
+        await adding('https://careers.acme.example/jobs/pm.pdf', async () => {
+          throw new FetchRefused('That link is a file (application/pdf), not a page.', 'file');
+        })
+      ).read,
+    ).toEqual({
+      ok: false,
+      why: 'file',
+      message: 'That link is a file, such as a PDF, not a web page, so Factwright doesn’t read it.',
+    });
+  });
+
+  it('says a busy site asked it to wait, rather than that it blocks apps', async () => {
+    const { read } = await adding('https://careers.acme.example/jobs/1', async (url) => {
+      throw new FetchAnswered(new URL(url).hostname, 429);
+    });
+    expect(read).toEqual({
+      ok: false,
+      why: 'unreachable',
+      message:
+        'careers.acme.example is busy, and asked Factwright to wait (429). Try again in a minute.',
     });
   });
 

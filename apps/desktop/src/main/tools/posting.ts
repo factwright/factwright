@@ -3,10 +3,12 @@ import { join } from 'node:path';
 import {
   FEED_SYSTEMS,
   folderJobId,
+  isJobLink,
   JOB_EXTRAS,
   localDate,
   normalizeUrl,
   onFeedSite,
+  PAGE_TEXT,
   type Posting,
   postingRequests,
   postingSource,
@@ -95,7 +97,10 @@ async function exists(path: string): Promise<boolean> {
 const GONE = new Set([404, 410]);
 
 /** What a site answers when it turns the app away: it wants a sign-in, or blocks apps. */
-const TURNED_AWAY = new Set([401, 403, 407, 429, 451, 999]);
+const TURNED_AWAY = new Set([401, 403, 407, 451, 999]);
+
+/** What a site answers when it wants fewer requests for now. */
+const BUSY = 429;
 
 /**
  * A posting or page, read from where the link points. With `feedsOnly`, only through an
@@ -125,9 +130,11 @@ async function readFrom(url: string, fetch: Fetch, feedsOnly: boolean): Promise<
     if (failure) throw failure;
     return null;
   }
-  if (gone && source.kind !== 'ashby' && onFeedSite(url)) {
-    return { text: '', via: FEED_SYSTEMS[source.kind], closed: true };
-  }
+  // Only the posting's own link on its system says so: never a board guessed from a company's
+  // site's name, nor Ashby's whole board.
+  const ownLink =
+    source.kind !== 'ashby' && !(source.kind === 'greenhouse' && source.guessed) && onFeedSite(url);
+  if (gone && ownLink) return { text: '', via: FEED_SYSTEMS[source.kind], closed: true };
   if (feedsOnly && !(tooBig && onFeedSite(url))) {
     if (failure) throw failure;
     return null;
@@ -146,6 +153,9 @@ function notRead(error: unknown, href: string): string {
   }
   if (error instanceof FetchAnswered && TURNED_AWAY.has(error.status)) {
     return `Couldn’t read ${href}: ${reasonOf(error)}. The site turns apps away or wants a sign-in, so never try another way round it: ask the user to save it from their browser with Save to Factwright, or to paste it.`;
+  }
+  if (error instanceof FetchAnswered && error.status === BUSY) {
+    return `Couldn’t read ${href}: ${reasonOf(error)}, as it wants fewer requests for now. Try it again later, or ask the user to paste it.`;
   }
   return `Couldn’t read ${href} (${reasonOf(error)}).`;
 }
@@ -189,6 +199,11 @@ export class ReadCache {
     const entry = this.entries.get(url);
     if (!entry || now - entry.at > KEEP_MS) return null;
     return entry.posting;
+  }
+
+  /** Forgets what was read from a link, as when reading it again failed. */
+  forget(url: string): void {
+    this.entries.delete(url);
   }
 }
 
@@ -289,6 +304,12 @@ function plainly(error: unknown, url: URL): { why: PostingProblem; message: stri
         };
       case 'too-big':
         return { why: 'refused', message: 'That page is too big for Factwright to read.' };
+      case 'file':
+        return {
+          why: 'file',
+          message:
+            'That link is a file, such as a PDF, not a web page, so Factwright doesn’t read it.',
+        };
       default:
         return { why: 'refused', message: error.message };
     }
@@ -303,6 +324,12 @@ function plainly(error: unknown, url: URL): { why: PostingProblem; message: stri
     return {
       why: 'blocked',
       message: `${site} turned Factwright away (${error.status}): it blocks apps, or wants you signed in.`,
+    };
+  }
+  if (error instanceof FetchAnswered && error.status === BUSY) {
+    return {
+      why: 'unreachable',
+      message: `${site} is busy, and asked Factwright to wait (${error.status}). Try again in a minute.`,
     };
   }
   if (error instanceof FetchAnswered) {
@@ -356,6 +383,15 @@ export async function readForAdding(link: string, deps: FetchDeps): Promise<Addi
       ok: false,
       why: 'browser',
       message: `${siteOf(url)} shows the posting only in a web browser, or once you’re signed in, so Factwright found nothing to read.`,
+    };
+  }
+  // A page's own text, from a link that isn't one job's, as a company's board or careers page is,
+  // is never this job's posting, which the job would keep.
+  if (posting.via === PAGE_TEXT && !isJobLink(url.href)) {
+    return {
+      ok: false,
+      why: 'list',
+      message: 'That page looks like a list of jobs or a careers page, not one job’s posting.',
     };
   }
   return { ok: true, url: url.href, posting };

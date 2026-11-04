@@ -23,15 +23,19 @@ const READ_AFTER_MS = 700;
 /** A link Factwright might read: one that starts as a web address does and names a site. */
 const looksLikeLink = (text: string) => /^https?:\/\/[^\s/]+\.[^\s/]+/i.test(text);
 
-/** The problems that leave the posting where only a browser, or the user, can get it. */
-const IN_A_BROWSER: readonly PostingProblem[] = [
-  'linkedin',
-  'barred',
-  'blocked',
-  'browser',
-  'unreachable',
-  'refused',
-];
+/** What works instead, for each problem: the browser, or pasting. */
+const INSTEAD: Readonly<Record<PostingProblem, 'browser' | 'open' | 'own-link' | 'file'>> = {
+  linkedin: 'browser',
+  barred: 'browser',
+  blocked: 'browser',
+  browser: 'browser',
+  unreachable: 'browser',
+  refused: 'browser',
+  gone: 'open',
+  closed: 'open',
+  list: 'own-link',
+  file: 'file',
+};
 
 /** What Add job says when reading the link failed in the app itself, as it never should. */
 const NOT_READ: PostingRead = {
@@ -68,10 +72,11 @@ function ReadNote({ read }: { read: LinkRead }) {
       </p>
     );
   }
+  const instead = INSTEAD[result.why];
   return (
     <p className={`${styles.unread} ${styles.wide}`} role="status">
       {result.message}{' '}
-      {IN_A_BROWSER.includes(result.why) ? (
+      {instead === 'browser' && (
         <>
           Open the posting in your browser and click{' '}
           <a className={styles.link} href={EXTENSION_URL} target="_blank" rel="noreferrer">
@@ -79,9 +84,10 @@ function ReadNote({ read }: { read: LinkRead }) {
           </a>
           , or paste the description below.
         </>
-      ) : (
-        'If it’s still open, paste its description below.'
       )}
+      {instead === 'open' && 'If it’s still open, paste its description below.'}
+      {instead === 'own-link' && 'Use the job’s own link, or paste its description below.'}
+      {instead === 'file' && 'Open it, and paste the description below.'}
     </p>
   );
 }
@@ -151,21 +157,28 @@ export function AddJobDialog({
   const changeLink = (value: string) => {
     setLink(value);
     clearTimeout(timer.current);
-    if (looksLikeLink(value.trim()))
+    // What a read of the link before says is about that link alone, so it fills in nothing now.
+    if (reading.current && reading.current.link !== value.trim()) reading.current = null;
+    if (looksLikeLink(value.trim())) {
       timer.current = setTimeout(() => readLink(value), READ_AFTER_MS);
+    }
   };
+
+  // What was read from the link the dialog has, or is being read from it.
+  const shownRead = read && read.link === link.trim() ? read : null;
+  // While the link is read, the job waits for it, unless the user pasted its posting.
+  const waiting = Boolean(shownRead && !shownRead.result) && !posting.trim();
 
   const add = async (event: FormEvent, close: () => void) => {
     event.preventDefault();
-    setSaving(true);
-    // A link still being read, or not read yet, is read before the job is added, so its posting
-    // goes with it. One that couldn't be read says why before the job's added without it.
-    const shown = read?.link === link.trim() ? read.result : null;
-    const result = shown ?? (await readLink(link));
-    if (result && !result.ok && !shown && !posting.trim()) {
-      setSaving(false);
+    // A link not read yet, or still being read, is read first, and the next click adds the job,
+    // with its posting or once the dialog says why it couldn't read it, so nothing it reads after
+    // a click changes the job the click added. Text the user pasted needs no reading.
+    if (!posting.trim() && looksLikeLink(link.trim()) && !shownRead?.result) {
+      readLink(link);
       return;
     }
+    setSaving(true);
     const added = await api.addJob({
       company,
       role,
@@ -184,8 +197,6 @@ export function AddJobDialog({
     onAdded(added.jobId, status, (hasKinds && kind) || null);
     close();
   };
-
-  const shownRead = read && read.link === link.trim() ? read : null;
 
   return (
     <Dialog
@@ -311,7 +322,7 @@ export function AddJobDialog({
           <div className={styles.wide}>
             <DialogActions>
               <Button onClick={close}>Cancel</Button>
-              <Button variant="primary" type="submit" disabled={saving}>
+              <Button variant="primary" type="submit" disabled={saving || waiting}>
                 Add job
               </Button>
             </DialogActions>

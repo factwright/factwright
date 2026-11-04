@@ -25,10 +25,16 @@ export class AddedPostings {
     return (this.deps.now?.() ?? new Date()).getTime();
   }
 
-  /** Reads a job's link as Add job shows it, and keeps the posting it read for the job. */
+  /**
+   * Reads a job's link as Add job shows it, and keeps the posting it read for the job. A link it
+   * can't read now keeps nothing from an earlier read, as Add job says it couldn't read it.
+   */
   async read(link: string): Promise<PostingRead> {
     const read = await readForAdding(link, this.deps);
-    if (!read.ok) return read;
+    if (!read.ok) {
+      if (URL.canParse(link.trim())) this.cache.forget(new URL(link.trim()).href);
+      return read;
+    }
     const { posting } = read;
     this.cache.remember(read.url, posting, this.now());
     return {

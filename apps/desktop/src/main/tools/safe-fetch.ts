@@ -21,7 +21,15 @@ const WORKDAY_SEARCH = /^\/wday\/cxs\/[a-z0-9-]{1,63}\/[\w-]{1,100}\/jobs$/;
  * the link itself, a site on a private network, an answer in Brotli or bigger than the app
  * reads, or a POST it never sends.
  */
-export type Refusal = 'linkedin' | 'barred' | 'link' | 'network' | 'brotli' | 'too-big' | 'post';
+export type Refusal =
+  | 'linkedin'
+  | 'barred'
+  | 'link'
+  | 'network'
+  | 'brotli'
+  | 'too-big'
+  | 'file'
+  | 'post';
 
 /** A fetch the app won't make, with the reason in plain words. */
 export class FetchRefused extends Error {
@@ -174,6 +182,16 @@ export function postProblem(url: URL, body: string): string | null {
 }
 
 /**
+ * Whether an answer is something the app reads: a page, text, JSON or XML, rather than a file such
+ * as a PDF or a Word document, whose bytes read as nonsense. An answer that doesn't say is read.
+ */
+export function readableType(type: string | undefined): boolean {
+  if (!type) return true;
+  const [kind = '', sub = ''] = (type.split(';', 1)[0] ?? '').trim().toLowerCase().split('/');
+  return kind === 'text' || /^(json|xml|html|javascript)$|\+(json|xml)$/.test(sub);
+}
+
+/**
  * The page as it came, unpacked from gzip or deflate, or null when it came in Brotli. The app
  * never asks for Brotli or unpacks it, so a page can't reach a flaw like the one Node.js's
  * Brotli decoder had (CVE-2026-111497), which let a page made for it run code.
@@ -221,6 +239,16 @@ function send(
           clearTimeout(timer);
           response.resume();
           resolve({ status, location: response.headers.location ?? '', body: '' });
+          return;
+        }
+        const type = response.headers['content-type'];
+        if (status >= 200 && status < 300 && !readableType(type)) {
+          fail(
+            new FetchRefused(
+              `That link is a file (${(type ?? '').split(';', 1)[0]}), not a page, so the app doesn’t read it. Ask the user to paste the posting.`,
+              'file',
+            ),
+          );
           return;
         }
         const chunks: Buffer[] = [];

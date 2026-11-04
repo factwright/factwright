@@ -1,5 +1,6 @@
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { FetchAnswered } from '../tools/safe-fetch.ts';
 import { testPages } from '../tools/test-pages.ts';
 import { AddedPostings } from './added-posting.ts';
 
@@ -23,6 +24,21 @@ describe('what Add job reads from a job’s link', () => {
     expect(postings.readFor('not a link')).toBeNull();
     // Kept two hours, as Claude's reads are.
     now = new Date(2026, 10, 4, 11, 1);
+    expect(postings.readFor(LEVER)).toBeNull();
+  });
+
+  it('forgets an earlier read of a link it can’t read now', async () => {
+    let closed = false;
+    const pages = testPages(PAGES);
+    const postings = new AddedPostings({
+      fetch: async (url, json, limitMs, maxBytes) => {
+        if (closed) throw new FetchAnswered(new URL(url).hostname, 404);
+        return pages(url, json, limitMs, maxBytes);
+      },
+    });
+    expect(await postings.read(LEVER)).toMatchObject({ ok: true });
+    closed = true;
+    expect(await postings.read(LEVER)).toMatchObject({ ok: false, why: 'closed' });
     expect(postings.readFor(LEVER)).toBeNull();
   });
 
