@@ -4,6 +4,9 @@ Notable changes to Factwright, newest first. The format follows [Keep a Changelo
 
 ## Unreleased
 
+### Security
+- The sync server uses Zod 4.6.7, up from 4.6.5, which Better Auth uses to check what each request sends. With 4.6.5, a request holding a huge list could make the server run out of memory and stop for a moment (GHSA-mrhx-c7xc-m3w5). It couldn't reveal anything. Factwright's sync gets it with its next deploy, and a server of your own once you update it to the copy made for Factwright's next version.
+
 ## 0.19.2 - 2026-11-04
 
 ### Fixed
