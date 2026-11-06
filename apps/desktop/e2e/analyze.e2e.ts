@@ -34,18 +34,19 @@ const pickView = (name: RegExp) =>
 
 /**
  * Adds a job by hand, as one saved from the browser is added, with a link to its posting, which
- * Add job can't read, as no saved page has it: once it says so, the job is added without it.
+ * Add job can't read, as no saved page has it: it asks for the posting, and the job is added
+ * without it.
  */
 async function addJob(company: string, role: string, link: string) {
   const { window } = opened;
   await window.getByRole('button', { name: 'Add job' }).click();
-  const dialog = window.getByRole('dialog', { name: 'Add a job' });
+  const dialog = window.getByRole('dialog', { name: /^(Add a job|Paste the posting)$/ });
   await dialog.getByRole('textbox', { name: 'Company' }).fill(company);
   await dialog.getByRole('textbox', { name: 'Role' }).fill(role);
   await dialog.getByRole('textbox', { name: 'Link to the posting' }).fill(link);
   await dialog.getByRole('textbox', { name: 'Link to the posting' }).blur();
   await expect(dialog.getByRole('status')).toContainText('Couldn’t reach');
-  await dialog.getByRole('button', { name: 'Add job' }).click();
+  await dialog.getByRole('button', { name: 'Add without the posting' }).click();
   await expect(jobRow(company)).toBeVisible();
 }
 

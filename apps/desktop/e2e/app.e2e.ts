@@ -1416,14 +1416,14 @@ test('gets a Greenhouse form’s questions before it’s open, and has your Clau
   opened = await openApp(dataDir, { FACTWRIGHT_FORM_FEED: feed });
   const { window } = opened;
   await window.getByRole('button', { name: 'Add job' }).click();
-  const add = window.getByRole('dialog', { name: 'Add a job' });
+  const add = window.getByRole('dialog', { name: /^(Add a job|Paste the posting)$/ });
   await add.getByRole('textbox', { name: 'Company' }).fill('Harbor & Pine Outfitters');
   await add.getByRole('textbox', { name: 'Role' }).fill('Account Executive');
   await add.getByRole('textbox', { name: 'Link to the posting' }).fill(HARBOR_POSTING);
-  // No saved page has this made-up posting, so Add job says it couldn't read it, then adds the job.
+  // No saved page has this made-up posting, so Add job asks for it, and the job goes in without.
   await add.getByRole('textbox', { name: 'Link to the posting' }).blur();
   await expect(add.getByRole('status')).toContainText('Couldn’t reach');
-  await add.getByRole('button', { name: 'Add job' }).click();
+  await add.getByRole('button', { name: 'Add without the posting' }).click();
   const answers = jobPanel().getByRole('region', { name: 'Application questions' });
   await answers.getByRole('button', { name: 'Get the form’s questions' }).click();
   // Only the form's own questions, for your Claude: not what every form asks, what Profile

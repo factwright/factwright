@@ -303,7 +303,7 @@ describe('AddJobDialog', () => {
     expect(screen.getByRole('textbox', { name: 'Role' })).toHaveProperty('value', 'Platform lead');
   });
 
-  it('says plainly why it can’t read a link and what works, before adding the job without its posting', async () => {
+  it('asks for the posting of a link it can’t read, plainly, and adds the job without it only when told', async () => {
     let answer: (read: PostingRead) => void = () => {};
     const readPosting = vi.fn(
       () =>
@@ -323,7 +323,7 @@ describe('AddJobDialog', () => {
     await userEvent.keyboard('Kite');
     const linkedIn = 'https://www.linkedin.com/jobs/view/4012345678/';
     await userEvent.type(screen.getByRole('textbox', { name: 'Link to the posting' }), linkedIn);
-    // Add waits while the link is read, then says why it couldn't, without adding yet.
+    // Add waits while the link is read, without adding yet.
     await userEvent.click(screen.getByRole('button', { name: 'Add job' }));
     expect(await screen.findByText('Reading the posting…')).toBeTruthy();
     // It keeps the keyboard's focus, as a disabled button would lose it.
@@ -335,23 +335,142 @@ describe('AddJobDialog', () => {
       why: 'linkedin',
       message: 'LinkedIn doesn’t let apps read its pages, so Factwright never does.',
     });
-    const note = await screen.findByText(/^LinkedIn doesn’t let apps read its pages/);
-    expect(note.textContent).toBe(
-      'LinkedIn doesn’t let apps read its pages, so Factwright never does. Open the posting in your browser and click Save to Factwright, or paste the description below.',
+    // The dialog turns to asking for the posting, with the box for it ready to paste into.
+    expect(await screen.findByRole('heading', { name: 'Paste the posting' })).toBeTruthy();
+    const box = screen.getByRole('textbox', { name: 'Job posting' });
+    expect(document.activeElement).toBe(box);
+    const why = screen.getByRole('status');
+    expect(why.textContent).toContain(
+      'LinkedIn doesn’t let apps read its pages, so Factwright never does.',
     );
-    expect(
-      within(note).getByRole('link', { name: 'Save to Factwright' }).getAttribute('href'),
-    ).toBe('https://factwright.com/extension');
+    expect(why.textContent).toContain(
+      'Paste the posting below. Or open it in your browser and click Save to Factwright, which saves the whole posting with its link in one click.',
+    );
+    expect(within(why).getByRole('link', { name: 'Save to Factwright' }).getAttribute('href')).toBe(
+      'https://factwright.com/extension',
+    );
+    expect(screen.getByText(/^On LinkedIn, click “… more” under About the job first/)).toBeTruthy();
+    // What the user typed is there to finish.
+    expect(screen.getByRole('textbox', { name: 'Company' })).toHaveProperty('value', 'Kite');
     expect(addJob).not.toHaveBeenCalled();
-    const results = await axe.run(container, { rules: { 'color-contrast': { enabled: false } } });
+    const results = await axe.run(container.ownerDocument.body, {
+      rules: { 'color-contrast': { enabled: false } },
+    });
     expect(results.violations).toEqual([]);
-    // Once it's said, the job is added without its posting.
+    // Add job wants the posting first. Add without the posting adds the job with its link alone.
     await userEvent.click(screen.getByRole('button', { name: 'Add job' }));
+    expect(screen.getByRole('alert').textContent).toBe(
+      'Paste the job’s posting first, or choose Add without the posting.',
+    );
+    expect(document.activeElement).toBe(box);
+    expect(addJob).not.toHaveBeenCalled();
+    await userEvent.click(screen.getByRole('button', { name: 'Add without the posting' }));
     expect(addJob).toHaveBeenCalledWith(
       expect.not.objectContaining({ posting: expect.anything() }),
     );
     expect(readPosting).toHaveBeenCalledTimes(1);
     expect(onAdded).toHaveBeenCalled();
+  });
+
+  const BLOCKED: PostingRead = {
+    ok: false,
+    why: 'blocked',
+    message:
+      'careers.acme.example turned Factwright away (403): it blocks apps, or wants you signed in.',
+  };
+
+  it('ticks off what a pasted posting has, says when it looks like part of one, and adds the job with it', async () => {
+    const readPosting = vi.fn(async () => BLOCKED);
+    const addJob = vi.fn(async () => ({ ok: true as const, jobId: 'acme--program-manager' }));
+    render(
+      <AddJobDialog
+        api={{ readPosting, addJob } as unknown as FactwrightApi}
+        onAdded={() => {}}
+        onClose={() => {}}
+      />,
+    );
+    await userEvent.keyboard('Acme');
+    await userEvent.type(
+      screen.getByRole('textbox', { name: 'Link to the posting' }),
+      'https://careers.acme.example/jobs/1',
+    );
+    await userEvent.tab();
+    const box = await screen.findByRole('textbox', { name: 'Job posting' });
+    const parts = () =>
+      within(screen.getByRole('region', { name: 'What to paste' }))
+        .getAllByRole('listitem')
+        .map((item) => item.textContent);
+    expect(parts()).toEqual([
+      'All of it, from the job’s title down to the end',
+      'What you’d do: the work, the team, who it reports to',
+      'What they want: years, skills, degrees, certifications',
+      'Pay and benefits, if it says',
+      'Where: the place, and remote, hybrid or on-site',
+    ]);
+    expect(screen.getByText(/^On the posting’s page, select from the job’s title/)).toBeTruthy();
+    await userEvent.click(box);
+    const start = 'Program Manager\n\nWhat you’ll do: run the roadmap.\nRemote in the US.';
+    await userEvent.paste(start);
+    expect(parts()).toEqual([
+      'All of it, from the job’s title down to the end',
+      'What you’d do: the work, the team, who it reports to: it’s there',
+      'What they want: years, skills, degrees, certifications',
+      'Pay and benefits, if it says',
+      'Where: the place, and remote, hybrid or on-site: it’s there',
+    ]);
+    expect(
+      screen.getByText(
+        `${start.length} characters. That may be only part of the posting: paste all of it, from the top.`,
+      ),
+    ).toBeTruthy();
+    await userEvent.paste(
+      `\n\nWhat you’ll need: 5 years of program management.\nPay: $150,000–$180,000 a year, with benefits.\n${'More about the team and its work. '.repeat(40)}`,
+    );
+    expect(parts().every((part) => part?.endsWith(': it’s there'))).toBe(true);
+    expect(screen.queryByText(/That may be only part of the posting/)).toBeNull();
+    await userEvent.click(screen.getByRole('button', { name: 'Add job' }));
+    expect(addJob).toHaveBeenCalledWith(
+      expect.objectContaining({
+        company: 'Acme',
+        link: 'https://careers.acme.example/jobs/1',
+        posting: expect.stringMatching(/^Program Manager\n\nWhat you’ll do/),
+      }),
+    );
+  });
+
+  it('goes back to the link, and asks for the posting again before adding the job without it', async () => {
+    const readPosting = vi.fn(async () => BLOCKED);
+    const addJob = vi.fn(async () => ({ ok: true as const, jobId: 'acme' }));
+    render(
+      <AddJobDialog
+        api={{ readPosting, addJob } as unknown as FactwrightApi}
+        onAdded={() => {}}
+        onClose={() => {}}
+      />,
+    );
+    await userEvent.type(
+      screen.getByRole('textbox', { name: 'Link to the posting' }),
+      'https://careers.acme.example/jobs/1',
+    );
+    await userEvent.tab();
+    await screen.findByRole('heading', { name: 'Paste the posting' });
+    // Without a company, the job can't be added either way.
+    await userEvent.click(screen.getByRole('button', { name: 'Add without the posting' }));
+    expect(screen.getByRole('alert').textContent).toBe('Add the company’s name first.');
+    expect(document.activeElement).toBe(screen.getByRole('textbox', { name: 'Company' }));
+    await userEvent.keyboard('Acme');
+    await userEvent.click(screen.getByRole('button', { name: 'Back' }));
+    expect(screen.getByRole('heading', { name: 'Add a job' })).toBeTruthy();
+    expect(document.activeElement).toBe(
+      screen.getByRole('textbox', { name: 'Link to the posting' }),
+    );
+    expect(screen.getByRole('textbox', { name: 'Company' })).toHaveProperty('value', 'Acme');
+    expect(screen.queryByRole('alert')).toBeNull();
+    // Add job, with the link still unread and nothing pasted, asks for the posting again.
+    await userEvent.click(screen.getByRole('button', { name: 'Add job' }));
+    expect(await screen.findByRole('heading', { name: 'Paste the posting' })).toBeTruthy();
+    expect(addJob).not.toHaveBeenCalled();
+    expect(readPosting).toHaveBeenCalledTimes(1);
   });
 
   /** A read of the link that answers only when the test says. */
@@ -458,13 +577,40 @@ describe('AddJobDialog', () => {
     await userEvent.type(screen.getByRole('textbox', { name: 'Link to the posting' }), WORKDAY);
     await userEvent.tab();
     await screen.findByText(/^careers\.acme\.example is busy/);
-    // Leaving the box again asks nothing more: Try again does.
-    await userEvent.click(screen.getByRole('textbox', { name: 'Link to the posting' }));
+    expect(screen.getByRole('heading', { name: 'Paste the posting' })).toBeTruthy();
+    // Back at the link, leaving the box again asks nothing more: Try again does.
+    await userEvent.click(screen.getByRole('button', { name: 'Back' }));
     await userEvent.tab();
     expect(readPosting).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole('heading', { name: 'Add a job' })).toBeTruthy();
     await userEvent.click(screen.getByRole('button', { name: 'Try again' }));
     await screen.findByText(/^Read the posting: Product Manager, AI Platform/);
     expect(readPosting).toHaveBeenCalledTimes(2);
+  });
+
+  it('tries again from the step that asks for the posting, and goes on once it’s read', async () => {
+    const readPosting = vi
+      .fn<() => Promise<PostingRead>>()
+      .mockResolvedValueOnce({
+        ok: false,
+        why: 'unreachable',
+        message: 'Factwright couldn’t reach careers.acme.example. Check the connection.',
+      })
+      .mockResolvedValueOnce(READ);
+    render(
+      <AddJobDialog
+        api={{ readPosting } as unknown as FactwrightApi}
+        onAdded={() => {}}
+        onClose={() => {}}
+      />,
+    );
+    await userEvent.type(screen.getByRole('textbox', { name: 'Link to the posting' }), WORKDAY);
+    await userEvent.tab();
+    const why = await screen.findByRole('status');
+    await userEvent.click(within(why).getByRole('button', { name: 'Try again' }));
+    await screen.findByText(/^Read the posting: Product Manager, AI Platform/);
+    expect(screen.getByRole('heading', { name: 'Add a job' })).toBeTruthy();
+    expect(screen.getByRole('textbox', { name: 'Company' })).toHaveProperty('value', 'NVIDIA');
   });
 
   it('says what works for a page of several jobs, or a file', async () => {
@@ -481,27 +627,38 @@ describe('AddJobDialog', () => {
         onClose={() => {}}
       />,
     );
-    const link = screen.getByRole('textbox', { name: 'Link to the posting' });
-    await userEvent.type(link, 'https://job-boards.greenhouse.io/acme');
+    const link = () => screen.getByRole('textbox', { name: 'Link to the posting' });
+    await userEvent.type(link(), 'https://job-boards.greenhouse.io/acme');
     await userEvent.tab();
     expect(
       await screen.findByText(
-        'That page looks like a list of jobs or a careers page, not one job’s posting. Use the job’s own link, or paste its description below.',
+        'That page looks like a list of jobs or a careers page, not one job’s posting.',
       ),
+    ).toBeTruthy();
+    expect(
+      screen.getByText('Go back and use the job’s own link, or paste its posting below.'),
     ).toBeTruthy();
     read = {
       ok: false,
       why: 'file',
       message: 'That link is a file, such as a PDF, not a web page, so Factwright doesn’t read it.',
     };
-    await userEvent.clear(link);
-    await userEvent.type(link, 'https://careers.acme.example/jobs/pm.pdf');
+    await userEvent.click(screen.getByRole('button', { name: 'Back' }));
+    // Back at the link, the note under it says the same.
+    expect(
+      screen.getByText(
+        'That page looks like a list of jobs or a careers page, not one job’s posting. Use the job’s own link, or paste its description below.',
+      ),
+    ).toBeTruthy();
+    await userEvent.clear(link());
+    await userEvent.type(link(), 'https://careers.acme.example/jobs/pm.pdf');
     await userEvent.tab();
     expect(
       await screen.findByText(
-        'That link is a file, such as a PDF, not a web page, so Factwright doesn’t read it. Open it, and paste the description below.',
+        'That link is a file, such as a PDF, not a web page, so Factwright doesn’t read it.',
       ),
     ).toBeTruthy();
+    expect(screen.getByText('Open the file, and paste the posting below.')).toBeTruthy();
   });
 
   it('adds the job at once with the description the user pasted', async () => {
@@ -521,14 +678,17 @@ describe('AddJobDialog', () => {
     );
     await userEvent.keyboard('Apple');
     await userEvent.type(
-      screen.getByRole('textbox', { name: 'Link to the posting' }),
-      'https://jobs.apple.com/en-us/details/200626630-0836/engineering-project-manager',
-    );
-    await userEvent.type(
       screen.getByRole('textbox', { name: 'Job description' }),
       'Engineering Project Manager. Lead the work.',
     );
+    await userEvent.type(
+      screen.getByRole('textbox', { name: 'Link to the posting' }),
+      'https://jobs.apple.com/en-us/details/200626630-0836/engineering-project-manager',
+    );
+    await userEvent.tab();
     await screen.findByText(/^jobs\.apple\.com shows the posting only in a web browser/);
+    // What the user pasted is the posting: there's nothing more to ask for.
+    expect(screen.queryByRole('heading', { name: 'Paste the posting' })).toBeNull();
     await userEvent.click(screen.getByRole('button', { name: 'Add job' }));
     expect(addJob).toHaveBeenCalledWith(
       expect.objectContaining({ posting: 'Engineering Project Manager. Lead the work.' }),
@@ -550,11 +710,8 @@ describe('AddJobDialog', () => {
     );
     await userEvent.type(screen.getByRole('textbox', { name: 'Link to the posting' }), WORKDAY);
     await userEvent.tab();
-    expect(
-      await screen.findByText(
-        'Workday says this posting has closed. If it’s still open, paste its description below.',
-      ),
-    ).toBeTruthy();
+    expect(await screen.findByText('Workday says this posting has closed.')).toBeTruthy();
+    expect(screen.getByText('If you still have the posting, paste it below.')).toBeTruthy();
   });
 
   it('points to the browser extension, for a job found in the browser', () => {

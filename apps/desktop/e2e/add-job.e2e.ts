@@ -31,10 +31,13 @@ const jobRow = (company: string) =>
     .getByRole('list', { name: 'Jobs' })
     .getByRole('button', { name: new RegExp(`^${company}`) });
 
-/** Opens Add job and gives it a link, which it reads once the field is left. */
+/**
+ * Opens Add job and gives it a link, which it reads once the field is left. A link it can't read
+ * turns the dialog to asking for the posting, under another name.
+ */
 async function addWithLink(link: string): Promise<Locator> {
   await opened.window.getByRole('button', { name: 'Add job' }).click();
-  const dialog = opened.window.getByRole('dialog', { name: 'Add a job' });
+  const dialog = opened.window.getByRole('dialog', { name: /^(Add a job|Paste the posting)$/ });
   const field = dialog.getByRole('textbox', { name: 'Link to the posting' });
   await field.fill(link);
   await field.blur();
@@ -70,21 +73,24 @@ test('reads a job’s link as it’s added, fills in its company and role, and k
   await expect(posting).toHaveCount(0);
 });
 
-test('says plainly why it can’t read LinkedIn, points to what works, and keeps a pasted description', async () => {
+test('asks plainly for a LinkedIn job’s posting, points to what works, and keeps what’s pasted', async () => {
   const dialog = await addWithLink('https://www.linkedin.com/jobs/view/4012345678/');
-  const note = dialog.getByRole('status');
-  await expect(note).toHaveText(
-    'LinkedIn doesn’t let apps read its pages, so Factwright never does. Open the posting in your browser and click Save to Factwright, or paste the description below.',
+  await expect(dialog.getByRole('heading', { name: 'Paste the posting' })).toBeVisible();
+  const why = dialog.getByRole('status');
+  await expect(why).toContainText(
+    'LinkedIn doesn’t let apps read its pages, so Factwright never does.',
   );
-  await expect(note.getByRole('link', { name: 'Save to Factwright' })).toHaveAttribute(
+  await expect(why.getByRole('link', { name: 'Save to Factwright' })).toHaveAttribute(
     'href',
     'https://factwright.com/extension',
   );
+  const box = dialog.getByRole('textbox', { name: 'Job posting' });
+  await expect(box).toBeFocused();
   await dialog.getByRole('textbox', { name: 'Company' }).fill('Cynet Systems');
   await dialog.getByRole('textbox', { name: 'Role' }).fill('.NET Core Developer');
-  await dialog
-    .getByRole('textbox', { name: 'Job description' })
-    .fill('About the job\n\nBuild services in .NET Core for our clients.');
+  await box.fill('About the job\n\nBuild services in .NET Core for our clients. Remote in the US.');
+  const parts = dialog.getByRole('region', { name: 'What to paste' });
+  await expect(parts).toContainText('Where: the place, and remote, hybrid or on-site: it’s there');
   await dialog.getByRole('button', { name: 'Add job' }).click();
   await expect(dialog).toHaveCount(0);
   await expect(jobRow('Cynet Systems')).toBeVisible();
@@ -93,22 +99,31 @@ test('says plainly why it can’t read LinkedIn, points to what works, and keeps
   await opened.window.keyboard.press('Escape');
 });
 
-test('says a site turned it away, or a posting closed, then adds the job without its posting', async () => {
+test('asks for the posting when a site turned it away or a posting closed, then adds the job without it on the user’s word', async () => {
   const blocked = await addWithLink('https://careers.blocks-apps.example/jobs/1');
-  await expect(blocked.getByRole('status')).toHaveText(
-    'careers.blocks-apps.example turned Factwright away (403): it blocks apps, or wants you signed in. Open the posting in your browser and click Save to Factwright, or paste the description below.',
+  await expect(blocked.getByRole('status')).toContainText(
+    'careers.blocks-apps.example turned Factwright away (403): it blocks apps, or wants you signed in.',
   );
   await blocked.getByRole('textbox', { name: 'Company' }).fill('Blocks Apps');
+  // Add job wants the posting. Without one, the job is added only on the user's word.
   await blocked.getByRole('button', { name: 'Add job' }).click();
+  await expect(blocked.getByRole('alert')).toHaveText(
+    'Paste the job’s posting first, or choose Add without the posting.',
+  );
+  await blocked.getByRole('button', { name: 'Add without the posting' }).click();
   await expect(blocked).toHaveCount(0);
   await expect(jobRow('Blocks Apps')).toBeVisible();
 
   const closed = await addWithLink(
     'https://clark.wd503.myworkdayjobs.com/clarkexternal/job/McLean-VA/Project-Manager_R5025094',
   );
-  await expect(closed.getByRole('status')).toHaveText(
-    'Workday says this posting has closed. If it’s still open, paste its description below.',
+  await expect(closed.getByRole('status')).toContainText('Workday says this posting has closed.');
+  await expect(closed.getByRole('status')).toContainText(
+    'If you still have the posting, paste it below.',
   );
+  // Back at the link, the dialog is Add a job again, and Cancel closes it.
+  await closed.getByRole('button', { name: 'Back' }).click();
+  await expect(closed.getByRole('heading', { name: 'Add a job' })).toBeVisible();
   await closed.getByRole('button', { name: 'Cancel' }).click();
   await expect(closed).toHaveCount(0);
 });
