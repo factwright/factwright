@@ -39,7 +39,135 @@
 
 .unread {
   padding: 8px 10px;
-  border-radius: var(--fw-radius);
+  border-radius: var(--fw-radius-md);
   background: var(--fw-need-soft);
   color: var(--fw-text);
+}
+
+/* Asking for the posting of a link it couldn't read: why, the job's details, and a big box. */
+.paste {
+  display: grid;
+  gap: var(--fw-space-4);
+}
+
+.why {
+  display: grid;
+  gap: var(--fw-space-2);
+  padding: 12px 14px;
+  border-left: 3px solid var(--fw-need);
+  border-radius: var(--fw-radius-md);
+  background: var(--fw-need-soft);
+  color: var(--fw-text);
+}
+
+.whyLine {
+  margin: 0;
+  font-size: var(--fw-text-md);
+}
+
+.whyLine:first-child {
+  font-weight: 600;
+}
+
+.details {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 14px var(--fw-space-3);
+}
+
+.pasteArea {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(220px, 1fr);
+  gap: var(--fw-space-4);
+  align-items: start;
+}
+
+.postingField {
+  min-width: 0;
+}
+
+.postingBox {
+  min-height: max(180px, 32vh);
+  font-size: var(--fw-text-md);
+  line-height: 1.5;
+}
+
+.parts {
+  display: grid;
+  gap: var(--fw-space-2);
+  padding: 12px 14px;
+  border: 1px solid var(--fw-border);
+  border-radius: var(--fw-radius-md);
+  background: var(--fw-sunken);
+}
+
+.partsTitle {
+  margin: 0;
+  font-size: var(--fw-text-md);
+  font-weight: 650;
+}
+
+.partList {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--fw-text-sm);
+}
+
+.partList li {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.partIcon {
+  flex: 0 0 auto;
+  margin-top: 1px;
+}
+
+.found {
+  color: var(--fw-text);
+}
+
+.found .partIcon {
+  color: var(--fw-ok);
+}
+
+.missing {
+  color: var(--fw-muted);
+}
+
+.short {
+  margin: 0;
+  color: var(--fw-bad);
+  font-size: var(--fw-text-sm);
+}
+
+/* On a narrow window, the list of what to paste goes under the box. */
+@media (max-width: 760px) {
+  .pasteArea {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.again {
+  display: flex;
+  align-items: center;
+  gap: var(--fw-space-2);
+}
+
+/* The buttons stay at the dialog's bottom edge while what's above them scrolls. */
+.pasteActions {
+  position: sticky;
+  bottom: calc(-1 * var(--fw-space-6));
+  margin: 0 calc(-1 * var(--fw-space-6)) calc(-1 * var(--fw-space-6));
+  padding: 0 var(--fw-space-6) var(--fw-space-4);
+  border-top: 1px solid var(--fw-border);
+  background: var(--fw-surface);
+}
+
+.pasteActions > * {
+  margin-top: var(--fw-space-4);
 }
