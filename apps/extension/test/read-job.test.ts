@@ -101,6 +101,15 @@ describe('reading a job page', () => {
     expect(job.pageUrl).toContain('keywords=');
   });
 
+  it('keeps a LinkedIn job alert email’s link as the job’s own address', () => {
+    const job = readJobPage(
+      page('<body><div class="jobs-description__content">Posting</div></body>'),
+      'https://www.linkedin.com/comm/jobs/view/4012345678/?trackingId=abc&refId=xyz',
+      '',
+    );
+    expect(job.url).toBe('https://www.linkedin.com/jobs/view/4012345678/');
+  });
+
   it('keeps a LinkedIn job page’s address without its tracking', () => {
     const job = readJobPage(
       page('<body><div class="jobs-description__content">Posting</div></body>'),

@@ -675,9 +675,11 @@ export function readJobPage(
     const host = url.hostname.replace(/^www\./, '');
     const query = queryOf(url.search);
     const param = (name: string) => query.find(([key]) => key === name)?.[1] ?? null;
-    if (/(^|\.)linkedin\.com$/.test(host) && /^\/jobs(\/|$)/.test(url.pathname)) {
+    // A job alert email's link is the job's page at /comm/jobs/view/, which stays there.
+    if (/(^|\.)linkedin\.com$/.test(host) && /^\/(comm\/)?jobs(\/|$)/.test(url.pathname)) {
       const id =
-        param('currentJobId') ?? url.pathname.match(/^\/jobs\/view\/(?:[^/]*-)?(\d+)/)?.[1];
+        param('currentJobId') ??
+        url.pathname.match(/^\/(?:comm\/)?jobs\/view\/(?:[^/]*-)?(\d+)/)?.[1];
       if (id && /^\d+$/.test(id)) return `https://www.linkedin.com/jobs/view/${id}/`;
     }
     if (

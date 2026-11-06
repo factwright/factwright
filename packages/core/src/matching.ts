@@ -55,9 +55,9 @@ export function postingKey(address: string): string | null {
   if (taleo) return taleo;
   const successFactors = successFactorsPosting(host, url);
   if (successFactors) return successFactors;
-  if (/(^|\.)linkedin\.com$/.test(host) && /^\/jobs(\/|$)/.test(url.pathname)) {
-    // jobs/view/<id>, or jobs/view/<its title>-<id>.
-    const view = url.pathname.match(/^\/jobs\/view\/([^/]+)/)?.[1];
+  if (/(^|\.)linkedin\.com$/.test(host) && /^\/(comm\/)?jobs(\/|$)/.test(url.pathname)) {
+    // jobs/view/<id>, or jobs/view/<its title>-<id>, or a job alert email's comm/jobs/view/<id>.
+    const view = url.pathname.match(/^\/(?:comm\/)?jobs\/view\/([^/]+)/)?.[1];
     const id = view?.match(/(?:^|-)(\d+)$/)?.[1] ?? url.searchParams.get('currentJobId');
     return id && /^\d{1,20}$/.test(id) ? `linkedin:${id}` : null;
   }

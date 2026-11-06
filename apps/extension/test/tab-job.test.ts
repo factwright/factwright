@@ -31,6 +31,7 @@ const ADDRESSES = [
   'https://careers-acme.icims.com/jobs/1234/engineer/job?in_iframe=1&utm_source=x',
   'https://acme.example/jobs/1234?width=wide',
   'not a link',
+  'https://www.linkedin.com/comm/jobs/view/4012345678/?trackingId=abc&refId=xyz',
 ];
 
 describe('a job’s own address', () => {
@@ -54,6 +55,8 @@ describe('a job’s own address', () => {
 
   it('is the job’s own page on LinkedIn and Indeed, and the page without tracking elsewhere', () => {
     expect(jobAddress(ADDRESSES[0] ?? '')).toBe('https://www.linkedin.com/jobs/view/4012345678/');
+    // A job alert email's link to it, which stays where it is.
+    expect(jobAddress(ADDRESSES[17] ?? '')).toBe('https://www.linkedin.com/jobs/view/4012345678/');
     expect(jobAddress(ADDRESSES[2] ?? '')).toBe('https://www.indeed.com/viewjob?jk=a1b2c3d4e5');
     expect(jobAddress(ADDRESSES[4] ?? '')).toBe('https://jobs.example.com/pm-data?team=data');
   });
@@ -62,6 +65,8 @@ describe('a job’s own address', () => {
 describe('whether an address is one job’s', () => {
   it('is, on LinkedIn and Indeed, only for a job’s own page', () => {
     expect(isJobAddress('https://www.linkedin.com/jobs/view/4012345678/')).toBe(true);
+    expect(isJobAddress('https://www.linkedin.com/comm/jobs/view/4012345678/')).toBe(true);
+    expect(isJobAddress('https://www.linkedin.com/comm/feed/')).toBe(false);
     expect(isJobAddress('https://www.linkedin.com/jobs/search/?keywords=engineer')).toBe(false);
     expect(isJobAddress('https://www.linkedin.com/feed/')).toBe(false);
     expect(isJobAddress('https://www.indeed.com/viewjob?jk=a1b2c3d4e5')).toBe(true);
