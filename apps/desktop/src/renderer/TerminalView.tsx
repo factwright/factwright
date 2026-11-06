@@ -83,9 +83,13 @@ export function TerminalView({
         api.writeToClaude(runId, data);
         return;
       }
-      const next = (waiting ?? Promise.resolve()).then(async () => {
-        api.writeToClaude(runId, await data);
-      });
+      const next = (waiting ?? Promise.resolve())
+        .then(async () => {
+          api.writeToClaude(runId, await data);
+        })
+        .catch(() => {
+          // A step that failed sends nothing, and what's typed after it still goes.
+        });
       waiting = next;
       void next.then(() => {
         if (waiting === next) waiting = null;
@@ -112,6 +116,9 @@ export function TerminalView({
         if (text.trim().length <= LONG_TEXT) return;
         event.preventDefault();
         event.stopPropagation();
+        // As the terminal's own paste does, it shows where the text goes.
+        terminal.clearSelection();
+        terminal.scrollToBottom();
         send(
           api
             .pasteText(runId, text)
