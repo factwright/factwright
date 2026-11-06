@@ -13,11 +13,14 @@ const WORK =
 
 /** What they want: years, skills, degrees, certifications. */
 const ASKS =
-  /\b(qualifications?|requirements?|what you(?:'|’)?ll need|what we(?:'|’)?re looking for|you have|you bring|must[- ]have|nice to have|years? of|experience (?:with|in)|bachelor|master(?:'|’)?s|degree|certifi)/i;
+  /\b(qualifications?|requirements?|what you(?:'|’)?ll need|what we(?:'|’)?re looking for|you have|you bring|must[- ]have|nice to have|years? of|experience (?:with|in)|bachelor|master(?:'|’)?s|ph\.?d|degree (?:in|or|required|preferred)|certifi)/i;
 
-/** Pay and benefits. */
+/**
+ * Pay and benefits: an amount with its currency before or after it, or the words for it. Not
+ * "equity" alone, which is as often diversity's, nor "bonus points".
+ */
 const PAY =
-  /([$£€]\s?\d|\b(salary|compensation|pay range|base pay|hourly|per hour|per year|benefits|401\(?k\)?|bonus|equity)\b)/i;
+  /([$£€]\s?\d|\d[\d.,]*\s?(?:[$£€]|(?:usd|eur|gbp)\b)|\b(salary|compensation|pay range|base pay|hourly|per hour|per year|benefits|401\(?k\)?|bonus(?!\s+points?)|stock options?)\b)/i;
 
 /** Where: the place, and remote, hybrid or on-site. */
 const PLACE = /\b(remote|hybrid|on[- ]?site|in[- ]office|location|relocat)/i;

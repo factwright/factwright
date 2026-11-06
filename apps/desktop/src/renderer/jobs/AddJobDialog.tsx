@@ -70,7 +70,16 @@ function ExtensionLink() {
 }
 
 /** What Add job says of the link it read, or is reading, under it, with Try again when it may work. */
-function ReadNote({ read, onAgain }: { read: LinkRead; onAgain: () => void }) {
+function ReadNote({
+  read,
+  pasted,
+  onAgain,
+}: {
+  read: LinkRead;
+  /** Whether the user pasted a description, which the posting read from the link replaces. */
+  pasted: boolean;
+  onAgain: () => void;
+}) {
   const { result } = read;
   if (!result) {
     return (
@@ -83,7 +92,8 @@ function ReadNote({ read, onAgain }: { read: LinkRead; onAgain: () => void }) {
     return (
       <p className={`${styles.read} ${styles.wide}`} role="status">
         Read the posting{result.title ? `: ${result.title}` : ''}, {count(result.characters)}{' '}
-        characters. It’s kept with the job.
+        characters. It’s kept with the job{pasted ? ', in place of the description you pasted' : ''}
+        .
       </p>
     );
   }
@@ -178,6 +188,16 @@ export function AddJobDialog({
   useEffect(() => {
     pasted.current = posting;
   }, [posting]);
+  // How many times the user changed a box other than the link, so a read that ends while they're
+  // busy in one asks nothing then, and moves nothing they type to another box.
+  const edits = useRef(0);
+  const edited = () => {
+    edits.current += 1;
+  };
+  // The last read that failed, which the step asking for the posting keeps showing while the link
+  // is read again.
+  const [failure, setFailure] = useState<{ link: string; result: Unread } | null>(null);
+  const whyId = useId();
   const companyBox = useRef<HTMLInputElement>(null);
   const linkBox = useRef<HTMLInputElement>(null);
   const postingBox = useRef<HTMLTextAreaElement>(null);
@@ -196,13 +216,18 @@ export function AddJobDialog({
     const done = api.readPosting(wanted).catch(() => NOT_READ);
     reading.current = { link: wanted, done };
     setRead({ link: wanted, result: null });
+    const editsBefore = edits.current;
     void done.then((result) => {
-      if (reading.current?.link !== wanted) return;
+      // A read the user has moved on from, to another link or another read of this one, says nothing.
+      if (reading.current?.done !== done) return;
       setRead({ link: wanted, result });
       if (!result.ok) {
-        if (!pasted.current.trim()) setStep('paste');
+        setFailure({ link: wanted, result });
+        // Asking for the posting waits for Add job when the user is busy in another box.
+        if (!pasted.current.trim() && edits.current === editsBefore) setStep('paste');
         return;
       }
+      setFailure(null);
       setStep('details');
       setCompany((typed) => (typed.trim() ? typed : (result.company ?? typed)));
       setRole((typed) => (typed.trim() ? typed : (result.title ?? typed)));
@@ -224,9 +249,13 @@ export function AddJobDialog({
   const shownRead = read && read.link === link.trim() ? read : null;
   // While the link is read, the job waits for it, unless the user pasted its posting.
   const waiting = Boolean(shownRead && !shownRead.result) && !posting.trim();
-  // The link it couldn't read, if that's what it has.
+  // The link it couldn't read, if that's what it has, or is reading again after it couldn't.
   const unread = shownRead?.result && !shownRead.result.ok ? shownRead.result : null;
-  const asking = step === 'paste' && unread !== null;
+  const rereading = Boolean(shownRead && !shownRead.result) && failure?.link === link.trim();
+  const shownFailure = unread ?? (rereading ? (failure?.result ?? null) : null);
+  const asking = step === 'paste' && shownFailure !== null;
+  // A posting read from the link takes the place of a description the user pasted before.
+  const readOk = shownRead?.result?.ok === true;
 
   // Asked for the posting, the box for it takes the keyboard, ready to paste. Back from there, the
   // link does, as going back is for changing it.
@@ -245,12 +274,12 @@ export function AddJobDialog({
    */
   const add = async (close: () => void, withoutPosting = false) => {
     setProblem(null);
-    const pastedNow = posting.trim();
-    if (!pastedNow && looksLikeLink(link.trim()) && !shownRead?.result) {
+    const pastedNow = withoutPosting || readOk ? '' : posting.trim();
+    if (!withoutPosting && !pastedNow && looksLikeLink(link.trim()) && !shownRead?.result) {
       readLink(link);
       return;
     }
-    if (unread && !pastedNow && !withoutPosting) {
+    if (shownFailure && !pastedNow && !withoutPosting) {
       if (asking) {
         setProblem('Paste the job’s posting first, or choose Add without the posting.');
         postingBox.current?.focus();
@@ -298,7 +327,10 @@ export function AddJobDialog({
           required
           maxLength={LIMITS.company}
           value={company}
-          onChange={(event) => setCompany(event.target.value)}
+          onChange={(event) => {
+            edited();
+            setCompany(event.target.value);
+          }}
         />
       )}
     </Field>
@@ -310,7 +342,10 @@ export function AddJobDialog({
           {...control}
           maxLength={LIMITS.role}
           value={role}
-          onChange={(event) => setRole(event.target.value)}
+          onChange={(event) => {
+            edited();
+            setRole(event.target.value);
+          }}
         />
       )}
     </Field>
@@ -318,7 +353,14 @@ export function AddJobDialog({
   const kindField = hasKinds && (
     <Field label="Kind of job">
       {(control) => (
-        <Select {...control} value={kind} onChange={(event) => setKind(event.target.value)}>
+        <Select
+          {...control}
+          value={kind}
+          onChange={(event) => {
+            edited();
+            setKind(event.target.value);
+          }}
+        >
           <option value="">Let its fit check decide</option>
           {kinds.map((each) => (
             <option key={each.id} value={each.id}>
@@ -337,18 +379,22 @@ export function AddJobDialog({
           placeholder="$150k–$180k"
           maxLength={LIMITS.pay}
           value={pay}
-          onChange={(event) => setPay(event.target.value)}
+          onChange={(event) => {
+            edited();
+            setPay(event.target.value);
+          }}
         />
       )}
     </Field>
   );
   const problemNote = problem && (
-    <p className={`${styles.problem} ${styles.wide}`} role="alert">
+    <p className={asking ? styles.problem : `${styles.problem} ${styles.wide}`} role="alert">
       {problem}
     </p>
   );
 
-  if (asking) {
+  if (asking && shownFailure) {
+    const unreadNow = shownFailure;
     const parts = postingParts(posting);
     const length = posting.trim().length;
     return (
@@ -360,16 +406,17 @@ export function AddJobDialog({
       >
         {(close) => (
           <form className={styles.paste} onSubmit={submit(close)}>
-            <div className={styles.why} role="status">
-              <p className={styles.whyLine}>{unread.message}</p>
+            <div id={whyId} className={styles.why} role="status">
+              <p className={styles.whyLine}>{unreadNow.message}</p>
               <p className={styles.whyLine}>
-                <WhatWorks unread={unread} />
+                <WhatWorks unread={unreadNow} />
               </p>
-              {unread.why === 'unreachable' && (
-                <div>
-                  <Button size="sm" onClick={() => readLink(link, true)}>
+              {unreadNow.why === 'unreachable' && (
+                <div className={styles.again}>
+                  <Button size="sm" disabled={rereading} onClick={() => readLink(link, true)}>
                     Try again
                   </Button>
+                  {rereading && <span className={styles.hint}>Reading it again…</span>}
                 </div>
               )}
             </div>
@@ -385,7 +432,8 @@ export function AddJobDialog({
                   <TextArea
                     {...control}
                     ref={postingBox}
-                    rows={16}
+                    aria-describedby={whyId}
+                    rows={10}
                     className={styles.postingBox}
                     placeholder="Paste the whole posting here, from the job’s title down to the end."
                     maxLength={LIMITS.posting}
@@ -418,7 +466,7 @@ export function AddJobDialog({
                   ))}
                 </ul>
                 <p className={styles.hint}>
-                  {unread.why === 'linkedin'
+                  {unreadNow.why === 'linkedin'
                     ? 'On LinkedIn, click “… more” under About the job first, so all of it shows. Then select from the job’s title down to the end, and copy.'
                     : 'On the posting’s page, select from the job’s title down to the end, and copy.'}
                 </p>
@@ -432,22 +480,25 @@ export function AddJobDialog({
               </p>
             )}
             {problemNote}
-            <DialogActions>
-              <Button
-                onClick={() => {
-                  setProblem(null);
-                  setStep('details');
-                }}
-              >
-                Back
-              </Button>
-              <Button variant="quiet" disabled={saving} onClick={() => void add(close, true)}>
-                Add without the posting
-              </Button>
-              <Button variant="primary" type="submit" disabled={saving}>
-                Add job
-              </Button>
-            </DialogActions>
+            {/* Pinned to the dialog's bottom, so they show however short the window. */}
+            <div className={styles.pasteActions}>
+              <DialogActions>
+                <Button
+                  onClick={() => {
+                    setProblem(null);
+                    setStep('details');
+                  }}
+                >
+                  Back
+                </Button>
+                <Button variant="quiet" disabled={saving} onClick={() => void add(close, true)}>
+                  Add without the posting
+                </Button>
+                <Button variant="primary" type="submit" disabled={saving}>
+                  Add job
+                </Button>
+              </DialogActions>
+            </div>
           </form>
         )}
       </Dialog>
@@ -479,7 +530,13 @@ export function AddJobDialog({
               />
             )}
           </Field>
-          {shownRead && <ReadNote read={shownRead} onAgain={() => readLink(link, true)} />}
+          {shownRead && (
+            <ReadNote
+              read={shownRead}
+              pasted={posting.trim() !== ''}
+              onAgain={() => readLink(link, true)}
+            />
+          )}
           <Field label="Job description" className={styles.wide}>
             {(control) => (
               <TextArea
@@ -498,7 +555,10 @@ export function AddJobDialog({
               <Select
                 {...control}
                 value={status}
-                onChange={(event) => setStatus(event.target.value as JobStatus)}
+                onChange={(event) => {
+                  edited();
+                  setStatus(event.target.value as JobStatus);
+                }}
               >
                 {STARTING.map((each) => (
                   <option key={each} value={each}>
@@ -515,7 +575,10 @@ export function AddJobDialog({
                 rows={3}
                 maxLength={LIMITS.notes}
                 value={notes}
-                onChange={(event) => setNotes(event.target.value)}
+                onChange={(event) => {
+                  edited();
+                  setNotes(event.target.value);
+                }}
               />
             )}
           </Field>

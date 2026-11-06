@@ -35,6 +35,15 @@ describe('the parts of a pasted posting', () => {
     expect(has('On-site in Austin')).toEqual(['place']);
   });
 
+  it('takes no words for a part that mean something else there', () => {
+    expect(has('We value diversity, equity and inclusion.')).toEqual([]);
+    // A nice-to-have, which is what they want, but no pay.
+    expect(has('Bonus points if you have used Go.')).toEqual(['asks']);
+    expect(has('You’ll have a high degree of autonomy.')).not.toContain('asks');
+    expect(has('65.000 € a year')).toEqual(['pay']);
+    expect(has('A bachelor’s degree in finance')).toEqual(['asks']);
+  });
+
   it('takes a short text as part of a posting, however much it has', () => {
     const closing =
       'Workiva lets employees work from an office or remotely from any location in their country of employment.';

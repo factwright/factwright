@@ -87,7 +87,7 @@
 }
 
 .postingBox {
-  min-height: max(280px, 42vh);
+  min-height: max(180px, 32vh);
   font-size: var(--fw-text-md);
   line-height: 1.5;
 }
@@ -150,4 +150,24 @@
   .pasteArea {
     grid-template-columns: minmax(0, 1fr);
   }
+}
+
+.again {
+  display: flex;
+  align-items: center;
+  gap: var(--fw-space-2);
+}
+
+/* The buttons stay at the dialog's bottom edge while what's above them scrolls. */
+.pasteActions {
+  position: sticky;
+  bottom: calc(-1 * var(--fw-space-6));
+  margin: 0 calc(-1 * var(--fw-space-6)) calc(-1 * var(--fw-space-6));
+  padding: 0 var(--fw-space-6) var(--fw-space-4);
+  border-top: 1px solid var(--fw-border);
+  background: var(--fw-surface);
+}
+
+.pasteActions > * {
+  margin-top: var(--fw-space-4);
 }
