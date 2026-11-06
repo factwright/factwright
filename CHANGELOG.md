@@ -4,8 +4,11 @@ Notable changes to Factwright, newest first. The format follows [Keep a Changelo
 
 ## Unreleased
 
+## 0.19.3 - 2026-11-06
+
 ### Changed
 - **When Add job can't read a job's link, it asks for the posting, plainly.** Instead of a note under the link, the dialog turns into Paste the posting: why it couldn't read the link and what works, the company, role and pay, a big box for the posting with the cursor in it, and What to paste, a list of the parts your Claude scores a job on that ticks off each one as you paste it in: all of it, what you'd do, what they want, pay and where. It says when what you pasted looks like only part of a posting, and on LinkedIn, to click "… more" first. Add job wants the posting, and Add without the posting adds the job with its link alone, only when you choose it. Back goes to the link, to change it. A description you pasted is the posting, and nothing more is asked: even when the link reads fine, Add job keeps what you pasted, and says to empty its box to keep the one it read. A read that ends while you're busy in another box waits for Add job to ask, and when the dialog changes, the box you're typing in keeps the keyboard. On a small screen, the buttons, and why Add job can't add the job yet, stay in view.
+- The browser extension is version 0.3.2, ready for its next upload to the Chrome Web Store and Firefox Add-ons, which list 0.3.1. It reads LinkedIn's newer job pages, below. It asks for nothing new.
 
 ### Fixed
 - **Save to Factwright reads LinkedIn's newer job page.** Signed in, a LinkedIn job's own page, where a link to it opens, has a new layout whose parts have no lasting names, and the extension found nothing there: it said it couldn't find the posting, and saved the job with no company or role. LinkedIn's search, which now opens at /jobs/search-results/, has the same layout. The extension now reads the posting that follows "About the job", and the job and company from the tab's title, in each of them. A link from one of LinkedIn's job alert emails, which opens the job at its own address under /comm/, counts as the job's own page, so a job saved from it matches the same job saved any other way. This comes with the extension's next version in the Chrome Web Store and Firefox Add-ons.
