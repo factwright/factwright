@@ -310,11 +310,12 @@ export class ClaudeRuns {
   }
 
   /**
-   * Keeps long text the user sent a run, such as a posting, in a file in its workspace, for its
-   * Claude to read whole: where it is, or null when the run isn't open or it couldn't be kept.
+   * Whether a run takes what the user sends it: its Claude Code is open, or it's starting, when
+   * what they type waits for it. Long text they send it is kept in a file for its Claude to read.
    */
-  keep(id: string, text: string): Promise<string | null> {
-    return this.entry(id)?.run?.keep(text) ?? Promise.resolve(null);
+  takesInput(id: string): boolean {
+    const entry = this.entry(id);
+    return Boolean(entry?.run) || (entry?.phase === 'starting' && !entry.stopped);
   }
 
   /** A run's terminal says its size, which runs that start after it start at too. */

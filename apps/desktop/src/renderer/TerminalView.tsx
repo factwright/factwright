@@ -75,7 +75,29 @@ export function TerminalView({
       terminal.options.theme = terminalColors(started);
     });
 
-    const typing = terminal.onData((data) => api.writeToClaude(runId, data));
+    // What the user types goes to Claude Code in order. While long text they pasted is being kept,
+    // what they type after it, Enter included, waits its turn behind the words that say where.
+    let waiting: Promise<void> | null = null;
+    const send = (data: string | Promise<string>) => {
+      if (waiting === null && typeof data === 'string') {
+        api.writeToClaude(runId, data);
+        return;
+      }
+      const next = (waiting ?? Promise.resolve()).then(async () => {
+        api.writeToClaude(runId, await data);
+      });
+      waiting = next;
+      void next.then(() => {
+        if (waiting === next) waiting = null;
+      });
+    };
+    /** Text as the terminal's own paste sends it: lines end with Enter, marked as a paste. */
+    const asPasted = (text: string) => {
+      const lines = text.replace(/\r?\n/g, '\r');
+      return terminal.modes.bracketedPasteMode ? `\x1b[200~${lines}\x1b[201~` : lines;
+    };
+
+    const typing = terminal.onData(send);
     const stopOutput = api.onClaudeOutput((output) => {
       if (output.runId === runId) terminal.write(output.data);
     });
@@ -90,10 +112,12 @@ export function TerminalView({
         if (text.trim().length <= LONG_TEXT) return;
         event.preventDefault();
         event.stopPropagation();
-        void api
-          .pasteText(runId, text)
-          .catch(() => ({ ok: false as const }))
-          .then((kept) => terminal.paste(kept.ok ? kept.words : text));
+        send(
+          api
+            .pasteText(runId, text)
+            .catch(() => ({ ok: false as const }))
+            .then((kept) => asPasted(kept.ok ? kept.words : text)),
+        );
         return;
       }
       event.preventDefault();

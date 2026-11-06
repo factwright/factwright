@@ -10,7 +10,7 @@ interface Opened {
   size: TerminalSize;
   options: RunOptions;
   events: RunEvents;
-  run: OpenRun & { written: string[]; sent: string[]; kept: string[]; sizes: TerminalSize[] };
+  run: OpenRun & { written: string[]; sent: string[]; sizes: TerminalSize[] };
   /** Ends it, as Claude Code quitting would. */
   exit: (signal?: 'stopped' | 'failed') => void;
 }
@@ -38,14 +38,9 @@ function openFake(...[id, size, options, events]: Parameters<ClaudeRunsDeps['ope
   const run: Opened['run'] = {
     written: [],
     sent: [],
-    kept: [],
     sizes: [],
     write: (data) => run.written.push(data),
     send: (prompt) => run.sent.push(prompt),
-    keep: async (text) => {
-      run.kept.push(text);
-      return `.pasted/${id}-${run.kept.length}.md`;
-    },
     resize: (next) => run.sizes.push(next),
     stop: () => {
       stops.push(id);
@@ -381,22 +376,29 @@ describe('runs side by side', () => {
     expect(run('run-1').run.written).toEqual([]);
   });
 
-  it('keeps long text in the workspace of the run it’s for, and none for a run that’s gone', async () => {
-    const claude = runs();
+  it('takes what the user sends a run that’s open or starting, and none that’s gone', async () => {
+    let release: () => void = () => {};
+    const claude = runs({
+      prepare: async (task) => {
+        await new Promise<void>((resolve) => {
+          release = resolve;
+        });
+        return prepared(task);
+      },
+    });
     claude.start(resume('acme'));
-    claude.start(resume('globex'));
     await settle();
-    run('run-1').events.past();
+    // Starting, what the user types waits for its Claude Code to open.
+    expect(claude.takesInput('run-1')).toBe(true);
+    release();
     await settle();
-    await expect(claude.keep('run-2', 'A posting')).resolves.toBe('.pasted/run-2-1.md');
-    expect(run('run-2').run.kept).toEqual(['A posting']);
-    expect(run('run-1').run.kept).toEqual([]);
-    await expect(claude.keep('run-9', 'A posting')).resolves.toBeNull();
-    run('run-2').exit();
+    expect(claude.takesInput('run-1')).toBe(true);
+    expect(claude.takesInput('run-9')).toBe(false);
+    run('run-1').exit();
     await settle();
-    claude.close('run-2');
-    await expect(claude.keep('run-2', 'Another')).resolves.toBeNull();
-    expect(run('run-2').run.kept).toEqual(['A posting']);
+    expect(claude.takesInput('run-1')).toBe(false);
+    claude.close('run-1');
+    expect(claude.takesInput('run-1')).toBe(false);
   });
 });
 

@@ -27,6 +27,7 @@ import { AnalyzeNew } from './claude/analyze-new.ts';
 import { loadAtOnce } from './claude/at-once.ts';
 import { Desk, fromRun } from './claude/desk.ts';
 import { useClaudeFolder } from './claude/launch.ts';
+import { clearPasted } from './claude/pasted.ts';
 import { taskPreparer } from './claude/prepare.ts';
 import { RunChanges } from './claude/run-changes.ts';
 import { FormDrafts, RunRequests } from './claude/run-requests.ts';
@@ -275,6 +276,8 @@ function start(home: string, profile: ProfileFolder, stopped: ProfileFolder | nu
     await whatsNew?.load();
     const tracker = new Tracker(trackerFile);
     const workspace = workspaceDir(dataDir);
+    // Long text the user sent Claude, kept for it to read, goes a week on.
+    void clearPasted(workspace);
     const profiles = new Profiles({
       home,
       open: profile,

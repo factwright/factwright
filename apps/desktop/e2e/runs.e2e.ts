@@ -290,7 +290,7 @@ test('keeps a "!" from starting Claude Code’s shell mode, and helpers in the w
       new ClipboardEvent('paste', { clipboardData: pasted, bubbles: true, cancelable: true }),
     );
   })()`);
-  await expect.poll(() => kept().length).toBe(2);
+  // Enter straight after it waits for the words that say where, so it sends them.
   await typing.press('Enter');
   await sent('[I pasted text: it is in .pasted/');
   await expect(status).toHaveText('Done');

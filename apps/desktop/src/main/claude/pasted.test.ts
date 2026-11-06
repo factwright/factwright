@@ -12,7 +12,7 @@ import {
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { KEPT_MS, keepPasted, PASTED_FOLDER, pastedIn, replyIn } from './pasted.ts';
+import { clearPasted, KEPT_MS, keepPasted, PASTED_FOLDER, pastedIn, replyIn } from './pasted.ts';
 
 let workspace: string;
 
@@ -59,12 +59,29 @@ describe('keeping long text for Claude', () => {
     expect(existsSync(other)).toBe(true);
   });
 
+  it('takes away what it kept more than a week ago as the app starts', async () => {
+    await clearPasted(workspace, NOW.getTime());
+    expect(existsSync(join(workspace, PASTED_FOLDER))).toBe(false);
+    const path = (await keepPasted(workspace, 'a reply')) ?? '';
+    const file = join(workspace, ...path.split('/'));
+    await clearPasted(workspace, Date.now() + KEPT_MS - 60_000);
+    expect(existsSync(file)).toBe(true);
+    await clearPasted(workspace, Date.now() + KEPT_MS + 60_000);
+    expect(existsSync(file)).toBe(false);
+  });
+
   it('keeps nothing when its folder is a link, which could lead anywhere', async () => {
     const elsewhere = mkdtempSync(join(tmpdir(), 'factwright-pasted-elsewhere-'));
     try {
       symlinkSync(elsewhere, join(workspace, PASTED_FOLDER), 'junction');
       await expect(keepPasted(workspace, POSTING, NOW)).resolves.toBeNull();
       expect(readdirSync(elsewhere)).toEqual([]);
+      // Nor does clearing out old text follow it.
+      const theirs = join(elsewhere, '2026-10-01-090000-cccccc.md');
+      writeFileSync(theirs, 'text');
+      utimesSync(theirs, 0, 0);
+      await clearPasted(workspace, NOW.getTime());
+      expect(existsSync(theirs)).toBe(true);
     } finally {
       rmSync(elsewhere, { recursive: true, force: true });
     }

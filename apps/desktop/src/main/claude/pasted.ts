@@ -28,6 +28,19 @@ const asFile = (text: string) =>
     // biome-ignore lint/suspicious/noControlCharactersInRegex: these are what it's there to take out
     .replace(/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/g, '');
 
+/**
+ * Takes away the text the workspace kept more than a week ago, its own files only, as the app
+ * starts. A folder that's missing, or is a link, is left alone.
+ */
+export async function clearPasted(workspace: string, now = Date.now()): Promise<void> {
+  const folder = join(workspace, PASTED_FOLDER);
+  try {
+    if ((await lstat(folder)).isDirectory()) await clearOld(folder, now);
+  } catch {
+    // Nothing kept yet, or nothing it can read: the next start tries again.
+  }
+}
+
 /** Takes away the text it kept more than a week ago: its own files only. */
 async function clearOld(folder: string, now: number): Promise<void> {
   for (const name of await readdir(folder)) {
