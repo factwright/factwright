@@ -95,6 +95,7 @@ type TrackerApi = Pick<
   | 'removeShot'
   | 'readShot'
   | 'pasteImage'
+  | 'pasteText'
   | 'prepareRevision'
   | 'revisionOf'
   | 'keepVersion'
@@ -765,6 +766,10 @@ export function sampleTracker(
     },
     readShot: async (path) => shots.get(path)?.bytes ?? null,
     pasteImage: async () => ({ ok: true, file: '/sample/workspace/screenshots/pasted-1.png' }),
+    pasteText: async () => ({
+      ok: true,
+      words: '[I pasted text: it is in .pasted/2026-11-06-152000-a1b2c3.md] ',
+    }),
     openFile: async () => ({ ok: false, message: 'The sample screens can’t open files.' }),
     downloadFile: async () => ({ ok: false, message: 'The sample screens can’t save files.' }),
     showFile: async () => ({ ok: false, message: 'The sample screens can’t show files.' }),

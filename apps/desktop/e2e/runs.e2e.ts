@@ -1,4 +1,5 @@
-import { rmSync } from 'node:fs';
+import { readdirSync, readFileSync, rmSync } from 'node:fs';
+import { join } from 'node:path';
 import { expect, type Locator, test } from '@playwright/test';
 import { type Opened, openApp, showWork, terminalStart, terminalText } from './app.ts';
 import { newDataFolder } from './workspace.ts';
@@ -253,6 +254,48 @@ test('keeps a "!" from starting Claude Code’s shell mode, and helpers in the w
   await sent('fifth replied');
   await expect(status).toHaveText('Done');
   expect(await terminalText(window)).not.toContain('Ran in your shell');
+
+  // Long text, such as a posting, goes to Claude whole in a file, lines and all, as on Windows
+  // Claude Code can lose part of long text that comes in at once. What's typed says where.
+  const pasted = join(dataDir, 'workspace', '.pasted');
+  const kept = () => {
+    try {
+      return readdirSync(pasted).map((name) => readFileSync(join(pasted, name), 'utf8'));
+    } catch {
+      return [];
+    }
+  };
+  const posting = (company: string) =>
+    [
+      `About the job at ${company}`,
+      '',
+      ...Array.from(
+        { length: 8 },
+        (_, at) => `- Requirement ${at + 1}: lead a portfolio of programs across the company`,
+      ),
+    ].join('\n');
+  await reply.fill(posting('Workiva'));
+  await reply.press('Enter');
+  await sent('My reply is long, so Factwright saved it in .pasted/');
+  await expect(status).toHaveText('Done');
+  expect(kept()).toEqual([posting('Workiva')]);
+  await window.evaluate(`(() => {
+    const pasted = new DataTransfer();
+    pasted.setData('text/plain', ${JSON.stringify(posting('MUFG'))});
+    const input = document.querySelector(
+      'section[aria-label="Claude"] [data-shown] .xterm-helper-textarea',
+    );
+    input.focus();
+    input.dispatchEvent(
+      new ClipboardEvent('paste', { clipboardData: pasted, bubbles: true, cancelable: true }),
+    );
+  })()`);
+  // Enter straight after it waits for the words that say where, so it sends them.
+  await typing.press('Enter');
+  await sent('[I pasted text: it is in .pasted/');
+  await expect(status).toHaveText('Done');
+  expect(kept()).toContain(posting('MUFG'));
+  expect(await terminalText(window)).not.toContain('About the job at MUFG');
 
   // A helper asked for in a worktree never starts, and the window hears nothing of it.
   await typing.pressSequentially('start a helper in a worktree');

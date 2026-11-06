@@ -47,11 +47,13 @@ const edits = (path: string) => `Edit(./${path})`;
 
 /**
  * Files Claude never changes: Claude Code's own settings and the instructions it loads, which a
- * job post could otherwise use to steer later runs. Where there's no CLAUDE.md, as in the
- * workspace, Claude Code loads AGENTS.md files in their place. Nor the files that set up a git
- * repository, which no run has any use for.
+ * job post could otherwise use to steer later runs, and the long text the user sent, which later
+ * runs read as their words. Where there's no CLAUDE.md, as in the workspace, Claude Code loads
+ * AGENTS.md files in their place. Nor the files that set up a git repository, which no run has
+ * any use for.
  */
 const NEVER_CHANGED = [
+  '.pasted/**',
   '.claude/**',
   '**/.claude/**',
   'CLAUDE.md',

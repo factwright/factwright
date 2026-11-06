@@ -78,6 +78,7 @@ const api: FactwrightApi = {
   removeShot: (path) => ipcRenderer.invoke('jobs:remove-shot', path),
   readShot: (path) => ipcRenderer.invoke('jobs:shot', path),
   pasteImage: (shot, jobId) => ipcRenderer.invoke('claude:paste-image', shot, jobId),
+  pasteText: (runId, text) => ipcRenderer.invoke('claude:paste-text', runId, text),
   openFile: (path) => ipcRenderer.invoke('files:open', path),
   downloadFile: (jobId, path) => ipcRenderer.invoke('files:download', jobId, path),
   showFile: (jobId, path) => ipcRenderer.invoke('files:show', jobId, path),

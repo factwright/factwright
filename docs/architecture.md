@@ -56,6 +56,7 @@ Claude works on plain files in a folder on your computer:
 | `calls/` | Claude's prep sheet for each call you logged, and the thank-you notes after it, a folder per call in a folder per job |
 | `screenshots/` | Screenshots you added for a job, or pasted into Claude's panel, one folder per job |
 | `linkedin/` | The spreadsheets from your LinkedIn data export, such as your connections |
+| `.pasted/` | Long text you pasted into Claude's panel or replied with, such as a posting, kept for Claude to read whole. It's hidden, sync leaves it on this computer, Claude can't change it, and the app takes away what's over a week old |
 
 The app watches this folder, and reads it again whenever something changes. What you track by hand, such as statuses, dates, calls, notes, the answers you sent and your questions for Claude, lives in a small database beside the workspace, where Claude's file tools can't reach it.
 

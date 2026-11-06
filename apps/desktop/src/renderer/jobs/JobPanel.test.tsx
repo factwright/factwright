@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { addDays, type Job, localDate } from '@factwright/core';
-import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import axe from 'axe-core';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
@@ -558,6 +558,10 @@ describe('JobPanel', () => {
     await userEvent.keyboard('{Escape}');
     expect(screen.queryByRole('form', { name: 'Edit details' })).toBeNull();
     expect(second.onClose).not.toHaveBeenCalled();
+    // The keyboard's focus, gone with the boxes, goes back to Edit details.
+    await waitFor(() =>
+      expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Edit details' })),
+    );
     await userEvent.click(screen.getByRole('button', { name: 'Edit details' }));
     await userEvent.click(screen.getByRole('button', { name: 'Save' }));
     expect(second.api.updateJob).toHaveBeenCalledTimes(1);

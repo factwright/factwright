@@ -159,12 +159,16 @@ export function JobPanel({
 }: JobPanelProps) {
   const [problem, setProblem] = useState<{ jobId: string; message: string } | null>(null);
   // The job whose details are open to change, in boxes under its name. Once they close, the
-  // keyboard's focus goes back to Edit details.
+  // keyboard's focus, gone with them, goes back to Edit details, unless it's somewhere again by
+  // then, as in the boxes opened again.
   const [editing, setEditing] = useState<string | null>(null);
   const editButton = useRef<HTMLButtonElement>(null);
   const stopEditing = () => {
     setEditing(null);
-    requestAnimationFrame(() => editButton.current?.focus());
+    requestAnimationFrame(() => {
+      const focused = document.activeElement;
+      if (!focused || focused === document.body) editButton.current?.focus();
+    });
   };
   const panel = useRef<HTMLElement>(null);
   const frame = useRef<HTMLDivElement>(null);

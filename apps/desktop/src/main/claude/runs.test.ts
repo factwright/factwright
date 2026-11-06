@@ -375,6 +375,31 @@ describe('runs side by side', () => {
     expect(run('run-2').run.sizes).toEqual([{ cols: 90, rows: 24 }]);
     expect(run('run-1').run.written).toEqual([]);
   });
+
+  it('takes what the user sends a run that’s open or starting, and none that’s gone', async () => {
+    let release: () => void = () => {};
+    const claude = runs({
+      prepare: async (task) => {
+        await new Promise<void>((resolve) => {
+          release = resolve;
+        });
+        return prepared(task);
+      },
+    });
+    claude.start(resume('acme'));
+    await settle();
+    // Starting, what the user types waits for its Claude Code to open.
+    expect(claude.takesInput('run-1')).toBe(true);
+    release();
+    await settle();
+    expect(claude.takesInput('run-1')).toBe(true);
+    expect(claude.takesInput('run-9')).toBe(false);
+    run('run-1').exit();
+    await settle();
+    expect(claude.takesInput('run-1')).toBe(false);
+    claude.close('run-1');
+    expect(claude.takesInput('run-1')).toBe(false);
+  });
 });
 
 describe('the size a run starts at', () => {

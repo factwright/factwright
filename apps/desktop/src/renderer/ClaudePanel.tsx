@@ -1,4 +1,4 @@
-import { Button, IconButton, Input, Markdown, Notice, VisuallyHidden } from '@factwright/ui';
+import { Button, IconButton, Markdown, Notice, TextArea, VisuallyHidden } from '@factwright/ui';
 import { ArrowDown, BookCheck, Check, X } from 'lucide-react';
 import { type FormEvent, type ReactNode, useEffect, useId, useState } from 'react';
 import {
@@ -574,11 +574,21 @@ function RunBar({
             <Markdown text={said} />
           </div>
           <form className={styles.reply} onSubmit={send}>
-            <Input
+            {/* It keeps a pasted posting's lines. Enter sends, and Shift-Enter starts a line. */}
+            <TextArea
               aria-label="Reply to Claude"
               placeholder="Reply to Claude"
+              rows={1}
+              className={styles.replyText}
               value={reply}
               onChange={(event) => setReply(event.target.value)}
+              onKeyDown={(event) => {
+                const sends =
+                  event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing;
+                if (!sends) return;
+                event.preventDefault();
+                event.currentTarget.form?.requestSubmit();
+              }}
             />
             <Button size="sm" type="submit" disabled={!reply.trim()}>
               Send

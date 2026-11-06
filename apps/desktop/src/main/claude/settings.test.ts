@@ -295,6 +295,8 @@ describe('sessionSettings', () => {
 
   it('never lets Claude change its own settings, the instructions it loads, the user’s own files, or the logs', () => {
     const never = [
+      // Long text the user sent, which the next run reads as their words.
+      'Edit(./.pasted/**)',
       'Edit(./.claude/**)',
       'Edit(./**/.claude/**)',
       'Edit(./CLAUDE.md)',
@@ -325,6 +327,9 @@ describe('sessionSettings', () => {
       expect(scoped(scope).permissions.deny.slice(0, never.length)).toEqual(never);
     }
     expect(settings.permissions.deny).toEqual([...never, 'Edit(./facts/**)']);
+    for (const part of PROFILE_PARTS) {
+      expect(scoped(`part:${part}`).permissions.deny, part).toContain('Edit(./.pasted/**)');
+    }
     // Claude still keeps its own note of what it has read.
     expect(scoped('profile').permissions.deny).not.toContain('Edit(./about-me/read.md)');
   });

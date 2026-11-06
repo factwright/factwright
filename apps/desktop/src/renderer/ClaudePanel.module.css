@@ -185,12 +185,22 @@
 
 .reply {
   display: flex;
+  align-items: flex-end;
   gap: var(--fw-space-2);
 }
 
 .reply > :first-child {
   flex: 1 1 auto;
   min-width: 0;
+}
+
+/* One line, as tall as a button beside it, growing with what's in it up to eight. */
+.replyText {
+  min-height: 34px;
+  max-height: calc(8lh + 18px);
+  padding-block: 6px;
+  resize: none;
+  field-sizing: content;
 }
 
 /* Claude's work: the terminal, and the notes over it, under the bar. */

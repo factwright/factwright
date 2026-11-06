@@ -380,6 +380,12 @@ export interface JobExtras {
 /** A picture pasted into Claude's panel, saved where Claude can read it, by its full path. */
 export type PasteResult = { ok: true; file: string } | { ok: false; message: string };
 
+/**
+ * Long text pasted into a run's terminal, kept in a file for Claude to read whole: the words that
+ * say where, to paste in its place. Not kept, it's pasted as it is.
+ */
+export type PastedText = { ok: true; words: string } | { ok: false };
+
 /** A screenshot from the window: its name and bytes. */
 export interface ShotUpload {
   name: string;
@@ -584,6 +590,11 @@ export interface FactwrightApi {
   readShot(path: string): Promise<Uint8Array | null>;
   /** Saves a picture pasted into Claude's panel, with the run's job when there is one. */
   pasteImage(shot: ShotUpload, jobId: string | null): Promise<PasteResult>;
+  /**
+   * Keeps long text pasted into a run's terminal in a file in the workspace, as on Windows Claude
+   * Code can lose part of a long paste, and gives the words to paste in its place, which say where.
+   */
+  pasteText(runId: string, text: string): Promise<PastedText>;
   /** Opens a resume from the workspace in the user's own app for it. */
   openFile(path: string): Promise<EditResult>;
   /**
