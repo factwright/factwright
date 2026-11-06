@@ -309,6 +309,14 @@ export class ClaudeRuns {
     this.entry(id)?.run?.send(prompt);
   }
 
+  /**
+   * Keeps long text the user sent a run, such as a posting, in a file in its workspace, for its
+   * Claude to read whole: where it is, or null when the run isn't open or it couldn't be kept.
+   */
+  keep(id: string, text: string): Promise<string | null> {
+    return this.entry(id)?.run?.keep(text) ?? Promise.resolve(null);
+  }
+
   /** A run's terminal says its size, which runs that start after it start at too. */
   resize(id: string, size: TerminalSize): void {
     this.size = size;

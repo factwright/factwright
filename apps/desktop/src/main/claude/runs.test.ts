@@ -10,7 +10,7 @@ interface Opened {
   size: TerminalSize;
   options: RunOptions;
   events: RunEvents;
-  run: OpenRun & { written: string[]; sent: string[]; sizes: TerminalSize[] };
+  run: OpenRun & { written: string[]; sent: string[]; kept: string[]; sizes: TerminalSize[] };
   /** Ends it, as Claude Code quitting would. */
   exit: (signal?: 'stopped' | 'failed') => void;
 }
@@ -38,9 +38,14 @@ function openFake(...[id, size, options, events]: Parameters<ClaudeRunsDeps['ope
   const run: Opened['run'] = {
     written: [],
     sent: [],
+    kept: [],
     sizes: [],
     write: (data) => run.written.push(data),
     send: (prompt) => run.sent.push(prompt),
+    keep: async (text) => {
+      run.kept.push(text);
+      return `.pasted/${id}-${run.kept.length}.md`;
+    },
     resize: (next) => run.sizes.push(next),
     stop: () => {
       stops.push(id);
@@ -374,6 +379,24 @@ describe('runs side by side', () => {
     expect(run('run-1').run.sent).toEqual(['Make it shorter']);
     expect(run('run-2').run.sizes).toEqual([{ cols: 90, rows: 24 }]);
     expect(run('run-1').run.written).toEqual([]);
+  });
+
+  it('keeps long text in the workspace of the run it’s for, and none for a run that’s gone', async () => {
+    const claude = runs();
+    claude.start(resume('acme'));
+    claude.start(resume('globex'));
+    await settle();
+    run('run-1').events.past();
+    await settle();
+    await expect(claude.keep('run-2', 'A posting')).resolves.toBe('.pasted/run-2-1.md');
+    expect(run('run-2').run.kept).toEqual(['A posting']);
+    expect(run('run-1').run.kept).toEqual([]);
+    await expect(claude.keep('run-9', 'A posting')).resolves.toBeNull();
+    run('run-2').exit();
+    await settle();
+    claude.close('run-2');
+    await expect(claude.keep('run-2', 'Another')).resolves.toBeNull();
+    expect(run('run-2').run.kept).toEqual(['A posting']);
   });
 });
 

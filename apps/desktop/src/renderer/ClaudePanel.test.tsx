@@ -284,6 +284,27 @@ describe('ClaudePanel', () => {
     expect(screen.queryByRole('button', { name: 'Close' })).toBeNull();
   });
 
+  it('keeps the lines of a reply, such as a pasted posting, with Shift-Enter between them', async () => {
+    const activity: RunActivity = {
+      ...NOTHING,
+      steps: [],
+      lastAt: null,
+      end: { said: 'Please paste the posting here.', error: null },
+    };
+    const { claude } = panel([run('done', { activity, stoppedShort: true })]);
+    const box = screen.getByRole('textbox', { name: 'Reply to Claude' });
+    await userEvent.type(box, 'About the job{Shift>}{Enter}{/Shift}Lead our PMO.');
+    expect(claude.reply).not.toHaveBeenCalled();
+    await userEvent.click(box);
+    await userEvent.paste('\n- 10 years\n- PMP');
+    await userEvent.type(box, '{Enter}');
+    expect(claude.reply).toHaveBeenCalledWith(
+      'run-1',
+      'About the job\nLead our PMO.\n- 10 years\n- PMP',
+    );
+    expect((box as HTMLTextAreaElement).value).toBe('');
+  });
+
   it('offers Close once Claude is done, which closes the run’s tab', async () => {
     const { claude } = panel([run('done')]);
     expect(bar().textContent).toContain('Claude is done.');

@@ -4,6 +4,7 @@ import { Terminal } from '@xterm/xterm';
 import '@xterm/xterm/css/xterm.css';
 import { useEffect, useRef } from 'react';
 import type { FactwrightApi } from '../shared/api.ts';
+import { LONG_TEXT } from '../shared/pasted.ts';
 import styles from './ClaudePanel.module.css';
 import { pastedPictures, readPictures } from './jobs/Screenshots.tsx';
 import { terminalColors, themeNow, watchTheme } from './theme.ts';
@@ -11,7 +12,8 @@ import { terminalColors, themeNow, watchTheme } from './theme.ts';
 /**
  * The terminal one run's Claude Code runs in. It shows that run's output, sends what the user
  * types to it, follows the theme, and reports its size in characters whenever it changes. A picture pasted into it is saved where Claude can read it, with the run's
- * job, and pasted as where it is, which Claude Code takes as the picture itself.
+ * job, and pasted as where it is, which Claude Code takes as the picture itself. Long text pasted
+ * into it is kept in a file for Claude to read whole, and pasted as words that say where.
  */
 export function TerminalView({
   api,
@@ -78,10 +80,22 @@ export function TerminalView({
       if (output.runId === runId) terminal.write(output.data);
     });
 
-    // Caught before the terminal's own paste, which takes only text.
-    const pastePicture = (event: ClipboardEvent) => {
+    // Caught before the terminal's own paste, which takes only text, and hands it to Claude Code
+    // in one go. On Windows, Claude Code can lose part of long text that comes in at once, without
+    // a word, so long text goes to Claude in a file, and what's pasted says where.
+    const paste = (event: ClipboardEvent) => {
       const files = pastedPictures(event);
-      if (files.length === 0) return;
+      if (files.length === 0) {
+        const text = event.clipboardData?.getData('text/plain') ?? '';
+        if (text.trim().length <= LONG_TEXT) return;
+        event.preventDefault();
+        event.stopPropagation();
+        void api
+          .pasteText(runId, text)
+          .catch(() => ({ ok: false as const }))
+          .then((kept) => terminal.paste(kept.ok ? kept.words : text));
+        return;
+      }
       event.preventDefault();
       event.stopPropagation();
       void readPictures(files).then(async (pictures) => {
@@ -95,12 +109,12 @@ export function TerminalView({
         }
       });
     };
-    element.addEventListener('paste', pastePicture, true);
+    element.addEventListener('paste', paste, true);
     // A run that opens in view takes the keyboard, for what the user types.
     if (latestShown.current) terminal.focus();
 
     return () => {
-      element.removeEventListener('paste', pastePicture, true);
+      element.removeEventListener('paste', paste, true);
       stopOutput();
       typing.dispose();
       stopFollowing();

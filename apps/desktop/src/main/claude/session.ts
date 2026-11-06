@@ -24,6 +24,7 @@ import { RunActivity, turnEnd } from './activity.ts';
 import { claudeCommand } from './command.ts';
 import { findClaude, nodeFindDeps } from './find.ts';
 import { buildLaunchArgs, runEnv } from './launch.ts';
+import { keepPasted } from './pasted.ts';
 import { keepBefore, type TaskChanges } from './run-changes.ts';
 import type { PermissionAsker, QuestionAsker, RunServer } from './run-server.ts';
 import { FIRST_RUN_SCREENS, ScreenWatch, TRUST_QUESTION } from './screen.ts';
@@ -208,6 +209,11 @@ export interface OpenRun {
   write: (data: string) => void;
   /** Types a prompt and sends it, as the user would. */
   send: (prompt: string) => void;
+  /**
+   * Keeps long text the user sent, such as a posting, in a file of its own in the run's
+   * workspace, for Claude to read whole: where it is from the workspace, or null.
+   */
+  keep: (text: string) => Promise<string | null>;
   resize: (size: TerminalSize) => void;
   stop: () => void;
   /** Whether it has work going: starting, working, or waiting on the user. */
@@ -377,6 +383,7 @@ export async function openRun(
         terminal.write('\r');
       }, 150);
     },
+    keep: (text) => (closed ? Promise.resolve(null) : keepPasted(launch.cwd, text)),
     resize: (next) => {
       if (!closed) terminal.resize(next.cols, next.rows);
     },

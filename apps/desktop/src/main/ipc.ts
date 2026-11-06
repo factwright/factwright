@@ -18,6 +18,7 @@ import {
 import type {
   ClaudeStatus,
   EditResult,
+  PastedText,
   PasteResult,
   PdfResult,
   SaveFileResult,
@@ -29,6 +30,7 @@ import type {
 import { parseEffort } from '../shared/effort.ts';
 import { LIMITS } from '../shared/limits.ts';
 import { parseModels } from '../shared/models.ts';
+import { LONG_TEXT } from '../shared/pasted.ts';
 import type { PermissionAnswer } from '../shared/permission-asks.ts';
 import { parseRevisionRequest } from '../shared/revision.ts';
 import type { RoundReply } from '../shared/rounds.ts';
@@ -48,6 +50,7 @@ import type { Desk } from './claude/desk.ts';
 import { loadEffort, saveEffort } from './claude/effort.ts';
 import { claudeConfigFolder } from './claude/launch.ts';
 import { loadModels, saveModels } from './claude/models.ts';
+import { pastedIn, replyIn } from './claude/pasted.ts';
 import { parsePermissionAnswer } from './claude/permission-asks.ts';
 import { parseReply } from './claude/rounds.ts';
 import type { RunChanges } from './claude/run-changes.ts';
@@ -467,7 +470,9 @@ export function registerIpc({
   });
 
   // A reply from a run's tab, on one line, as a message of the user's own: nothing in it can
-  // reach the terminal as a key that isn't text.
+  // reach the terminal as a key that isn't text. A long one, such as a posting, goes in a file
+  // instead, lines and all, and the line typed says where, as on Windows Claude Code can lose
+  // part of long text typed into it without a word.
   ipcMain.on('claude:reply', (event, runId: unknown, text: unknown) => {
     if (!fromApp(event) || !isRun(runId)) return;
     if (typeof text !== 'string' || text.length > MAX_INPUT_LENGTH) return;
@@ -478,7 +483,14 @@ export function registerIpc({
       })
       .join('')
       .trim();
-    if (line) claude.send(runId, line);
+    if (!line) return;
+    if (line.length <= LONG_TEXT) {
+      claude.send(runId, line);
+      return;
+    }
+    void claude
+      .keep(runId, text.trim())
+      .then((path) => claude.send(runId, path ? replyIn(path) : line));
   });
 
   ipcMain.on('claude:input', (event, runId: unknown, data: unknown) => {
@@ -588,6 +600,17 @@ export function registerIpc({
   answer('jobs:remove-shot', (path) => jobs.removeShot(path));
 
   answer('jobs:shot', (path) => jobs.shot(path));
+
+  // Long text pasted into a run's terminal: kept in a file in the workspace, and handed back as
+  // words that say where, which the terminal pastes in its place, so Claude reads it whole.
+  answer('claude:paste-text', async (runId, text): Promise<PastedText> => {
+    if (!isRun(runId) || typeof text !== 'string' || text.length > MAX_INPUT_LENGTH) {
+      return { ok: false };
+    }
+    if (text.trim().length <= LONG_TEXT) return { ok: false };
+    const path = await claude.keep(runId, text);
+    return path ? { ok: true, words: pastedIn(path) } : { ok: false };
+  });
 
   // A picture pasted into Claude's panel: saved with the run's job, or on its own, and handed
   // back by where it is on this computer, which Claude Code attaches when it's pasted.

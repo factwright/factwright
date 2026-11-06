@@ -101,6 +101,11 @@ Claude's panel runs your own Claude Code in a real terminal (node-pty and xterm.
 
 **Pictures:** a picture pasted into the panel, such as a screenshot, is checked like any picture you share, saved in the workspace with the run's job (`screenshots/<job>/pasted-…`, or `screenshots/` without one), and pasted as where it is. Claude Code attaches a pasted picture's path as the picture itself. Screenshots added with the application's questions or a question for Claude are kept in the same folder, named for what they came with, and `job_details` lists each one.
 
+**Long text:** on Windows, Claude Code can lose part of long text that comes in at once, such as a posting's first half, without a word to you or to Claude. So text of over 400 characters never goes in as it is ([`src/shared/pasted.ts`](src/shared/pasted.ts)):
+- **Pasted into the panel,** it's kept in a file of its own, in the workspace's hidden `.pasted/` folder, and what's pasted in its place says where: `[I pasted text: it is in .pasted/…]`.
+- **A reply from the run's bar,** where Claude asked you something, goes the same way, lines and all, and what's typed says where. The box keeps a pasted posting's lines: Enter sends, and Shift-Enter starts a new line. A shorter reply is typed on one line, as before.
+- **Claude reads the file,** as the standing rules say, as your own words. Sync leaves `.pasted/` on this computer, and the app takes away what it kept there more than a week ago ([`src/main/claude/pasted.ts`](src/main/claude/pasted.ts)).
+
 The first run asks a question of its own: Claude Code wants to know whether to trust the workspace, and says it will be able to "execute files". When the app sees that question on screen:
 - The run reads "Needs your answer", and the panel comes back.
 - The terminal gets an outline that pulses a few times, then stays, until it's answered.
