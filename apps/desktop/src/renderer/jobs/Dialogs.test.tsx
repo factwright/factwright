@@ -607,7 +607,7 @@ describe('AddJobDialog', () => {
     await screen.findByText(/^Read the posting: Product Manager, AI Platform/);
   });
 
-  it('keeps the posting read from the link in place of a description pasted before, and says so', async () => {
+  it('keeps a description pasted before over a posting read later, and says how to keep the read one', async () => {
     const readPosting = vi.fn(async () => READ);
     const addJob = vi.fn(async () => ({ ok: true as const, jobId: 'nvidia--product-manager' }));
     render(
@@ -619,19 +619,100 @@ describe('AddJobDialog', () => {
     );
     await userEvent.type(
       screen.getByRole('textbox', { name: 'Job description' }),
-      'The closing lines of some posting.',
+      'The posting, as the user pasted it.',
     );
     await userEvent.type(screen.getByRole('textbox', { name: 'Link to the posting' }), WORKDAY);
     await userEvent.tab();
     expect(
       await screen.findByText(
-        'Read the posting: Product Manager, AI Platform, 4,692 characters. It’s kept with the job, in place of the description you pasted.',
+        'Read the posting: Product Manager, AI Platform, 4,692 characters. The description you pasted is kept with the job instead. Empty its box to keep this one.',
       ),
     ).toBeTruthy();
     await userEvent.click(screen.getByRole('button', { name: 'Add job' }));
     expect(addJob).toHaveBeenCalledWith(
-      expect.not.objectContaining({ posting: expect.anything() }),
+      expect.objectContaining({ posting: 'The posting, as the user pasted it.' }),
     );
+  });
+
+  it('keeps the keyboard in the box the user is in when the step changes under it', async () => {
+    const unreachable: PostingRead = {
+      ok: false,
+      why: 'unreachable',
+      message: 'Factwright couldn’t reach careers.acme.example. Check the connection.',
+    };
+    let answer: (read: PostingRead) => void = () => {};
+    const readPosting = vi
+      .fn<() => Promise<PostingRead>>()
+      .mockResolvedValueOnce(unreachable)
+      .mockImplementation(
+        () =>
+          new Promise<PostingRead>((resolve) => {
+            answer = resolve;
+          }),
+      );
+    render(
+      <AddJobDialog
+        api={{ readPosting } as unknown as FactwrightApi}
+        onAdded={() => {}}
+        onClose={() => {}}
+      />,
+    );
+    await userEvent.keyboard('Acme');
+    await userEvent.type(
+      screen.getByRole('textbox', { name: 'Link to the posting' }),
+      'https://careers.acme.example/jobs/1',
+    );
+    await userEvent.tab();
+    await userEvent.click(
+      within(await screen.findByRole('status')).getByRole('button', { name: 'Try again' }),
+    );
+    // While the link is read again, Add job with nothing pasted says what it wants.
+    await userEvent.click(screen.getByRole('button', { name: 'Add job' }));
+    expect(screen.getByRole('alert').textContent).toBe(
+      'Paste the job’s posting first, or choose Add without the posting.',
+    );
+    await userEvent.click(screen.getByRole('textbox', { name: 'Role' }));
+    await userEvent.keyboard('Senior ');
+    answer(READ);
+    await screen.findByText(/^Read the posting: Product Manager, AI Platform/);
+    // The details show again, and what the user goes on typing goes where they were typing.
+    expect(screen.getByRole('heading', { name: 'Add a job' })).toBeTruthy();
+    const role = screen.getByRole('textbox', { name: 'Role' });
+    expect(document.activeElement).toBe(role);
+    await userEvent.keyboard('PM');
+    expect(role).toHaveProperty('value', 'Senior PM');
+    expect(screen.getByRole('textbox', { name: 'Link to the posting' })).toHaveProperty(
+      'value',
+      'https://careers.acme.example/jobs/1',
+    );
+    expect(readPosting).toHaveBeenCalledTimes(2);
+  });
+
+  it('waits for Add job to ask for the posting while the keyboard is in a box the asking step hasn’t', async () => {
+    let answer: (read: PostingRead) => void = () => {};
+    const readPosting = vi.fn(
+      () =>
+        new Promise<PostingRead>((resolve) => {
+          answer = resolve;
+        }),
+    );
+    render(
+      <AddJobDialog
+        api={{ readPosting } as unknown as FactwrightApi}
+        onAdded={() => {}}
+        onClose={() => {}}
+      />,
+    );
+    await userEvent.type(
+      screen.getByRole('textbox', { name: 'Link to the posting' }),
+      'https://careers.acme.example/jobs/1',
+    );
+    const notes = screen.getByRole('textbox', { name: 'Notes' });
+    await userEvent.click(notes);
+    answer(BLOCKED);
+    await screen.findByText(/^careers\.acme\.example turned Factwright away/);
+    expect(screen.queryByRole('heading', { name: 'Paste the posting' })).toBeNull();
+    expect(document.activeElement).toBe(notes);
   });
 
   /** A read of the link that answers only when the test says. */

@@ -76,7 +76,7 @@ function ReadNote({
   onAgain,
 }: {
   read: LinkRead;
-  /** Whether the user pasted a description, which the posting read from the link replaces. */
+  /** Whether the user pasted a description, which the job keeps over the posting read. */
   pasted: boolean;
   onAgain: () => void;
 }) {
@@ -92,8 +92,10 @@ function ReadNote({
     return (
       <p className={`${styles.read} ${styles.wide}`} role="status">
         Read the posting{result.title ? `: ${result.title}` : ''}, {count(result.characters)}{' '}
-        characters. It’s kept with the job{pasted ? ', in place of the description you pasted' : ''}
-        .
+        characters.{' '}
+        {pasted
+          ? 'The description you pasted is kept with the job instead. Empty its box to keep this one.'
+          : 'It’s kept with the job.'}
       </p>
     );
   }
@@ -198,6 +200,16 @@ export function AddJobDialog({
   // is read again.
   const [failure, setFailure] = useState<{ link: string; result: Unread } | null>(null);
   const whyId = useId();
+  // The box that keeps the keyboard when the step changes, by its name, and the form it's in.
+  const focusBack = useRef<string | null>(null);
+  const form = useRef<HTMLFormElement>(null);
+  /** The box with the keyboard, by its name, if one of the dialog's has it. */
+  const boxWithFocus = () => {
+    const focused = document.activeElement;
+    return focused instanceof HTMLElement && form.current?.contains(focused)
+      ? (focused.dataset.field ?? null)
+      : null;
+  };
   const companyBox = useRef<HTMLInputElement>(null);
   const linkBox = useRef<HTMLInputElement>(null);
   const postingBox = useRef<HTMLTextAreaElement>(null);
@@ -220,14 +232,22 @@ export function AddJobDialog({
     void done.then((result) => {
       // A read the user has moved on from, to another link or another read of this one, says nothing.
       if (reading.current?.done !== done) return;
+      // The box the user is in keeps the keyboard, wherever the next step has it.
+      const box = boxWithFocus();
       setRead({ link: wanted, result });
       if (!result.ok) {
         setFailure({ link: wanted, result });
-        // Asking for the posting waits for Add job when the user is busy in another box.
-        if (!pasted.current.trim() && edits.current === editsBefore) setStep('paste');
+        // Asking for the posting waits for Add job while the user is busy: typing since the read
+        // began, or in a box the step that asks doesn't have.
+        const busy = edits.current !== editsBefore || box === 'notes' || box === 'status';
+        if (!pasted.current.trim() && !busy) {
+          focusBack.current = box === 'link' ? null : box;
+          setStep('paste');
+        }
         return;
       }
       setFailure(null);
+      if (askingNow.current) focusBack.current = box;
       setStep('details');
       setCompany((typed) => (typed.trim() ? typed : (result.company ?? typed)));
       setRole((typed) => (typed.trim() ? typed : (result.title ?? typed)));
@@ -254,16 +274,31 @@ export function AddJobDialog({
   const rereading = Boolean(shownRead && !shownRead.result) && failure?.link === link.trim();
   const shownFailure = unread ?? (rereading ? (failure?.result ?? null) : null);
   const asking = step === 'paste' && shownFailure !== null;
-  // A posting read from the link takes the place of a description the user pasted before.
-  const readOk = shownRead?.result?.ok === true;
+  const askingNow = useRef(asking);
+  useEffect(() => {
+    askingNow.current = asking;
+  }, [asking]);
 
-  // Asked for the posting, the box for it takes the keyboard, ready to paste. Back from there, the
-  // link does, as going back is for changing it.
+  // When the step changes, the keyboard stays in the box the user was in, where the new step has
+  // it, with the caret at its end. Otherwise, asked for the posting, the box for it takes it.
   const wasAsking = useRef(false);
   useEffect(() => {
-    if (asking) postingBox.current?.focus();
-    else if (wasAsking.current) linkBox.current?.focus();
+    if (asking === wasAsking.current) return;
     wasAsking.current = asking;
+    const name = focusBack.current;
+    focusBack.current = null;
+    const box = name ? form.current?.querySelector<HTMLElement>(`[data-field="${name}"]`) : null;
+    if (box) {
+      box.focus();
+      if (
+        box instanceof HTMLTextAreaElement ||
+        (box instanceof HTMLInputElement && box.type === 'text')
+      ) {
+        box.setSelectionRange(box.value.length, box.value.length);
+      }
+    } else if (asking) {
+      postingBox.current?.focus();
+    }
   }, [asking]);
 
   /**
@@ -274,18 +309,19 @@ export function AddJobDialog({
    */
   const add = async (close: () => void, withoutPosting = false) => {
     setProblem(null);
-    const pastedNow = withoutPosting || readOk ? '' : posting.trim();
+    const pastedNow = withoutPosting ? '' : posting.trim();
+    // Asking for the posting, even while the link is read again, Add job wants it.
+    if (asking && !pastedNow && !withoutPosting) {
+      setProblem('Paste the job’s posting first, or choose Add without the posting.');
+      postingBox.current?.focus();
+      return;
+    }
     if (!withoutPosting && !pastedNow && looksLikeLink(link.trim()) && !shownRead?.result) {
       readLink(link);
       return;
     }
     if (shownFailure && !pastedNow && !withoutPosting) {
-      if (asking) {
-        setProblem('Paste the job’s posting first, or choose Add without the posting.');
-        postingBox.current?.focus();
-      } else {
-        setStep('paste');
-      }
+      setStep('paste');
       return;
     }
     if (!company.trim()) {
@@ -323,6 +359,7 @@ export function AddJobDialog({
         <Input
           {...control}
           ref={companyBox}
+          data-field="company"
           data-autofocus
           required
           maxLength={LIMITS.company}
@@ -340,6 +377,7 @@ export function AddJobDialog({
       {(control) => (
         <Input
           {...control}
+          data-field="role"
           maxLength={LIMITS.role}
           value={role}
           onChange={(event) => {
@@ -355,6 +393,7 @@ export function AddJobDialog({
       {(control) => (
         <Select
           {...control}
+          data-field="kind"
           value={kind}
           onChange={(event) => {
             edited();
@@ -376,6 +415,7 @@ export function AddJobDialog({
       {(control) => (
         <Input
           {...control}
+          data-field="pay"
           placeholder="$150k–$180k"
           maxLength={LIMITS.pay}
           value={pay}
@@ -405,7 +445,7 @@ export function AddJobDialog({
         onClose={onClose}
       >
         {(close) => (
-          <form className={styles.paste} onSubmit={submit(close)}>
+          <form ref={form} className={styles.paste} onSubmit={submit(close)}>
             <div id={whyId} className={styles.why} role="status">
               <p className={styles.whyLine}>{unreadNow.message}</p>
               <p className={styles.whyLine}>
@@ -413,7 +453,13 @@ export function AddJobDialog({
               </p>
               {unreadNow.why === 'unreachable' && (
                 <div className={styles.again}>
-                  <Button size="sm" disabled={rereading} onClick={() => readLink(link, true)}>
+                  <Button
+                    size="sm"
+                    aria-disabled={rereading || undefined}
+                    onClick={() => {
+                      if (!rereading) readLink(link, true);
+                    }}
+                  >
                     Try again
                   </Button>
                   {rereading && <span className={styles.hint}>Reading it again…</span>}
@@ -432,6 +478,7 @@ export function AddJobDialog({
                   <TextArea
                     {...control}
                     ref={postingBox}
+                    data-field="posting"
                     aria-describedby={whyId}
                     rows={10}
                     className={styles.postingBox}
@@ -479,12 +526,15 @@ export function AddJobDialog({
                   ' That may be only part of the posting: paste all of it, from the top.'}
               </p>
             )}
-            {problemNote}
-            {/* Pinned to the dialog's bottom, so they show however short the window. */}
+            {/* Pinned to the dialog's bottom, with what stops the job being added, so they show
+                however short the window. */}
             <div className={styles.pasteActions}>
+              {problemNote}
               <DialogActions>
                 <Button
                   onClick={() => {
+                    // Going back is for changing the link, so the link takes the keyboard.
+                    focusBack.current = 'link';
                     setProblem(null);
                     setStep('details');
                   }}
@@ -512,7 +562,7 @@ export function AddJobDialog({
       onClose={onClose}
     >
       {(close) => (
-        <form className={styles.form} onSubmit={submit(close)}>
+        <form ref={form} className={styles.form} onSubmit={submit(close)}>
           {companyField}
           {roleField}
           {kindField}
@@ -521,6 +571,7 @@ export function AddJobDialog({
               <Input
                 {...control}
                 ref={linkBox}
+                data-field="link"
                 type="url"
                 placeholder="https://"
                 maxLength={LIMITS.link}
@@ -541,6 +592,7 @@ export function AddJobDialog({
             {(control) => (
               <TextArea
                 {...control}
+                data-field="posting"
                 rows={3}
                 placeholder="Paste it here if Factwright can’t read the link"
                 maxLength={LIMITS.posting}
@@ -554,6 +606,7 @@ export function AddJobDialog({
             {(control) => (
               <Select
                 {...control}
+                data-field="status"
                 value={status}
                 onChange={(event) => {
                   edited();
@@ -572,6 +625,7 @@ export function AddJobDialog({
             {(control) => (
               <TextArea
                 {...control}
+                data-field="notes"
                 rows={3}
                 maxLength={LIMITS.notes}
                 value={notes}

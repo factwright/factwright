@@ -17,10 +17,11 @@ const ASKS =
 
 /**
  * Pay and benefits: an amount with its currency before or after it, or the words for it. Not
- * "equity" alone, which is as often diversity's, nor "bonus points".
+ * "equity" alone, which is as often diversity's, nor "bonus points". An amount is tried only from
+ * where its digits start, so a long run of them takes no longer than its length.
  */
 const PAY =
-  /([$£€]\s?\d|\d[\d.,]*\s?(?:[$£€]|(?:usd|eur|gbp)\b)|\b(salary|compensation|pay range|base pay|hourly|per hour|per year|benefits|401\(?k\)?|bonus(?!\s+points?)|stock options?)\b)/i;
+  /([$£€]\s?\d|(?<![\d.,])\d[\d.,]*\s?(?:[$£€]|(?:usd|eur|gbp)\b)|\b(salary|compensation|pay range|base pay|hourly|per hour|per year|benefits|401\(?k\)?|bonus(?!\s+points?)|stock options?)\b)/i;
 
 /** Where: the place, and remote, hybrid or on-site. */
 const PLACE = /\b(remote|hybrid|on[- ]?site|in[- ]office|location|relocat)/i;

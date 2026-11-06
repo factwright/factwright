@@ -44,6 +44,12 @@ describe('the parts of a pasted posting', () => {
     expect(has('A bachelor’s degree in finance')).toEqual(['asks']);
   });
 
+  it('takes no longer over a long run of digits than its length', () => {
+    const started = performance.now();
+    expect(has('1'.repeat(100_000))).toEqual(['whole']);
+    expect(performance.now() - started).toBeLessThan(1000);
+  });
+
   it('takes a short text as part of a posting, however much it has', () => {
     const closing =
       'Workiva lets employees work from an office or remotely from any location in their country of employment.';
