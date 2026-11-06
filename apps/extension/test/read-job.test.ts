@@ -110,6 +110,89 @@ describe('reading a job page', () => {
     expect(job.url).toBe('https://www.linkedin.com/jobs/view/4012345678/');
   });
 
+  /**
+   * LinkedIn's newer job page, signed in at /jobs/view/, in the shape it had in November 2026: its
+   * classes are made up anew with each build, it has no h1 and no job data, and only the words and
+   * their order say what's what. The job, the company and the posting are made up.
+   */
+  const newerLinkedIn = (tabTitle: string, posting: string, around = '') =>
+    page(`<html><head><title>${tabTitle}</title></head><body>
+      <main id="workspace" tabindex="-1"><section aria-label="Primary content">
+        <div class="fa4l40 fa4ayy"><div class="fa4ayy fa4iu3">
+          <div class="fa4ayq fa4l42" data-display-contents="true">
+            <a tabindex="0" class="fa4me9 fa4me8" href="https://www.linkedin.com/company/northwind/life/">
+              <div class="fa4ivr fa4ayy" aria-label="Company, Northwind.">
+                <figure class="fa4l6q fa4l6u"></figure><p class="fa4lje fa4lo8">Northwind</p>
+              </div>
+            </a>
+          </div>
+          <button class="fa4lw3 fa4lw2" type="button" aria-label="More options"></button>
+        </div></div>
+        <p class="fa4lje"><span>Staff Engineer, Payments</span><span aria-hidden="true">Staff Engineer, Payments</span></p>
+        <p class="fa4lje"><span>Austin, TX</span> · Reposted 1 week ago</p>
+        ${around}
+        <div class="fa4l40 fa4lch">
+          <div class="fa4ayy fa4iu3"></div>
+          <div class="fa4ayy fa4iu3"><h2 class="fa4lje fa4lo4">About the job</h2></div>
+          <p class="fa4lje fa4lo6" style="-webkit-line-clamp: 3"><span class="fa4l1m fa4lrt" tabindex="-1" data-testid="expandable-text-box">${posting}</span><button type="button">… more</button></p>
+        </div>
+      </section></main></body></html>`);
+  const NEWER_POSTING =
+    'Build payments at scale for millions of small businesses.<br><br>What you’ll do<br>- Lead the ledger team<br>- Ship weekly<br><br>Pay: $180,000–$220,000 a year.';
+
+  it('reads LinkedIn’s newer job page: the posting after About the job, the job and company from the tab’s title', () => {
+    const job = readJobPage(
+      newerLinkedIn('(3) Staff Engineer, Payments | Northwind | LinkedIn', NEWER_POSTING),
+      'https://www.linkedin.com/jobs/view/4012345678/',
+      '',
+    );
+    expect(job).toMatchObject<Partial<PageJob>>({
+      url: 'https://www.linkedin.com/jobs/view/4012345678/',
+      title: 'Staff Engineer, Payments',
+      company: 'Northwind',
+      source: 'page',
+    });
+    expect(job.posting).toBe(
+      'About the job\n\nBuild payments at scale for millions of small businesses.\n\nWhat you’ll do\n- Lead the ledger team\n- Ship weekly\n\nPay: $180,000–$220,000 a year.',
+    );
+  });
+
+  it('keeps a job title with a bar in it whole, and the company the last before LinkedIn', () => {
+    const job = readJobPage(
+      newerLinkedIn('(99+) Engineer | Platform | Northwind | LinkedIn', NEWER_POSTING),
+      'https://www.linkedin.com/jobs/view/4012345678/',
+      '',
+    );
+    expect(job.title).toBe('Engineer | Platform');
+    expect(job.company).toBe('Northwind');
+  });
+
+  it('reads no posting after an About the job with too little after it, or one that’s hidden', () => {
+    const short = readJobPage(
+      newerLinkedIn('Staff Engineer, Payments | Northwind | LinkedIn', 'Apply on the site.'),
+      'https://www.linkedin.com/jobs/view/4012345678/',
+      '',
+    );
+    expect(short.posting).toBe('');
+    // A heading hidden from the page, with a long text after it, comes before the real one.
+    const hidden = newerLinkedIn(
+      'Staff Engineer, Payments | Northwind | LinkedIn',
+      'Short.',
+      `<div aria-hidden="true"><h2>About the job</h2><p>${'Not this one. '.repeat(20)}</p></div>`,
+    );
+    expect(readJobPage(hidden, 'https://www.linkedin.com/jobs/view/4012345678/', '').posting).toBe(
+      '',
+    );
+  });
+
+  it('names no job or company from a LinkedIn tab title that isn’t a job’s', () => {
+    const picks = page(`<html><head><title>(13) Top job picks for you | LinkedIn</title></head>
+      <body><main><p>Jobs for you</p></main></body></html>`);
+    const job = readJobPage(picks, 'https://www.linkedin.com/jobs/collections/recommended/', '');
+    expect(job.company).toBe('');
+    expect(job.title).not.toBe('Top job picks for you');
+  });
+
   it('reads an Indeed job from its search, as the job’s own page', () => {
     const indeed = page(`<body>
       <h1 data-testid="jobsearch-JobInfoHeader-title">Data Analyst</h1>
