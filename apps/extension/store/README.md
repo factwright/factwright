@@ -128,8 +128,8 @@ Firefox Add-ons reads the description as Markdown, and an edit there goes live a
    > To try it with no account: install Factwright from factwright.com and open it, choose Browser extension in its sidebar, and Set up beside Firefox if it offers it, then choose Factwright on this computer in the extension's setup. For sync, ask for a test account in the review's thread. Each permission's use is set out in apps/extension/store/README.md.
 
    If Factwright's sync is sold by then, give a reviewer's account sync for free, as [apps/server's README](../../server/README.md#giving-sync-away) says.
-7. **Release notes,** for 0.3.1:
-   > The box on a form that asks what you did in a job now fits the job you're applying to, through sync too: the bullets for that position from the job's own resume, then your starting resume for its kind of job, then your work history, with the others in the field's menu. For a job not under a kind of job yet, that box and the pay to ask for go by the job's title, and say so. A form's panel and menus say which kind of job's target pay they filled in. A hint such as "Minimum 200 characters" no longer reads as the most a box takes, and a box of rich text keeps an answer's lines on their own lines.
+7. **Release notes,** for 0.3.2:
+   > Reads job pages laid out the newer way some job sites now use, where it found nothing to save: a job's own page, a search with a job open beside it, and links from job alert emails. It takes the posting that follows its heading, and the job and the company from the page's title. A job saved from an email's link matches the same job saved any other way.
 
 ### How each part works, for a reviewer
 If a reviewer asks how something works, paste the part they ask about:
@@ -170,6 +170,8 @@ Each store's listing address is in `STORES` in [apps/site/src/stores.ts](../../s
 
 ## Each update
 Raise `version` in `apps/extension/package.json`, build, and upload the new zip to each store (with a new source zip for Firefox). Note what changed in the CHANGELOG. Paste the listing and the answers above again where they changed since the last upload: for 0.3.0, all of them.
+
+0.3.2 asks nothing of anyone in either store: no new permission, and no new kind of data. Of what's pasted, only the release notes changed since 0.3.1. It works with any Factwright: it only reads LinkedIn's job pages the way they now show.
 
 0.3.1 asks nothing of anyone in either store: no new permission, and no new kind of data. Of what's pasted, only the description and the release notes changed since 0.3.0. It works with any Factwright, and it can go up before or with Factwright 0.19.0, which makes the pay to ask for go by a job's title: with 0.19.0 and the stores' 0.3.0 on one computer, that pay says only "From Profile".
 

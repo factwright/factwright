@@ -1,6 +1,6 @@
 {
   "name": "@factwright/extension",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "private": true,
   "description": "Factwright for Chrome and Firefox: save the job you're looking at to your job hunt, and fill in its application for you to check.",
   "license": "AGPL-3.0-only",
