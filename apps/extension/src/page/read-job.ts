@@ -153,6 +153,11 @@ export function readJobPage(
   const SITES: {
     host: RegExp;
     posting: string[];
+    /**
+     * The posting's heading, as the site words it, for a layout whose places for the posting have
+     * no lasting names: the posting is what follows the heading.
+     */
+    postingAfter?: RegExp;
     title: string[];
     /** Where it shows the pay, for a site whose job data has none, such as Lever's salary range. */
     pay?: string[];
@@ -179,18 +184,24 @@ export function readJobPage(
         '.show-more-less-html__markup',
         '.description__text',
       ],
+      // Its newer job page, as signed in at /jobs/view/, names none of its places for good: the
+      // posting follows its "About the job", and the tab's title says the job and the company, as
+      // "(3) Data Analyst | Acme | LinkedIn", with how many notifications wait in front.
+      postingAfter: /^about the job$/i,
       title: [
         '.job-details-jobs-unified-top-card__job-title',
         '.jobs-unified-top-card__job-title',
         '.top-card-layout__title',
         '.topcard__title',
       ],
+      titleInTitle: /^(?:\(\d+\+?\)\s*)?(.+?) \| [^|]+ \| LinkedIn$/,
       company: [
         '.job-details-jobs-unified-top-card__company-name',
         '.jobs-unified-top-card__company-name',
         '.topcard__org-name-link',
         '.top-card-layout__second-subline a',
       ],
+      companyInTitle: /^(?:\(\d+\+?\)\s*)?.+ \| ([^|]+) \| LinkedIn$/,
       location: [
         '.job-details-jobs-unified-top-card__primary-description-container .tvm__text',
         '.job-details-jobs-unified-top-card__bullet',
@@ -475,6 +486,38 @@ export function readJobPage(
       : textOf(body);
   }
 
+  /** The least text that follows a posting's heading for it to be the posting. */
+  const MIN_AFTER_HEADING = 100;
+  /**
+   * The posting after its heading, as a site words it, for a layout with no lasting names for its
+   * places: the heading, then what follows it, or what follows the elements wrapped around it that
+   * hold nothing else. Nothing where no heading is followed by enough text, or where it's hidden.
+   * It goes through the page's text once, rather than asking each element for its own.
+   */
+  function postingAfter(heading: RegExp | undefined): string {
+    const body = doc.body;
+    if (!heading || !body) return '';
+    // NodeFilter.SHOW_TEXT, as a number, which every browser's sandbox for an extension's code has.
+    const walker = doc.createTreeWalker(body, 4);
+    for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+      const words = oneLine(node.nodeValue);
+      if (!heading.test(words)) continue;
+      const own = node.parentElement;
+      if (!own || own.closest('[hidden], [aria-hidden="true"]')) continue;
+      for (let at: Element | null = own; at && at !== body; at = at.parentElement) {
+        if (oneLine(at.textContent) !== words) break;
+        const after: string[] = [];
+        for (let next = at.nextElementSibling; next; next = next.nextElementSibling) {
+          const text = textOf(next);
+          if (text) after.push(text);
+        }
+        const posting = after.join('\n\n');
+        if (posting.length >= MIN_AFTER_HEADING) return `${words}\n\n${posting}`;
+      }
+    }
+    return '';
+  }
+
   /** The first of the selectors that finds an element with text, and its text. */
   function first(selectors: string[], asText: (element: Element) => string): string {
     for (const selector of selectors) {
@@ -632,9 +675,11 @@ export function readJobPage(
     const host = url.hostname.replace(/^www\./, '');
     const query = queryOf(url.search);
     const param = (name: string) => query.find(([key]) => key === name)?.[1] ?? null;
-    if (/(^|\.)linkedin\.com$/.test(host) && /^\/jobs(\/|$)/.test(url.pathname)) {
+    // A job alert email's link is the job's page at /comm/jobs/view/, which stays there.
+    if (/(^|\.)linkedin\.com$/.test(host) && /^\/(comm\/)?jobs(\/|$)/.test(url.pathname)) {
       const id =
-        param('currentJobId') ?? url.pathname.match(/^\/jobs\/view\/(?:[^/]*-)?(\d+)/)?.[1];
+        param('currentJobId') ??
+        url.pathname.match(/^\/(?:comm\/)?jobs\/view\/(?:[^/]*-)?(\d+)/)?.[1];
       if (id && /^\d+$/.test(id)) return `https://www.linkedin.com/jobs/view/${id}/`;
     }
     if (
@@ -877,12 +922,13 @@ export function readJobPage(
   const selection = oneLine(selected).length >= MIN_SELECTION ? selected.trim() : '';
   const described = data?.description ? textOfMarkup(String(data.description)) : '';
   // Where the job site shows its posting, unless what's there is its application form, as Ashby's
-  // is on its application's tab.
+  // is on its application's tab, or else what follows its heading for the posting, as LinkedIn's
+  // newer job page has nothing else to go by.
   const onSite = post
     ? postText
     : first(known?.posting ?? [], (element) =>
         questionsIn(element, new Set()).length >= FORM_QUESTIONS ? '' : textOf(element),
-      );
+      ) || postingAfter(known?.postingAfter);
   // The page's main text, without its navigation, headers, footers and forms, and without an
   // application form built without a form element, or none where that's all there is. None on a
   // page of an application that runs over several, which never shows the posting. Never

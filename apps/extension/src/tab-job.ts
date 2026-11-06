@@ -54,10 +54,11 @@ export function jobAddress(href: string): string {
     return href;
   }
   const host = url.hostname.replace(/^www\./, '');
-  if (/(^|\.)linkedin\.com$/.test(host) && /^\/jobs(\/|$)/.test(url.pathname)) {
+  // A job alert email's link is the job's page at /comm/jobs/view/, which stays there.
+  if (/(^|\.)linkedin\.com$/.test(host) && /^\/(comm\/)?jobs(\/|$)/.test(url.pathname)) {
     const id =
       url.searchParams.get('currentJobId') ??
-      url.pathname.match(/^\/jobs\/view\/(?:[^/]*-)?(\d+)/)?.[1];
+      url.pathname.match(/^\/(?:comm\/)?jobs\/view\/(?:[^/]*-)?(\d+)/)?.[1];
     if (id && /^\d+$/.test(id)) return `https://www.linkedin.com/jobs/view/${id}/`;
   }
   if (/(^|\.)indeed\.com$/.test(host) && INDEED_JOB_PATH.test(url.pathname)) {
@@ -92,7 +93,9 @@ export function isJobAddress(url: string): boolean {
     return false;
   }
   const host = parsed.hostname.replace(/^www\./, '');
-  if (/(^|\.)linkedin\.com$/.test(host)) return /^\/jobs\/view\/\d+\/?$/.test(parsed.pathname);
+  if (/(^|\.)linkedin\.com$/.test(host)) {
+    return /^\/(comm\/)?jobs\/view\/\d+\/?$/.test(parsed.pathname);
+  }
   if (/(^|\.)indeed\.com$/.test(host)) {
     return parsed.pathname === '/viewjob' && parsed.searchParams.has('jk');
   }

@@ -45,8 +45,10 @@ describe('postingKey', () => {
         'https://www.linkedin.com/jobs/view/4012345678/?refId=a1&trackingId=b2',
         'https://uk.linkedin.com/jobs/view/senior-engineer-at-acme-4012345678',
         'https://www.linkedin.com/jobs/search/?currentJobId=4012345678&keywords=engineer',
+        // A job alert email's link to it.
+        'https://www.linkedin.com/comm/jobs/view/4012345678/?trackingId=c3&refId=d4',
       ].map(postingKey),
-    ).toEqual(Array(3).fill('linkedin:4012345678'));
+    ).toEqual(Array(4).fill('linkedin:4012345678'));
     expect(postingKey('https://www.indeed.com/viewjob?jk=ab12cd34')).toBe('indeed:ab12cd34');
     expect(postingKey('https://ca.indeed.com/jobs?q=engineer&vjk=AB12CD34')).toBe(
       'indeed:ab12cd34',
