@@ -16,7 +16,7 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "docx": "9.14.0"
+    "docx": "9.15.1"
   },
   "devDependencies": {
     "jszip": "3.10.2",
