@@ -289,6 +289,7 @@ async function callAllowed(name, args) {
 
 /** The answer it gives to every question about a job. */
 const ANSWER = 'A short screen, from the stand-in Claude.';
+const REPLY_ANSWER = 'Then ask about on-call, following on, from the stand-in Claude.';
 
 /** What it asks while tailoring a resume, and what the user answers in Claude Code's dialog. */
 const GRAPHQL = 'The posting wants GraphQL. Have you used GraphQL?';
@@ -408,12 +409,20 @@ async function work(text) {
   if (asked) {
     const [, job, named] = asked;
     const details = await call('job_details', { job });
-    const waiting = [...details.matchAll(/^- (\S+) \(asked [^)]+\): not answered yet$/gm)];
+    const waiting = [
+      ...details.matchAll(/^(?: {4})?- (?:Reply )?(\S+) \(asked [^)]+\): not answered yet$/gm),
+    ];
     const open = waiting.map(([, each]) => each);
     // A question named again after it was answered gets a fresh answer.
     const again = named && !open.includes(named);
     for (const id of named ? [named] : open) {
-      await call('save_answer', { job, question: id, answer: again ? `${ANSWER} Again.` : ANSWER });
+      // A reply, which the details list under the question it carries on from, after the
+      // answer before it, gets an answer that follows on.
+      const reply = new RegExp(
+        `answered in asked/\\S+\\.md\\n(?: {4}.*\\n)*? {4}- Reply ${id} \\(asked `,
+      ).test(details);
+      const answer = reply ? REPLY_ANSWER : again ? `${ANSWER} Again.` : ANSWER;
+      await call('save_answer', { job, question: id, answer });
     }
   }
   // As Claude would for Analyze job, on one job or several: read each one, and log its fit check

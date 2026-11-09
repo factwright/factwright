@@ -113,6 +113,60 @@
   font-size: var(--fw-text-md);
 }
 
+/* One of the user's replies, then Claude's answer to it, under the answer before. */
+.turn {
+  display: grid;
+  gap: var(--fw-space-2);
+  margin-top: var(--fw-space-3);
+}
+
+/* The user's reply, set apart from Claude's answers. */
+.reply {
+  padding: 8px 10px;
+  border-radius: var(--fw-radius-md);
+  background: var(--fw-sunken);
+}
+
+.from {
+  margin: 0 0 2px;
+  color: var(--fw-muted);
+  font-size: var(--fw-text-sm);
+}
+
+.replied {
+  margin: 0;
+  line-height: 1.4;
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+}
+
+/* The box for another reply, at the conversation's end. */
+.replyForm {
+  display: grid;
+  gap: 4px;
+  margin-top: var(--fw-space-3);
+}
+
+.replyRow {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--fw-space-2);
+}
+
+.replyRow > :first-child {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* One line, as tall as the button beside it, growing with what's in it up to eight. */
+.replyBox {
+  min-height: 34px;
+  max-height: calc(8lh + 18px);
+  padding-block: 6px;
+  resize: none;
+  field-sizing: content;
+}
+
 .shots {
   display: flex;
   flex-wrap: wrap;

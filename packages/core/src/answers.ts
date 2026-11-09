@@ -1,6 +1,6 @@
 import { slug } from './keys.ts';
 import { markdownTable, sectionHeading } from './markdown.ts';
-import type { SentAnswer } from './tracker.ts';
+import type { Ask, SentAnswer } from './tracker.ts';
 
 /** One of Claude's suggested answers, from a job's answers.md. */
 export interface SuggestedAnswer {
@@ -153,4 +153,53 @@ export function askId(question: string, on: string, taken: readonly string[]): s
   let id = base;
   for (let n = 2; taken.includes(id); n++) id = `${base}-${n}`;
   return id;
+}
+
+/**
+ * A conversation with Claude about a job: the question that started it, then the user's replies
+ * to Claude's answers, each a question of its own, in the order they came.
+ */
+export interface AskThread {
+  ask: Ask;
+  replies: Ask[];
+}
+
+/**
+ * A job's questions for Claude as conversations, in the order they started. A reply whose
+ * conversation isn't on file anymore, as when another device removed it, shows as a question of
+ * its own, so nothing the user said goes missing.
+ */
+export function askThreads(asks: readonly Ask[]): AskThread[] {
+  const byId = new Map(asks.map((ask) => [ask.id, ask]));
+  // The question a conversation started with: the first one back with nothing before it on file.
+  // A loop, which the app never makes, leaves each question in it as a start of its own.
+  const startOf = (ask: Ask): Ask => {
+    const seen = new Set([ask.id]);
+    let at = ask;
+    for (;;) {
+      const before = at.thread === undefined ? undefined : byId.get(at.thread);
+      if (!before) return at;
+      if (seen.has(before.id)) return ask;
+      seen.add(before.id);
+      at = before;
+    }
+  };
+  const threads = new Map<string, AskThread>();
+  for (const ask of asks) {
+    if (startOf(ask).id === ask.id) threads.set(ask.id, { ask, replies: [] });
+  }
+  for (const ask of asks) {
+    const start = startOf(ask).id;
+    if (start !== ask.id) threads.get(start)?.replies.push(ask);
+  }
+  return [...threads.values()];
+}
+
+/** The conversation a question or reply is in, or null for one that isn't on file. */
+export function askThreadOf(asks: readonly Ask[], id: string): AskThread | null {
+  return (
+    askThreads(asks).find(
+      (thread) => thread.ask.id === id || thread.replies.some((reply) => reply.id === id),
+    ) ?? null
+  );
 }

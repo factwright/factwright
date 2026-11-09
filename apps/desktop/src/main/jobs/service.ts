@@ -489,26 +489,33 @@ export class JobsService {
     return result.ok && result.recorded === 0 ? result : this.saved(result);
   }
 
-  /** Keeps a question the user asked Claude about a job. */
-  addAsk(jobId: string, question: string): AskResult {
-    return this.saved(this.deps.tracker.addAsk(jobId, question, this.context()));
+  /**
+   * Keeps a question the user asked Claude about a job, or with `replyTo`, a question or reply in
+   * a conversation, their reply to Claude's answer there.
+   */
+  addAsk(jobId: string, question: string, replyTo?: string): AskResult {
+    return this.saved(this.deps.tracker.addAsk(jobId, question, this.context(), replyTo));
   }
 
-  /** Forgets a question the user asked about a job, and puts its answer and screenshots in the trash. */
+  /**
+   * Forgets a question the user asked about a job, with their replies in its conversation, and
+   * puts the answers and screenshots of each in the trash.
+   */
   async removeAsk(jobId: string, askId: string): Promise<EditResult> {
     if (!ASK_ID.test(askId)) return { ok: false, message: 'That question isn’t on file.' };
     const result = this.saved(this.deps.tracker.removeAsk(jobId, askId, this.context()));
     if (!result.ok) return result;
+    const gone = new Set(result.removed);
     const files = [
-      join(this.deps.workspace, ...askedFile(jobId, askId).split('/')),
+      ...result.removed.map((id) => join(this.deps.workspace, ...askedFile(jobId, id).split('/'))),
       ...this.extras(jobId)
-        .shots.filter((shot) => shot.ask === askId)
+        .shots.filter((shot) => shot.ask !== null && gone.has(shot.ask))
         .flatMap((shot) => shotFile(this.deps.workspace, shot.path) ?? []),
     ];
     for (const file of files.filter((each) => existsSync(each))) {
       await this.deps.trash?.(file).catch(() => {});
     }
-    return result;
+    return { ok: true };
   }
 
   /** Saves a screenshot the user added for a job, or pasted into Claude's panel outside one. */

@@ -261,12 +261,31 @@ describe('tracker rows', () => {
       asks: JSON.stringify([
         { id: '../../outside', question: 'Escape?', on: '2026-10-12' },
         { id: '2026-10-12-culture', question: 'What’s the culture like?', on: '2026-10-12' },
+        // A reply keeps the conversation it's in, by a question's ID, and drops one that isn't.
+        {
+          id: '2026-10-13-and-pay',
+          question: 'And pay?',
+          on: '2026-10-13',
+          thread: '2026-10-12-culture',
+        },
+        { id: '2026-10-13-odd', question: 'Odd?', on: '2026-10-13', thread: '../../outside' },
+        { id: '2026-10-13-self', question: 'Self?', on: '2026-10-13', thread: '2026-10-13-self' },
       ]),
     });
     expect(row.sent).toEqual([
       { question: 'Start date?', nth: 0, text: 'Two weeks', on: '2026-10-10', at: '2026-10-10' },
     ]);
-    expect(row.asks.map((ask) => ask.id)).toEqual(['2026-10-12-culture']);
+    expect(row.asks).toEqual([
+      { id: '2026-10-12-culture', question: 'What’s the culture like?', on: '2026-10-12' },
+      {
+        id: '2026-10-13-and-pay',
+        question: 'And pay?',
+        on: '2026-10-13',
+        thread: '2026-10-12-culture',
+      },
+      { id: '2026-10-13-odd', question: 'Odd?', on: '2026-10-13' },
+      { id: '2026-10-13-self', question: 'Self?', on: '2026-10-13' },
+    ]);
     // Two devices answered the same question: the later answer stands, and a repeated
     // question's second box keeps its own.
     const twice = trackedRow({

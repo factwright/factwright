@@ -13,8 +13,11 @@ export {
 export {
   type ApplicationAnswer,
   ASK_ID,
+  type AskThread,
   applicationAnswers,
   askId,
+  askThreadOf,
+  askThreads,
   questionKey,
   readSuggestedAnswers,
   type SuggestedAnswer,

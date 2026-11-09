@@ -4,6 +4,9 @@ Notable changes to Factwright, newest first. The format follows [Keep a Changelo
 
 ## Unreleased
 
+### Added
+- **Reply to Claude's answers in Questions for Claude, as a conversation.** Under each answer is a box to reply in: ask a follow-up, push back, or say what's happened since, and Claude answers your reply from everything said so far, its own earlier answers included, as well as everything on file for the job. Enter sends, and Shift-Enter starts a new line. You can write a reply while Claude is still answering, and send it once the answer is in. Your replies show under the answers they follow, each with Claude's answer, and the question says how many replies it has. Ask again asks the latest one again, and Remove takes the question, your replies and Claude's answers together. Like your questions, replies stay in your tracker and sync, and Claude reads them through its tools, never typed in as a command. Your phone shows each conversation too, once Factwright's sync next deploys.
+
 ## 0.19.3 - 2026-11-06
 
 ### Changed

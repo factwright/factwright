@@ -130,6 +130,24 @@ describe('runOutcome', () => {
       text: 'Claude answered your question about Acme Robotics.',
       place: { jobId: acme.id, section: 'asks' },
     });
+    // A reply to Claude's answer, in a conversation, gets Claude's reply.
+    const replied = (job: Job): Job => ({
+      ...job,
+      asks: [
+        { id: 'q1', question: 'What should I expect?', on: TODAY },
+        { id: 'q2', question: 'And pay?', on: TODAY, thread: 'q1' },
+      ],
+    });
+    expect(
+      outcome({ skill: 'ask', jobId: acme.id, askId: 'q2' }, replied, [
+        done('mcp__factwright__save_answer'),
+      ])?.text,
+    ).toBe('Claude replied about Acme Robotics.');
+    expect(
+      outcome({ skill: 'ask', jobId: acme.id, askId: 'q1' }, replied, [
+        done('mcp__factwright__save_answer'),
+      ])?.text,
+    ).toBe('Claude answered your question about Acme Robotics.');
     // A step that only started, or failed, made nothing.
     expect(
       outcome({ skill: 'ask', jobId: acme.id, askId: 'q1' }, undefined, [

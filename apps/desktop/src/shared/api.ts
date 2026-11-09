@@ -578,9 +578,16 @@ export interface FactwrightApi {
    * job, among its application questions. The extension fills in their drafts once it's open.
    */
   getFormQuestions(jobId: string): Promise<FormQuestionsResult>;
-  /** Keeps a question for Claude about a job, ready for a run to answer it. */
-  askAboutJob(jobId: string, question: string): Promise<AskResult>;
-  /** Forgets a question about a job, and puts its answer and screenshots in the trash. */
+  /**
+   * Keeps a question for Claude about a job, ready for a run to answer it. With `replyTo`, the ID
+   * of a question or reply in a conversation, it's the user's reply to Claude's answer there,
+   * which Claude answers from everything said before it.
+   */
+  askAboutJob(jobId: string, question: string, replyTo?: string | null): Promise<AskResult>;
+  /**
+   * Forgets a question about a job, with the user's replies in its conversation, and puts the
+   * answers and screenshots of each in the trash.
+   */
   removeAsk(jobId: string, askId: string): Promise<EditResult>;
   /** Saves a screenshot for a job: of the application form, or with a question for Claude. */
   addShot(jobId: string, shot: ShotUpload, purpose: ShotFor): Promise<ShotResult>;

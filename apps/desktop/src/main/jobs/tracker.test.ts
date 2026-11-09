@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { type CollectedJob, jobIdFor, newJobRows, normalizeUrl, shortCode } from '@factwright/core';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { LIMITS } from '../../shared/limits.ts';
 import { trackerAsOf } from './testing.ts';
 import { type EditContext, Tracker } from './tracker.ts';
 
@@ -744,17 +745,30 @@ describe('mergeJobs', () => {
       tracker.addAsk(id, 'What should I expect?', AT);
       tracker.recordAnswer(id, 'Why Acme?', 0, `Sent for ${id}`, AT);
       tracker.updateJob(id, { questions: ['Why Acme?', `Only ${id}?`] }, AT);
+      // Each job's conversation has a reply, which follows its question to its new ID.
+      tracker.addAsk(id, 'And pay?', AT, '2026-10-10-what-should-i-expect');
     }
     expect(tracker.mergeJobs('acme--staff', other, AT)).toEqual({
       ok: true,
-      asks: [['2026-10-10-what-should-i-expect', '2026-10-10-what-should-i-expect-2']],
+      asks: [
+        ['2026-10-10-what-should-i-expect', '2026-10-10-what-should-i-expect-2'],
+        ['2026-10-10-and-pay', '2026-10-10-and-pay-2'],
+      ],
     });
     expect(row()).toMatchObject({
       questions: ['Why Acme?', 'Only acme--staff?', `Only ${other}?`],
       sent: [expect.objectContaining({ text: 'Sent for acme--staff' })],
       asks: [
         expect.objectContaining({ id: '2026-10-10-what-should-i-expect' }),
+        expect.objectContaining({
+          id: '2026-10-10-and-pay',
+          thread: '2026-10-10-what-should-i-expect',
+        }),
         expect.objectContaining({ id: '2026-10-10-what-should-i-expect-2' }),
+        expect.objectContaining({
+          id: '2026-10-10-and-pay-2',
+          thread: '2026-10-10-what-should-i-expect-2',
+        }),
       ],
     });
   });
@@ -1362,13 +1376,76 @@ describe('questions for Claude', () => {
 
   it('forgets a question, and needs one to keep', () => {
     tracker.addAsk('acme--staff', 'What’s their stack?', AT);
-    tracker.removeAsk('acme--staff', '2026-10-10-what-s-their-stack', AT);
+    expect(tracker.removeAsk('acme--staff', '2026-10-10-what-s-their-stack', AT)).toEqual({
+      ok: true,
+      removed: ['2026-10-10-what-s-their-stack'],
+    });
     expect(row()?.asks).toEqual([]);
+    expect(tracker.removeAsk('acme--staff', '2026-10-10-what-s-their-stack', AT)).toEqual({
+      ok: true,
+      removed: [],
+    });
     expect(tracker.addAsk('acme--staff', '   ', AT)).toEqual({
       ok: false,
       message: 'Type your question first.',
     });
     expect(tracker.addAsk('nope', 'Why?', AT)).toMatchObject({ ok: false });
+  });
+
+  it('keeps a reply in the conversation of the question it carries on from', () => {
+    tracker.addAsk('acme--staff', 'What should I expect?', AT);
+    tracker.addAsk('acme--staff', 'What’s their stack?', AT);
+    expect(
+      tracker.addAsk('acme--staff', 'And pay?', AT, '2026-10-10-what-should-i-expect'),
+    ).toEqual({ ok: true, askId: '2026-10-10-and-pay' });
+    // A reply to a reply carries on the same conversation.
+    expect(tracker.addAsk('acme--staff', 'Equity?', AT, '2026-10-10-and-pay')).toEqual({
+      ok: true,
+      askId: '2026-10-10-equity',
+    });
+    expect(row()?.asks).toEqual([
+      { id: '2026-10-10-what-should-i-expect', question: 'What should I expect?', on: TODAY },
+      { id: '2026-10-10-what-s-their-stack', question: 'What’s their stack?', on: TODAY },
+      {
+        id: '2026-10-10-and-pay',
+        question: 'And pay?',
+        on: TODAY,
+        thread: '2026-10-10-what-should-i-expect',
+      },
+      {
+        id: '2026-10-10-equity',
+        question: 'Equity?',
+        on: TODAY,
+        thread: '2026-10-10-what-should-i-expect',
+      },
+    ]);
+    expect(tracker.addAsk('acme--staff', 'Hm?', AT, '2026-10-10-gone')).toEqual({
+      ok: false,
+      message: 'That question isn’t on file anymore, so ask yours as a new question.',
+    });
+    expect(tracker.addAsk('acme--staff', ' ', AT, '2026-10-10-and-pay')).toEqual({
+      ok: false,
+      message: 'Type your reply first.',
+    });
+    // Removing a reply forgets it alone, and removing the question forgets its conversation.
+    expect(tracker.removeAsk('acme--staff', '2026-10-10-equity', AT)).toEqual({
+      ok: true,
+      removed: ['2026-10-10-equity'],
+    });
+    expect(tracker.removeAsk('acme--staff', '2026-10-10-what-should-i-expect', AT)).toEqual({
+      ok: true,
+      removed: ['2026-10-10-what-should-i-expect', '2026-10-10-and-pay'],
+    });
+    expect(row()?.asks.map((ask) => ask.id)).toEqual(['2026-10-10-what-s-their-stack']);
+  });
+
+  it('keeps as many questions and replies as a job can hold, and no more', () => {
+    for (let n = 0; n < LIMITS.asks; n++) tracker.addAsk('acme--staff', `Question ${n}?`, AT);
+    expect(tracker.addAsk('acme--staff', 'One more?', AT, '2026-10-10-question-0')).toEqual({
+      ok: false,
+      message:
+        'That’s as many questions and replies as a job can keep. Remove a question you’re done with.',
+    });
   });
 });
 

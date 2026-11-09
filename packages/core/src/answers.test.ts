@@ -3,11 +3,13 @@ import {
   ASK_ID,
   applicationAnswers,
   askId,
+  askThreadOf,
+  askThreads,
   questionKey,
   readSuggestedAnswers,
   type SuggestedAnswer,
 } from './answers.ts';
-import type { SentAnswer } from './tracker.ts';
+import type { Ask, SentAnswer } from './tracker.ts';
 
 /** How long something takes, in milliseconds. */
 function timed(work: () => unknown): number {
@@ -221,5 +223,50 @@ describe('askId', () => {
     for (const id of ['../secrets', '2026-10-12', '2026-10-12-', 'notes', '2026-10-12-a/b']) {
       expect(ASK_ID.test(id)).toBe(false);
     }
+  });
+});
+
+describe('askThreads', () => {
+  const ask = (id: string, thread?: string): Ask => ({
+    id: `2026-10-12-${id}`,
+    question: `${id}?`,
+    on: '2026-10-12',
+    ...(thread && { thread: `2026-10-12-${thread}` }),
+  });
+  const ids = (asks: readonly Ask[]) =>
+    askThreads(asks).map(({ ask, replies }) => [ask.id, ...replies.map((reply) => reply.id)]);
+
+  it('puts each reply under the question that started its conversation, in order', () => {
+    const asks = [
+      ask('expect'),
+      ask('stack'),
+      ask('pay', 'expect'),
+      ask('oncall', 'stack'),
+      ask('equity', 'expect'),
+    ];
+    expect(ids(asks)).toEqual([
+      ['2026-10-12-expect', '2026-10-12-pay', '2026-10-12-equity'],
+      ['2026-10-12-stack', '2026-10-12-oncall'],
+    ]);
+    expect(askThreadOf(asks, '2026-10-12-equity')?.ask.id).toBe('2026-10-12-expect');
+    expect(askThreadOf(asks, '2026-10-12-stack')?.replies.map((reply) => reply.id)).toEqual([
+      '2026-10-12-oncall',
+    ]);
+    expect(askThreadOf(asks, '2026-10-12-gone')).toBeNull();
+  });
+
+  it('follows a reply to a reply back to the question, ahead of it in the list or not', () => {
+    expect(ids([ask('again', 'pay'), ask('expect'), ask('pay', 'expect')])).toEqual([
+      ['2026-10-12-expect', '2026-10-12-again', '2026-10-12-pay'],
+    ]);
+  });
+
+  it('keeps a reply whose question is gone as a question of its own, and a loop as two', () => {
+    expect(ids([ask('pay', 'expect')])).toEqual([['2026-10-12-pay']]);
+    expect(ids([ask('a', 'b'), ask('b', 'a'), ask('c', 'a')])).toEqual([
+      ['2026-10-12-a'],
+      ['2026-10-12-b'],
+      ['2026-10-12-c'],
+    ]);
   });
 });

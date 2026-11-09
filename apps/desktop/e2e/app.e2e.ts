@@ -574,6 +574,35 @@ test('answers a question about the job, and keeps the answer with it', async () 
   await closeRun();
 });
 
+test('carries a question on as a conversation when the user replies to Claude’s answer', async () => {
+  const { window } = opened;
+  const asked = jobPanel().getByRole('region', { name: 'Questions for Claude' });
+  const reply = asked.getByRole('textbox', { name: 'Your reply' });
+  await reply.fill('And what should I ask them?');
+  await reply.press('Enter');
+  await expect(reply).toHaveValue('');
+  await expect(claudePanel().getByRole('status')).toHaveText('Done');
+  await expect(claudePanel()).toContainText('Claude replied about Acme Robotics.');
+  // The app types only the skill, the job and the reply's ID. The reply reaches Claude through
+  // its tools, under the question and answer it carries on from, and the stand-in Claude
+  // answers it as a reply only when they come before it.
+  const typed = await terminalLines(window);
+  expect(typed).toMatch(
+    new RegExp(
+      `/factwright:ask job ${ACME_ID} question 20\\d\\d-\\d\\d-\\d\\d-and-what-should-i-ask-them`,
+    ),
+  );
+  expect(typed).not.toContain('And what should I ask them?');
+  await expect(asked.getByText('A short screen, from the stand-in Claude. Again.')).toBeVisible();
+  await expect(asked.getByText('And what should I ask them?')).toBeVisible();
+  await expect(
+    asked.getByText('Then ask about on-call, following on, from the stand-in Claude.'),
+  ).toBeVisible();
+  await expect(asked.locator('summary')).toContainText('1 reply');
+  await expect(asked.getByText('Answered')).toBeVisible();
+  await closeRun();
+});
+
 test('adds a call with who it’s with, preps for it, and keeps the prep sheet with the call', async () => {
   const { window } = opened;
   const calls = jobPanel().getByRole('region', { name: 'Calls and interviews' });

@@ -1,4 +1,11 @@
-import { type Ask, askAnswer, type Job, type JobShot, shortDate } from '@factwright/core';
+import {
+  type Ask,
+  askAnswer,
+  askThreads,
+  type Job,
+  type JobShot,
+  shortDate,
+} from '@factwright/core';
 import { Button, Dialog, DialogActions, Markdown, Pill, TextArea } from '@factwright/ui';
 import { MessageCircleQuestionMark, Plus } from 'lucide-react';
 import { type FormEvent, useEffect, useRef, useState } from 'react';
@@ -186,32 +193,138 @@ function AskShots({ shots, api }: { shots: readonly JobShot[]; api: FactwrightAp
   );
 }
 
-/** One question the user asked, with Claude's answer once there is one. */
-function AskItem({
+/** One turn of a conversation: the user's question or reply, and Claude's answer once it's in. */
+interface Turn {
+  ask: Ask;
+  answer: string | undefined;
+  shots: readonly JobShot[];
+  /** Claude's task to answer it: running, waiting in line for its turn, or neither. */
+  task: 'answering' | 'in-line' | null;
+}
+
+/** Claude's answer to one turn, or where it stands while there's none. */
+function TurnAnswer({ turn, api }: { turn: Turn; api: FactwrightApi }) {
+  const shown = turn.answer ? askAnswer(turn.answer) : null;
+  return (
+    <>
+      {turn.shots.length > 0 && <AskShots shots={turn.shots} api={api} />}
+      {shown ? (
+        <div className={styles.answer}>
+          <Markdown text={shown.body} />
+        </div>
+      ) : (
+        <p className={panel.quiet}>
+          {turn.task === 'answering'
+            ? 'Claude is working on it in its panel.'
+            : turn.task === 'in-line'
+              ? 'It’s in line for Claude, and starts by itself.'
+              : 'Claude hasn’t answered this yet.'}
+        </p>
+      )}
+    </>
+  );
+}
+
+/**
+ * The box under a conversation for the user's reply to Claude's latest answer, which Claude
+ * answers from everything said so far. It sends once that answer is in. Until then the user can
+ * write their reply, but not send it.
+ */
+function ReplyBox({
   job,
-  ask,
+  replyTo,
+  ready,
+  api,
+  onReplied,
+}: {
+  job: Job;
+  /** The latest question or reply in the conversation, which the reply answers back to. */
+  replyTo: string;
+  /** Whether Claude has answered the latest one, with nothing else going on the conversation. */
+  ready: boolean;
+  api: FactwrightApi;
+  /** Starts the run that answers the reply, once it's kept. */
+  onReplied: (askId: string) => void;
+}) {
+  const [reply, setReply] = useState('');
+  const [sending, setSending] = useState(false);
+  const [problem, setProblem] = useState<string | null>(null);
+  const box = useRef<HTMLTextAreaElement>(null);
+  const send = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!ready || sending || !reply.trim()) return;
+    setSending(true);
+    try {
+      const sent = await api.askAboutJob(job.id, reply, replyTo);
+      if (!sent.ok) {
+        setProblem(sent.message);
+        return;
+      }
+      setReply('');
+      setProblem(null);
+      onReplied(sent.askId);
+      // Send goes quiet until Claude answers, so the keyboard stays in the box.
+      box.current?.focus();
+    } finally {
+      setSending(false);
+    }
+  };
+  return (
+    <form className={styles.replyForm} onSubmit={(event) => void send(event)}>
+      <div className={styles.replyRow}>
+        {/* Enter sends, and Shift-Enter starts a line, as in Claude's panel. */}
+        <TextArea
+          ref={box}
+          aria-label="Your reply"
+          placeholder="Reply to Claude"
+          rows={1}
+          className={styles.replyBox}
+          maxLength={LIMITS.ask}
+          value={reply}
+          onChange={(event) => setReply(event.target.value)}
+          onKeyDown={(event) => {
+            const sends =
+              event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing;
+            if (!sends) return;
+            event.preventDefault();
+            event.currentTarget.form?.requestSubmit();
+          }}
+        />
+        <Button size="sm" type="submit" disabled={!ready || sending || !reply.trim()}>
+          Send
+        </Button>
+      </div>
+      {problem && (
+        <p className={panel.problem} role="alert">
+          {problem}
+        </p>
+      )}
+    </form>
+  );
+}
+
+/**
+ * One conversation with Claude about the job: the user's question, Claude's answer, and each of
+ * the user's replies with Claude's answer to it, then a box to reply again.
+ */
+function Conversation({
+  job,
+  turns,
   newest,
-  answer,
-  shots,
-  answering,
-  inLine,
   canRun,
   api,
   onRun,
   today,
 }: {
   job: Job;
-  ask: Ask;
-  /** The latest question, which starts open. */
+  /** The question that started it, then each reply, oldest first. */
+  turns: readonly [Turn, ...Turn[]];
+  /** The latest conversation, which starts open. */
   newest: boolean;
-  answer: string | undefined;
-  shots: readonly JobShot[];
-  answering: boolean;
-  /** Claude's task to answer it waits in line for its turn. */
-  inLine: boolean;
   canRun: boolean;
   api: FactwrightApi;
-  onRun: () => void;
+  /** Starts Claude's task to answer a question or reply, by its ID. */
+  onRun: (askId: string) => void;
   today: string;
 }) {
   const [open, setOpen] = useState(newest);
@@ -229,10 +342,20 @@ function AskItem({
     toggled.current = true;
     setRemoving(next);
   };
-  const shown = answer ? askAnswer(answer) : null;
-  const state = answering ? 'Answering' : inLine ? 'In line' : shown ? 'Answered' : 'Waiting';
+  const [first, ...replies] = turns;
+  const latest = replies.at(-1) ?? first;
+  const answering = turns.some((turn) => turn.task === 'answering');
+  const inLine = !answering && turns.some((turn) => turn.task === 'in-line');
+  const busy = answering || inLine;
+  const state = answering
+    ? 'Answering'
+    : inLine
+      ? 'In line'
+      : latest.answer
+        ? 'Answered'
+        : 'Waiting';
   const remove = async () => {
-    const result = await api.removeAsk(job.id, ask.id);
+    const result = await api.removeAsk(job.id, first.ask.id);
     if (!result.ok) setProblem(result.message);
   };
   return (
@@ -243,9 +366,11 @@ function AskItem({
         onToggle={(event) => setOpen(event.currentTarget.open)}
       >
         <summary className={styles.summary}>
-          <span className={styles.asked}>{ask.question}</span>
+          <span className={styles.asked}>{first.ask.question}</span>
           <span className={styles.meta}>
-            {shortDate(ask.on, today)}
+            {replies.length > 0 &&
+              (replies.length === 1 ? '1 reply · ' : `${replies.length} replies · `)}
+            {shortDate(latest.ask.on, today)}
             <Pill
               tone={
                 state === 'Answered'
@@ -262,30 +387,33 @@ function AskItem({
           </span>
         </summary>
         <div className={styles.body}>
-          {shots.length > 0 && <AskShots shots={shots} api={api} />}
-          {shown ? (
-            <div className={styles.answer}>
-              <Markdown text={shown.body} />
+          <TurnAnswer turn={first} api={api} />
+          {replies.map((turn) => (
+            <div key={turn.ask.id} className={styles.turn}>
+              <div className={styles.reply}>
+                <p className={styles.from}>You · {shortDate(turn.ask.on, today)}</p>
+                <p className={styles.replied}>{turn.ask.question}</p>
+              </div>
+              <TurnAnswer turn={turn} api={api} />
             </div>
-          ) : (
-            <p className={panel.quiet}>
-              {answering
-                ? 'Claude is working on it in its panel.'
-                : inLine
-                  ? 'It’s in line for Claude, and starts by itself.'
-                  : 'Claude hasn’t answered this yet.'}
-            </p>
-          )}
+          ))}
           <div className={styles.actions}>
-            {!answering && !inLine && (
-              <Button size="sm" variant="quiet" disabled={!canRun} onClick={onRun}>
-                {shown ? 'Ask again' : 'Answer now'}
+            {!busy && (
+              <Button
+                size="sm"
+                variant="quiet"
+                disabled={!canRun}
+                onClick={() => onRun(latest.ask.id)}
+              >
+                {latest.answer ? 'Ask again' : 'Answer now'}
               </Button>
             )}
             {removing ? (
               <>
                 <span className={styles.confirm} role="status">
-                  Remove the question and its answer?
+                  {replies.length > 0
+                    ? 'Remove the question, your replies and Claude’s answers?'
+                    : 'Remove the question and its answer?'}
                 </span>
                 <Button size="sm" onClick={() => void remove()}>
                   Remove
@@ -310,6 +438,15 @@ function AskItem({
               {problem}
             </p>
           )}
+          {canRun && (
+            <ReplyBox
+              job={job}
+              replyTo={latest.ask.id}
+              ready={!busy && Boolean(latest.answer)}
+              api={api}
+              onReplied={onRun}
+            />
+          )}
         </div>
       </details>
     </li>
@@ -318,7 +455,8 @@ function AskItem({
 
 /**
  * The user's own questions about a job, such as what to expect from a call, each with Claude's
- * answer, which stays here to come back to, and the button to ask one.
+ * answer, which stays here to come back to, and the button to ask one. Replying to an answer
+ * makes a question a conversation, which Claude answers from everything said so far.
  */
 export function AskSection({
   job,
@@ -351,10 +489,18 @@ export function AskSection({
         each.state === state &&
         ('askId' in each.task ? each.task.askId === ask.id : !extras?.asked[ask.id]),
     );
+  const turnOf = (ask: Ask): Turn => ({
+    ask,
+    answer: extras?.asked[ask.id],
+    shots: extras?.shots.filter((shot) => shot.ask === ask.id) ?? [],
+    task: on(ask, 'running') ? 'answering' : on(ask, 'in-line') ? 'in-line' : null,
+  });
   const start = (askId: string) => run?.start({ skill: 'ask', jobId: job.id, askId });
-  const asks = [...job.asks].reverse();
-  const empty = asks.length === 0;
-  const waiting = asks.filter((ask) => !extras?.asked[ask.id]).length;
+  const threads = askThreads(job.asks).reverse();
+  const empty = threads.length === 0;
+  const waiting = threads.filter(
+    (thread) => !extras?.asked[(thread.replies.at(-1) ?? thread.ask).id],
+  ).length;
   // While Claude answers one, another waits in line for its turn.
   const askButton = (
     <Button
@@ -375,20 +521,20 @@ export function AskSection({
       summary={
         !empty &&
         [
-          asks.length === 1 ? '1 question' : `${asks.length} questions`,
+          threads.length === 1 ? '1 question' : `${threads.length} questions`,
           extras && waiting > 0 && `${waiting} not answered yet`,
         ]
           .filter(Boolean)
           .join(' · ')
       }
-      count={asks.length}
+      count={threads.length}
       empty={empty}
       actions={!empty && askButton}
     >
       {empty && (
         <Placeholder action={askButton}>
           Anything about this job, such as what to expect from a call. Your Claude answers from
-          everything on file and the web, and the answer stays here.
+          everything on file and the web, and the answer stays here, for you to reply to.
         </Placeholder>
       )}
       {asking && (
@@ -401,19 +547,15 @@ export function AskSection({
       )}
       {!empty && (
         <ul className={styles.asks}>
-          {asks.map((ask, i) => (
-            <AskItem
-              key={ask.id}
+          {threads.map((thread, i) => (
+            <Conversation
+              key={thread.ask.id}
               job={job}
-              ask={ask}
+              turns={[turnOf(thread.ask), ...thread.replies.map(turnOf)]}
               newest={i === 0}
-              answer={extras?.asked[ask.id]}
-              shots={extras?.shots.filter((shot) => shot.ask === ask.id) ?? []}
-              answering={on(ask, 'running')}
-              inLine={!on(ask, 'running') && on(ask, 'in-line')}
               canRun={Boolean(run)}
               api={api}
-              onRun={() => start(ask.id)}
+              onRun={start}
               today={today}
             />
           ))}

@@ -1,3 +1,4 @@
+import type { Job } from '@factwright/core';
 import type { Field } from './about.ts';
 import { PROFILE_SKILL, type ProfilePart } from './profile-parts.ts';
 import { REVISE_SKILL, type TemplateChoice } from './revision.ts';
@@ -254,6 +255,14 @@ export function scopeOf(task: RunTask | null | undefined): RunScope {
 /** The job a task runs on, or null for one on the whole job hunt, or on several jobs. */
 export const taskJob = (task: RunTask | null): string | null =>
   task && 'jobId' in task ? task.jobId : null;
+
+/** Whether a task answers the user's reply to Claude's answer, in a conversation about a job. */
+export const isReply = (task: RunTask | null, job: Pick<Job, 'asks'> | undefined): boolean =>
+  Boolean(
+    task &&
+      'askId' in task &&
+      job?.asks.some((ask) => ask.id === task.askId && ask.thread !== undefined),
+  );
 
 /** Every job a task runs on: its one job, the jobs it analyzes, or none for the job hunt. */
 export const taskJobs = (task: RunTask | null): readonly string[] =>

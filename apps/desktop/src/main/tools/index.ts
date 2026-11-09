@@ -855,7 +855,7 @@ export function factwrightTools(deps: ToolDeps): McpTool[] {
     {
       name: 'save_answer',
       description:
-        'Saves your answer to one of the user’s questions about a job, which job_details lists under the user’s questions with their ids. The app shows it with the question, for the user to come back to. Give the answer as Markdown, with links to sources. Answering again replaces it.',
+        'Saves your answer to one of the user’s questions about a job, or to their reply to one of your answers, which job_details lists under the user’s questions with their ids. The app shows it with the question or reply, for the user to come back to and reply to. Give the answer as Markdown, with links to sources. Answering again replaces it.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -865,7 +865,8 @@ export function factwrightTools(deps: ToolDeps): McpTool[] {
           },
           question: {
             type: 'string',
-            description: 'The question’s id, such as 2026-10-12-what-should-i-expect-from.',
+            description:
+              'The question’s or reply’s id, such as 2026-10-12-what-should-i-expect-from.',
           },
           answer: { type: 'string', description: 'The answer, as Markdown.' },
         },

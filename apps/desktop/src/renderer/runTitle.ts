@@ -5,6 +5,7 @@ import {
   FACTS_SKILL,
   GET_STARTED_SKILL,
   HISTORY_SKILL,
+  isReply,
   type RunTask,
   SEARCH_SKILL,
   TEMPLATE_SKILL,
@@ -58,7 +59,7 @@ export function runTitle(
     return `Analyze · ${count} ${what}${count === 1 ? '' : 's'}`;
   }
   const job = jobs.find((each) => each.id === taskJob(task));
-  const label = taskLabel(task);
+  const label = isReply(task, job) ? 'Your reply' : taskLabel(task);
   if (job && label) return `${job.company} · ${label}`;
   return label ?? 'Claude';
 }

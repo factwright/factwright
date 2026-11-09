@@ -65,8 +65,8 @@ export function answerFile(question: string, askedOn: string, today: string, ans
 }
 
 /**
- * Saves Claude's answer to one of the user's questions about a job, where the app shows it with
- * the question. Answering again replaces it.
+ * Saves Claude's answer to one of the user's questions about a job, or to their reply to an
+ * answer, where the app shows it with the question or reply. Answering again replaces it.
  */
 export async function saveAnswer(
   job: Job,
@@ -92,5 +92,6 @@ export async function saveAnswer(
   await mkdir(dirname(file), { recursive: true });
   keep?.(file);
   await writeFile(file, answerFile(ask.question, ask.on, today, answer));
-  return `Saved in ${path}. The app shows it with the question.`;
+  const shown = ask.thread === undefined ? 'with the question' : 'under the user’s reply';
+  return `Saved in ${path}. The app shows it ${shown}.`;
 }

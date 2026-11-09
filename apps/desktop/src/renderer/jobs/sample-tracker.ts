@@ -1,6 +1,9 @@
 import {
+  type Ask,
   askedFile,
   askId,
+  askThreadOf,
+  askThreads,
   CALL_STAGE,
   type Call,
   callDocFile,
@@ -147,12 +150,24 @@ function sampleRevision(job: Job, resume: string): Revision | null {
 }
 
 /** What Claude answered about the sample jobs, by job and question. */
-function sampleAnswer(question: string, on: string): string {
+function sampleAnswer(ask: Pick<Ask, 'question' | 'on' | 'thread'>): string {
+  const top = [
+    `# ${ask.question.split('\n')[0]}`,
+    '',
+    `Asked ${ask.on}. Answered ${localDate()}.`,
+    '',
+  ];
+  // A reply carries on from the answer before it.
+  if (ask.thread !== undefined) {
+    return [
+      ...top,
+      'Keep it short and about what’s next, not what’s wrong where you are: you’ve run an internal platform for four years, and you want to build one with the teams who use it, which is what their platform team does.',
+      '',
+      'If they push, one honest line about why now is enough, such as your team moving under a new org. Then bring it back to the panel’s question about the system you built.',
+    ].join('\n');
+  }
   return [
-    `# ${question.split('\n')[0]}`,
-    '',
-    `Asked ${on}. Answered ${localDate()}.`,
-    '',
+    ...top,
     'Expect three people for 45 minutes: the hiring manager, a senior engineer and a product manager. Most panels there start with a walk through your resume, then one system you built, in depth.',
     '',
     '**Worth asking them:**',
@@ -218,7 +233,7 @@ export function sampleTracker(
   const shots = new Map<string, { shot: JobShot; bytes: Uint8Array }>();
   const asked = new Map<string, string>(
     list.jobs.flatMap((job) =>
-      job.asks.map((ask) => [askedFile(job.id, ask.id), sampleAnswer(ask.question, ask.on)]),
+      job.asks.map((ask) => [askedFile(job.id, ask.id), sampleAnswer(ask)]),
     ),
   );
   let next = 0;
@@ -715,34 +730,48 @@ export function sampleTracker(
       );
       return { ok: true, questions: form.questions.length };
     },
-    askAboutJob: async (jobId, question) => {
+    askAboutJob: async (jobId, question, replyTo) => {
       const job = list.jobs.find((each) => each.id === jobId);
       if (!job) return { ok: false, message: 'That job isn’t in your tracker anymore.' };
       if (!question.trim()) return { ok: false, message: 'Type your question first.' };
+      const thread = replyTo ? askThreadOf(job.asks, replyTo) : null;
+      if (replyTo && !thread) {
+        return {
+          ok: false,
+          message: 'That question isn’t on file anymore, so ask yours as a new question.',
+        };
+      }
       const id = askId(
         question,
         localDate(),
         job.asks.map((ask) => ask.id),
       );
+      const ask: Ask = {
+        id,
+        question: question.trim(),
+        on: localDate(),
+        ...(thread && { thread: thread.ask.id }),
+      };
       change(
         (each) => each.id === jobId,
-        (each) => ({
-          ...each,
-          asks: [...each.asks, { id, question: question.trim(), on: localDate() }],
-        }),
+        (each) => ({ ...each, asks: [...each.asks, ask] }),
       );
       // Claude answers a moment later, as a run would.
       setTimeout(() => {
-        asked.set(askedFile(jobId, id), sampleAnswer(question.trim(), localDate()));
+        asked.set(askedFile(jobId, id), sampleAnswer(ask));
         publish(list.jobs.map((each) => ({ ...each })));
       }, 2500);
       return { ok: true, askId: id };
     },
+    // A question goes with the replies in its conversation.
     removeAsk: async (jobId, id) => {
-      asked.delete(askedFile(jobId, id));
+      const job = list.jobs.find((each) => each.id === jobId);
+      const thread = askThreads(job?.asks ?? []).find((each) => each.ask.id === id);
+      const gone = new Set([id, ...(thread?.replies.map((reply) => reply.id) ?? [])]);
+      for (const each of gone) asked.delete(askedFile(jobId, each));
       return change(
-        (job) => job.id === jobId,
-        (job) => ({ ...job, asks: job.asks.filter((ask) => ask.id !== id) }),
+        (each) => each.id === jobId,
+        (each) => ({ ...each, asks: each.asks.filter((ask) => !gone.has(ask.id)) }),
       );
     },
     addShot: async (jobId, upload, purpose) => {
