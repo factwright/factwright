@@ -7,6 +7,7 @@ import {
   FACTS_SKILL,
   GET_STARTED_SKILL,
   HISTORY_SKILL,
+  isReply,
   type RunTask,
   SEARCH_SKILL,
   TEMPLATE_SKILL,
@@ -212,7 +213,12 @@ export function runOutcome(
         : null;
     case 'ask':
       return called(steps, 'save_answer')
-        ? { text: `Claude answered your question about ${company}.`, place: at('asks') }
+        ? {
+            text: isReply(task, job)
+              ? `Claude replied about ${company}.`
+              : `Claude answered your question about ${company}.`,
+            place: at('asks'),
+          }
         : null;
     case THANKS_SKILL:
     case 'interview-prep': {

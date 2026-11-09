@@ -3,11 +3,14 @@ import {
   ASK_ID,
   applicationAnswers,
   askId,
+  askThreadOf,
+  askThreads,
+  isAskReply,
   questionKey,
   readSuggestedAnswers,
   type SuggestedAnswer,
 } from './answers.ts';
-import type { SentAnswer } from './tracker.ts';
+import type { Ask, SentAnswer } from './tracker.ts';
 
 /** How long something takes, in milliseconds. */
 function timed(work: () => unknown): number {
@@ -214,6 +217,8 @@ describe('askId', () => {
     );
     expect(askId('???', '2026-10-12', [])).toBe('2026-10-12-question');
     expect(askId('Qué tal el equipo?', '2026-10-12', [])).toBe('2026-10-12-que-tal-el-equipo');
+    expect(askId('Thanks!', '2026-10-12', [], '3fa9')).toBe('2026-10-12-thanks-3fa9');
+    expect(ASK_ID.test(askId('Thanks!', '2026-10-12', [], '3fa9'))).toBe(true);
   });
 
   it('makes IDs that name a file safely, and only those pass', () => {
@@ -221,5 +226,59 @@ describe('askId', () => {
     for (const id of ['../secrets', '2026-10-12', '2026-10-12-', 'notes', '2026-10-12-a/b']) {
       expect(ASK_ID.test(id)).toBe(false);
     }
+  });
+});
+
+describe('askThreads', () => {
+  const ask = (id: string, thread?: string): Ask => ({
+    id: `2026-10-12-${id}`,
+    question: `${id}?`,
+    on: '2026-10-12',
+    ...(thread && { thread: `2026-10-12-${thread}` }),
+  });
+  const ids = (asks: readonly Ask[]) =>
+    askThreads(asks).map(({ ask, replies }) => [ask.id, ...replies.map((reply) => reply.id)]);
+
+  it('puts each reply under the question that started its conversation, in order', () => {
+    const asks = [
+      ask('expect'),
+      ask('stack'),
+      ask('pay', 'expect'),
+      ask('oncall', 'stack'),
+      ask('equity', 'expect'),
+    ];
+    expect(ids(asks)).toEqual([
+      ['2026-10-12-expect', '2026-10-12-pay', '2026-10-12-equity'],
+      ['2026-10-12-stack', '2026-10-12-oncall'],
+    ]);
+    expect(askThreadOf(asks, '2026-10-12-equity')?.ask.id).toBe('2026-10-12-expect');
+    expect(askThreadOf(asks, '2026-10-12-stack')?.replies.map((reply) => reply.id)).toEqual([
+      '2026-10-12-oncall',
+    ]);
+    expect(askThreadOf(asks, '2026-10-12-gone')).toBeNull();
+  });
+
+  it('follows a reply to a reply back to the question, ahead of it in the list or not', () => {
+    expect(ids([ask('again', 'pay'), ask('expect'), ask('pay', 'expect')])).toEqual([
+      ['2026-10-12-expect', '2026-10-12-again', '2026-10-12-pay'],
+    ]);
+  });
+
+  it('keeps the replies of a question that’s gone together, the first in its place', () => {
+    const asks = [ask('pay', 'expect'), ask('stack'), ask('equity', 'expect'), ask('more', 'pay')];
+    expect(ids(asks)).toEqual([
+      ['2026-10-12-pay', '2026-10-12-equity', '2026-10-12-more'],
+      ['2026-10-12-stack'],
+    ]);
+    expect(isAskReply(asks, '2026-10-12-pay')).toBe(false);
+    expect(isAskReply(asks, '2026-10-12-equity')).toBe(true);
+    expect(isAskReply(asks, '2026-10-12-stack')).toBe(false);
+    expect(isAskReply(asks, '2026-10-12-gone')).toBe(false);
+    // A loop, which the app never makes, leaves each question in it as a start of its own.
+    expect(ids([ask('a', 'b'), ask('b', 'a'), ask('c', 'a')])).toEqual([
+      ['2026-10-12-a'],
+      ['2026-10-12-b'],
+      ['2026-10-12-c'],
+    ]);
   });
 });

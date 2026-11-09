@@ -1,6 +1,7 @@
+import { existsSync } from 'node:fs';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
-import { askedFile, type Job, questionKey } from '@factwright/core';
+import { askedFile, isAskReply, type Job, questionKey } from '@factwright/core';
 
 /** How many answers past_answers gives at once, newest first. */
 const MOST = 30;
@@ -65,8 +66,9 @@ export function answerFile(question: string, askedOn: string, today: string, ans
 }
 
 /**
- * Saves Claude's answer to one of the user's questions about a job, where the app shows it with
- * the question. Answering again replaces it.
+ * Saves Claude's answer to one of the user's questions about a job, or to their reply to an
+ * answer, where the app shows it with the question or reply. Answering again replaces it, unless
+ * only the questions waiting may be answered.
  */
 export async function saveAnswer(
   job: Job,
@@ -75,6 +77,7 @@ export async function saveAnswer(
   workspace: string,
   today: string,
   keep?: (path: string) => void,
+  { waitingOnly = false }: { waitingOnly?: boolean } = {},
 ): Promise<string> {
   const ask = job.asks.find((each) => each.id === askId);
   if (!ask) {
@@ -89,8 +92,12 @@ export async function saveAnswer(
   }
   const path = askedFile(job.id, ask.id);
   const file = join(workspace, ...path.split('/'));
+  if (waitingOnly && existsSync(file)) {
+    throw new Error(`${ask.id} has an answer already, and this run answers the questions waiting.`);
+  }
   await mkdir(dirname(file), { recursive: true });
   keep?.(file);
   await writeFile(file, answerFile(ask.question, ask.on, today, answer));
-  return `Saved in ${path}. The app shows it with the question.`;
+  const shown = isAskReply(job.asks, ask.id) ? 'under the user’s reply' : 'with the question';
+  return `Saved in ${path}. The app shows it ${shown}.`;
 }

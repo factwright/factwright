@@ -20,6 +20,7 @@ import {
   permitsNothing,
   UPDATE_PERMITS_NOTHING,
 } from '../policy.ts';
+import type { AnsweringAsk } from '../tools/mcp.ts';
 import { RunActivity, turnEnd } from './activity.ts';
 import { claudeCommand } from './command.ts';
 import { findClaude, nodeFindDeps } from './find.ts';
@@ -147,6 +148,8 @@ export interface RunOptions {
   changes?: BoundChanges | BoundProfileChanges | undefined;
   /** The jobs it analyzes, by their IDs, which its tool calls know as its own. */
   jobs?: readonly string[] | undefined;
+  /** The question or reply it answers, for a question for Claude, which only it may save. */
+  answering?: AnsweringAsk | undefined;
 }
 
 /** What a run needs from the app: where things live, and who answers what it asks the user. */
@@ -228,7 +231,7 @@ export async function openRun(
   deps: RunDeps,
   events: RunEvents,
 ): Promise<OpenRun | 'not-ready' | 'failed'> {
-  const { prompt, choose, scope = 'hunt', revision, changes, jobs } = options;
+  const { prompt, choose, scope = 'hunt', revision, changes, jobs, answering } = options;
   const launch = await prepareLaunch({
     dataDir: deps.dataDir,
     pluginDir: deps.pluginDir,
@@ -309,6 +312,7 @@ export async function openRun(
       ...(revision && { revision }),
       ...(changes && { changes }),
       ...(jobs && { jobs }),
+      ...(answering && { answering }),
       ...(events.analyzed && { analyzed: events.analyzed }),
     },
   );

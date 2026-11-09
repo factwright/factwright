@@ -15,6 +15,18 @@ describe('a run’s name', () => {
     expect(runTitle(null, jobs)).toBe('Claude');
   });
 
+  it('names a question for Claude, and a reply to Claude’s answer', () => {
+    const northwind = jobs.find((job) => job.asks.some((ask) => ask.thread !== undefined));
+    const [question, reply] = northwind?.asks ?? [];
+    if (!northwind || !question || !reply) throw new Error('No sample conversation');
+    expect(runTitle({ skill: 'ask', jobId: northwind.id, askId: question.id }, jobs)).toBe(
+      'Northwind Labs · Your question',
+    );
+    expect(runTitle({ skill: 'ask', jobId: northwind.id, askId: reply.id }, jobs)).toBe(
+      'Northwind Labs · Your reply',
+    );
+  });
+
   it('names the part of Profile a run changes', () => {
     expect(runTitle({ skill: 'update-profile', part: 'leaving', request: '' }, jobs)).toBe(
       'Update · Why you’re leaving',

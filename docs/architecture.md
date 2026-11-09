@@ -52,7 +52,7 @@ Claude works on plain files in a folder on your computer:
 | `applications/` | One folder per job: posting, fit check, notes, answers, prep and resumes |
 | `searches/` | Job searches, your search criteria, and logs of fit, salary and employer checks |
 | `outreach/` | Messages drafted for people at a company |
-| `asked/` | Claude's answers to your own questions about a job, one folder per job |
+| `asked/` | Claude's answers to your own questions about a job, and to your replies to its answers, one folder per job |
 | `calls/` | Claude's prep sheet for each call you logged, and the thank-you notes after it, a folder per call in a folder per job |
 | `screenshots/` | Screenshots you added for a job, or pasted into Claude's panel, one folder per job |
 | `linkedin/` | The spreadsheets from your LinkedIn data export, such as your connections |

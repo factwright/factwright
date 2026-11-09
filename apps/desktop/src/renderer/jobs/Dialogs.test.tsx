@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { localDate } from '@factwright/core';
-import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import axe from 'axe-core';
 import { type ComponentProps, useState } from 'react';
@@ -335,10 +335,11 @@ describe('AddJobDialog', () => {
       why: 'linkedin',
       message: 'LinkedIn doesn’t let apps read its pages, so Factwright never does.',
     });
-    // The dialog turns to asking for the posting, with the box for it ready to paste into.
+    // The dialog turns to asking for the posting, with the box for it ready to paste into. The
+    // box takes the keyboard just after the step shows, which a slow computer can see between.
     expect(await screen.findByRole('heading', { name: 'Paste the posting' })).toBeTruthy();
     const box = screen.getByRole('textbox', { name: 'Job posting' });
-    expect(document.activeElement).toBe(box);
+    await waitFor(() => expect(document.activeElement).toBe(box));
     const why = screen.getByRole('status');
     expect(why.textContent).toContain(
       'LinkedIn doesn’t let apps read its pages, so Factwright never does.',
@@ -461,8 +462,10 @@ describe('AddJobDialog', () => {
     await userEvent.keyboard('Acme');
     await userEvent.click(screen.getByRole('button', { name: 'Back' }));
     expect(screen.getByRole('heading', { name: 'Add a job' })).toBeTruthy();
-    expect(document.activeElement).toBe(
-      screen.getByRole('textbox', { name: 'Link to the posting' }),
+    await waitFor(() =>
+      expect(document.activeElement).toBe(
+        screen.getByRole('textbox', { name: 'Link to the posting' }),
+      ),
     );
     expect(screen.getByRole('textbox', { name: 'Company' })).toHaveProperty('value', 'Acme');
     expect(screen.queryByRole('alert')).toBeNull();
@@ -678,7 +681,7 @@ describe('AddJobDialog', () => {
     // The details show again, and what the user goes on typing goes where they were typing.
     expect(screen.getByRole('heading', { name: 'Add a job' })).toBeTruthy();
     const role = screen.getByRole('textbox', { name: 'Role' });
-    expect(document.activeElement).toBe(role);
+    await waitFor(() => expect(document.activeElement).toBe(role));
     await userEvent.keyboard('PM');
     expect(role).toHaveProperty('value', 'Senior PM');
     expect(screen.getByRole('textbox', { name: 'Link to the posting' })).toHaveProperty(

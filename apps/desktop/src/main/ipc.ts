@@ -594,8 +594,13 @@ export function registerIpc({
     isId(jobId) ? getFormQuestions(jobId, { jobs, ...(formFeed && { fetch: formFeed }) }) : REFUSED,
   );
 
-  answer('jobs:ask', (jobId, question) =>
-    isId(jobId) && isTextUpTo(question, LIMITS.ask) ? jobs.addAsk(jobId, question) : REFUSED,
+  // A reply names a question in its conversation, by ID, and a new question names none.
+  answer('jobs:ask', (jobId, question, replyTo = null) =>
+    isId(jobId) &&
+    isTextUpTo(question, LIMITS.ask) &&
+    (replyTo === null || (typeof replyTo === 'string' && ASK_ID.test(replyTo)))
+      ? jobs.addAsk(jobId, question, replyTo ?? undefined)
+      : REFUSED,
   );
 
   answer('jobs:remove-ask', (jobId, askId) =>

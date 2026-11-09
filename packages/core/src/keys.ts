@@ -3,13 +3,17 @@ const COMPANY_NOISE = /\b(inc|llc|ltd|corp|corporation|co|company|the)\b/g;
 
 /** Lowercase, accent-free and hyphen-separated: "Café & Co." becomes "cafe-and-co". */
 export function slug(text: string): string {
-  return text
+  const dashed = text
     .toLowerCase()
     .normalize('NFKD')
     .replace(COMBINING_MARKS, '')
     .replace(/&/g, ' and ')
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '');
+    .replace(/[^a-z0-9]+/g, '-');
+  // Each run is one hyphen by now, so an end has at most one to take off. Taken off by position,
+  // not a pattern, which would try the rest of a long run from each hyphen in it.
+  const start = dashed.startsWith('-') ? 1 : 0;
+  const end = dashed.length > start && dashed.endsWith('-') ? dashed.length - 1 : dashed.length;
+  return dashed.slice(start, end);
 }
 
 /**

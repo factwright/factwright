@@ -293,7 +293,7 @@ describe('sessionSettings', () => {
     expect(deny).not.toContain('mcp__factwright__save_template');
   });
 
-  it('never lets Claude change its own settings, the instructions it loads, the user’s own files, or the logs', () => {
+  it('never lets Claude change its own settings, the instructions it loads, the user’s own files, the logs or its answers', () => {
     const never = [
       // Long text the user sent, which the next run reads as their words.
       'Edit(./.pasted/**)',
@@ -322,6 +322,9 @@ describe('sessionSettings', () => {
       'Edit(./searches/fit-checks.md)',
       'Edit(./searches/salary-checks.md)',
       'Edit(./searches/unmask-checks.md)',
+      // Claude's answers to the user's questions, which later replies read as what it said:
+      // save_answer writes each, in the run started for it.
+      'Edit(./asked/**)',
     ];
     for (const scope of ['hunt', 'profile', 'history', 'revise', 'template'] as const) {
       expect(scoped(scope).permissions.deny.slice(0, never.length)).toEqual(never);

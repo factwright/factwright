@@ -1,8 +1,10 @@
-import { randomUUID } from 'node:crypto';
+import { randomBytes, randomUUID } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
 import {
   AUTO_STATUSES,
   askId,
+  askThreadOf,
+  askThreads,
   byJob,
   CALL_STAGE,
   type Call,
@@ -216,6 +218,9 @@ const MAX_SAME = 50;
  * [old, new], since the job kept had one by the same ID, so their answers move with them.
  */
 export type MergeResult = { ok: true; asks: [string, string][] } | { ok: false; message: string };
+
+/** What removing a question for Claude forgot: it and the user's replies to its answers, by ID. */
+export type RemovedAsks = { ok: true; removed: string[] } | { ok: false; message: string };
 
 /**
  * What noting that a job might be the same as another did: noted, or not, as the user said the two
@@ -611,37 +616,60 @@ export class Tracker {
     return { ok: true, recorded };
   }
 
-  /** Keeps a question the user asked Claude about a job, under a new ID for its answer. */
-  addAsk(jobId: string, question: string, context: EditContext): AskResult {
+  /**
+   * Keeps a question the user asked Claude about a job, under a new ID for its answer. With
+   * `replyTo`, the ID of a question or reply in a conversation, it's the user's reply to Claude's
+   * answer there, kept with the question that started the conversation.
+   */
+  addAsk(jobId: string, question: string, context: EditContext, replyTo?: string): AskResult {
     const job = this.row(jobId);
     if (!job) return NOT_FOUND;
     const asked = question.trim();
-    if (!asked) return failed('Type your question first.');
-    if (job.asks.length >= LIMITS.asks) {
-      return failed('That’s as many questions as a job can keep. Remove one you’re done with.');
+    if (!asked) {
+      return failed(replyTo === undefined ? 'Type your question first.' : 'Type your reply first.');
     }
+    const thread = replyTo === undefined ? null : askThreadOf(job.asks, replyTo);
+    if (replyTo !== undefined && !thread) {
+      return failed('That question isn’t on file anymore, so ask yours as a new question.');
+    }
+    if (job.asks.length >= LIMITS.asks) {
+      return failed(
+        'That’s as many questions and replies as a job can keep. Remove a question you’re done with.',
+      );
+    }
+    // Two computers can reply the same few words, such as "Thanks!", on the same day before
+    // they sync, so a reply's ID ends in a few random letters, and neither takes the other's place.
     const id = askId(
       asked,
       context.today,
       job.asks.map((ask) => ask.id),
+      thread ? randomBytes(2).toString('hex') : undefined,
     );
-    const asks = [...job.asks, { id, question: asked, on: context.today }];
+    const asks = [
+      ...job.asks,
+      { id, question: asked, on: context.today, ...(thread && { thread: thread.ask.id }) },
+    ];
     this.db
       .prepare('UPDATE jobs SET asks = ?, updated_at = ? WHERE id = ?')
       .run(JSON.stringify(asks), context.now, jobId);
     return { ok: true, askId: id };
   }
 
-  /** Forgets a question the user asked Claude about a job. */
-  removeAsk(jobId: string, id: string, context: EditContext): EditResult {
+  /**
+   * Forgets a question the user asked Claude about a job, with the user's replies in the
+   * conversation it started, or one reply. Says which it forgot, by ID, for their answers to go.
+   */
+  removeAsk(jobId: string, id: string, context: EditContext): RemovedAsks {
     const job = this.row(jobId);
     if (!job) return NOT_FOUND;
-    const asks = job.asks.filter((ask) => ask.id !== id);
-    if (asks.length === job.asks.length) return DONE;
+    const thread = askThreads(job.asks).find((each) => each.ask.id === id);
+    const gone = new Set(thread ? [id, ...thread.replies.map((reply) => reply.id)] : [id]);
+    const asks = job.asks.filter((ask) => !gone.has(ask.id));
+    if (asks.length === job.asks.length) return { ok: true, removed: [] };
     this.db
       .prepare('UPDATE jobs SET asks = ?, updated_at = ? WHERE id = ?')
       .run(JSON.stringify(asks), context.now, jobId);
-    return DONE;
+    return { ok: true, removed: job.asks.filter((ask) => gone.has(ask.id)).map((ask) => ask.id) };
   }
 
   private redateStatus(job: TrackedRow, at: string, now: string): EditResult {
@@ -806,7 +834,8 @@ export class Tracker {
     const answered = (each: SentAnswer) => `${questionKey(each.question)}#${each.nth}`;
     const sentHere = new Set(keep.sent.map(answered));
     const sent = [...keep.sent, ...other.sent.filter((each) => !sentHere.has(answered(each)))];
-    // A question asked of both by the same words on the same day takes the next ID free.
+    // A question asked of both by the same words on the same day takes the next ID free, and
+    // the replies in its conversation follow it there.
     const renamed: [string, string][] = [];
     const asks = [...keep.asks];
     for (const ask of other.asks) {
@@ -814,6 +843,11 @@ export class Tracker {
       const id = taken.includes(ask.id) ? askId(ask.question, ask.on, taken) : ask.id;
       if (id !== ask.id) renamed.push([ask.id, id]);
       asks.push({ ...ask, id });
+    }
+    const moved = new Map(renamed);
+    for (const [at, ask] of asks.entries()) {
+      const thread = at >= keep.asks.length && ask.thread ? moved.get(ask.thread) : undefined;
+      if (thread) asks[at] = { ...ask, thread };
     }
     const notes = [keep.earlierNotes, other.earlierNotes].filter(Boolean).join('\n\n') || null;
     const nextFrom = keep.nextAction || keep.nextOn ? keep : other;

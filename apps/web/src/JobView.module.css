@@ -168,6 +168,18 @@
   font-weight: 400;
 }
 
+/* One of the user's replies to Claude's answer, then Claude's answer to it. */
+.turn {
+  margin-top: var(--fw-space-3);
+}
+
+.reply {
+  margin-bottom: var(--fw-space-2);
+  padding: 8px 10px;
+  border-radius: var(--fw-radius-md);
+  background: var(--fw-sunken);
+}
+
 /* The cover letter as it reads, on a sunken ground, with its buttons under it. */
 .letter {
   padding: var(--fw-space-3) var(--fw-space-4);

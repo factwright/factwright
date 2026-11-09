@@ -10,7 +10,14 @@ import type { BoundProfileChanges } from '../about/profile-requests.ts';
 import type { BoundRevision } from '../jobs/revisions.ts';
 import type { BoundChanges } from '../jobs/versions.ts';
 import { runHasTool, TOOLS_INSTRUCTIONS } from '../tools/index.ts';
-import { answerMcp, type McpAnswer, type McpTool, newCall, type ToolCall } from '../tools/mcp.ts';
+import {
+  type AnsweringAsk,
+  answerMcp,
+  type McpAnswer,
+  type McpTool,
+  newCall,
+  type ToolCall,
+} from '../tools/mcp.ts';
 import { type AskContext, permissionAskFrom, permissionReply, toolKey } from './permission-asks.ts';
 import { hookReply, roundFrom } from './rounds.ts';
 import { bearerToken, parseJson } from './signals.ts';
@@ -127,6 +134,8 @@ export interface ListenOptions {
   jobs?: readonly string[];
   /** Hears each job the run finished analyzing, by its ID. */
   analyzed?: (jobId: string) => void;
+  /** The question or reply the run answers, for a question for Claude. */
+  answering?: AnsweringAsk;
   /** Hears which MCP methods the run calls. */
   tools?: ToolsListener;
   /** What the run may change without asking. Every run but getting started is "hunt". */
@@ -271,6 +280,7 @@ export class RunServer {
       read,
       jobs,
       analyzed,
+      answering,
       tools,
       scope = 'hunt',
       onFiled,
@@ -297,7 +307,14 @@ export class RunServer {
       context,
       held,
       allowed: [],
-      call: { ...newCall(scope, onFiled, revision, changes), keep, read, jobs, analyzed },
+      call: {
+        ...newCall(scope, onFiled, revision, changes),
+        keep,
+        read,
+        jobs,
+        analyzed,
+        answering,
+      },
     });
     return () => {
       this.listeners.delete(token);

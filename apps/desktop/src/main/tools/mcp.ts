@@ -46,6 +46,20 @@ export interface ToolCall {
    * it, so a run on several jobs says how far it's got.
    */
   analyzed?: ((jobId: string) => void) | undefined;
+  /**
+   * For a run started to answer one of the user's questions about a job, or their reply to an
+   * answer, which one, with its job. save_answer saves that answer alone, so nothing the run
+   * reads can rewrite another, which later replies read as what Claude said. Any other run saves
+   * none.
+   */
+  answering?: AnsweringAsk | undefined;
+}
+
+/** The question or reply a run answers, by its ID, and its job's. */
+export interface AnsweringAsk {
+  job: string;
+  /** Null for a run on every question of the job's not answered yet. */
+  ask: string | null;
 }
 
 /**

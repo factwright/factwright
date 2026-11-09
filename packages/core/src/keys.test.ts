@@ -14,8 +14,20 @@ describe('slug', () => {
     ['  Senior Engineer, Platform  ', 'senior-engineer-platform'],
     ['Ünïcödé', 'unicode'],
     ['---', ''],
+    ['-', ''],
+    ['', ''],
+    ['a', 'a'],
+    ['!a', 'a'],
+    ['a!', 'a'],
+    ['-a-b-', 'a-b'],
   ])('turns "%s" into "%s"', (text, expected) => {
     expect(slug(text)).toBe(expected);
+  });
+
+  it('is made in a moment from a long run of hyphens', () => {
+    const long = `a${'-'.repeat(100_000)}a${'-'.repeat(100_000)}`;
+    expect(slug(long)).toBe('a-a');
+    expect(timed(() => slug(long))).toBeLessThan(1000);
   });
 });
 

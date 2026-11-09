@@ -4,6 +4,12 @@ Notable changes to Factwright, newest first. The format follows [Keep a Changelo
 
 ## Unreleased
 
+### Added
+- **Reply to Claude's answers in Questions for Claude, as a conversation.** Under each answer is a box to reply in: ask a follow-up, push back, or say what's happened since, and Claude answers your reply from everything said so far, its own earlier answers included, as well as everything on file for the job. Enter sends, and Shift-Enter starts a new line. A reply can come with screenshots, as a question can, such as the recruiter's next email: paste one into the box, drop it under it, or pick it with Add screenshots. You can write a reply while Claude is still answering, and send it once the answer is in. Your replies show under the answers they follow, each with Claude's answer, and the question says how many replies it has. Ask again asks the latest one again, and Remove takes the question, your replies and Claude's answers together. Like your questions, replies stay in your tracker and sync, even when two computers reply at once, and Claude reads them through its tools, never typed in as a command. Only the run that answers a question or reply can save that answer, and no run can edit Claude's saved answers any other way, so nothing a run reads on the web can rewrite what Claude said earlier in the conversation. Your phone shows each conversation too, once Factwright's sync next deploys.
+
+### Fixed
+- With Claude's work shown, a run that starts no longer takes the keyboard from a box you're typing in, such as your next reply to Claude, a note or a search. It used to, so what you typed next went to Claude Code.
+
 ## 0.19.3 - 2026-11-06
 
 ### Changed
@@ -15,7 +21,7 @@ Notable changes to Factwright, newest first. The format follows [Keep a Changelo
 - **A long reply to Claude, such as a pasted posting, reaches Claude whole.** On Windows, Claude Code can lose part of long text that comes in at once, without a word, so a posting pasted for Claude could reach it as only its closing lines, and Claude asked for it again. Now text of over 400 characters, replied from the run's bar or pasted into Claude's panel, goes to Claude in a file of its own in your workspace, and what Claude gets says where to read it. The reply box keeps a pasted posting's lines too: Enter sends it, and Shift-Enter starts a new line. The files stay on your computer, out of sync, Claude can't change them, and they go after a week.
 
 ### Security
-- The sync server uses Zod 4.6.7, up from 4.6.5, which Better Auth uses to check what each request sends. With 4.6.5, a request holding a huge list could make the server run out of memory and stop for a moment (GHSA-mrhx-c7xc-m3w5). It couldn't reveal anything. Factwright's sync gets it with its next deploy, and a server of your own once you update it to the copy made for Factwright's next version.
+- The sync server uses Zod 4.6.7, up from 4.6.5, which Better Auth uses to check what each request sends. With 4.6.5, a request holding a huge list could make the server run out of memory and stop for a moment (GHSA-mrhx-c7xc-m3w5). It couldn't reveal anything. Factwright's sync has had it since before this version came out, and a server of your own gets it from the copy made for this version or a later one.
 
 ## 0.19.2 - 2026-11-04
 

@@ -1,6 +1,6 @@
 import { Button, IconButton } from '@factwright/ui';
 import { ImagePlus, X } from 'lucide-react';
-import { type DragEvent, useEffect, useRef, useState } from 'react';
+import { type DragEvent, type RefObject, useEffect, useRef, useState } from 'react';
 import styles from './Screenshots.module.css';
 
 /** A screenshot shown in a dialog: saved already, or waiting to be. */
@@ -80,8 +80,8 @@ export function pastedPictures(event: ClipboardEvent): File[] {
 }
 
 /**
- * Screenshots in a dialog: the ones added so far, and a way to add more by pasting them, dropping
- * them on the dialog, or picking them with the system's file picker.
+ * Screenshots in a dialog, or with a reply in a job's panel: the ones added so far, and a way to
+ * add more by pasting them, dropping them here, or picking them with the system's file picker.
  */
 export function Screenshots({
   shots,
@@ -90,6 +90,7 @@ export function Screenshots({
   platform,
   label = 'Add screenshots',
   disabled = false,
+  pasteOn,
 }: {
   shots: readonly ShownShot[];
   onAdd: (files: File[]) => void;
@@ -98,6 +99,11 @@ export function Screenshots({
   platform: string;
   label?: string;
   disabled?: boolean;
+  /**
+   * Where a pasted picture joins the others: anywhere in the window, as in a dialog, or only in
+   * this element, such as the box for a reply under Claude's answer in a job's panel.
+   */
+  pasteOn?: RefObject<HTMLElement | null>;
 }) {
   const picker = useRef<HTMLInputElement>(null);
   const [over, setOver] = useState(false);
@@ -109,7 +115,8 @@ export function Screenshots({
   const latest = useRef(take);
   latest.current = take;
 
-  // A screenshot pasted anywhere in the dialog joins the others. Pasted text goes on as usual.
+  // A screenshot pasted anywhere in the dialog, or in the element it's for, joins the others.
+  // Pasted text goes on as usual.
   useEffect(() => {
     const paste = (event: ClipboardEvent) => {
       const files = pastedPictures(event);
@@ -117,9 +124,14 @@ export function Screenshots({
       event.preventDefault();
       latest.current(files);
     };
+    if (pasteOn) {
+      const element = pasteOn.current;
+      element?.addEventListener('paste', paste);
+      return () => element?.removeEventListener('paste', paste);
+    }
     window.addEventListener('paste', paste);
     return () => window.removeEventListener('paste', paste);
-  }, []);
+  }, [pasteOn]);
 
   const onDragOver = (event: DragEvent) => {
     if (disabled || !event.dataTransfer.types.includes('Files')) return;

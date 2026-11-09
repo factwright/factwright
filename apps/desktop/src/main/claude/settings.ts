@@ -90,6 +90,13 @@ const USERS_OWN = [
 const LOGS_THE_APP_WRITES = Object.values(LOGS).map((log) => log.path);
 
 /**
+ * Claude's answers to the user's questions about a job, which later replies in a conversation
+ * read as what Claude said: save_answer writes each one, only in the run started for it, so no
+ * run edits them itself, whatever a page it read says.
+ */
+const ANSWERS = `${JOB_EXTRAS.asked}/**`;
+
+/**
  * What a run that isn't on the job hunt may never use: the web, and the tools that read job
  * posts. Getting started and adding facts change the user's facts, a run for their work history
  * their Profile, and a template run their templates, so nothing they read may come from a page
@@ -235,6 +242,7 @@ export function sessionSettings({
         ...NEVER_CHANGED.map(edits),
         ...USERS_OWN.map(edits),
         ...LOGS_THE_APP_WRITES.map(edits),
+        edits(ANSWERS),
         ...(scope === 'profile' ? [] : [edits(FACTS)]),
         ...(scope === 'hunt' ? [] : OFF_THE_WEB),
         ...(partOf(scope)

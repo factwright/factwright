@@ -423,6 +423,13 @@ export function sampleJobs(): Job[] {
             'I have a 45 minute panel on Friday. What should I expect, and what should I ask them?',
           on: day(-3),
         },
+        // A reply to Claude's answer, in the same conversation.
+        {
+          id: `${day(-1)}-what-if-they-ask-why-i-m`,
+          question: 'What if they ask why I’m leaving my current job?',
+          on: day(-1),
+          thread: `${day(-3)}-i-have-a-45-minute-panel`,
+        },
       ],
       events: [
         {

@@ -1,6 +1,7 @@
 import {
   applicationAnswers,
   askAnswer,
+  askThreads,
   CALL_KIND_LABELS,
   CALL_MODE_LABELS,
   CALL_OUTCOME_LABELS,
@@ -426,24 +427,45 @@ export function JobView({
             Your questions
           </h2>
           <ul className={styles.items}>
-            {[...job.asks].reverse().map((ask) => {
-              const answer = asked[ask.id];
-              return (
-                <li key={ask.id}>
-                  <details className={styles.details}>
-                    <summary className={styles.summary}>
-                      {ask.question}
-                      <span className={styles.itemNote}>Asked {shortDate(ask.on, today)}</span>
-                    </summary>
-                    {answer ? (
-                      <Markdown text={askAnswer(answer).body} />
-                    ) : (
-                      <p className={styles.itemNote}>Claude hasn’t answered this yet.</p>
-                    )}
-                  </details>
-                </li>
-              );
-            })}
+            {askThreads(job.asks)
+              .reverse()
+              .map(({ ask, replies }) => {
+                // Claude's answer to a question or reply, once it's in.
+                const answerTo = (id: string) => {
+                  const answer = asked[id];
+                  return answer ? (
+                    <Markdown text={askAnswer(answer).body} />
+                  ) : (
+                    <p className={styles.itemNote}>Claude hasn’t answered this yet.</p>
+                  );
+                };
+                return (
+                  <li key={ask.id}>
+                    <details className={styles.details}>
+                      <summary className={styles.summary}>
+                        {ask.question}
+                        <span className={styles.itemNote}>
+                          Asked {shortDate(ask.on, today)}
+                          {replies.length > 0 &&
+                            (replies.length === 1 ? ' · 1 reply' : ` · ${replies.length} replies`)}
+                        </span>
+                      </summary>
+                      {answerTo(ask.id)}
+                      {replies.map((reply) => (
+                        <div key={reply.id} className={styles.turn}>
+                          <div className={styles.reply}>
+                            <span className={styles.itemNote}>
+                              You · {shortDate(reply.on, today)}
+                            </span>
+                            <p className={styles.notes}>{reply.question}</p>
+                          </div>
+                          {answerTo(reply.id)}
+                        </div>
+                      ))}
+                    </details>
+                  </li>
+                );
+              })}
           </ul>
         </section>
       )}

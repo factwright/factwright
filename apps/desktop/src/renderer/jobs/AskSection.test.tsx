@@ -27,6 +27,32 @@ afterEach(cleanup);
 
 const job = sampleJob({ id: 'acme--staff-engineer', company: 'Acme', role: 'Staff Engineer' });
 const ASK = { id: '2026-10-12-what-should-i-expect', question: 'What should I expect?', on: TODAY };
+/** The user's reply to Claude's answer to ASK, carrying the conversation on. */
+const REPLY = {
+  id: '2026-10-13-and-pay',
+  question: 'And pay?\nThey asked twice.',
+  on: TODAY,
+  thread: ASK.id,
+};
+/** A picture pasted where the page gets it, as the system's clipboard gives it. */
+function pasteInto(target: EventTarget, file: File) {
+  const event = new Event('paste', { bubbles: true, cancelable: true });
+  Object.defineProperty(event, 'clipboardData', {
+    value: {
+      items: [{ kind: 'file', type: file.type, getAsFile: () => file }],
+      getData: () => '',
+    },
+  });
+  target.dispatchEvent(event);
+}
+
+const PICTURE = new File([new Uint8Array([0x89, 0x50, 0x4e, 0x47, 13, 10, 26, 10])], 'image.png', {
+  type: 'image/png',
+});
+
+/** Claude's answer as save_answer keeps it, with the question and dates on top. */
+const saved = (question: string, answer: string) =>
+  `# ${question}\n\nAsked ${TODAY}. Answered ${TODAY}.\n\n${answer}`;
 
 function apiStub(
   extras: Omit<JobExtras, 'posting' | 'form' | 'calls' | 'outreach' | 'versions'> &
@@ -222,7 +248,9 @@ describe('AskSection', () => {
     const api = apiStub();
     render(<AskSection job={{ ...job, asks: [ASK] }} api={api} run={controls()} today={TODAY} />);
     await userEvent.click(await screen.findByRole('button', { name: 'Remove' }));
-    expect(screen.getByRole('status').textContent).toBe('Remove the question and its answer?');
+    expect(screen.getByText('Remove the question and its answer?').getAttribute('role')).toBe(
+      'status',
+    );
     // The focus moves to the choices that took the button's place, and back.
     expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Keep' }));
     await userEvent.click(screen.getByRole('button', { name: 'Keep' }));
@@ -231,5 +259,238 @@ describe('AskSection', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Remove' }));
     await userEvent.click(screen.getByRole('button', { name: 'Remove' }));
     expect(api.removeAsk).toHaveBeenCalledWith(job.id, ASK.id);
+  });
+
+  it('shows a conversation: each reply under the answer before it, with Claude’s answer', async () => {
+    const api = apiStub({
+      asked: {
+        [ASK.id]: saved(ASK.question, 'A short screen.'),
+        [REPLY.id]: saved('And pay?', 'Ask for **the range** first.'),
+      },
+      shots: [],
+    });
+    const shown = render(
+      <AskSection job={{ ...job, asks: [ASK, REPLY] }} api={api} run={controls()} today={TODAY} />,
+    );
+    const section = screen.getByRole('region', { name: 'Questions for Claude' });
+    // One conversation counts as one question.
+    await waitFor(() => expect(section.textContent).toContain('1 question'));
+    expect(section.textContent).not.toContain('not answered yet');
+    expect(within(section).getByText(/^1 reply/)).toBeTruthy();
+    expect(within(section).getByText('A short screen.')).toBeTruthy();
+    expect(within(section).getByText(/^You ·/)).toBeTruthy();
+    expect(within(section).getByText(/^And pay\?/).textContent).toBe('And pay?\nThey asked twice.');
+    expect(within(section).getByText('the range').tagName).toBe('STRONG');
+    expect(within(section).getByText('Answered')).toBeTruthy();
+    expect((await axe.run(shown.container)).violations).toEqual([]);
+  });
+
+  it('sends a reply to Claude’s latest answer, and starts Claude on it', async () => {
+    const run = controls();
+    const api = apiStub({ asked: { [ASK.id]: saved(ASK.question, 'A short screen.') }, shots: [] });
+    api.askAboutJob.mockResolvedValue({ ok: true, askId: REPLY.id });
+    render(<AskSection job={{ ...job, asks: [ASK] }} api={api} run={run} today={TODAY} />);
+    const box = (await screen.findByRole('textbox', { name: 'Your reply' })) as HTMLTextAreaElement;
+    const send = screen.getByRole('button', { name: 'Send' }) as HTMLButtonElement;
+    await waitFor(() => expect(screen.getByText('Answered')).toBeTruthy());
+    expect(send.disabled).toBe(true);
+    // Shift-Enter starts a line, and Enter sends.
+    await userEvent.type(box, 'And pay?{Shift>}{Enter}{/Shift}They asked twice.');
+    expect(send.disabled).toBe(false);
+    await userEvent.keyboard('{Enter}');
+    expect(api.askAboutJob).toHaveBeenCalledWith(job.id, 'And pay?\nThey asked twice.', ASK.id);
+    await waitFor(() =>
+      expect(run.start).toHaveBeenCalledWith({ skill: 'ask', jobId: job.id, askId: REPLY.id }),
+    );
+    expect(box.value).toBe('');
+    expect(document.activeElement).toBe(box);
+    // Send works too, and the reply goes to the latest in the conversation.
+    cleanup();
+    const replied = apiStub({
+      asked: {
+        [ASK.id]: saved(ASK.question, 'A short screen.'),
+        [REPLY.id]: saved('And pay?', 'Ask for the range.'),
+      },
+      shots: [],
+    });
+    render(
+      <AskSection
+        job={{ ...job, asks: [ASK, REPLY] }}
+        api={replied}
+        run={controls()}
+        today={TODAY}
+      />,
+    );
+    await userEvent.type(await screen.findByRole('textbox', { name: 'Your reply' }), 'Thanks!');
+    await waitFor(() =>
+      expect((screen.getByRole('button', { name: 'Send' }) as HTMLButtonElement).disabled).toBe(
+        false,
+      ),
+    );
+    await userEvent.click(screen.getByRole('button', { name: 'Send' }));
+    expect(replied.askAboutJob).toHaveBeenCalledWith(job.id, 'Thanks!', REPLY.id);
+    // Send goes quiet once it's sent, and the keyboard goes back to the box.
+    await waitFor(() =>
+      expect(document.activeElement).toBe(screen.getByRole('textbox', { name: 'Your reply' })),
+    );
+    // A screen reader hears how to send, as the box shows nothing of it.
+    const described = screen.getByRole('textbox', { name: 'Your reply' });
+    expect(
+      document.getElementById(described.getAttribute('aria-describedby') ?? '')?.textContent,
+    ).toBe('Enter sends, and Shift-Enter starts a new line.');
+  });
+
+  it('holds a reply until Claude has answered, and says why one wasn’t kept', async () => {
+    // Not answered yet: the user can write a reply, but it waits for the answer.
+    const api = apiStub();
+    render(<AskSection job={{ ...job, asks: [ASK] }} api={api} run={controls()} today={TODAY} />);
+    expect(await screen.findByText('Waiting')).toBeTruthy();
+    await userEvent.type(screen.getByRole('textbox', { name: 'Your reply' }), 'Hello?{Enter}');
+    expect((screen.getByRole('button', { name: 'Send' }) as HTMLButtonElement).disabled).toBe(true);
+    expect(api.askAboutJob).not.toHaveBeenCalled();
+    expect(
+      within(
+        screen.getByRole('textbox', { name: 'Your reply' }).closest('form') as HTMLElement,
+      ).getByRole('status').textContent,
+    ).toBe('Claude hasn’t answered yet. Click Answer now, then send this.');
+    cleanup();
+    // Claude is answering it again.
+    const answered = apiStub({ asked: { [ASK.id]: 'A short screen.' }, shots: [] });
+    render(
+      <AskSection
+        job={{ ...job, asks: [ASK] }}
+        api={answered}
+        run={controls('working', { skill: 'ask', jobId: job.id, askId: ASK.id })}
+        today={TODAY}
+      />,
+    );
+    expect(await screen.findByText('Answering')).toBeTruthy();
+    const box = screen.getByRole('textbox', { name: 'Your reply' });
+    const hint = within(box.closest('form') as HTMLElement).getByRole('status');
+    // The hint is there from the start, empty, so a screen reader hears it when it says why.
+    expect(hint.textContent).toBe('');
+    await userEvent.type(box, 'Hello?{Enter}');
+    expect(answered.askAboutJob).not.toHaveBeenCalled();
+    expect(hint.textContent).toBe('You can send this once Claude has answered.');
+    cleanup();
+    // The question went on another device: the reply stays in its box, with why.
+    const gone = apiStub({ asked: { [ASK.id]: 'A short screen.' }, shots: [] });
+    gone.askAboutJob.mockResolvedValue({
+      ok: false,
+      message: 'That question isn’t on file anymore, so ask yours as a new question.',
+    });
+    const run = controls();
+    render(<AskSection job={{ ...job, asks: [ASK] }} api={gone} run={run} today={TODAY} />);
+    const field = (await screen.findByRole('textbox', {
+      name: 'Your reply',
+    })) as HTMLTextAreaElement;
+    await waitFor(() => expect(screen.getByText('Answered')).toBeTruthy());
+    await userEvent.type(field, 'Hello?{Enter}');
+    expect((await screen.findByRole('alert')).textContent).toBe(
+      'That question isn’t on file anymore, so ask yours as a new question.',
+    );
+    expect(field.value).toBe('Hello?');
+    expect(run.start).not.toHaveBeenCalled();
+  });
+
+  it('asks again about the latest reply, and removes the whole conversation', async () => {
+    const run = controls();
+    const api = apiStub({
+      asked: { [ASK.id]: 'A short screen.', [REPLY.id]: 'Ask for the range.' },
+      shots: [],
+    });
+    render(<AskSection job={{ ...job, asks: [ASK, REPLY] }} api={api} run={run} today={TODAY} />);
+    await userEvent.click(await screen.findByRole('button', { name: 'Ask again' }));
+    expect(run.start).toHaveBeenCalledWith({ skill: 'ask', jobId: job.id, askId: REPLY.id });
+    await userEvent.click(screen.getByRole('button', { name: 'Remove' }));
+    expect(
+      screen
+        .getByText('Remove the question, your replies and Claude’s answers?')
+        .getAttribute('role'),
+    ).toBe('status');
+    await userEvent.click(screen.getByRole('button', { name: 'Remove' }));
+    expect(api.removeAsk).toHaveBeenCalledWith(job.id, ASK.id);
+  });
+
+  it('sends a reply with a screenshot pasted into its box, saved with it before Claude starts', async () => {
+    const run = controls();
+    const api = apiStub({ asked: { [ASK.id]: saved(ASK.question, 'A short screen.') }, shots: [] });
+    api.askAboutJob.mockResolvedValue({ ok: true, askId: REPLY.id });
+    render(<AskSection job={{ ...job, asks: [ASK] }} api={api} run={run} today={TODAY} />);
+    const box = await screen.findByRole('textbox', { name: 'Your reply' });
+    await waitFor(() => expect(screen.getByText('Answered')).toBeTruthy());
+    const form = box.closest('form') as HTMLFormElement;
+    pasteInto(box, PICTURE);
+    expect(await within(form).findByRole('img', { name: 'Screenshot 1' })).toBeTruthy();
+    // A picture pasted anywhere else in the window isn't the reply's.
+    pasteInto(window, PICTURE);
+    pasteInto(document.body, PICTURE);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(within(form).getAllByRole('img')).toHaveLength(1);
+    await userEvent.type(box, 'The recruiter emailed this. What do I say?{Enter}');
+    expect(api.askAboutJob).toHaveBeenCalledWith(
+      job.id,
+      'The recruiter emailed this. What do I say?',
+      ASK.id,
+    );
+    await waitFor(() =>
+      expect(run.start).toHaveBeenCalledWith({ skill: 'ask', jobId: job.id, askId: REPLY.id }),
+    );
+    expect(api.addShot).toHaveBeenCalledWith(
+      job.id,
+      { name: 'image.png', bytes: expect.any(Uint8Array) },
+      { kind: 'ask', ask: REPLY.id },
+    );
+    expect(within(form).queryAllByRole('img')).toHaveLength(0);
+    expect((box as HTMLTextAreaElement).value).toBe('');
+  });
+
+  it('keeps a reply whose screenshot isn’t saved, and starts Claude once it’s sorted', async () => {
+    const run = controls();
+    const api = apiStub({ asked: { [ASK.id]: saved(ASK.question, 'A short screen.') }, shots: [] });
+    api.askAboutJob.mockResolvedValue({ ok: true, askId: REPLY.id });
+    api.addShot.mockResolvedValueOnce({ ok: false, message: 'image.png is empty.' });
+    render(<AskSection job={{ ...job, asks: [ASK] }} api={api} run={run} today={TODAY} />);
+    const box = (await screen.findByRole('textbox', { name: 'Your reply' })) as HTMLTextAreaElement;
+    await waitFor(() => expect(screen.getByText('Answered')).toBeTruthy());
+    const form = box.closest('form') as HTMLFormElement;
+    await userEvent.upload(form.querySelector('input[type="file"]') as HTMLInputElement, PICTURE);
+    await within(form).findByRole('img', { name: 'Screenshot 1' });
+    await userEvent.type(box, 'What do I say?{Enter}');
+    expect((await within(form).findByRole('alert')).textContent).toBe(
+      'Your reply is kept, but a screenshot isn’t: image.png is empty. Remove it and send, or try again.',
+    );
+    expect(run.start).not.toHaveBeenCalled();
+    // The reply is kept, so it can't change, and sending again doesn't send it twice.
+    expect(box.readOnly).toBe(true);
+    await userEvent.click(within(form).getByRole('button', { name: 'Remove screenshot 1' }));
+    await userEvent.click(within(form).getByRole('button', { name: 'Send' }));
+    await waitFor(() =>
+      expect(run.start).toHaveBeenCalledWith({ skill: 'ask', jobId: job.id, askId: REPLY.id }),
+    );
+    expect(api.askAboutJob).toHaveBeenCalledOnce();
+    expect(box.readOnly).toBe(false);
+    expect(box.value).toBe('');
+  });
+
+  it('shows a reply’s screenshots with the reply, and a question’s with the question', async () => {
+    const shot = (ask: string) => ({
+      path: `screenshots/${job.id}/ask-${ask}-1.png`,
+      name: `ask-${ask}-1.png`,
+      kind: 'ask' as const,
+      ask,
+      size: 3,
+      modified: TODAY,
+    });
+    const api = apiStub({
+      asked: { [ASK.id]: 'A short screen.', [REPLY.id]: 'Say yes.' },
+      shots: [shot(ASK.id), shot(REPLY.id)],
+    });
+    render(
+      <AskSection job={{ ...job, asks: [ASK, REPLY] }} api={api} run={controls()} today={TODAY} />,
+    );
+    const replyShot = await screen.findByRole('img', { name: 'Screenshot 1 with the reply' });
+    expect(replyShot.closest('div')?.textContent).toContain('And pay?');
+    expect(screen.getByRole('img', { name: 'Screenshot 1 with the question' })).toBeTruthy();
   });
 });

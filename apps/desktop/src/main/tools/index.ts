@@ -855,7 +855,7 @@ export function factwrightTools(deps: ToolDeps): McpTool[] {
     {
       name: 'save_answer',
       description:
-        'Saves your answer to one of the user’s questions about a job, which job_details lists under the user’s questions with their ids. The app shows it with the question, for the user to come back to. Give the answer as Markdown, with links to sources. Answering again replaces it.',
+        'Saves your answer to one of the user’s questions about a job, or to their reply to one of your answers, which job_details lists under the user’s questions with their ids. The app shows it with the question or reply, for the user to come back to and reply to. Give the answer as Markdown, with links to sources. Answering again replaces it. Only the run the app started for that question or reply can save its answer.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -865,7 +865,8 @@ export function factwrightTools(deps: ToolDeps): McpTool[] {
           },
           question: {
             type: 'string',
-            description: 'The question’s id, such as 2026-10-12-what-should-i-expect-from.',
+            description:
+              'The question’s or reply’s id, such as 2026-10-12-what-should-i-expect-from.',
           },
           answer: { type: 'string', description: 'The answer, as Markdown.' },
         },
@@ -876,20 +877,31 @@ export function factwrightTools(deps: ToolDeps): McpTool[] {
       annotations: { readOnlyHint: false, idempotentHint: true, openWorldHint: false },
       run: async (input, call) => {
         const id = textInput(input, 'job', true) ?? '';
+        const question = textInput(input, 'question', true) ?? '';
+        // A run saves only the answer it was started for: nothing it reads can rewrite another,
+        // which later replies read as what Claude said.
+        const answering = call?.answering;
+        if (call && !answering) {
+          throw new Error(
+            'Only a run started from the job’s panel saves an answer. Answer in the chat, and say that asking from the job’s panel keeps the answer with the job.',
+          );
+        }
+        if (answering && answering.job !== id) {
+          throw new Error(`This run answers questions about ${answering.job} alone.`);
+        }
+        if (answering?.ask && answering.ask !== question) {
+          throw new Error(`This run answers ${answering.ask}. Save only that answer.`);
+        }
         const job = deps.jobs.job(id);
         if (!job) throw new Error(`Nothing on file for ${id}.`);
         const answer = input.answer;
         if (typeof answer !== 'string' || answer.length > MAX_ANSWER) {
           throw new Error(`Give the answer as text of ${MAX_ANSWER} characters or fewer.`);
         }
-        return saveAnswer(
-          job,
-          textInput(input, 'question', true) ?? '',
-          answer,
-          deps.workspace,
-          today(),
-          call?.keep,
-        );
+        // One on every question waiting answers those, never one with an answer already.
+        return saveAnswer(job, question, answer, deps.workspace, today(), call?.keep, {
+          waitingOnly: answering?.ask === null,
+        });
       },
     },
     {

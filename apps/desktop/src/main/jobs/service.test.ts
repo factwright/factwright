@@ -254,13 +254,20 @@ describe('screenshots and questions for Claude', () => {
     const asked = jobs.addAsk(id, 'What should I expect?');
     const other = jobs.addAsk(id, 'What’s their stack?');
     if (!asked.ok || !other.ok) throw new Error('Not asked');
+    // The user's reply in its conversation, with Claude's answer, goes with it.
+    const reply = jobs.addAsk(id, 'And pay?', asked.askId);
+    if (!reply.ok) throw new Error(reply.message);
     write(`asked/${id}/${asked.askId}.md`, '# What should I expect?\n\nA short screen.');
     write(`asked/${id}/${other.askId}.md`, '# What’s their stack?\n\nGo.');
+    write(`asked/${id}/${reply.askId}.md`, '# And pay?\n\nAsk for the range.');
     await jobs.addShot(id, { name: 'a.png', bytes: PNG }, { kind: 'ask', ask: asked.askId });
     await jobs.addShot(id, { name: 'b.png', bytes: PNG }, { kind: 'form' });
+    await jobs.addShot(id, { name: 'c.png', bytes: PNG }, { kind: 'ask', ask: reply.askId });
     expect(await jobs.removeAsk(id, asked.askId)).toEqual({ ok: true });
     expect(trashedHere()).toEqual([
       `asked/${id}/${asked.askId}.md`,
+      `asked/${id}/${reply.askId}.md`,
+      `screenshots/${id}/ask-${reply.askId}-1.png`,
       `screenshots/${id}/ask-${asked.askId}-1.png`,
     ]);
     expect(existsSync(join(root, 'asked', id, `${other.askId}.md`))).toBe(true);
@@ -523,6 +530,10 @@ describe('merging a job found twice', () => {
     jobs.addAsk(kept, 'What should I expect?');
     const askId = ask.ok ? ask.askId : '';
     write(`asked/${twice}/${askId}.md`, 'Expect a panel.');
+    // A reply in its conversation follows the question to its new ID, with its answer.
+    const reply = jobs.addAsk(twice, 'And pay?', askId);
+    const replyId = reply.ok ? reply.askId : '';
+    write(`asked/${twice}/${replyId}.md`, 'Ask for the range.');
     write(`screenshots/${twice}/ask-${askId}-1.png`, 'png');
     write(`screenshots/${twice}/form-2026-10-10-1.png`, 'png');
     write(`screenshots/${kept}/form-2026-10-10-1.png`, 'png');
@@ -540,8 +551,15 @@ describe('merging a job found twice', () => {
       search: { source: 'LinkedIn Oct 12', again: true },
     });
     const renamed = `${askId}-2`;
-    expect(job?.asks.map((each) => each.id)).toEqual([askId, renamed]);
+    expect(job?.asks.map((each) => [each.id, each.thread])).toEqual([
+      [askId, undefined],
+      [renamed, undefined],
+      [replyId, renamed],
+    ]);
     expect(readFileSync(join(root, `asked/${kept}/${renamed}.md`), 'utf8')).toBe('Expect a panel.');
+    expect(readFileSync(join(root, `asked/${kept}/${replyId}.md`), 'utf8')).toBe(
+      'Ask for the range.',
+    );
     for (const file of [
       `screenshots/${kept}/ask-${renamed}-1.png`,
       `screenshots/${kept}/form-2026-10-10-1.png`,

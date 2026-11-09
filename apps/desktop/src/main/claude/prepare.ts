@@ -65,6 +65,10 @@ export function taskPreparer(deps: PrepareDeps): (task: RunTask | null) => Promi
         scope: scopeOf(task),
         // The jobs it analyzes, which only an Analyze job run may merge others into.
         jobs: task?.skill === ANALYZE_SKILL ? taskJobs(task) : [],
+        // The question or reply it answers, whose answer alone it may save.
+        ...(task?.skill === 'ask' && {
+          answering: { job: task.jobId, ask: 'askId' in task ? task.askId : null },
+        }),
         ...(revision && { revision }),
         ...((changes || update) && { changes: changes ?? update }),
       },

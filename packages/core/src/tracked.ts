@@ -154,16 +154,14 @@ function maybeSameOf(json: unknown): MaybeSame[] {
   return [...kept.values()];
 }
 
-/** The questions the user asked Claude, leaving out any that don't read. */
+/** The questions the user asked Claude, and their replies, leaving out any that don't read. */
 const asksOf = (json: unknown): Ask[] =>
   listOf(json).flatMap((item) => {
-    const { id, question, on } = (item ?? {}) as StoredRow;
-    return typeof id === 'string' &&
-      ASK_ID.test(id) &&
-      typeof question === 'string' &&
-      isIsoDate(on)
-      ? [{ id, question, on }]
-      : [];
+    const { id, question, on, thread } = (item ?? {}) as StoredRow;
+    if (typeof id !== 'string' || !ASK_ID.test(id)) return [];
+    if (typeof question !== 'string' || !isIsoDate(on)) return [];
+    const reply = typeof thread === 'string' && ASK_ID.test(thread) && thread !== id;
+    return [{ id, question, on, ...(reply && { thread }) }];
   });
 
 /** A job's row, read from the tracker's jobs table. */

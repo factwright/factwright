@@ -245,6 +245,12 @@ describe('a job on the phone', () => {
           question: 'What should I expect?',
           on: '2026-10-09',
         },
+        {
+          id: '2026-10-10-and-pay',
+          question: 'And pay?',
+          on: '2026-10-10',
+          thread: '2026-10-09-what-should-i-expect',
+        },
       ],
       docKinds: ['answers' as const],
     };
@@ -256,6 +262,8 @@ describe('a job on the phone', () => {
           {
             '2026-10-09-what-should-i-expect':
               '# What should I expect?\n\nAsked 2026-10-09. Answered 2026-10-09.\n\nA short screen with Sam.',
+            '2026-10-10-and-pay':
+              '# And pay?\n\nAsked 2026-10-10. Answered 2026-10-10.\n\nAsk for the range first.',
           },
         ],
       ]),
@@ -268,6 +276,11 @@ describe('a job on the phone', () => {
     const questions = section('Your questions');
     expect(within(questions).getByText('A short screen with Sam.')).toBeTruthy();
     expect(within(questions).queryByText(/Answered 2026/)).toBeNull();
+    // A reply to Claude's answer shows in the conversation, with Claude's answer to it.
+    expect(within(questions).getAllByRole('listitem')).toHaveLength(1);
+    expect(within(questions).getByText(/1 reply$/)).toBeTruthy();
+    expect(within(questions).getByText('And pay?')).toBeTruthy();
+    expect(within(questions).getByText('Ask for the range first.')).toBeTruthy();
     expect((await axe.run(container)).violations).toEqual([]);
   });
 

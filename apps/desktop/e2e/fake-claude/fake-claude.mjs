@@ -289,6 +289,7 @@ async function callAllowed(name, args) {
 
 /** The answer it gives to every question about a job. */
 const ANSWER = 'A short screen, from the stand-in Claude.';
+const REPLY_ANSWER = 'Then ask about on-call, following on, from the stand-in Claude.';
 
 /** What it asks while tailoring a resume, and what the user answers in Claude Code's dialog. */
 const GRAPHQL = 'The posting wants GraphQL. Have you used GraphQL?';
@@ -408,12 +409,32 @@ async function work(text) {
   if (asked) {
     const [, job, named] = asked;
     const details = await call('job_details', { job });
-    const waiting = [...details.matchAll(/^- (\S+) \(asked [^)]+\): not answered yet$/gm)];
+    const waiting = [
+      ...details.matchAll(/^(?: {4})?- (?:Reply )?(\S+) \(asked [^)]+\): not answered yet$/gm),
+    ];
     const open = waiting.map(([, each]) => each);
     // A question named again after it was answered gets a fresh answer.
     const again = named && !open.includes(named);
     for (const id of named ? [named] : open) {
-      await call('save_answer', { job, question: id, answer: again ? `${ANSWER} Again.` : ANSWER });
+      // A reply, which the details list under the question it carries on from, after the
+      // answer before it, gets an answer that follows on.
+      const lines = details.split('\n');
+      const at = lines.findIndex((line) => line.startsWith(`    - Reply ${id} (asked `));
+      const before = lines
+        .slice(0, Math.max(at, 0))
+        .findLast((line) => /^(?: {4})?- (?:Reply )?\S+ \(asked [^)]+\): /.test(line));
+      const reply = at >= 0 && Boolean(before?.includes(': answered in asked/'));
+      // The screenshots that came with it, which the details list under its words.
+      const pictured = lines
+        .slice(at + 1)
+        .find((line) => /^ {8}Screenshots: /.test(line) || /^(?: {4})?- /.test(line))
+        ?.startsWith('        Screenshots: screenshots/');
+      const answer = reply
+        ? `${REPLY_ANSWER}${pictured ? ' Read the screenshot.' : ''}`
+        : again
+          ? `${ANSWER} Again.`
+          : ANSWER;
+      await call('save_answer', { job, question: id, answer });
     }
   }
   // As Claude would for Analyze job, on one job or several: read each one, and log its fit check

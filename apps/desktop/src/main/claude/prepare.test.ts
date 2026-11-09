@@ -59,3 +59,25 @@ describe('a task on a part of Profile, as it starts', () => {
     expect(again.options.changes).toMatchObject({ changes: 'Make it warmer' });
   });
 });
+
+describe('a question for Claude, as it starts', () => {
+  it('names the question or reply its run answers, whose answer alone it may save', async () => {
+    const task = { skill: 'ask', jobId: 'acme--staff', askId: '2026-10-12-and-pay-3fa9' } as const;
+    const prepared = await prepare()(task);
+    if (!prepared.ok) throw new Error(prepared.problem);
+    expect(prepared.options.prompt).toBe(
+      '/factwright:ask job acme--staff question 2026-10-12-and-pay-3fa9',
+    );
+    expect(prepared.options.answering).toEqual({
+      job: 'acme--staff',
+      ask: '2026-10-12-and-pay-3fa9',
+    });
+    // One on every question waiting may answer those alone, on its job, and any other run none.
+    const waiting = await prepare()({ skill: 'ask', jobId: 'acme--staff' });
+    if (!waiting.ok) throw new Error(waiting.problem);
+    expect(waiting.options.answering).toEqual({ job: 'acme--staff', ask: null });
+    const other = await prepare()({ skill: 'analyze-job', jobId: 'acme--staff' });
+    if (!other.ok) throw new Error(other.problem);
+    expect(other.options.answering).toBeUndefined();
+  });
+});

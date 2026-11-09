@@ -199,6 +199,12 @@ export interface Ask {
   question: string;
   /** When they asked, as an ISO date. */
   on: string;
+  /**
+   * For the user's reply to Claude's answer, the ID of the question that started the
+   * conversation. A reply is a question of its own, with its own answer, which Claude gives from
+   * everything said before it. A question that starts a conversation has none.
+   */
+  thread?: string;
 }
 
 /**
