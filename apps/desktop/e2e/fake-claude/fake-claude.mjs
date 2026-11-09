@@ -418,9 +418,12 @@ async function work(text) {
     for (const id of named ? [named] : open) {
       // A reply, which the details list under the question it carries on from, after the
       // answer before it, gets an answer that follows on.
-      const reply = new RegExp(
-        `answered in asked/\\S+\\.md\\n(?: {4}.*\\n)*? {4}- Reply ${id} \\(asked `,
-      ).test(details);
+      const lines = details.split('\n');
+      const at = lines.findIndex((line) => line.startsWith(`    - Reply ${id} (asked `));
+      const before = lines
+        .slice(0, Math.max(at, 0))
+        .findLast((line) => /^(?: {4})?- (?:Reply )?\S+ \(asked [^)]+\): /.test(line));
+      const reply = at >= 0 && Boolean(before?.includes(': answered in asked/'));
       const answer = reply ? REPLY_ANSWER : again ? `${ANSWER} Again.` : ANSWER;
       await call('save_answer', { job, question: id, answer });
     }

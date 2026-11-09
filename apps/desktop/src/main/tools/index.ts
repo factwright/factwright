@@ -855,7 +855,7 @@ export function factwrightTools(deps: ToolDeps): McpTool[] {
     {
       name: 'save_answer',
       description:
-        'Saves your answer to one of the user’s questions about a job, or to their reply to one of your answers, which job_details lists under the user’s questions with their ids. The app shows it with the question or reply, for the user to come back to and reply to. Give the answer as Markdown, with links to sources. Answering again replaces it.',
+        'Saves your answer to one of the user’s questions about a job, or to their reply to one of your answers, which job_details lists under the user’s questions with their ids. The app shows it with the question or reply, for the user to come back to and reply to. Give the answer as Markdown, with links to sources. Answering again replaces it. Only the run the app started for that question or reply can save its answer.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -898,7 +898,10 @@ export function factwrightTools(deps: ToolDeps): McpTool[] {
         if (typeof answer !== 'string' || answer.length > MAX_ANSWER) {
           throw new Error(`Give the answer as text of ${MAX_ANSWER} characters or fewer.`);
         }
-        return saveAnswer(job, question, answer, deps.workspace, today(), call?.keep);
+        // One on every question waiting answers those, never one with an answer already.
+        return saveAnswer(job, question, answer, deps.workspace, today(), call?.keep, {
+          waitingOnly: answering?.ask === null,
+        });
       },
     },
     {

@@ -36,7 +36,7 @@ Input: `job <id>` from the app, maybe with `question <id>`. The questions are in
 - The next reply's run sees only the conversation as saved. So when the answer rests on something the user told you in this run, in that round or typed here, say it in the answer, such as "You said the panel is with the VP."
 
 ## 4. Save
-Call `save_answer` with the job's id, the question's or reply's id, and the answer as Markdown. It saves only the answer this run was started for. End it with `## Sources`, as links, when you used any. The app shows it under the question or reply, in the job's panel, where the user can reply to it.
+Call `save_answer` with the job's id, the question's or reply's id, and the answer as Markdown. It saves only the answer this run was started for, and it's the only way to save one: never edit the files in `asked/` yourself. End it with `## Sources`, as links, when you used any. The app shows it under the question or reply, in the job's panel, where the user can reply to it.
 
 If the answer turns up something worth keeping elsewhere, offer it in one line: a fact for `/factwright:add-facts`, or a prep sheet with `/factwright:interview-prep`.
 

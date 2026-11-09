@@ -866,10 +866,19 @@ describe('job_details', () => {
     await expect(
       tool('save_answer').run({ job: id, question: other.askId, answer: 'Go.' }, newCall('hunt')),
     ).rejects.toThrow('Only a run started from the job’s panel saves an answer.');
+    // A run on every question waiting answers those, and can't rewrite one with an answer.
+    const waiting = { ...newCall('hunt'), answering: { job: id, ask: null } };
+    await expect(
+      tool('save_answer').run({ job: id, question: asked.askId, answer: 'Rewritten.' }, waiting),
+    ).rejects.toThrow(
+      `${asked.askId} has an answer already, and this run answers the questions waiting.`,
+    );
+    expect(
+      await tool('save_answer').run({ job: id, question: other.askId, answer: 'Go.' }, waiting),
+    ).toBe(`Saved in asked/${id}/${other.askId}.md. The app shows it with the question.`);
     expect(readFileSync(join(root, 'asked', id, `${asked.askId}.md`), 'utf8')).toContain(
       'Mostly remote.',
     );
-    expect(existsSync(join(root, 'asked', id, `${other.askId}.md`))).toBe(false);
   });
 
   it('says which kind of job a job is under, when the user wants more than one', async () => {

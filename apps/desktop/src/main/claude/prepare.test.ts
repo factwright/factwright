@@ -72,7 +72,7 @@ describe('a question for Claude, as it starts', () => {
       job: 'acme--staff',
       ask: '2026-10-12-and-pay-3fa9',
     });
-    // One on every question waiting answers those, on its job, and any other run answers none.
+    // One on every question waiting may answer those alone, on its job, and any other run none.
     const waiting = await prepare()({ skill: 'ask', jobId: 'acme--staff' });
     if (!waiting.ok) throw new Error(waiting.problem);
     expect(waiting.options.answering).toEqual({ job: 'acme--staff', ask: null });

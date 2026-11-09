@@ -228,20 +228,20 @@ function TurnAnswer({ turn, api }: { turn: Turn; api: FactwrightApi }) {
 /**
  * The box under a conversation for the user's reply to Claude's latest answer, which Claude
  * answers from everything said so far. It sends once that answer is in. Until then the user can
- * write their reply, but not send it.
+ * write their reply, but not send it, and the box says why.
  */
 function ReplyBox({
   job,
   replyTo,
-  ready,
+  hold,
   api,
   onReplied,
 }: {
   job: Job;
   /** The latest question or reply in the conversation, which the reply answers back to. */
   replyTo: string;
-  /** Whether Claude has answered the latest one, with nothing else going on the conversation. */
-  ready: boolean;
+  /** Why a reply can't be sent yet, as the latest one has no answer, or null once it can. */
+  hold: string | null;
   api: FactwrightApi;
   /** Starts the run that answers the reply, once it's kept. */
   onReplied: (askId: string) => void;
@@ -251,8 +251,7 @@ function ReplyBox({
   const [problem, setProblem] = useState<string | null>(null);
   const box = useRef<HTMLTextAreaElement>(null);
   const keys = useId();
-  // A reply written while Claude is still answering waits, and says so.
-  const held = !ready && reply.trim() !== '';
+  const ready = hold === null;
   const send = async (event: FormEvent) => {
     event.preventDefault();
     if (!ready || sending || !reply.trim()) return;
@@ -299,14 +298,13 @@ function ReplyBox({
           Send
         </Button>
       </div>
-      <span id={keys} className={styles.keys}>
+      <span id={keys} hidden>
         Enter sends, and Shift-Enter starts a new line.
       </span>
-      {held && (
-        <p className={styles.replyHint} role="status">
-          You can send this once Claude has answered.
-        </p>
-      )}
+      {/* Mounted from the start, so a screen reader hears why a reply waits once there's one. */}
+      <p className={styles.replyHint} role="status">
+        {hold !== null && reply.trim() !== '' ? hold : ''}
+      </p>
       {problem && (
         <p className={panel.problem} role="alert">
           {problem}
@@ -455,7 +453,13 @@ function Conversation({
             <ReplyBox
               job={job}
               replyTo={latest.ask.id}
-              ready={!busy && Boolean(latest.answer)}
+              hold={
+                busy
+                  ? 'You can send this once Claude has answered.'
+                  : latest.answer
+                    ? null
+                    : 'Claude hasn’t answered yet. Click Answer now, then send this.'
+              }
               api={api}
               onReplied={onRun}
             />

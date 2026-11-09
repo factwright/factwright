@@ -232,7 +232,9 @@ describe('AskSection', () => {
     const api = apiStub();
     render(<AskSection job={{ ...job, asks: [ASK] }} api={api} run={controls()} today={TODAY} />);
     await userEvent.click(await screen.findByRole('button', { name: 'Remove' }));
-    expect(screen.getByRole('status').textContent).toBe('Remove the question and its answer?');
+    expect(screen.getByText('Remove the question and its answer?').getAttribute('role')).toBe(
+      'status',
+    );
     // The focus moves to the choices that took the button's place, and back.
     expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Keep' }));
     await userEvent.click(screen.getByRole('button', { name: 'Keep' }));
@@ -330,9 +332,11 @@ describe('AskSection', () => {
     await userEvent.type(screen.getByRole('textbox', { name: 'Your reply' }), 'Hello?{Enter}');
     expect((screen.getByRole('button', { name: 'Send' }) as HTMLButtonElement).disabled).toBe(true);
     expect(api.askAboutJob).not.toHaveBeenCalled();
-    expect(screen.getByRole('status').textContent).toBe(
-      'You can send this once Claude has answered.',
-    );
+    expect(
+      within(
+        screen.getByRole('textbox', { name: 'Your reply' }).closest('form') as HTMLElement,
+      ).getByRole('status').textContent,
+    ).toBe('Claude hasn’t answered yet. Click Answer now, then send this.');
     cleanup();
     // Claude is answering it again.
     const answered = apiStub({ asked: { [ASK.id]: 'A short screen.' }, shots: [] });
@@ -345,8 +349,13 @@ describe('AskSection', () => {
       />,
     );
     expect(await screen.findByText('Answering')).toBeTruthy();
-    await userEvent.type(screen.getByRole('textbox', { name: 'Your reply' }), 'Hello?{Enter}');
+    const box = screen.getByRole('textbox', { name: 'Your reply' });
+    const hint = within(box.closest('form') as HTMLElement).getByRole('status');
+    // The hint is there from the start, empty, so a screen reader hears it when it says why.
+    expect(hint.textContent).toBe('');
+    await userEvent.type(box, 'Hello?{Enter}');
     expect(answered.askAboutJob).not.toHaveBeenCalled();
+    expect(hint.textContent).toBe('You can send this once Claude has answered.');
     cleanup();
     // The question went on another device: the reply stays in its box, with why.
     const gone = apiStub({ asked: { [ASK.id]: 'A short screen.' }, shots: [] });
@@ -356,13 +365,15 @@ describe('AskSection', () => {
     });
     const run = controls();
     render(<AskSection job={{ ...job, asks: [ASK] }} api={gone} run={run} today={TODAY} />);
-    const box = (await screen.findByRole('textbox', { name: 'Your reply' })) as HTMLTextAreaElement;
+    const field = (await screen.findByRole('textbox', {
+      name: 'Your reply',
+    })) as HTMLTextAreaElement;
     await waitFor(() => expect(screen.getByText('Answered')).toBeTruthy());
-    await userEvent.type(box, 'Hello?{Enter}');
+    await userEvent.type(field, 'Hello?{Enter}');
     expect((await screen.findByRole('alert')).textContent).toBe(
       'That question isn’t on file anymore, so ask yours as a new question.',
     );
-    expect(box.value).toBe('Hello?');
+    expect(field.value).toBe('Hello?');
     expect(run.start).not.toHaveBeenCalled();
   });
 
@@ -376,9 +387,11 @@ describe('AskSection', () => {
     await userEvent.click(await screen.findByRole('button', { name: 'Ask again' }));
     expect(run.start).toHaveBeenCalledWith({ skill: 'ask', jobId: job.id, askId: REPLY.id });
     await userEvent.click(screen.getByRole('button', { name: 'Remove' }));
-    expect(screen.getByRole('status').textContent).toBe(
-      'Remove the question, your replies and Claude’s answers?',
-    );
+    expect(
+      screen
+        .getByText('Remove the question, your replies and Claude’s answers?')
+        .getAttribute('role'),
+    ).toBe('status');
     await userEvent.click(screen.getByRole('button', { name: 'Remove' }));
     expect(api.removeAsk).toHaveBeenCalledWith(job.id, ASK.id);
   });

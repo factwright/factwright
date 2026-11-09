@@ -741,29 +741,32 @@ describe('mergeJobs', () => {
   });
 
   it('keeps each question and answer once, giving a question asked of both a new ID', () => {
-    const replies: string[] = [];
     for (const id of ['acme--staff', other]) {
       tracker.addAsk(id, 'What should I expect?', AT);
       tracker.recordAnswer(id, 'Why Acme?', 0, `Sent for ${id}`, AT);
       tracker.updateJob(id, { questions: ['Why Acme?', `Only ${id}?`] }, AT);
       // Each job's conversation has a reply, which follows its question to its new ID.
-      const reply = tracker.addAsk(id, 'And pay?', AT, '2026-10-10-what-should-i-expect');
-      if (reply.ok) replies.push(reply.askId);
+      tracker.addAsk(id, 'And pay?', AT, '2026-10-10-what-should-i-expect');
     }
-    expect(tracker.mergeJobs('acme--staff', other, AT)).toEqual({
-      ok: true,
-      asks: [['2026-10-10-what-should-i-expect', '2026-10-10-what-should-i-expect-2']],
-    });
+    const merged = tracker.mergeJobs('acme--staff', other, AT);
+    expect(merged).toMatchObject({ ok: true });
+    expect(merged.ok && merged.asks).toContainEqual([
+      '2026-10-10-what-should-i-expect',
+      '2026-10-10-what-should-i-expect-2',
+    ]);
     expect(row()).toMatchObject({
       questions: ['Why Acme?', 'Only acme--staff?', `Only ${other}?`],
       sent: [expect.objectContaining({ text: 'Sent for acme--staff' })],
-      asks: [
-        expect.objectContaining({ id: '2026-10-10-what-should-i-expect' }),
-        expect.objectContaining({ id: replies[0], thread: '2026-10-10-what-should-i-expect' }),
-        expect.objectContaining({ id: '2026-10-10-what-should-i-expect-2' }),
-        expect.objectContaining({ id: replies[1], thread: '2026-10-10-what-should-i-expect-2' }),
-      ],
     });
+    // Each reply stays in its own question's conversation, under an ID of its own.
+    const asks = row()?.asks ?? [];
+    expect(asks.map((ask) => [ask.question, ask.thread])).toEqual([
+      ['What should I expect?', undefined],
+      ['And pay?', '2026-10-10-what-should-i-expect'],
+      ['What should I expect?', undefined],
+      ['And pay?', '2026-10-10-what-should-i-expect-2'],
+    ]);
+    expect(new Set(asks.map((ask) => ask.id)).size).toBe(4);
   });
 
   it('gives a reply asked of both by the same ID a new one, in its question’s conversation', () => {
