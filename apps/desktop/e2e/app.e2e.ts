@@ -589,7 +589,7 @@ test('carries a question on as a conversation when the user replies to Claude’
   const typed = await terminalLines(window);
   expect(typed).toMatch(
     new RegExp(
-      `/factwright:ask job ${ACME_ID} question 20\\d\\d-\\d\\d-\\d\\d-and-what-should-i-ask-them`,
+      `/factwright:ask job ${ACME_ID} question 20\\d\\d-\\d\\d-\\d\\d-and-what-should-i-ask-them-[0-9a-f]{4}`,
     ),
   );
   expect(typed).not.toContain('And what should I ask them?');

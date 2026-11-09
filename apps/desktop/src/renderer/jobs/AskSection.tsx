@@ -8,7 +8,7 @@ import {
 } from '@factwright/core';
 import { Button, Dialog, DialogActions, Markdown, Pill, TextArea } from '@factwright/ui';
 import { MessageCircleQuestionMark, Plus } from 'lucide-react';
-import { type FormEvent, useEffect, useRef, useState } from 'react';
+import { type FormEvent, useEffect, useId, useRef, useState } from 'react';
 import type { FactwrightApi, JobExtras } from '../../shared/api.ts';
 import { LIMITS } from '../../shared/limits.ts';
 import styles from './AskSection.module.css';
@@ -250,6 +250,9 @@ function ReplyBox({
   const [sending, setSending] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
   const box = useRef<HTMLTextAreaElement>(null);
+  const keys = useId();
+  // A reply written while Claude is still answering waits, and says so.
+  const held = !ready && reply.trim() !== '';
   const send = async (event: FormEvent) => {
     event.preventDefault();
     if (!ready || sending || !reply.trim()) return;
@@ -263,7 +266,8 @@ function ReplyBox({
       setReply('');
       setProblem(null);
       onReplied(sent.askId);
-      // Send goes quiet until Claude answers, so the keyboard stays in the box.
+      // Send goes quiet until Claude answers, so the keyboard goes back to the box, and the run's
+      // terminal leaves it there.
       box.current?.focus();
     } finally {
       setSending(false);
@@ -276,6 +280,7 @@ function ReplyBox({
         <TextArea
           ref={box}
           aria-label="Your reply"
+          aria-describedby={keys}
           placeholder="Reply to Claude"
           rows={1}
           className={styles.replyBox}
@@ -294,6 +299,14 @@ function ReplyBox({
           Send
         </Button>
       </div>
+      <span id={keys} className={styles.keys}>
+        Enter sends, and Shift-Enter starts a new line.
+      </span>
+      {held && (
+        <p className={styles.replyHint} role="status">
+          You can send this once Claude has answered.
+        </p>
+      )}
       {problem && (
         <p className={panel.problem} role="alert">
           {problem}

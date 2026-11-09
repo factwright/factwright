@@ -18,6 +18,7 @@ export {
   askId,
   askThreadOf,
   askThreads,
+  isAskReply,
   questionKey,
   readSuggestedAnswers,
   type SuggestedAnswer,

@@ -8,6 +8,7 @@ import { LONG_TEXT } from '../shared/pasted.ts';
 import styles from './ClaudePanel.module.css';
 import { pastedPictures, readPictures } from './jobs/Screenshots.tsx';
 import { terminalColors, themeNow, watchTheme } from './theme.ts';
+import { typingOutside } from './typing.ts';
 
 /**
  * The terminal one run's Claude Code runs in. It shows that run's output, sends what the user
@@ -141,8 +142,9 @@ export function TerminalView({
       });
     };
     element.addEventListener('paste', paste, true);
-    // A run that opens in view takes the keyboard, for what the user types.
-    if (latestShown.current) terminal.focus();
+    // A run that opens in view takes the keyboard, for what the user types, unless they're
+    // typing in a box elsewhere, such as their next reply to Claude in a job's panel.
+    if (latestShown.current && !typingOutside(element)) terminal.focus();
 
     return () => {
       element.removeEventListener('paste', paste, true);

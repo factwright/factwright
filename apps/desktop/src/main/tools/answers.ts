@@ -1,6 +1,6 @@
 import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
-import { askedFile, type Job, questionKey } from '@factwright/core';
+import { askedFile, isAskReply, type Job, questionKey } from '@factwright/core';
 
 /** How many answers past_answers gives at once, newest first. */
 const MOST = 30;
@@ -92,6 +92,6 @@ export async function saveAnswer(
   await mkdir(dirname(file), { recursive: true });
   keep?.(file);
   await writeFile(file, answerFile(ask.question, ask.on, today, answer));
-  const shown = ask.thread === undefined ? 'with the question' : 'under the user’s reply';
+  const shown = isAskReply(job.asks, ask.id) ? 'under the user’s reply' : 'with the question';
   return `Saved in ${path}. The app shows it ${shown}.`;
 }

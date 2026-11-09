@@ -844,13 +844,32 @@ describe('job_details', () => {
         '    What’s their stack?',
       ].join('\n'),
     );
-    // A reply's answer is kept as a question's is, under its own ID.
+    // A reply's answer is kept as a question's is, under its own ID, by the run started for it.
+    const run = { ...newCall('hunt'), answering: { job: id, ask: reply.askId } };
     expect(
-      await tool('save_answer').run({ job: id, question: reply.askId, answer: 'Two zones.' }),
+      await tool('save_answer').run({ job: id, question: reply.askId, answer: 'Two zones.' }, run),
     ).toBe(`Saved in asked/${id}/${reply.askId}.md. The app shows it under the user’s reply.`);
     expect(readFileSync(join(root, 'asked', id, `${reply.askId}.md`), 'utf8')).toBe(
       '# Remote how?\n\nAsked 2026-10-11. Answered 2026-10-11.\n\nTwo zones.\n',
     );
+    // That run can't rewrite an earlier answer, which later replies read as what Claude said,
+    // and a run started for anything else saves none.
+    await expect(
+      tool('save_answer').run({ job: id, question: asked.askId, answer: 'Rewritten.' }, run),
+    ).rejects.toThrow(`This run answers ${reply.askId}. Save only that answer.`);
+    await expect(
+      tool('save_answer').run(
+        { job: id, question: other.askId, answer: 'Go.' },
+        { ...newCall('hunt'), answering: { job: 'acme--other', ask: null } },
+      ),
+    ).rejects.toThrow('This run answers questions about acme--other alone.');
+    await expect(
+      tool('save_answer').run({ job: id, question: other.askId, answer: 'Go.' }, newCall('hunt')),
+    ).rejects.toThrow('Only a run started from the job’s panel saves an answer.');
+    expect(readFileSync(join(root, 'asked', id, `${asked.askId}.md`), 'utf8')).toContain(
+      'Mostly remote.',
+    );
+    expect(existsSync(join(root, 'asked', id, `${other.askId}.md`))).toBe(false);
   });
 
   it('says which kind of job a job is under, when the user wants more than one', async () => {

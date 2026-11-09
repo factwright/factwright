@@ -145,11 +145,17 @@ export const ASK_ID = /^\d{4}-\d{2}-\d{2}-[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
 /**
  * A new question's ID: the day it was asked and its first few words, such as
- * "2026-10-12-what-should-i-expect-from", made unique among the job's other questions.
+ * "2026-10-12-what-should-i-expect-from", made unique among the job's other questions. A tag,
+ * such as a few random letters, goes on the end: "2026-10-12-thanks-3fa9".
  */
-export function askId(question: string, on: string, taken: readonly string[]): string {
+export function askId(
+  question: string,
+  on: string,
+  taken: readonly string[],
+  tag?: string,
+): string {
   const words = slug(question).split('-').filter(Boolean).slice(0, 6).join('-') || 'question';
-  const base = `${on}-${words}`;
+  const base = tag ? `${on}-${words}-${tag}` : `${on}-${words}`;
   let id = base;
   for (let n = 2; taken.includes(id); n++) id = `${base}-${n}`;
   return id;
@@ -165,20 +171,29 @@ export interface AskThread {
 }
 
 /**
- * A job's questions for Claude as conversations, in the order they started. A reply whose
- * conversation isn't on file anymore, as when another device removed it, shows as a question of
- * its own, so nothing the user said goes missing.
+ * A job's questions for Claude as conversations, in the order they started. When a conversation's
+ * question isn't on file anymore, as when another device removed it while this one replied, its
+ * replies stay together, the first standing in for the question, so nothing the user said goes
+ * missing.
  */
 export function askThreads(asks: readonly Ask[]): AskThread[] {
   const byId = new Map(asks.map((ask) => [ask.id, ask]));
-  // The question a conversation started with: the first one back with nothing before it on file.
-  // A loop, which the app never makes, leaves each question in it as a start of its own.
+  // The first reply left from each conversation whose question is gone, by that question's ID.
+  const standIns = new Map<string, Ask>();
+  for (const ask of asks) {
+    if (ask.thread !== undefined && !byId.has(ask.thread) && !standIns.has(ask.thread)) {
+      standIns.set(ask.thread, ask);
+    }
+  }
+  // The question a conversation started with, or what stands in for it. A loop, which the app
+  // never makes, leaves each question in it as a start of its own.
   const startOf = (ask: Ask): Ask => {
     const seen = new Set([ask.id]);
     let at = ask;
     for (;;) {
-      const before = at.thread === undefined ? undefined : byId.get(at.thread);
-      if (!before) return at;
+      if (at.thread === undefined) return at;
+      const before = byId.get(at.thread);
+      if (!before) return standIns.get(at.thread) ?? at;
       if (seen.has(before.id)) return ask;
       seen.add(before.id);
       at = before;
@@ -202,4 +217,10 @@ export function askThreadOf(asks: readonly Ask[], id: string): AskThread | null 
       (thread) => thread.ask.id === id || thread.replies.some((reply) => reply.id === id),
     ) ?? null
   );
+}
+
+/** Whether an ask is a reply in a conversation, rather than the question that starts one. */
+export function isAskReply(asks: readonly Ask[], id: string): boolean {
+  const thread = askThreadOf(asks, id);
+  return thread !== null && thread.ask.id !== id;
 }

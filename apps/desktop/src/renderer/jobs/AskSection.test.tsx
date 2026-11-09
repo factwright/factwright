@@ -311,6 +311,15 @@ describe('AskSection', () => {
     );
     await userEvent.click(screen.getByRole('button', { name: 'Send' }));
     expect(replied.askAboutJob).toHaveBeenCalledWith(job.id, 'Thanks!', REPLY.id);
+    // Send goes quiet once it's sent, and the keyboard goes back to the box.
+    await waitFor(() =>
+      expect(document.activeElement).toBe(screen.getByRole('textbox', { name: 'Your reply' })),
+    );
+    // A screen reader hears how to send, as the box shows nothing of it.
+    const described = screen.getByRole('textbox', { name: 'Your reply' });
+    expect(
+      document.getElementById(described.getAttribute('aria-describedby') ?? '')?.textContent,
+    ).toBe('Enter sends, and Shift-Enter starts a new line.');
   });
 
   it('holds a reply until Claude has answered, and says why one wasn’t kept', async () => {
@@ -321,6 +330,9 @@ describe('AskSection', () => {
     await userEvent.type(screen.getByRole('textbox', { name: 'Your reply' }), 'Hello?{Enter}');
     expect((screen.getByRole('button', { name: 'Send' }) as HTMLButtonElement).disabled).toBe(true);
     expect(api.askAboutJob).not.toHaveBeenCalled();
+    expect(screen.getByRole('status').textContent).toBe(
+      'You can send this once Claude has answered.',
+    );
     cleanup();
     // Claude is answering it again.
     const answered = apiStub({ asked: { [ASK.id]: 'A short screen.' }, shots: [] });

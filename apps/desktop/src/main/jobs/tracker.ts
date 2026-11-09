@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { randomBytes, randomUUID } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
 import {
   AUTO_STATUSES,
@@ -637,10 +637,13 @@ export class Tracker {
         'That’s as many questions and replies as a job can keep. Remove a question you’re done with.',
       );
     }
+    // Two computers can reply the same few words, such as "Thanks!", on the same day before
+    // they sync, so a reply's ID ends in a few random letters, and neither takes the other's place.
     const id = askId(
       asked,
       context.today,
       job.asks.map((ask) => ask.id),
+      thread ? randomBytes(2).toString('hex') : undefined,
     );
     const asks = [
       ...job.asks,

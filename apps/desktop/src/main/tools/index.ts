@@ -877,20 +877,28 @@ export function factwrightTools(deps: ToolDeps): McpTool[] {
       annotations: { readOnlyHint: false, idempotentHint: true, openWorldHint: false },
       run: async (input, call) => {
         const id = textInput(input, 'job', true) ?? '';
+        const question = textInput(input, 'question', true) ?? '';
+        // A run saves only the answer it was started for: nothing it reads can rewrite another,
+        // which later replies read as what Claude said.
+        const answering = call?.answering;
+        if (call && !answering) {
+          throw new Error(
+            'Only a run started from the job’s panel saves an answer. Answer in the chat, and say that asking from the job’s panel keeps the answer with the job.',
+          );
+        }
+        if (answering && answering.job !== id) {
+          throw new Error(`This run answers questions about ${answering.job} alone.`);
+        }
+        if (answering?.ask && answering.ask !== question) {
+          throw new Error(`This run answers ${answering.ask}. Save only that answer.`);
+        }
         const job = deps.jobs.job(id);
         if (!job) throw new Error(`Nothing on file for ${id}.`);
         const answer = input.answer;
         if (typeof answer !== 'string' || answer.length > MAX_ANSWER) {
           throw new Error(`Give the answer as text of ${MAX_ANSWER} characters or fewer.`);
         }
-        return saveAnswer(
-          job,
-          textInput(input, 'question', true) ?? '',
-          answer,
-          deps.workspace,
-          today(),
-          call?.keep,
-        );
+        return saveAnswer(job, question, answer, deps.workspace, today(), call?.keep);
       },
     },
     {

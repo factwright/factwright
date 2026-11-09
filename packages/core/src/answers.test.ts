@@ -5,6 +5,7 @@ import {
   askId,
   askThreadOf,
   askThreads,
+  isAskReply,
   questionKey,
   readSuggestedAnswers,
   type SuggestedAnswer,
@@ -216,6 +217,8 @@ describe('askId', () => {
     );
     expect(askId('???', '2026-10-12', [])).toBe('2026-10-12-question');
     expect(askId('Qué tal el equipo?', '2026-10-12', [])).toBe('2026-10-12-que-tal-el-equipo');
+    expect(askId('Thanks!', '2026-10-12', [], '3fa9')).toBe('2026-10-12-thanks-3fa9');
+    expect(ASK_ID.test(askId('Thanks!', '2026-10-12', [], '3fa9'))).toBe(true);
   });
 
   it('makes IDs that name a file safely, and only those pass', () => {
@@ -261,8 +264,17 @@ describe('askThreads', () => {
     ]);
   });
 
-  it('keeps a reply whose question is gone as a question of its own, and a loop as two', () => {
-    expect(ids([ask('pay', 'expect')])).toEqual([['2026-10-12-pay']]);
+  it('keeps the replies of a question that’s gone together, the first in its place', () => {
+    const asks = [ask('pay', 'expect'), ask('stack'), ask('equity', 'expect'), ask('more', 'pay')];
+    expect(ids(asks)).toEqual([
+      ['2026-10-12-pay', '2026-10-12-equity', '2026-10-12-more'],
+      ['2026-10-12-stack'],
+    ]);
+    expect(isAskReply(asks, '2026-10-12-pay')).toBe(false);
+    expect(isAskReply(asks, '2026-10-12-equity')).toBe(true);
+    expect(isAskReply(asks, '2026-10-12-stack')).toBe(false);
+    expect(isAskReply(asks, '2026-10-12-gone')).toBe(false);
+    // A loop, which the app never makes, leaves each question in it as a start of its own.
     expect(ids([ask('a', 'b'), ask('b', 'a'), ask('c', 'a')])).toEqual([
       ['2026-10-12-a'],
       ['2026-10-12-b'],

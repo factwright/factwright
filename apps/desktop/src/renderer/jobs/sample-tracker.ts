@@ -150,14 +150,21 @@ function sampleRevision(job: Job, resume: string): Revision | null {
 }
 
 /** What Claude answered about the sample jobs, by job and question. */
-function sampleAnswer(ask: Pick<Ask, 'question' | 'on' | 'thread'>): string {
+function sampleAnswer(ask: Pick<Ask, 'question' | 'on' | 'thread'>, typed = false): string {
   const top = [
     `# ${ask.question.split('\n')[0]}`,
     '',
     `Asked ${ask.on}. Answered ${localDate()}.`,
     '',
   ];
-  // A reply carries on from the answer before it.
+  // A reply typed in the preview gets an answer that fits any reply.
+  if (ask.thread !== undefined && typed) {
+    return [
+      ...top,
+      'This is the screens preview, so this answer is a stand-in. In the app, your Claude answers your reply from the whole conversation, its earlier answers included, and everything on file for the job.',
+    ].join('\n');
+  }
+  // The sample conversation's reply carries on from the answer before it.
   if (ask.thread !== undefined) {
     return [
       ...top,
@@ -745,6 +752,7 @@ export function sampleTracker(
         question,
         localDate(),
         job.asks.map((ask) => ask.id),
+        thread ? Math.random().toString(16).slice(2, 6).padEnd(4, '0') : undefined,
       );
       const ask: Ask = {
         id,
@@ -758,7 +766,7 @@ export function sampleTracker(
       );
       // Claude answers a moment later, as a run would.
       setTimeout(() => {
-        asked.set(askedFile(jobId, id), sampleAnswer(ask));
+        asked.set(askedFile(jobId, id), sampleAnswer(ask, true));
         publish(list.jobs.map((each) => ({ ...each })));
       }, 2500);
       return { ok: true, askId: id };

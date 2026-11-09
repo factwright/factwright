@@ -33,9 +33,10 @@ Input: `job <id>` from the app, maybe with `question <id>`. The questions are in
 - Never invent anything about the user or the company. When the sources are thin, say so.
 - It's the user's own notes, like interview prep: it can name the people they'll meet, but nothing confidential from their past work.
 - If the answer needs something only the user knows, ask first, in one AskUserQuestion round.
+- The next reply's run sees only the conversation as saved. So when the answer rests on something the user told you in this run, in that round or typed here, say it in the answer, such as "You said the panel is with the VP."
 
 ## 4. Save
-Call `save_answer` with the job's id, the question's or reply's id, and the answer as Markdown. End it with `## Sources`, as links, when you used any. The app shows it under the question or reply, in the job's panel, where the user can reply to it.
+Call `save_answer` with the job's id, the question's or reply's id, and the answer as Markdown. It saves only the answer this run was started for. End it with `## Sources`, as links, when you used any. The app shows it under the question or reply, in the job's panel, where the user can reply to it.
 
 If the answer turns up something worth keeping elsewhere, offer it in one line: a fact for `/factwright:add-facts`, or a prep sheet with `/factwright:interview-prep`.
 
