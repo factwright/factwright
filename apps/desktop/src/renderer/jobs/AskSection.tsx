@@ -157,8 +157,16 @@ export function AskDialog({
   );
 }
 
-/** Screenshots that came with a question, loaded once it's open. */
-function AskShots({ shots, api }: { shots: readonly JobShot[]; api: FactwrightApi }) {
+/** Screenshots that came with a question or a reply, loaded once it's open. */
+function AskShots({
+  shots,
+  of,
+  api,
+}: {
+  shots: readonly JobShot[];
+  of: 'question' | 'reply';
+  api: FactwrightApi;
+}) {
   const [shown, setShown] = useState<ShownShot[]>([]);
   // The pictures load again only when they change, not each time the panel draws.
   const paths = shots.map((shot) => shot.path).join('\n');
@@ -179,14 +187,10 @@ function AskShots({ shots, api }: { shots: readonly JobShot[]; api: FactwrightAp
   }, [api, paths]);
   if (shown.length === 0) return null;
   return (
-    <ul className={styles.shots}>
+    <ul className={of === 'reply' ? `${styles.shots} ${styles.replyShots}` : styles.shots}>
       {shown.map((shot, i) => (
         <li key={shot.key}>
-          <img
-            className={styles.shot}
-            src={shot.url}
-            alt={`Screenshot ${i + 1} with the question`}
-          />
+          <img className={styles.shot} src={shot.url} alt={`Screenshot ${i + 1} with the ${of}`} />
         </li>
       ))}
     </ul>
@@ -203,32 +207,28 @@ interface Turn {
 }
 
 /** Claude's answer to one turn, or where it stands while there's none. */
-function TurnAnswer({ turn, api }: { turn: Turn; api: FactwrightApi }) {
+function TurnAnswer({ turn }: { turn: Turn }) {
   const shown = turn.answer ? askAnswer(turn.answer) : null;
-  return (
-    <>
-      {turn.shots.length > 0 && <AskShots shots={turn.shots} api={api} />}
-      {shown ? (
-        <div className={styles.answer}>
-          <Markdown text={shown.body} />
-        </div>
-      ) : (
-        <p className={panel.quiet}>
-          {turn.task === 'answering'
-            ? 'Claude is working on it in its panel.'
-            : turn.task === 'in-line'
-              ? 'It’s in line for Claude, and starts by itself.'
-              : 'Claude hasn’t answered this yet.'}
-        </p>
-      )}
-    </>
+  return shown ? (
+    <div className={styles.answer}>
+      <Markdown text={shown.body} />
+    </div>
+  ) : (
+    <p className={panel.quiet}>
+      {turn.task === 'answering'
+        ? 'Claude is working on it in its panel.'
+        : turn.task === 'in-line'
+          ? 'It’s in line for Claude, and starts by itself.'
+          : 'Claude hasn’t answered this yet.'}
+    </p>
   );
 }
 
 /**
- * The box under a conversation for the user's reply to Claude's latest answer, which Claude
- * answers from everything said so far. It sends once that answer is in. Until then the user can
- * write their reply, but not send it, and the box says why.
+ * The box under a conversation for the user's reply to Claude's latest answer, with screenshots
+ * if the user has some, such as the recruiter's next email. Claude answers it from everything
+ * said so far. It sends once that answer is in. Until then the user can write their reply, but
+ * not send it, and the box says why.
  */
 function ReplyBox({
   job,
@@ -247,24 +247,49 @@ function ReplyBox({
   onReplied: (askId: string) => void;
 }) {
   const [reply, setReply] = useState('');
+  const [shots, setShots] = useState<PickedShot[]>([]);
   const [sending, setSending] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
+  // Once the reply is kept, sending again only saves the screenshots still waiting.
+  const [kept, setKept] = useState<string | null>(null);
   const box = useRef<HTMLTextAreaElement>(null);
+  const form = useRef<HTMLFormElement>(null);
   const keys = useId();
-  const ready = hold === null;
+  const ready = kept !== null || hold === null;
   const send = async (event: FormEvent) => {
     event.preventDefault();
     if (!ready || sending || !reply.trim()) return;
     setSending(true);
     try {
-      const sent = await api.askAboutJob(job.id, reply, replyTo);
-      if (!sent.ok) {
-        setProblem(sent.message);
+      let id = kept;
+      if (!id) {
+        const sent = await api.askAboutJob(job.id, reply, replyTo);
+        if (!sent.ok) {
+          setProblem(sent.message);
+          return;
+        }
+        id = sent.askId;
+      }
+      const failed: string[] = [];
+      for (const shot of shots) {
+        const saved = await api
+          .addShot(job.id, { name: shot.name, bytes: shot.bytes }, { kind: 'ask', ask: id })
+          .catch(() => null);
+        if (saved?.ok) setShots((now) => now.filter((each) => each.key !== shot.key));
+        else failed.push(saved?.message ?? `${shot.name} couldn’t be saved.`);
+      }
+      // Claude starts once the screenshots are kept, or the user takes away the ones that won't be.
+      if (failed.length > 0) {
+        setKept(id);
+        setProblem(
+          `Your reply is kept, but ${failed.length === 1 ? 'a screenshot isn’t' : 'some screenshots aren’t'}: ${failed.join(' ')} Remove ${failed.length === 1 ? 'it' : 'them'} and send, or try again.`,
+        );
         return;
       }
+      setKept(null);
       setReply('');
       setProblem(null);
-      onReplied(sent.askId);
+      onReplied(id);
       // Send goes quiet until Claude answers, so the keyboard goes back to the box, and the run's
       // terminal leaves it there.
       box.current?.focus();
@@ -273,7 +298,7 @@ function ReplyBox({
     }
   };
   return (
-    <form className={styles.replyForm} onSubmit={(event) => void send(event)}>
+    <form ref={form} className={styles.replyForm} onSubmit={(event) => void send(event)}>
       <div className={styles.replyRow}>
         {/* Enter sends, and Shift-Enter starts a line, as in Claude's panel. */}
         <TextArea
@@ -284,6 +309,7 @@ function ReplyBox({
           rows={1}
           className={styles.replyBox}
           maxLength={LIMITS.ask}
+          readOnly={kept !== null}
           value={reply}
           onChange={(event) => setReply(event.target.value)}
           onKeyDown={(event) => {
@@ -303,8 +329,20 @@ function ReplyBox({
       </span>
       {/* Mounted from the start, so a screen reader hears why a reply waits once there's one. */}
       <p className={styles.replyHint} role="status">
-        {hold !== null && reply.trim() !== '' ? hold : ''}
+        {kept === null && hold !== null && (reply.trim() !== '' || shots.length > 0) ? hold : ''}
       </p>
+      {/* A picture pasted into the box joins these, and one pasted anywhere else goes on as usual. */}
+      <div className={styles.replyPictures}>
+        <Screenshots
+          shots={shots}
+          platform={api.platform}
+          pasteOn={form}
+          onAdd={(files) =>
+            void readPictures(files).then((picked) => setShots((now) => [...now, ...picked]))
+          }
+          onRemove={(key) => setShots((now) => now.filter((shot) => shot.key !== key))}
+        />
+      </div>
       {problem && (
         <p className={panel.problem} role="alert">
           {problem}
@@ -398,14 +436,16 @@ function Conversation({
           </span>
         </summary>
         <div className={styles.body}>
-          <TurnAnswer turn={first} api={api} />
+          {first.shots.length > 0 && <AskShots shots={first.shots} of="question" api={api} />}
+          <TurnAnswer turn={first} />
           {replies.map((turn) => (
             <div key={turn.ask.id} className={styles.turn}>
               <div className={styles.reply}>
                 <p className={styles.from}>You · {shortDate(turn.ask.on, today)}</p>
                 <p className={styles.replied}>{turn.ask.question}</p>
+                {turn.shots.length > 0 && <AskShots shots={turn.shots} of="reply" api={api} />}
               </div>
-              <TurnAnswer turn={turn} api={api} />
+              <TurnAnswer turn={turn} />
             </div>
           ))}
           <div className={styles.actions}>

@@ -424,7 +424,16 @@ async function work(text) {
         .slice(0, Math.max(at, 0))
         .findLast((line) => /^(?: {4})?- (?:Reply )?\S+ \(asked [^)]+\): /.test(line));
       const reply = at >= 0 && Boolean(before?.includes(': answered in asked/'));
-      const answer = reply ? REPLY_ANSWER : again ? `${ANSWER} Again.` : ANSWER;
+      // The screenshots that came with it, which the details list under its words.
+      const pictured = lines
+        .slice(at + 1)
+        .find((line) => /^ {8}Screenshots: /.test(line) || /^(?: {4})?- /.test(line))
+        ?.startsWith('        Screenshots: screenshots/');
+      const answer = reply
+        ? `${REPLY_ANSWER}${pictured ? ' Read the screenshot.' : ''}`
+        : again
+          ? `${ANSWER} Again.`
+          : ANSWER;
       await call('save_answer', { job, question: id, answer });
     }
   }

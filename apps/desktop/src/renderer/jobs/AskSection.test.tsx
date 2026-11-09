@@ -34,6 +34,22 @@ const REPLY = {
   on: TODAY,
   thread: ASK.id,
 };
+/** A picture pasted where the page gets it, as the system's clipboard gives it. */
+function pasteInto(target: EventTarget, file: File) {
+  const event = new Event('paste', { bubbles: true, cancelable: true });
+  Object.defineProperty(event, 'clipboardData', {
+    value: {
+      items: [{ kind: 'file', type: file.type, getAsFile: () => file }],
+      getData: () => '',
+    },
+  });
+  target.dispatchEvent(event);
+}
+
+const PICTURE = new File([new Uint8Array([0x89, 0x50, 0x4e, 0x47, 13, 10, 26, 10])], 'image.png', {
+  type: 'image/png',
+});
+
 /** Claude's answer as save_answer keeps it, with the question and dates on top. */
 const saved = (question: string, answer: string) =>
   `# ${question}\n\nAsked ${TODAY}. Answered ${TODAY}.\n\n${answer}`;
@@ -394,5 +410,87 @@ describe('AskSection', () => {
     ).toBe('status');
     await userEvent.click(screen.getByRole('button', { name: 'Remove' }));
     expect(api.removeAsk).toHaveBeenCalledWith(job.id, ASK.id);
+  });
+
+  it('sends a reply with a screenshot pasted into its box, saved with it before Claude starts', async () => {
+    const run = controls();
+    const api = apiStub({ asked: { [ASK.id]: saved(ASK.question, 'A short screen.') }, shots: [] });
+    api.askAboutJob.mockResolvedValue({ ok: true, askId: REPLY.id });
+    render(<AskSection job={{ ...job, asks: [ASK] }} api={api} run={run} today={TODAY} />);
+    const box = await screen.findByRole('textbox', { name: 'Your reply' });
+    await waitFor(() => expect(screen.getByText('Answered')).toBeTruthy());
+    const form = box.closest('form') as HTMLFormElement;
+    pasteInto(box, PICTURE);
+    expect(await within(form).findByRole('img', { name: 'Screenshot 1' })).toBeTruthy();
+    // A picture pasted anywhere else in the window isn't the reply's.
+    pasteInto(window, PICTURE);
+    pasteInto(document.body, PICTURE);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(within(form).getAllByRole('img')).toHaveLength(1);
+    await userEvent.type(box, 'The recruiter emailed this. What do I say?{Enter}');
+    expect(api.askAboutJob).toHaveBeenCalledWith(
+      job.id,
+      'The recruiter emailed this. What do I say?',
+      ASK.id,
+    );
+    await waitFor(() =>
+      expect(run.start).toHaveBeenCalledWith({ skill: 'ask', jobId: job.id, askId: REPLY.id }),
+    );
+    expect(api.addShot).toHaveBeenCalledWith(
+      job.id,
+      { name: 'image.png', bytes: expect.any(Uint8Array) },
+      { kind: 'ask', ask: REPLY.id },
+    );
+    expect(within(form).queryAllByRole('img')).toHaveLength(0);
+    expect((box as HTMLTextAreaElement).value).toBe('');
+  });
+
+  it('keeps a reply whose screenshot isn’t saved, and starts Claude once it’s sorted', async () => {
+    const run = controls();
+    const api = apiStub({ asked: { [ASK.id]: saved(ASK.question, 'A short screen.') }, shots: [] });
+    api.askAboutJob.mockResolvedValue({ ok: true, askId: REPLY.id });
+    api.addShot.mockResolvedValueOnce({ ok: false, message: 'image.png is empty.' });
+    render(<AskSection job={{ ...job, asks: [ASK] }} api={api} run={run} today={TODAY} />);
+    const box = (await screen.findByRole('textbox', { name: 'Your reply' })) as HTMLTextAreaElement;
+    await waitFor(() => expect(screen.getByText('Answered')).toBeTruthy());
+    const form = box.closest('form') as HTMLFormElement;
+    await userEvent.upload(form.querySelector('input[type="file"]') as HTMLInputElement, PICTURE);
+    await within(form).findByRole('img', { name: 'Screenshot 1' });
+    await userEvent.type(box, 'What do I say?{Enter}');
+    expect((await within(form).findByRole('alert')).textContent).toBe(
+      'Your reply is kept, but a screenshot isn’t: image.png is empty. Remove it and send, or try again.',
+    );
+    expect(run.start).not.toHaveBeenCalled();
+    // The reply is kept, so it can't change, and sending again doesn't send it twice.
+    expect(box.readOnly).toBe(true);
+    await userEvent.click(within(form).getByRole('button', { name: 'Remove screenshot 1' }));
+    await userEvent.click(within(form).getByRole('button', { name: 'Send' }));
+    await waitFor(() =>
+      expect(run.start).toHaveBeenCalledWith({ skill: 'ask', jobId: job.id, askId: REPLY.id }),
+    );
+    expect(api.askAboutJob).toHaveBeenCalledOnce();
+    expect(box.readOnly).toBe(false);
+    expect(box.value).toBe('');
+  });
+
+  it('shows a reply’s screenshots with the reply, and a question’s with the question', async () => {
+    const shot = (ask: string) => ({
+      path: `screenshots/${job.id}/ask-${ask}-1.png`,
+      name: `ask-${ask}-1.png`,
+      kind: 'ask' as const,
+      ask,
+      size: 3,
+      modified: TODAY,
+    });
+    const api = apiStub({
+      asked: { [ASK.id]: 'A short screen.', [REPLY.id]: 'Say yes.' },
+      shots: [shot(ASK.id), shot(REPLY.id)],
+    });
+    render(
+      <AskSection job={{ ...job, asks: [ASK, REPLY] }} api={api} run={controls()} today={TODAY} />,
+    );
+    const replyShot = await screen.findByRole('img', { name: 'Screenshot 1 with the reply' });
+    expect(replyShot.closest('div')?.textContent).toContain('And pay?');
+    expect(screen.getByRole('img', { name: 'Screenshot 1 with the question' })).toBeTruthy();
   });
 });

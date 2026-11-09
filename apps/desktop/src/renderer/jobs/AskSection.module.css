@@ -156,6 +156,11 @@
   min-width: 0;
 }
 
+/* The reply's screenshots, and the way to add them, lined up with the buttons above. */
+.replyPictures {
+  margin: 2px calc(-1 * var(--fw-space-2)) calc(-1 * var(--fw-space-2));
+}
+
 /* Empty, and so no taller than nothing, until a reply waits: it stays, for screen readers. */
 .replyHint {
   margin: 0;
@@ -183,6 +188,11 @@
   margin: 0 0 var(--fw-space-2);
   padding: 0;
   list-style: none;
+}
+
+/* A reply's screenshots, under its words. */
+.replyShots {
+  margin: var(--fw-space-2) 0 0;
 }
 
 .shot {
